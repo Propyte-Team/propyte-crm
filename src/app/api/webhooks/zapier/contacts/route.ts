@@ -75,7 +75,15 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const { id, ...data } = parsed.data;
+    const { id, ...fields } = parsed.data;
+
+    // Transformar nulls a formato Prisma para campos relacionales
+    const data: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) {
+        data[key] = value;
+      }
+    }
 
     const contact = await prisma.contact.update({
       where: { id },
