@@ -15,12 +15,49 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
+  const [codeSent, setCodeSent] = useState(false)
+  const [requestingCode, setRequestingCode] = useState(false)
+
+  // Solicitar código de acceso por email
+  async function handleRequestCode() {
+    setError("")
+    setSuccess("")
+
+    if (!email.trim()) {
+      setError("Ingresa tu correo electrónico primero")
+      return
+    }
+
+    setRequestingCode(true)
+
+    try {
+      const res = await fetch("/api/auth/request-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+
+      if (res.ok) {
+        setCodeSent(true)
+        setSuccess("Código enviado. Revisa tu bandeja de entrada.")
+      } else {
+        const data = await res.json()
+        setError(data.error || "Error al solicitar el código")
+      }
+    } catch {
+      setError("Error de conexión. Intenta de nuevo más tarde.")
+    } finally {
+      setRequestingCode(false)
+    }
+  }
 
   // Validación y envío del formulario de login
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError("")
+    setSuccess("")
 
     // Validación básica de campos
     if (!email.trim()) {
@@ -81,24 +118,35 @@ export default function LoginPage() {
                 placeholder="tu@correo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
+                disabled={loading || requestingCode}
                 autoComplete="email"
               />
             </div>
 
-            {/* Campo de contraseña */}
+            {/* Campo de contraseña / código */}
             <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
+              <Label htmlFor="password">
+                {codeSent ? "Código de acceso" : "Contraseña"}
+              </Label>
               <Input
                 id="password"
-                type="password"
-                placeholder="••••••••"
+                type={codeSent ? "text" : "password"}
+                placeholder={codeSent ? "123456" : "••••••••"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
-                autoComplete="current-password"
+                autoComplete={codeSent ? "one-time-code" : "current-password"}
+                inputMode={codeSent ? "numeric" : undefined}
+                maxLength={codeSent ? 6 : undefined}
               />
             </div>
+
+            {/* Mensaje de éxito */}
+            {success && (
+              <div className="rounded-md bg-green-500/10 p-3 text-sm text-green-600">
+                {success}
+              </div>
+            )}
 
             {/* Mensaje de error si existe */}
             {error && (
@@ -110,6 +158,33 @@ export default function LoginPage() {
             {/* Botón de inicio de sesión */}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
+            </Button>
+
+            {/* Separador */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  o
+                </span>
+              </div>
+            </div>
+
+            {/* Botón de solicitar código */}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={handleRequestCode}
+              disabled={requestingCode || loading}
+            >
+              {requestingCode
+                ? "Enviando código..."
+                : codeSent
+                  ? "Reenviar código"
+                  : "Solicitar código por correo"}
             </Button>
           </form>
         </CardContent>
