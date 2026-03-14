@@ -91,8 +91,8 @@ export async function handleCallStatus(payload: {
  */
 export function generateVoiceToken(userId: string): string {
   const accountSid = process.env.TWILIO_ACCOUNT_SID!;
-  const apiKey = process.env.TWILIO_ACCOUNT_SID!; // En producción usar API Key SID separado
-  const apiSecret = process.env.TWILIO_AUTH_TOKEN!;
+  const apiKey = process.env.TWILIO_API_KEY_SID || process.env.TWILIO_ACCOUNT_SID!;
+  const apiSecret = process.env.TWILIO_API_KEY_SECRET || process.env.TWILIO_AUTH_TOKEN!;
   const twimlAppSid = process.env.TWILIO_TWIML_APP_SID!;
 
   const token = new AccessToken(accountSid, apiKey, apiSecret, {

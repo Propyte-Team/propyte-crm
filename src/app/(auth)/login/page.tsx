@@ -1,4 +1,4 @@
-// Página de inicio de sesión del CRM Propyte
+// Página de inicio de sesión del CRM Propyte — Flujo OTP por email
 "use client"
 
 import { useState, FormEvent } from "react"
@@ -13,22 +13,55 @@ import { Badge } from "@/components/ui/badge"
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState<"email" | "code">("email")
+  const [requestingCode, setRequestingCode] = useState(false)
 
-  // Validación y envío del formulario de login
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  // Paso 1: Solicitar código de acceso
+  async function handleRequestCode(e?: FormEvent) {
+    e?.preventDefault()
     setError("")
+    setSuccess("")
 
-    // Validación básica de campos
     if (!email.trim()) {
-      setError("El correo electrónico es obligatorio")
+      setError("Ingresa tu correo electrónico")
       return
     }
-    if (!password.trim()) {
-      setError("La contraseña es obligatoria")
+
+    setRequestingCode(true)
+
+    try {
+      const res = await fetch("/api/auth/request-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+
+      if (res.ok) {
+        setStep("code")
+        setSuccess("Código enviado. Revisa tu bandeja de entrada.")
+      } else {
+        const data = await res.json()
+        setError(data.error || "Error al solicitar el código")
+      }
+    } catch {
+      setError("Error de conexión. Intenta de nuevo más tarde.")
+    } finally {
+      setRequestingCode(false)
+    }
+  }
+
+  // Paso 2: Iniciar sesión con el código
+  async function handleLogin(e: FormEvent) {
+    e.preventDefault()
+    setError("")
+    setSuccess("")
+
+    if (!code.trim()) {
+      setError("Ingresa el código de 6 dígitos")
       return
     }
 
@@ -37,14 +70,13 @@ export default function LoginPage() {
     try {
       const result = await signIn("credentials", {
         email,
-        password,
+        password: code,
         redirect: false,
       })
 
       if (result?.error) {
-        setError("Credenciales inválidas. Verifica tu correo y contraseña.")
+        setError("Código inválido o expirado. Solicita uno nuevo.")
       } else {
-        // Redirección al dashboard tras inicio exitoso
         router.push("/dashboard")
       }
     } catch {
@@ -58,7 +90,6 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="items-center space-y-2">
-          {/* Logo y marca Propyte */}
           <div className="flex items-center gap-2">
             <h1 className="text-3xl font-bold text-primary">PROPYTE</h1>
             <Badge variant="secondary" className="text-sm">
@@ -66,52 +97,110 @@ export default function LoginPage() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Inicia sesión para acceder al sistema
+            {step === "email"
+              ? "Ingresa tu correo para recibir un código de acceso"
+              : "Ingresa el código que enviamos a tu correo"}
           </p>
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Campo de correo electrónico */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Correo electrónico</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="tu@correo.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
-                autoComplete="email"
-              />
-            </div>
-
-            {/* Campo de contraseña */}
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                autoComplete="current-password"
-              />
-            </div>
-
-            {/* Mensaje de error si existe */}
-            {error && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
+          {step === "email" ? (
+            // Paso 1: Solicitar código
+            <form onSubmit={handleRequestCode} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Correo electrónico</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="tu@correo.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={requestingCode}
+                  autoComplete="email"
+                  autoFocus
+                />
               </div>
-            )}
 
-            {/* Botón de inicio de sesión */}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
-            </Button>
-          </form>
+              {error && (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={requestingCode}
+              >
+                {requestingCode ? "Enviando código..." : "Solicitar código de acceso"}
+              </Button>
+            </form>
+          ) : (
+            // Paso 2: Ingresar código
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                {email}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="code">Código de acceso</Label>
+                <Input
+                  id="code"
+                  type="text"
+                  placeholder="123456"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  disabled={loading}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  className="text-center text-2xl tracking-[0.5em] font-mono"
+                />
+              </div>
+
+              {success && (
+                <div className="rounded-md bg-green-500/10 p-3 text-sm text-green-600">
+                  {success}
+                </div>
+              )}
+
+              {error && (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
+
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Verificando..." : "Acceder"}
+              </Button>
+
+              <div className="flex items-center justify-between">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStep("email")
+                    setCode("")
+                    setError("")
+                    setSuccess("")
+                  }}
+                >
+                  Cambiar correo
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRequestCode()}
+                  disabled={requestingCode}
+                >
+                  {requestingCode ? "Enviando..." : "Reenviar código"}
+                </Button>
+              </div>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>
