@@ -1,0 +1,61 @@
+/* Estilos globales del CRM Propyte */
+/* Variables CSS para shadcn/ui con paleta de colores Propyte */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 0 0% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 17%;
+    --primary: 211 52% 25%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 187 100% 39%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 210 20% 96%;
+    --accent-foreground: 0 0% 17%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 90%;
+    --input: 214 20% 90%;
+    --ring: 211 52% 25%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 10%;
+    --foreground: 210 20% 98%;
+    --card: 0 0% 13%;
+    --card-foreground: 210 20% 98%;
+    --popover: 0 0% 13%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 187 100% 39%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 211 52% 25%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 17%;
+    --muted-foreground: 210 20% 60%;
+    --accent: 0 0% 17%;
+    --accent-foreground: 210 20% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 187 100% 39%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}

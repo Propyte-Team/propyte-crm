@@ -1,0 +1,668 @@
+// =====================================================================
+// PROPYTE CRM — Modelo de datos completo
+// =====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// ENUMS
+// =====================================================================
+
+// Roles de usuario para RBAC
+enum UserRole {
+  DIRECTOR
+  GERENTE
+  TEAM_LEADER
+  ASESOR_SR
+  ASESOR_JR
+  HOSTESS
+  MARKETING
+  DEVELOPER_EXT
+}
+
+// Nivel en plan de carrera
+enum CareerLevel {
+  JR
+  SR
+  TOP_PRODUCER
+  TEAM_LEADER
+  GERENTE
+}
+
+// Plazas activas
+enum Plaza {
+  PDC
+  TULUM
+  MERIDA
+}
+
+// Tipo de contacto
+enum ContactType {
+  LEAD
+  PROSPECTO
+  CLIENTE
+  INVERSIONISTA
+  BROKER_EXTERNO
+  REFERIDO
+}
+
+// Fuente del lead (crítico para atribución de marketing)
+enum LeadSource {
+  WALK_IN
+  FACEBOOK_ADS
+  GOOGLE_ADS
+  INSTAGRAM
+  PORTAL_INMOBILIARIO
+  REFERIDO_CLIENTE
+  REFERIDO_BROKER
+  LLAMADA_FRIA
+  EVENTO
+  WEBSITE
+  WHATSAPP
+  OTRO
+}
+
+// Idioma preferido del contacto
+enum PreferredLanguage {
+  ES
+  EN
+}
+
+// Perfil de inversión (del discovery call)
+enum InvestmentProfile {
+  END_USER
+  INVESTOR_RENTAL
+  INVESTOR_FLIP
+  INVESTOR_LAND
+  MIXED
+}
+
+// Tipo de propiedad buscada
+enum PropertyType {
+  DEPARTAMENTO
+  CASA
+  TERRENO
+  MACROLOTE
+  LOCAL_COMERCIAL
+  OTRO
+}
+
+// Horizonte de compra
+enum PurchaseTimeline {
+  IMMEDIATE
+  ONE_TO_THREE_MONTHS
+  THREE_TO_SIX_MONTHS
+  SIX_PLUS_MONTHS
+}
+
+// Forma de pago
+enum PaymentMethod {
+  CONTADO
+  CREDITO_HIPOTECARIO
+  FINANCIAMIENTO_DIRECTO
+  MIXTO
+}
+
+// Modalidad de compra preferida
+enum PurchaseModality {
+  PREVENTA
+  ENTREGA_INMEDIATA
+  REVENTA
+  ABIERTO
+}
+
+// Estrategia de renta
+enum RentalStrategy {
+  LONG_TERM
+  AIRBNB
+  BOTH
+  NA
+}
+
+// Temperatura del lead
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+  DEAD
+}
+
+// Tipo de desarrollo (relación comercial)
+enum DevelopmentType {
+  PROPIO
+  MASTERBROKER
+  CORRETAJE
+}
+
+// Moneda
+enum Currency {
+  MXN
+  USD
+}
+
+// Estado del desarrollo
+enum DevelopmentStatus {
+  PREVENTA
+  CONSTRUCCION
+  ENTREGA_INMEDIATA
+  VENDIDO
+  SUSPENDIDO
+}
+
+// Tipo de unidad individual
+enum UnitType {
+  DEPTO_1REC
+  DEPTO_2REC
+  DEPTO_3REC
+  PENTHOUSE
+  CASA
+  TERRENO
+  MACROLOTE
+  LOCAL
+}
+
+// Estado de la unidad
+enum UnitStatus {
+  DISPONIBLE
+  APARTADA
+  VENDIDA
+  NO_DISPONIBLE
+}
+
+// Etapas del pipeline de ventas
+enum DealStage {
+  NEW_LEAD
+  CONTACTED
+  DISCOVERY_DONE
+  MEETING_SCHEDULED
+  MEETING_COMPLETED
+  PROPOSAL_SENT
+  NEGOTIATION
+  RESERVED
+  CONTRACT_SIGNED
+  CLOSING
+  WON
+  LOST
+  FROZEN
+}
+
+// Tipo de operación (determina tabla de comisiones)
+enum DealType {
+  NATIVA_CONTADO
+  NATIVA_FINANCIAMIENTO
+  MACROLOTE
+  CORRETAJE
+  MASTERBROKER
+}
+
+// Razón de pérdida del deal
+enum LostReason {
+  PRECIO
+  COMPETENCIA
+  FINANCIAMIENTO_RECHAZADO
+  NO_INTERESADO
+  NO_CONTACTABLE
+  COMPRO_DIRECTO
+  DESARROLLO_CANCELADO
+  OTRO
+}
+
+// Estado del pago de comisión
+enum CommissionStatus {
+  PENDIENTE
+  FACTURADA
+  PAGADA
+}
+
+// Tipo de actividad
+enum ActivityType {
+  CALL_OUTBOUND
+  CALL_INBOUND
+  WHATSAPP_OUT
+  WHATSAPP_IN
+  SMS_OUT
+  SMS_IN
+  EMAIL_SENT
+  EMAIL_RECEIVED
+  MEETING_VIRTUAL
+  MEETING_PRESENTIAL
+  MEETING_SHOWROOM
+  DISCOVERY_CALL
+  PROPOSAL_DELIVERY
+  FOLLOW_UP
+  WALK_IN
+  NOTE
+  TASK
+  CONTRACT_REVIEW
+  CLOSING_ACTIVITY
+}
+
+// Canal de mensaje (Twilio)
+enum MessageChannel {
+  WHATSAPP
+  SMS
+}
+
+// Dirección del mensaje
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+// Estado del mensaje (Twilio)
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// Estado de actividad
+enum ActivityStatus {
+  PENDIENTE
+  COMPLETADA
+  VENCIDA
+  CANCELADA
+}
+
+// Propósito de visita (walk-in)
+enum VisitPurpose {
+  INVERSION
+  USO_PROPIO
+  INFORMACION
+  OTRO
+}
+
+// Acción de auditoría
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+}
+
+// Categoría de fuente del lead (para reglas de comisión)
+enum LeadSourceCategory {
+  PROPYTE_LEAD
+  BROKER_LEAD
+  ASESOR_LEAD
+}
+
+// Modo de asignación de leads
+enum LeadAssignmentMode {
+  ROUND_ROBIN
+  PERFORMANCE
+  MANUAL
+  GUARDIA
+}
+
+// =====================================================================
+// MODELOS
+// =====================================================================
+
+// Usuarios del CRM
+model User {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  name          String
+  role          UserRole
+  careerLevel   CareerLevel  @default(JR)
+  plaza         Plaza
+  teamLeaderId  String?
+  teamLeader    User?        @relation("TeamMembers", fields: [teamLeaderId], references: [id])
+  teamMembers   User[]       @relation("TeamMembers")
+  sedetusNumber String?
+  sedetusExpiry DateTime?
+  isActive      Boolean      @default(true)
+  avatarUrl     String?
+  phone         String?
+  passwordHash  String
+
+  // Relaciones
+  assignedContacts  Contact[]    @relation("AssignedContacts")
+  deals             Deal[]       @relation("AssignedDeals")
+  activities        Activity[]
+  walkInsAsHostess  WalkIn[]     @relation("HostessWalkIns")
+  walkInsAsAdvisor  WalkIn[]     @relation("AdvisorWalkIns")
+  reservedUnits     Unit[]       @relation("ReservedByUser")
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  messages          Message[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("users")
+}
+
+// Contactos / Leads
+model Contact {
+  id               String            @id @default(uuid())
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String
+  secondaryPhone   String?
+  contactType      ContactType       @default(LEAD)
+  leadSource       LeadSource
+  leadSourceDetail String?
+  residenceCity    String?
+  residenceCountry String?
+  nationality      String?
+  preferredLanguage PreferredLanguage @default(ES)
+
+  // Perfil de inversión (del discovery call)
+  investmentProfile InvestmentProfile?
+  propertyType      PropertyType?
+  purchaseTimeline  PurchaseTimeline?
+  budgetMin         Decimal?          @db.Decimal(14, 2)
+  budgetMax         Decimal?          @db.Decimal(14, 2)
+  paymentMethod     PaymentMethod?
+  preferredZone     String?
+  purchaseModality  PurchaseModality?
+  rentalStrategy    RentalStrategy?
+
+  // Asignación y scoring
+  assignedToId String?
+  assignedTo   User?            @relation("AssignedContacts", fields: [assignedToId], references: [id])
+  temperature  LeadTemperature  @default(COLD)
+  score        Int              @default(0)
+  tags         String[]
+
+  // Relaciones
+  deals      Deal[]
+  activities Activity[]
+  walkIns    WalkIn[]
+  units      Unit[]     @relation("ReservedByContact")
+  messages   Message[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("contacts")
+}
+
+// Desarrollos inmobiliarios
+model Development {
+  id                   String            @id @default(uuid())
+  name                 String
+  developerName        String
+  developmentType      DevelopmentType
+  location             String
+  plaza                Plaza
+  totalUnits           Int
+  availableUnits       Int
+  soldUnits            Int               @default(0)
+  reservedUnits        Int               @default(0)
+  priceMin             Decimal           @db.Decimal(14, 2)
+  priceMax             Decimal           @db.Decimal(14, 2)
+  currency             Currency          @default(MXN)
+  totalDevelopmentValue Decimal?         @db.Decimal(16, 2)
+  commissionRate       Decimal           @db.Decimal(5, 2)
+  status               DevelopmentStatus @default(PREVENTA)
+  constructionProgress Int               @default(0)
+  deliveryDate         DateTime?
+  contractStartDate    DateTime?
+  contractEndDate      DateTime?
+  brochureUrl          String?
+  virtualTourUrl       String?
+  amenities            String[]
+  description          String            @db.Text
+  isActive             Boolean           @default(true)
+
+  // Relaciones
+  units Unit[]
+  deals Deal[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("developments")
+}
+
+// Unidades individuales de un desarrollo
+model Unit {
+  id            String     @id @default(uuid())
+  developmentId String
+  development   Development @relation(fields: [developmentId], references: [id])
+  unitNumber    String
+  unitType      UnitType
+  area_m2       Decimal    @db.Decimal(10, 2)
+  price         Decimal    @db.Decimal(14, 2)
+  currency      Currency   @default(MXN)
+  floor         Int?
+  status        UnitStatus @default(DISPONIBLE)
+
+  // Reservación
+  reservedByContactId String?
+  reservedByContact   Contact?  @relation("ReservedByContact", fields: [reservedByContactId], references: [id])
+  reservedByUserId    String?
+  reservedByUser      User?     @relation("ReservedByUser", fields: [reservedByUserId], references: [id])
+  reservationDate     DateTime?
+  saleDate            DateTime?
+  salePrice           Decimal?  @db.Decimal(14, 2)
+
+  // Relaciones
+  deals Deal[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("units")
+}
+
+// Operaciones / Pipeline de ventas
+model Deal {
+  id              String    @id @default(uuid())
+  contactId       String
+  contact         Contact   @relation(fields: [contactId], references: [id])
+  assignedToId    String
+  assignedTo      User      @relation("AssignedDeals", fields: [assignedToId], references: [id])
+  developmentId   String?
+  development     Development? @relation(fields: [developmentId], references: [id])
+  unitId          String?
+  unit            Unit?     @relation(fields: [unitId], references: [id])
+
+  // Pipeline
+  stage           DealStage @default(NEW_LEAD)
+  dealType        DealType
+  estimatedValue  Decimal   @db.Decimal(14, 2)
+  currency        Currency  @default(MXN)
+  probability     Int       @default(5)
+  expectedCloseDate DateTime
+  actualCloseDate DateTime?
+
+  // Pérdida
+  lostReason       LostReason?
+  lostReasonDetail String?
+
+  // Comisiones calculadas
+  commissionTotal    Decimal? @db.Decimal(14, 2)
+  commissionAdvisor  Decimal? @db.Decimal(14, 2)
+  commissionTL       Decimal? @db.Decimal(14, 2)
+  commissionGerente  Decimal? @db.Decimal(14, 2)
+  commissionDirector Decimal? @db.Decimal(14, 2)
+  commissionBrokerExt Decimal? @db.Decimal(14, 2)
+  commissionStatus   CommissionStatus @default(PENDIENTE)
+
+  // Atribución
+  leadSourceAtDeal String
+
+  // Relaciones
+  activities Activity[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("deals")
+}
+
+// Actividades e interacciones
+model Activity {
+  id              String         @id @default(uuid())
+  contactId       String
+  contact         Contact        @relation(fields: [contactId], references: [id])
+  dealId          String?
+  deal            Deal?          @relation(fields: [dealId], references: [id])
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  activityType    ActivityType
+  subject         String
+  description     String?        @db.Text
+  dueDate         DateTime?
+  completedAt     DateTime?
+  status          ActivityStatus @default(PENDIENTE)
+  outcome         String?
+  duration_minutes Int?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("activities")
+}
+
+// Reglas de comisión configurables
+model CommissionRule {
+  id                 String             @id @default(uuid())
+  dealType           DealType
+  leadSourceCategory LeadSourceCategory
+  role               UserRole
+  percentage         Decimal            @db.Decimal(5, 2)
+  isActive           Boolean            @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("commission_rules")
+}
+
+// Registro de walk-ins
+model WalkIn {
+  id                String       @id @default(uuid())
+  hostessId         String
+  hostess           User         @relation("HostessWalkIns", fields: [hostessId], references: [id])
+  contactId         String
+  contact           Contact      @relation(fields: [contactId], references: [id])
+  arrivalTime       DateTime     @default(now())
+  departureTime     DateTime?
+  visitPurpose      VisitPurpose
+  assignedAdvisorId String?
+  assignedAdvisor   User?        @relation("AdvisorWalkIns", fields: [assignedAdvisorId], references: [id])
+  convertedToDeal   Boolean      @default(false)
+  notes             String?      @db.Text
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("walk_ins")
+}
+
+// Registro de auditoría
+model AuditLog {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  action    AuditAction
+  entity    String
+  entityId  String
+  changes   Json?
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// Notificaciones in-app
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String   // "lead_assigned", "task_overdue", "deal_stagnant", etc.
+  isRead    Boolean  @default(false)
+  link      String?  // URL de la entidad relacionada
+
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// Configuración global del sistema
+model SystemConfig {
+  id    String @id @default(uuid())
+  key   String @unique
+  value Json
+
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}
+
+// Mensajes SMS/WhatsApp via Twilio
+model Message {
+  id            String           @id @default(uuid())
+  contactId     String
+  contact       Contact          @relation(fields: [contactId], references: [id])
+  userId        String?
+  user          User?            @relation(fields: [userId], references: [id])
+  channel       MessageChannel
+  direction     MessageDirection
+  body          String           @db.Text
+  mediaUrl      String?
+  twilioSid     String?          @unique
+  templateName  String?
+  status        MessageStatus    @default(QUEUED)
+  externalPhone String
+
+  createdAt DateTime @default(now())
+
+  @@index([contactId, createdAt])
+  @@map("messages")
+}
+
+// Configuración de webhooks salientes (CRM → Zapier)
+model WebhookConfig {
+  id       String  @id @default(uuid())
+  event    String  // "contact.created", "deal.won", etc.
+  url      String
+  isActive Boolean @default(true)
+  secret   String  // HMAC signing secret
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("webhook_configs")
+}
+
+// API Keys para integraciones entrantes (Zapier → CRM)
+model ApiKey {
+  id         String   @id @default(uuid())
+  name       String
+  hashedKey  String   @unique
+  prefix     String   // "pk_live_..." primeros 8 chars para identificación
+  lastUsedAt DateTime?
+  isActive   Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@map("api_keys")
+}
