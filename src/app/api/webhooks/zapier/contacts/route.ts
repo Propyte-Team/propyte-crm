@@ -2,6 +2,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
+import { z } from "zod";
+
+const zapierContactUpdateSchema = z.object({
+  id: z.string().uuid(),
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
+  email: z.string().email().optional().nullable(),
+  phone: z.string().min(8).max(20).optional(),
+  secondaryPhone: z.string().min(8).max(20).optional().nullable(),
+  contactType: z.enum(["LEAD", "CLIENT", "INVESTOR", "REFERRAL"]).optional(),
+  leadSource: z.string().max(50).optional(),
+  leadSourceDetail: z.string().max(200).optional().nullable(),
+  residenceCity: z.string().max(100).optional().nullable(),
+  residenceCountry: z.string().max(100).optional().nullable(),
+  temperature: z.enum(["COLD", "WARM", "HOT"]).optional(),
+  assignedToId: z.string().uuid().optional().nullable(),
+  tags: z.array(z.string()).optional(),
+}).strict();
 
 export async function POST(req: NextRequest) {
   const apiKey = await authenticateApiKey(req);
@@ -49,11 +67,15 @@ export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
 
-    if (!body.id) {
-      return NextResponse.json({ error: "id es requerido" }, { status: 400 });
+    const parsed = zapierContactUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Datos inválidos", details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
     }
 
-    const { id, ...data } = body;
+    const { id, ...data } = parsed.data;
 
     const contact = await prisma.contact.update({
       where: { id },
