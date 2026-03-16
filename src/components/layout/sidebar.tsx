@@ -14,6 +14,7 @@ import {
   BarChart3,
   UserCheck,
   Settings,
+  FolderSync,
   ChevronLeft,
   ChevronRight,
   Moon,
@@ -77,6 +78,12 @@ const navItems = [
     href: "/walk-ins",
     icon: UserCheck,
     roles: ["HOSTESS"],
+  },
+  {
+    label: "Sync Drive",
+    href: "/sync",
+    icon: FolderSync,
+    roles: ["DIRECTOR", "GERENTE"],
   },
   {
     label: "Admin",

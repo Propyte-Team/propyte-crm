@@ -432,6 +432,7 @@ model Development {
   // Relaciones
   units Unit[]
   deals Deal[]
+  monitoredFolders MonitoredFolder[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -658,6 +659,127 @@ model WebhookConfig {
   updatedAt DateTime @updatedAt
 
   @@map("webhook_configs")
+}
+
+// =====================================================================
+// SYNC AGENTS — Modelos para sincronización Drive/Dropbox → CRM
+// =====================================================================
+
+// Carpeta externa de Drive/Dropbox a la que el servicio da seguimiento
+enum StorageProvider {
+  GOOGLE_DRIVE
+  DROPBOX
+}
+
+enum SyncJobStatus {
+  PENDING
+  CRAWLING
+  PARSING
+  MAPPING
+  UPLOADING
+  COMPLETED
+  FAILED
+}
+
+// Carpetas monitoreadas (1 carpeta = 1 desarrollo)
+model MonitoredFolder {
+  id               String           @id @default(uuid())
+  provider         StorageProvider
+  externalFolderId String           // ID de la carpeta en Drive/Dropbox
+  folderName       String
+  folderUrl        String?          // URL compartida para acceso rápido
+  developmentId    String?          // Desarrollo al que está vinculada (si ya existe)
+  development      Development?     @relation(fields: [developmentId], references: [id])
+  plaza            Plaza            @default(PDC)
+  developmentType  DevelopmentType  @default(PROPIO)
+  isActive         Boolean          @default(true)
+  syncInterval     Int              @default(15) // minutos
+  lastSyncAt       DateTime?
+  lastSyncStatus   SyncJobStatus?
+
+  // Relaciones
+  syncJobs   SyncJob[]
+  syncFiles  SyncFile[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([provider, externalFolderId])
+  @@map("monitored_folders")
+}
+
+// Archivo individual rastreado dentro de una carpeta
+model SyncFile {
+  id                String          @id @default(uuid())
+  monitoredFolderId String
+  monitoredFolder   MonitoredFolder @relation(fields: [monitoredFolderId], references: [id])
+  externalFileId    String          // ID del archivo en Drive/Dropbox
+  fileName          String
+  mimeType          String
+  fileSize          Int             // bytes
+  category          String          // PRICE_LIST, BROCHURE, RENDER, etc.
+  externalModifiedAt DateTime       // Última modificación en Drive/Dropbox
+  lastProcessedAt    DateTime?      // Última vez que se procesó
+  checksum           String?        // Para detectar cambios reales
+  processedData      Json?          // Datos extraídos del archivo (cache)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([monitoredFolderId, externalFileId])
+  @@map("sync_files")
+}
+
+// Job de sincronización (un pipeline completo: crawl → parse → map → upload)
+model SyncJob {
+  id                String          @id @default(uuid())
+  monitoredFolderId String
+  monitoredFolder   MonitoredFolder @relation(fields: [monitoredFolderId], references: [id])
+  status            SyncJobStatus   @default(PENDING)
+  triggeredBy       String          // "CRON", "WEBHOOK", "MANUAL"
+  developmentId     String?         // Desarrollo creado/actualizado
+
+  // Métricas del job
+  filesDiscovered   Int             @default(0)
+  filesNew          Int             @default(0)
+  filesModified     Int             @default(0)
+  unitsCreated      Int             @default(0)
+  unitsUpdated      Int             @default(0)
+  imagesProcessed   Int             @default(0)
+
+  // Estado detallado
+  crawlData   Json?                // CrawlResult serializado
+  parseData   Json?                // ParseResult serializado
+  mapData     Json?                // MapResult serializado
+  uploadData  Json?                // UploadResult serializado
+
+  error       String?   @db.Text
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  // Logs del pipeline
+  logs SyncLog[]
+
+  createdAt DateTime @default(now())
+
+  @@index([monitoredFolderId, createdAt])
+  @@map("sync_jobs")
+}
+
+// Logs detallados de cada paso del pipeline
+model SyncLog {
+  id        String   @id @default(uuid())
+  syncJobId String
+  syncJob   SyncJob  @relation(fields: [syncJobId], references: [id])
+  step      String   // "CRAWL", "PARSE", "MAP", "UPLOAD"
+  level     String   // "INFO", "WARN", "ERROR"
+  message   String   @db.Text
+  data      Json?    // Datos adicionales
+
+  createdAt DateTime @default(now())
+
+  @@index([syncJobId, createdAt])
+  @@map("sync_logs")
 }
 
 // API Keys para integraciones entrantes (Zapier → CRM)

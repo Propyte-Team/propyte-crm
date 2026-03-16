@@ -99,7 +99,7 @@ export function DevelopmentDetailClient({
             <Button variant="outline" size="sm" asChild>
               <a href={dev.brochureUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="mr-1 h-4 w-4" />
-                Brochure
+                {dev.brochureUrl.includes("drive.google.com") ? "Carpeta Drive" : "Brochure"}
               </a>
             </Button>
           )}
