@@ -1,4 +1,6 @@
 // Endpoint para solicitar un código de acceso temporal por email
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/db";
