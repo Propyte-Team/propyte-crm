@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     const email = parsed.data.email.toLowerCase().trim();
 
-    // Buscar usuario activo con ese correo
+    // Buscar usuario activo
     const user = await prisma.user.findUnique({
       where: { email },
       select: { id: true, isActive: true, email: true },
@@ -40,11 +40,13 @@ export async function POST(req: NextRequest) {
     // Generar código de 6 dígitos
     const code = crypto.randomInt(100000, 999999).toString();
 
-    // Hashear y guardar como contraseña del usuario
-    const passwordHash = await hash(code, 12);
+    // Hashear y guardar en campos OTP separados (NO sobreescribe la contraseña)
+    const otpHash = await hash(code, 12);
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash },
+      data: { otpHash, otpExpiresAt },
     });
 
     // Enviar código por email

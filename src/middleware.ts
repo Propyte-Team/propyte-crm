@@ -22,7 +22,7 @@ export default withAuth(
 
     // Verificar acceso a rutas administrativas
     if (pathname.startsWith("/dashboard/admin")) {
-      const adminRoles = ["ADMIN", "SUPER_ADMIN"];
+      const adminRoles = ["ADMIN", "DIRECTOR"];
       if (!adminRoles.includes(token.role as string)) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
@@ -30,7 +30,7 @@ export default withAuth(
 
     // Verificar acceso a configuración de plazas
     if (pathname.startsWith("/dashboard/plazas")) {
-      const plazaRoles = ["MANAGER", "ADMIN", "SUPER_ADMIN"];
+      const plazaRoles = ["ADMIN", "GERENTE", "DIRECTOR"];
       if (!plazaRoles.includes(token.role as string)) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }

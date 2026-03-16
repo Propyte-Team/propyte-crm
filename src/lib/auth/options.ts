@@ -37,13 +37,11 @@ declare module "next-auth/jwt" {
 
 // Configuración principal de NextAuth
 export const authOptions: NextAuthOptions = {
-  // Adaptador de Prisma para persistencia de sesiones y cuentas
   adapter: PrismaAdapter(prisma) as NextAuthOptions["adapter"],
 
-  // Estrategia JWT para sesiones stateless
   session: {
     strategy: "jwt",
-    maxAge: 8 * 60 * 60, // 8 horas de inactividad
+    maxAge: 8 * 60 * 60, // 8 horas
   },
 
   pages: {
@@ -57,14 +55,13 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Correo electrónico", type: "email" },
         password: { label: "Contraseña", type: "password" },
+        loginMethod: { label: "Método", type: "text" },
       },
       async authorize(credentials) {
-        // Validar que se proporcionaron ambos campos
         if (!credentials?.email || !credentials?.password) {
           throw new Error("Correo y contraseña son requeridos");
         }
 
-        // Buscar usuario por correo electrónico
         const user = await prisma.user.findUnique({
           where: { email: credentials.email.toLowerCase().trim() },
           select: {
@@ -72,6 +69,8 @@ export const authOptions: NextAuthOptions = {
             email: true,
             name: true,
             passwordHash: true,
+            otpHash: true,
+            otpExpiresAt: true,
             role: true,
             plaza: true,
             careerLevel: true,
@@ -79,22 +78,48 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        if (!user || !user.passwordHash) {
+        if (!user) {
           throw new Error("Credenciales inválidas");
         }
 
-        // Verificar que la cuenta esté activa
         if (!user.isActive) {
           throw new Error("Cuenta desactivada. Contacta al administrador.");
         }
 
-        // Comparar contraseña con hash almacenado
-        const passwordValid = await compare(credentials.password, user.passwordHash);
-        if (!passwordValid) {
-          throw new Error("Credenciales inválidas");
+        const isOtp = credentials.loginMethod === "otp";
+
+        if (isOtp) {
+          // Verificar código OTP
+          if (!user.otpHash || !user.otpExpiresAt) {
+            throw new Error("No hay código pendiente. Solicita uno nuevo.");
+          }
+
+          if (new Date() > user.otpExpiresAt) {
+            throw new Error("Código expirado. Solicita uno nuevo.");
+          }
+
+          const otpValid = await compare(credentials.password, user.otpHash);
+          if (!otpValid) {
+            throw new Error("Código inválido");
+          }
+
+          // Limpiar OTP después de uso exitoso
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { otpHash: null, otpExpiresAt: null },
+          });
+        } else {
+          // Verificar contraseña
+          if (!user.passwordHash) {
+            throw new Error("Credenciales inválidas");
+          }
+
+          const passwordValid = await compare(credentials.password, user.passwordHash);
+          if (!passwordValid) {
+            throw new Error("Credenciales inválidas");
+          }
         }
 
-        // Retornar datos del usuario autenticado
         return {
           id: user.id,
           email: user.email,
@@ -108,7 +133,6 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    // Agregar campos personalizados al token JWT
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
@@ -119,7 +143,6 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
 
-    // Exponer campos del JWT en la sesión del cliente
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id;
@@ -131,6 +154,5 @@ export const authOptions: NextAuthOptions = {
     },
   },
 
-  // Clave secreta para firmar tokens
   secret: process.env.NEXTAUTH_SECRET,
 };

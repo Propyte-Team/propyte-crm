@@ -17,6 +17,11 @@ datasource db {
 
 // Roles de usuario para RBAC
 enum UserRole {
+  ADMIN
+  ASESOR
+  BROKER
+  MANTENIMIENTO
+  // Legacy roles (mantener por compatibilidad hasta migración completa)
   DIRECTOR
   GERENTE
   TEAM_LEADER
@@ -327,6 +332,8 @@ model User {
   avatarUrl     String?
   phone         String?
   passwordHash  String
+  otpHash       String?
+  otpExpiresAt  DateTime?
 
   // Relaciones
   assignedContacts  Contact[]    @relation("AssignedContacts")
