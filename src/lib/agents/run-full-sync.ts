@@ -125,7 +125,8 @@ export async function runFullSync(
     await prisma.syncJob.update({ where: { id: syncJob.id }, data: { status: "MAPPING" } });
 
     const devName = project?.nombre_proyecto || folder.folderName.trim();
-    const devCity = project?.ciudad || (folder.plaza === "PDC" ? "Playa del Carmen" : folder.plaza === "MERIDA" ? "Mérida" : folder.plaza === "CANCUN" ? "Cancún" : "Tulum");
+    const plazaStr = folder.plaza as string;
+    const devCity = project?.ciudad || (plazaStr === "PDC" ? "Playa del Carmen" : plazaStr === "MERIDA" ? "Mérida" : plazaStr === "CANCUN" ? "Cancún" : "Tulum");
 
     const parseResult: ParseResult = {
       folderId: folder.id,
