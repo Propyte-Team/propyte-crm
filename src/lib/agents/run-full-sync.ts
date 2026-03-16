@@ -71,10 +71,10 @@ export async function runFullSync(
       metadata = reread.metadata;
 
       if (units.length === 0) {
-        throw new Error(`El analista no pudo extraer unidades de los archivos en Drive para "${folder.folderName}". Verifica que la carpeta tenga una lista de precios (PDF o Excel).`);
+        console.warn(`[SYNC] Analista no pudo extraer unidades para "${folder.folderName}". Continuando con metadata solamente.`);
+      } else {
+        console.log(`[SYNC] Analista completado: ${units.length} unidades extraídas`);
       }
-
-      console.log(`[SYNC] Analista completado: ${units.length} unidades extraídas`);
     }
 
     // ====== 2. OBTENER IMÁGENES ======
@@ -124,12 +124,15 @@ export async function runFullSync(
     // ====== 3. MAP ======
     await prisma.syncJob.update({ where: { id: syncJob.id }, data: { status: "MAPPING" } });
 
+    const devName = project?.nombre_proyecto || folder.folderName.trim();
+    const devCity = project?.ciudad || (folder.plaza === "PDC" ? "Playa del Carmen" : folder.plaza === "MERIDA" ? "Mérida" : folder.plaza === "CANCUN" ? "Cancún" : "Tulum");
+
     const parseResult: ParseResult = {
       folderId: folder.id,
       development: {
-        name: project?.nombre_proyecto || folder.folderName.trim(),
+        name: devName,
         developerName: project?.desarrolladora || "Desarrollador",
-        location: `${project?.ciudad || "Tulum"}, Quintana Roo`,
+        location: `${devCity}, Quintana Roo`,
         description: "Desarrollo inmobiliario en la Riviera Maya.",
         amenities: [],
         status: "CONSTRUCCION",
@@ -139,16 +142,16 @@ export async function runFullSync(
       units,
       images,
       warnings: [],
-      confidence: 1.0,
+      confidence: units.length > 0 ? 1.0 : 0.5,
       parsedAt: new Date(),
     };
 
-    // Limpiar unidades anteriores
+    // Limpiar unidades anteriores (solo si tenemos nuevas)
     const existingDev = await prisma.development.findFirst({
       where: { name: { contains: folder.folderName.trim(), mode: "insensitive" }, deletedAt: null },
     });
 
-    if (existingDev) {
+    if (existingDev && units.length > 0) {
       await prisma.unit.deleteMany({ where: { developmentId: existingDev.id } });
     }
 
@@ -181,7 +184,7 @@ export async function runFullSync(
       });
     }
 
-    // ====== 5. PUBLICAR EN PROPYTE-WEB ======
+    // ====== 5. PUBLICAR EN PROPYTE-WEB (Supabase) ======
     const typologies = extractTypologies(
       units.filter((u) => u.status !== "VENDIDA").map((u) => ({
         unitType: u.unitType || "",
@@ -194,41 +197,32 @@ export async function runFullSync(
     );
 
     const disponibles = units.filter((u) => u.status === "DISPONIBLE").length;
-    const totalReal = (metadata.totalReal as number) || units.length;
+    const totalReal = (metadata.totalReal as number) || units.length || 0;
     const vendidas = (metadata.vendidas as number) || 0;
 
     const webResult = await publishToWeb({
-      developmentName: project?.nombre_proyecto || folder.folderName.trim(),
+      developmentName: devName,
       developerName: project?.desarrolladora || "Desarrollador",
-      location: `Carretera Tulum-Cobá, ${project?.ciudad || "Tulum"}, Q.Roo`,
-      city: project?.ciudad || "Tulum",
-      description_es: "Desarrollo boutique con arquitectura biofílica en la selva de Tulum.",
-      description_en: "Boutique development with biophilic architecture in the Tulum jungle.",
+      location: `${devCity}, Quintana Roo`,
+      city: devCity,
+      description_es: `Desarrollo inmobiliario en ${devCity}. ${totalReal > 0 ? `${totalReal} unidades totales.` : ""}`,
+      description_en: `Real estate development in ${devCity}. ${totalReal > 0 ? `${totalReal} total units.` : ""}`,
       amenities: ["Alberca", "Gym", "Coworking", "Rooftop"],
       status: mapResult.development.status,
       constructionProgress: mapResult.development.constructionProgress,
       deliveryYear: "2027",
       totalUnits: totalReal,
       availableUnits: disponibles,
-      absorption: Math.round((vendidas / totalReal) * 100),
+      absorption: totalReal > 0 ? Math.round((vendidas / totalReal) * 100) : 0,
       driveUrl: project?.url_carpeta_drive,
       typologies,
       imageFolder: localImagePath,
       driveImageUrls,
+      commissionRate: mapResult.development.commissionRate,
+      zone: undefined,
     });
 
-    // ====== 6. AUTO-DEPLOY: vercel --prod ======
-    if (webResult.published > 0 || webResult.updated > 0) {
-      const webDir = path.resolve(process.cwd(), "../propyte-web");
-      const { execSync } = await import("child_process");
-      try {
-        console.log("[DEPLOY] Deploying to Vercel...");
-        execSync(`npx vercel --prod --yes`, { cwd: webDir, stdio: "pipe", timeout: 120000 });
-        console.log("[DEPLOY] Vercel deploy completed");
-      } catch (e) {
-        console.error("[DEPLOY] Vercel deploy failed:", (e as Error).message);
-      }
-    }
+    // Deploy se maneja en la cola (sync-queue.ts) — 1 deploy al final de todos los syncs
 
     // ====== FINALIZAR ======
     await prisma.syncJob.update({

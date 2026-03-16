@@ -117,28 +117,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Importar dinámicamente para evitar que pdf-parse/xlsx rompan webpack
-    const { runFullSync } = await import("@/lib/agents/run-full-sync");
-    const jobPromise = runFullSync(monitoredFolderId, "MANUAL");
+    // Usar la cola de sync (procesa secuencialmente, 1 deploy al final)
+    const { syncQueue } = await import("@/lib/agents/sync-queue");
+    const queueResult = syncQueue.enqueue(monitoredFolderId, "MANUAL");
 
-    // No esperamos a que termine — retornamos inmediato
-    jobPromise.catch((error) => {
-      console.error(`Sync pipeline failed for folder ${monitoredFolderId}:`, error);
-    });
-
-    // Dar un pequeño delay para que se cree el job en DB
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // Obtener el job recién creado
-    const job = await prisma.syncJob.findFirst({
-      where: { monitoredFolderId },
-      orderBy: { createdAt: "desc" },
-    });
+    if (!queueResult.queued) {
+      return NextResponse.json(
+        { error: "Este desarrollo ya está en la cola de sincronización" },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       {
-        data: job,
-        message: "Sync iniciado. Consulta el estado en GET /api/sync/jobs?folderId=...",
+        data: queueResult,
+        message: `Agregado a la cola (posición ${queueResult.position} de ${queueResult.queueLength})`,
       },
       { status: 202 }
     );

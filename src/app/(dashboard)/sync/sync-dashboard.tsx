@@ -117,6 +117,8 @@ export function SyncDashboard() {
   const [selectedJob, setSelectedJob] = React.useState<JobDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [showAddFolder, setShowAddFolder] = React.useState(false);
+  const [showBulkImport, setShowBulkImport] = React.useState(false);
+  const [selectedFolder, setSelectedFolder] = React.useState<MonitoredFolder | null>(null);
   const [syncing, setSyncing] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<"folders" | "jobs" | "logs">(
     "folders"
@@ -204,9 +206,13 @@ export function SyncDashboard() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Actualizar
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowBulkImport(true)}>
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            Importar CSV
+          </Button>
           <Button size="sm" onClick={() => setShowAddFolder(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Agregar Carpeta
+            Agregar
           </Button>
         </div>
       </div>
@@ -280,11 +286,11 @@ export function SyncDashboard() {
               prev.filter((j) => j.monitoredFolderId === folderId)
             );
             setActiveTab("jobs");
-            // Reload all jobs for this folder
             fetch(`/api/sync/jobs?folderId=${folderId}&limit=50`)
               .then((r) => r.json())
               .then((d) => setJobs(d.data || []));
           }}
+          onSelectFolder={(folder) => setSelectedFolder(folder)}
           onReload={loadData}
         />
       )}
@@ -311,6 +317,33 @@ export function SyncDashboard() {
           onClose={() => setShowAddFolder(false)}
           onAdded={() => {
             setShowAddFolder(false);
+            loadData();
+          }}
+        />
+      )}
+
+      {/* Bulk Import Modal */}
+      {showBulkImport && (
+        <BulkImportModal
+          onClose={() => setShowBulkImport(false)}
+          onImported={() => {
+            setShowBulkImport(false);
+            loadData();
+          }}
+        />
+      )}
+
+      {/* Folder Detail Panel */}
+      {selectedFolder && (
+        <FolderDetailPanel
+          folder={selectedFolder}
+          onClose={() => setSelectedFolder(null)}
+          onDeleted={() => {
+            setSelectedFolder(null);
+            loadData();
+          }}
+          onUpdated={() => {
+            setSelectedFolder(null);
             loadData();
           }}
         />
@@ -353,12 +386,14 @@ function FoldersTab({
   syncing,
   onSync,
   onViewJobs,
+  onSelectFolder,
   onReload,
 }: {
   folders: MonitoredFolder[];
   syncing: string | null;
   onSync: (id: string) => void;
   onViewJobs: (id: string) => void;
+  onSelectFolder: (folder: MonitoredFolder) => void;
   onReload: () => void;
 }) {
   if (folders.length === 0) {
@@ -411,7 +446,10 @@ function FoldersTab({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-medium truncate">
+                      <h3
+                        className="font-medium truncate cursor-pointer hover:text-blue-600 transition-colors"
+                        onClick={() => onSelectFolder(folder)}
+                      >
                         {folder.folderName}
                       </h3>
                       <Badge variant="outline" className="text-[10px] shrink-0">
@@ -1083,6 +1121,509 @@ function AddFolderModal({
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---- Bulk Import Modal ----
+
+function BulkImportModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [importing, setImporting] = React.useState(false);
+  const [csvText, setCsvText] = React.useState("");
+  const [result, setResult] = React.useState<{
+    total: number;
+    created: number;
+    existing: number;
+    errors: number;
+    queued: number;
+  } | null>(null);
+  const [error, setError] = React.useState("");
+
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCsvText(ev.target?.result as string || "");
+    };
+    reader.readAsText(file);
+  }
+
+  function parseCSV(text: string): Array<{
+    name: string;
+    driveUrl: string;
+    plaza?: string;
+    type?: string;
+    developer?: string;
+    totalUnits?: number;
+  }> {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].toLowerCase().split(",").map((h) => h.trim());
+    const nameIdx = headers.findIndex((h) => h.includes("nombre") || h.includes("name") || h.includes("proyecto"));
+    const urlIdx = headers.findIndex((h) => h.includes("url") || h.includes("drive") || h.includes("carpeta"));
+    const plazaIdx = headers.findIndex((h) => h.includes("plaza") || h.includes("ciudad") || h.includes("city"));
+    const typeIdx = headers.findIndex((h) => h.includes("tipo") || h.includes("type"));
+    const devIdx = headers.findIndex((h) => h.includes("desarrollador") || h.includes("developer"));
+    const unitsIdx = headers.findIndex((h) => h.includes("unidades") || h.includes("units") || h.includes("total"));
+
+    if (nameIdx === -1 || urlIdx === -1) return [];
+
+    return lines.slice(1).map((line) => {
+      const cols = line.split(",").map((c) => c.trim());
+      return {
+        name: cols[nameIdx] || "",
+        driveUrl: cols[urlIdx] || "",
+        plaza: plazaIdx >= 0 ? cols[plazaIdx] : undefined,
+        type: typeIdx >= 0 ? cols[typeIdx] : undefined,
+        developer: devIdx >= 0 ? cols[devIdx] : undefined,
+        totalUnits: unitsIdx >= 0 ? parseInt(cols[unitsIdx]) || undefined : undefined,
+      };
+    }).filter((d) => d.name && d.driveUrl);
+  }
+
+  async function handleImport() {
+    setImporting(true);
+    setError("");
+    setResult(null);
+
+    const developments = parseCSV(csvText);
+    if (developments.length === 0) {
+      setError("No se encontraron desarrollos validos. Verifica que el CSV tenga columnas 'nombre' y 'url'.");
+      setImporting(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/sync/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ developments }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Error al importar");
+        return;
+      }
+
+      setResult(data.data);
+    } catch {
+      setError("Error de conexion");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <Card className="w-full max-w-2xl mx-4">
+        <CardHeader>
+          <CardTitle className="text-lg">Importar Desarrollos (CSV)</CardTitle>
+          <CardDescription>
+            Sube un archivo CSV o Excel con multiples desarrollos para importarlos
+            y sincronizarlos automaticamente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!result ? (
+            <>
+              {/* File upload */}
+              <div className="space-y-2">
+                <Label>Subir archivo CSV</Label>
+                <Input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleFileUpload}
+                />
+              </div>
+
+              {/* Or paste */}
+              <div className="space-y-2">
+                <Label>O pega el contenido CSV</Label>
+                <textarea
+                  className="w-full h-32 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                  placeholder={`nombre,url,plaza,tipo,desarrolladora,total_unidades
+Soleil,https://drive.google.com/drive/folders/xxx,PDC,CORRETAJE,Grupo XYZ,60
+Noble,https://drive.google.com/drive/folders/yyy,PDC,MASTERBROKER,Noble Dev,40`}
+                  value={csvText}
+                  onChange={(e) => setCsvText(e.target.value)}
+                />
+              </div>
+
+              {/* Preview */}
+              {csvText && (
+                <div className="text-sm text-muted-foreground">
+                  {parseCSV(csvText).length} desarrollos detectados
+                </div>
+              )}
+
+              {error && (
+                <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={onClose} disabled={importing}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleImport} disabled={importing || !csvText}>
+                  {importing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Importar y Sincronizar
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Results */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-muted/50 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold">{result.total}</div>
+                    <div className="text-[11px] text-muted-foreground">Total</div>
+                  </div>
+                  <div className="bg-green-500/10 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-green-600">{result.created}</div>
+                    <div className="text-[11px] text-muted-foreground">Creados</div>
+                  </div>
+                  <div className="bg-blue-500/10 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-blue-600">{result.queued}</div>
+                    <div className="text-[11px] text-muted-foreground">En cola</div>
+                  </div>
+                  <div className="bg-red-500/10 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-red-600">{result.errors}</div>
+                    <div className="text-[11px] text-muted-foreground">Errores</div>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Los desarrollos se estan sincronizando en cola (1 a la vez).
+                  El sitio web se actualiza automaticamente cuando terminen todos.
+                </p>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={onImported}>Cerrar</Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---- Folder Detail Panel ----
+
+function FolderDetailPanel({
+  folder,
+  onClose,
+  onDeleted,
+  onUpdated,
+}: {
+  folder: MonitoredFolder;
+  onClose: () => void;
+  onDeleted: () => void;
+  onUpdated: () => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [form, setForm] = React.useState({
+    folderName: folder.folderName,
+    folderUrl: folder.folderUrl || "",
+    plaza: folder.plaza,
+    developmentType: folder.developmentType,
+    syncInterval: folder.syncInterval,
+    isActive: folder.isActive,
+  });
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/sync/folders/${folder.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (res.ok) {
+        onUpdated();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Error al guardar");
+      }
+    } catch {
+      alert("Error de conexion");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/sync/folders/${folder.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        onDeleted();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Error al eliminar");
+      }
+    } catch {
+      alert("Error de conexion");
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  const lastJob = folder.syncJobs?.[0];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <Card className="w-full max-w-2xl mx-4 max-h-[85vh] overflow-hidden flex flex-col">
+        <CardHeader className="flex flex-row items-start justify-between pb-3">
+          <div>
+            <CardTitle className="text-lg">{folder.folderName}</CardTitle>
+            <CardDescription className="flex items-center gap-2 mt-1">
+              <Badge variant="outline" className="text-[10px]">
+                {folder.provider === "GOOGLE_DRIVE" ? "Google Drive" : "Dropbox"}
+              </Badge>
+              <Badge variant={folder.isActive ? "secondary" : "outline"} className="text-[10px]">
+                {folder.isActive ? "Activa" : "Inactiva"}
+              </Badge>
+              {folder.development && (
+                <span className="text-green-600 text-xs">
+                  Vinculada: {folder.development.name}
+                </span>
+              )}
+            </CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} className="mt-0">
+            ✕
+          </Button>
+        </CardHeader>
+
+        <CardContent className="overflow-y-auto flex-1 space-y-4">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-muted/50 rounded-lg p-3 text-center">
+              <div className="text-lg font-bold">{folder._count.syncJobs}</div>
+              <div className="text-[11px] text-muted-foreground">Syncs</div>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3 text-center">
+              <div className="text-lg font-bold">{folder._count.syncFiles}</div>
+              <div className="text-[11px] text-muted-foreground">Archivos</div>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3 text-center">
+              <div className="text-lg font-bold">
+                {lastJob ? (lastJob.unitsCreated + lastJob.unitsUpdated) : 0}
+              </div>
+              <div className="text-[11px] text-muted-foreground">Unidades</div>
+            </div>
+          </div>
+
+          {/* Last sync info */}
+          {lastJob && (
+            <div className="flex items-center gap-2 text-sm">
+              <StatusBadge status={lastJob.status} />
+              <span className="text-muted-foreground">
+                {lastJob.completedAt
+                  ? `Ultimo sync: ${formatRelativeTime(lastJob.completedAt)}`
+                  : `Iniciado: ${formatRelativeTime(lastJob.startedAt)}`}
+              </span>
+              {lastJob.error && (
+                <span className="text-red-500 text-xs truncate max-w-[200px]">
+                  {lastJob.error}
+                </span>
+              )}
+            </div>
+          )}
+
+          <Separator />
+
+          {/* Editable fields */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold">Configuracion</Label>
+              {!editing ? (
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  Editar
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={handleSave} disabled={saving}>
+                    {saving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    Guardar
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Nombre</Label>
+                {editing ? (
+                  <Input
+                    value={form.folderName}
+                    onChange={(e) => setForm({ ...form, folderName: e.target.value })}
+                    className="h-8 text-sm"
+                  />
+                ) : (
+                  <div className="text-sm font-medium">{folder.folderName}</div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Plaza</Label>
+                {editing ? (
+                  <Select value={form.plaza} onValueChange={(v) => setForm({ ...form, plaza: v })}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PDC">Playa del Carmen</SelectItem>
+                      <SelectItem value="TULUM">Tulum</SelectItem>
+                      <SelectItem value="MERIDA">Merida</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="text-sm">{folder.plaza}</div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Tipo</Label>
+                {editing ? (
+                  <Select value={form.developmentType} onValueChange={(v) => setForm({ ...form, developmentType: v })}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PROPIO">Propio</SelectItem>
+                      <SelectItem value="MASTERBROKER">Masterbroker</SelectItem>
+                      <SelectItem value="CORRETAJE">Corretaje</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="text-sm">{folder.developmentType}</div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Intervalo (min)</Label>
+                {editing ? (
+                  <Input
+                    type="number"
+                    value={form.syncInterval}
+                    onChange={(e) => setForm({ ...form, syncInterval: parseInt(e.target.value) || 15 })}
+                    className="h-8 text-sm"
+                  />
+                ) : (
+                  <div className="text-sm">{folder.syncInterval} min</div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">URL de Drive</Label>
+              {editing ? (
+                <Input
+                  value={form.folderUrl}
+                  onChange={(e) => setForm({ ...form, folderUrl: e.target.value })}
+                  className="h-8 text-sm"
+                />
+              ) : (
+                <div className="text-sm">
+                  {folder.folderUrl ? (
+                    <a href={folder.folderUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline flex items-center gap-1">
+                      <ExternalLink className="h-3 w-3" />
+                      Abrir en Drive
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">No configurada</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {editing && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  checked={form.isActive}
+                  onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                />
+                <Label htmlFor="isActive" className="text-sm">Carpeta activa</Label>
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
+          {/* Folder ID */}
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">ID interno</Label>
+            <div className="text-xs font-mono text-muted-foreground">{folder.id}</div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">ID de Drive</Label>
+            <div className="text-xs font-mono text-muted-foreground">{folder.externalFolderId}</div>
+          </div>
+
+          <Separator />
+
+          {/* Danger Zone */}
+          <div className="rounded-lg border border-red-200 p-3 bg-red-50/50">
+            <h4 className="text-sm font-medium text-red-700 mb-2">Zona de peligro</h4>
+            {!confirmDelete ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Eliminar desarrollo
+              </Button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-red-600">
+                  Esto eliminara la carpeta monitoreada, todos los sync jobs, archivos rastreados,
+                  y el desarrollo vinculado del CRM. Esta accion no se puede deshacer.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    Si, eliminar todo
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

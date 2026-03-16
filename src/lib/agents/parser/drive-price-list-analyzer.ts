@@ -63,10 +63,11 @@ export async function analyzeDrivePriceList(config: {
     const [, fileId, fileName] = match;
     const ext = fileName.split(".").pop()?.toLowerCase() || "";
     if (["pdf", "xlsx", "xls", "csv"].includes(ext)) {
-      // Solo descargar archivos que parecen listas de precios (no legales/escrituras)
+      // Descargar todos los PDFs/Excel excepto escrituras y legales
       const nameLower = fileName.toLowerCase();
-      if (nameLower.includes("precio") || nameLower.includes("lista") || nameLower.includes("inventario") ||
-          nameLower.includes("disponibilidad") || nameLower.includes("brochure") || nameLower.includes("price")) {
+      const isLegal = nameLower.includes("escritura") || nameLower.includes("contrato") ||
+          nameLower.includes("legal") || nameLower.includes("notari") || nameLower.includes("factura");
+      if (!isLegal) {
         filesToDownload.push({ id: fileId, name: fileName });
       }
     }

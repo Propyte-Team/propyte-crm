@@ -1,14 +1,10 @@
 // ============================================================
-// Web Publisher — Publica desarrollos en propyte-web
-// Escribe directamente a properties.ts (datos estáticos)
-// hasta que Supabase esté configurado
+// Web Publisher — Publica desarrollos en propyte-web via Supabase
+// Upserts to the `developments` table so the website can render
+// detail pages at /[locale]/desarrollos/[slug]
 // ============================================================
 
-import fs from "fs/promises";
-import path from "path";
-
-const PROPERTIES_FILE = path.resolve(process.cwd(), "../propyte-web/src/data/properties.ts");
-const IMAGES_DIR = path.resolve(process.cwd(), "../propyte-web/public/img/desarrollos");
+import { getSupabaseServiceClient } from "@/lib/supabase";
 
 interface TypologyInput {
   name: string;
@@ -36,13 +32,20 @@ interface PublishInput {
   absorption: number;
   driveUrl?: string;
   typologies: TypologyInput[];
-  imageFolder?: string; // Path local con imágenes
-  driveImageUrls?: string[]; // URLs directas de Google Drive (lh3)
+  imageFolder?: string;
+  driveImageUrls?: string[];
+  // Extra metadata from redsearch CSV
+  developerContact?: string;
+  developerPhone?: string;
+  commissionRate?: number;
+  salesStartDate?: string;
+  deliveryDate?: string;
+  zone?: string;
 }
 
 /**
- * Publica tipologías de un desarrollo en propyte-web/src/data/properties.ts
- * y copia las imágenes a public/img/desarrollos/
+ * Publica/actualiza un desarrollo en Supabase `developments` table.
+ * El sitio web (propyte-web) lee de esta tabla para generar páginas ISR.
  */
 export async function publishToWeb(input: PublishInput): Promise<{
   published: number;
@@ -52,47 +55,17 @@ export async function publishToWeb(input: PublishInput): Promise<{
 }> {
   const errors: string[] = [];
   const urls: string[] = [];
-  let published = 0;
-  let updated = 0;
+
+  const supabase = getSupabaseServiceClient();
+  if (!supabase) {
+    errors.push("Supabase no configurado — SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY requeridos");
+    return { published: 0, updated: 0, urls: [], errors };
+  }
 
   try {
-    // 1. Verificar que properties.ts existe
-    try {
-      await fs.access(PROPERTIES_FILE);
-    } catch {
-      errors.push(`properties.ts no encontrado en ${PROPERTIES_FILE}`);
-      return { published: 0, updated: 0, urls: [], errors };
-    }
+    const slug = slugify(input.developmentName);
 
-    // 2. Copiar imágenes si hay carpeta local
-    const devSlug = slugify(input.developmentName);
-    let imageFiles: string[] = [];
-
-    if (input.imageFolder) {
-      const destDir = path.join(IMAGES_DIR, devSlug);
-      await fs.mkdir(destDir, { recursive: true });
-
-      try {
-        const files = await listImagesRecursive(input.imageFolder);
-        for (const src of files) {
-          const fileName = path.basename(src);
-          const dest = path.join(destDir, fileName);
-          try {
-            await fs.access(dest);
-          } catch {
-            await fs.copyFile(src, dest);
-          }
-          imageFiles.push(`/img/desarrollos/${devSlug}/${fileName}`);
-        }
-      } catch (e) {
-        errors.push(`Error copiando imágenes: ${(e as Error).message}`);
-      }
-    }
-
-    // 3. Leer properties.ts actual
-    let content = await fs.readFile(PROPERTIES_FILE, "utf-8");
-
-    // 4. Generar entries para cada tipología
+    // Map status to development_stage enum
     const stageMap: Record<string, string> = {
       PREVENTA: "preventa",
       CONSTRUCCION: "construccion",
@@ -100,82 +73,124 @@ export async function publishToWeb(input: PublishInput): Promise<{
     };
     const stage = stageMap[input.status] || "construccion";
 
-    for (const typo of input.typologies) {
-      const slug = slugify(`${input.developmentName}-${typo.name}`);
-      const id = `sync-${slugify(input.developmentName)}-${slugify(typo.name)}`;
+    // Determine property types from typologies
+    const propertyTypes = Array.from(new Set(
+      input.typologies.map((t) => mapPropertyType(t.type))
+    ));
+    if (propertyTypes.length === 0) propertyTypes.push("departamento");
 
-      // Verificar si ya existe
-      if (content.includes(`slug: '${slug}'`)) {
-        // Update: reemplazar precio
-        const priceRegex = new RegExp(`(slug: '${slug}'[\\s\\S]*?price: \\{ mxn: )\\d+`, "m");
-        content = content.replace(priceRegex, `$1${Math.round(typo.priceFrom)}`);
+    // Calculate price range from typologies
+    const prices = input.typologies.map((t) => t.priceFrom).filter((p) => p > 0);
+    const priceMin = prices.length > 0 ? Math.min(...prices) : null;
+    const priceMax = prices.length > 0 ? Math.max(...prices) : null;
 
-        // Update: reemplazar imágenes con Drive URLs si disponibles
-        const updateImages = input.driveImageUrls && input.driveImageUrls.length > 0
-          ? input.driveImageUrls.slice(0, 6)
-          : assignImages(imageFiles, typo, input.developmentName);
-
-        if (updateImages.length > 0) {
-          const imgArrayStr = `[${updateImages.map((i) => `'${i}'`).join(", ")}]`;
-          const imgRegex = new RegExp(`(slug: '${slug}'[\\s\\S]*?images: )\\[[^\\]]*\\]`, "m");
-          content = content.replace(imgRegex, `$1${imgArrayStr}`);
-        }
-
-        updated++;
-      } else {
-        // Insert: agregar antes del cierre del array
-        const propertyType = mapPropertyType(typo.type);
-        let assignedImages = assignImages(imageFiles, typo, input.developmentName);
-        // Fallback 1: Drive image URLs (directo del Drive sin descargar)
-        if (assignedImages.length === 0 && input.driveImageUrls && input.driveImageUrls.length > 0) {
-          assignedImages = input.driveImageUrls.slice(0, 6);
-        }
-        // Fallback 2: placeholder images
-        if (assignedImages.length === 0) {
-          assignedImages = [
-            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&h=450&fit=crop",
-            "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=450&fit=crop",
-            "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&h=450&fit=crop",
-            "https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?w=800&h=450&fit=crop",
-          ];
-        }
-
-        const entry = generatePropertyEntry({
-          id,
-          slug,
-          name: `${input.developmentName} — ${typo.name}`,
-          developer: input.developerName,
-          city: input.city,
-          location: input.location,
-          price: Math.round(typo.priceFrom),
-          bedrooms: typo.bedrooms,
-          bathrooms: typo.bathrooms,
-          area: typo.area_m2,
-          propertyType,
-          stage,
-          amenities: input.amenities,
-          images: assignedImages,
-          description_es: `${typo.name} de ${typo.area_m2} m² en ${input.developmentName}. ${input.description_es} ${input.constructionProgress}% avance. Entrega ${input.deliveryYear}. ${input.totalUnits} unidades, ${input.availableUnits} disponibles.`,
-          description_en: `${typo.name} of ${typo.area_m2} sqm at ${input.developmentName}. ${input.description_en} ${input.constructionProgress}% progress. Delivery ${input.deliveryYear}.`,
-          hasPool: typo.hasPool,
-        });
-
-        // Insertar antes de "];" al final del array
-        content = content.replace(/\n\];\n\nexport function getAllProperties/, `\n${entry}\n];\n\nexport function getAllProperties`);
-        published++;
-      }
-
-      urls.push(`/es/propiedades/${slug}`);
+    // Collect images
+    let images: string[] = [];
+    if (input.driveImageUrls && input.driveImageUrls.length > 0) {
+      images = input.driveImageUrls.slice(0, 10);
+    }
+    // Fallback placeholder images
+    if (images.length === 0) {
+      images = [
+        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&h=450&fit=crop",
+        "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=450&fit=crop",
+      ];
     }
 
-    // 5. Escribir archivo actualizado
-    await fs.writeFile(PROPERTIES_FILE, content, "utf-8");
+    // ROI estimates
+    const roi = priceMin && priceMin < 4_000_000 ? 12 : priceMin && priceMin < 6_000_000 ? 11 : 10;
+    const rentalMonthly = priceMin ? Math.round(priceMin * 0.006) : 0;
 
+    // Build upsert data
+    const devData: Record<string, unknown> = {
+      slug,
+      name: input.developmentName,
+      city: input.city,
+      zone: input.zone || input.location.split(",")[0].trim(),
+      state: "Quintana Roo",
+      address: input.location,
+      stage,
+      property_types: propertyTypes,
+      price_min_mxn: priceMin,
+      price_max_mxn: priceMax,
+      total_units: input.totalUnits || null,
+      available_units: input.availableUnits || null,
+      sold_units: input.totalUnits && input.availableUnits ? input.totalUnits - input.availableUnits : null,
+      roi_projected: roi,
+      roi_rental_monthly: rentalMonthly > 0 ? Number((rentalMonthly / (priceMin || 1) * 100).toFixed(2)) : null,
+      commission_rate: input.commissionRate || null,
+      construction_progress: input.constructionProgress || 0,
+      description_es: input.description_es,
+      description_en: input.description_en,
+      images,
+      amenities: input.amenities,
+      drive_url: input.driveUrl || null,
+      contact_name: input.developerContact || null,
+      contact_phone: input.developerPhone || null,
+      usage: ["vacacional", "renta"],
+      featured: false,
+      published: true,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Parse delivery date
+    if (input.deliveryDate) {
+      try {
+        const d = new Date(input.deliveryDate);
+        if (!isNaN(d.getTime())) {
+          devData.estimated_delivery = d.toISOString().split("T")[0];
+          devData.delivery_text = input.deliveryDate;
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (input.salesStartDate) {
+      try {
+        const d = new Date(input.salesStartDate);
+        if (!isNaN(d.getTime())) {
+          devData.sales_start_date = d.toISOString().split("T")[0];
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Check if development exists
+    const { data: existing } = await supabase
+      .from("developments")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+
+    if (existing) {
+      // Update existing
+      const { error } = await supabase
+        .from("developments")
+        .update(devData)
+        .eq("id", existing.id);
+
+      if (error) {
+        errors.push(`Error actualizando ${slug}: ${error.message}`);
+      } else {
+        urls.push(`/es/desarrollos/${slug}`);
+        return { published: 0, updated: 1, urls, errors };
+      }
+    } else {
+      // Insert new
+      const { error } = await supabase
+        .from("developments")
+        .insert(devData);
+
+      if (error) {
+        errors.push(`Error creando ${slug}: ${error.message}`);
+      } else {
+        urls.push(`/es/desarrollos/${slug}`);
+        return { published: 1, updated: 0, urls, errors };
+      }
+    }
   } catch (e) {
     errors.push(`Error general: ${(e as Error).message}`);
   }
 
-  return { published, updated, urls, errors };
+  return { published: 0, updated: 0, urls, errors };
 }
 
 /**
@@ -236,51 +251,6 @@ export function extractTypologies(units: Array<{
 
 // ---- Helpers ----
 
-function generatePropertyEntry(p: {
-  id: string; slug: string; name: string; developer: string;
-  city: string; location: string; price: number;
-  bedrooms: number; bathrooms: number; area: number;
-  propertyType: string; stage: string; amenities: string[];
-  images: string[]; description_es: string; description_en: string;
-  hasPool: boolean;
-}): string {
-  const rentalMonthly = Math.round(p.price * 0.006); // ~0.6% mensual estimado
-  const roi = p.price < 4_000_000 ? 12 : p.price < 6_000_000 ? 11 : 10;
-
-  return `
-  // ${p.name} (sync automático)
-  {
-    id: '${p.id}',
-    slug: '${p.slug}',
-    name: '${p.name.replace(/'/g, "\\'")}',
-    developer: '${p.developer.replace(/'/g, "\\'")}',
-    location: {
-      city: '${p.city}',
-      zone: '${p.location.split(",")[0].trim()}',
-      state: 'Quintana Roo',
-      lat: 20.2114,
-      lng: -87.4654,
-      address: '${p.location.replace(/'/g, "\\'")}',
-    },
-    price: { mxn: ${p.price}, currency: 'MXN' },
-    specs: { bedrooms: ${p.bedrooms}, bathrooms: ${p.bathrooms}, area: ${p.area}, type: '${p.propertyType}' },
-    stage: '${p.stage}',
-    usage: ['vacacional', 'renta'],
-    amenities: [${p.amenities.map((a) => `'${a.replace(/'/g, "\\'")}'`).join(", ")}],
-    images: [${p.images.map((i) => `'${i}'`).join(", ")}],
-    media: {},
-    roi: { projected: ${roi}, rentalMonthly: ${rentalMonthly}, appreciation: ${roi - 1} },
-    financing: { downPaymentMin: 30, months: [6, 12, 18, 24], interestRate: 0 },
-    description: {
-      es: '${p.description_es.replace(/'/g, "\\'")}',
-      en: '${p.description_en.replace(/'/g, "\\'")}',
-    },
-    badge: 'nuevo',
-    featured: true,
-    createdAt: '${new Date().toISOString()}',
-  },`;
-}
-
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -296,6 +266,8 @@ function mapPropertyType(unitType: string): string {
   if (upper.includes("CASA") || upper.includes("VILLA")) return "casa";
   if (upper.includes("TERRENO") || upper.includes("LOTE")) return "terreno";
   if (upper.includes("MACROLOTE")) return "macrolote";
+  if (upper.includes("ESTUDIO") || upper.includes("STUDIO")) return "studio";
+  if (upper.includes("TOWNHOUSE")) return "townhouse";
   return "departamento";
 }
 
@@ -313,55 +285,4 @@ function inferBedrooms(unitType: string): number {
   if (upper.includes("2 REC") || upper.includes("LOCK")) return 2;
   if (upper.includes("3 REC") || upper.includes("CORNER")) return 3;
   return 1;
-}
-
-function assignImages(allImages: string[], typo: TypologyInput, devName: string): string[] {
-  if (allImages.length === 0) return [];
-
-  // Asignar imágenes relevantes por tipo
-  const nameLower = typo.name.toLowerCase();
-  const specific = allImages.filter((img) => {
-    const imgLower = img.toLowerCase();
-    if (nameLower.includes("pentgarden") && (imgLower.includes("pentgarden") || imgLower.includes("estudio"))) return true;
-    if (nameLower.includes("lock") && (imgLower.includes("lock") || imgLower.includes("2-rec"))) return true;
-    if (nameLower.includes("corner") && (imgLower.includes("corner") || imgLower.includes("3-rec"))) return true;
-    if (nameLower.includes("penthouse") && (imgLower.includes("penthouse") || imgLower.includes("ph"))) return true;
-    return false;
-  });
-
-  // Renders exteriores (compartidos)
-  const exteriors = allImages.filter((img) => img.toLowerCase().includes("exterior") || img.toLowerCase().includes("00-"));
-  const amenities = allImages.filter((img) => {
-    const l = img.toLowerCase();
-    return l.includes("gym") || l.includes("cowork") || l.includes("salon") || l.includes("alberca");
-  });
-  const photos = allImages.filter((img) => img.toLowerCase().includes("abril") || img.toLowerCase().includes("nativa-tulum"));
-
-  // Combinar: exterior + específicas + amenidades + fotos (max 7)
-  const combined = [...exteriors.slice(0, 1), ...specific.slice(0, 2), ...exteriors.slice(1, 2), ...amenities.slice(0, 1), ...photos.slice(0, 1)];
-  const result = combined.filter((v, i, a) => a.indexOf(v) === i);
-  return result.slice(0, 7);
-}
-
-async function listImagesRecursive(dirPath: string): Promise<string[]> {
-  const results: string[] = [];
-  const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
-
-  try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      if (entry.isDirectory()) {
-        const sub = await listImagesRecursive(fullPath);
-        results.push(...sub);
-      } else {
-        const ext = path.extname(entry.name).toLowerCase();
-        if (imageExts.has(ext) && !entry.name.startsWith(".")) {
-          results.push(fullPath);
-        }
-      }
-    }
-  } catch { /* ignore */ }
-
-  return results;
 }

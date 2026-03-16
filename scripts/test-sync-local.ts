@@ -192,11 +192,10 @@ async function main() {
       developerName: project?.desarrolladora || "Avica",
       location: `Carretera Tulum-Cobá Km 7.5, Tulum, Q.Roo`,
       city: "Tulum",
-      description: "Desarrollo residencial boutique en la selva de Tulum. Arquitectura biofílica con amenidades premium.",
+      description_es: "Desarrollo residencial boutique en la selva de Tulum. Arquitectura biofílica con amenidades premium.",
+      description_en: "Boutique development with biophilic architecture in the Tulum jungle.",
       amenities: ["Alberca", "Gym", "Coworking", "Salón de Eventos", "Juice Bar", "Fire Pit", "Yoga", "Rooftop"],
       status: "CONSTRUCCION",
-      priceMin: mapResult.development.priceMin,
-      priceMax: mapResult.development.priceMax,
       driveUrl: project?.url_carpeta_drive,
       typologies,
     });
