@@ -1,10 +1,10 @@
-// Sidebar principal del CRM Propyte con navegación basada en roles
+// Sidebar principal del CRM Propyte — Estilo HubSpot
 "use client"
 
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useSession } from "next-auth/react"
+import { useSession, signOut } from "next-auth/react"
 import {
   LayoutDashboard,
   Users,
@@ -19,53 +19,42 @@ import {
   ChevronRight,
   Moon,
   Sun,
+  LogOut,
 } from "lucide-react"
 import { useTheme } from "next-themes"
-
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
-// Elementos de navegación con control de acceso por rol
+// Navegación con control de acceso por rol
 const navItems = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
-    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "HOSTESS"],
+    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER", "HOSTESS"],
   },
   {
     label: "Contactos",
     href: "/contacts",
     icon: Users,
-    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "HOSTESS"],
+    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER", "HOSTESS"],
   },
   {
     label: "Pipeline",
     href: "/pipeline",
     icon: Kanban,
-    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR"],
+    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"],
   },
   {
     label: "Desarrollos",
     href: "/developments",
     icon: Building2,
-    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR"],
+    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"],
   },
   {
     label: "Comisiones",
     href: "/commissions",
     icon: DollarSign,
-    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR"],
+    roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"],
   },
   {
     label: "Reportes",
@@ -83,7 +72,7 @@ const navItems = [
     label: "Sync Drive",
     href: "/sync",
     icon: FolderSync,
-    roles: ["DIRECTOR", "GERENTE"],
+    roles: ["DIRECTOR", "GERENTE", "MANTENIMIENTO"],
   },
   {
     label: "Admin",
@@ -99,12 +88,9 @@ export function Sidebar() {
   const { theme, setTheme } = useTheme()
   const [collapsed, setCollapsed] = React.useState(false)
 
-  // Rol del usuario actual para filtrar navegación
   const userRole = (session?.user as { role?: string })?.role || "ASESOR"
   const userName = session?.user?.name || "Usuario"
-  const userImage = session?.user?.image || ""
 
-  // Iniciales del nombre para el avatar fallback
   const initials = userName
     .split(" ")
     .map((n) => n[0])
@@ -112,155 +98,113 @@ export function Sidebar() {
     .toUpperCase()
     .slice(0, 2)
 
-  // Filtrar items de navegación según el rol del usuario
+  // ADMIN ve todo; otros roles se filtran
   const filteredNavItems = navItems.filter((item) =>
-    item.roles.includes(userRole)
+    userRole === "ADMIN" || item.roles.includes(userRole)
   )
 
   return (
-    <TooltipProvider delayDuration={0}>
-      <aside
-        className={cn(
-          "flex h-screen flex-col border-r bg-card transition-all duration-300",
-          collapsed ? "w-[60px]" : "w-[260px]"
-        )}
-      >
-        {/* Logo de Propyte */}
-        <div className="flex h-16 items-center justify-between px-4">
-          {!collapsed && (
-            <div className="flex items-center gap-2">
-              <span className="text-xl font-bold text-primary">PROPYTE</span>
-              <Badge variant="secondary" className="text-xs">
-                CRM
-              </Badge>
-            </div>
-          )}
-          {collapsed && (
-            <span className="mx-auto text-lg font-bold text-primary">P</span>
-          )}
-        </div>
-
-        <Separator />
-
-        {/* Navegación principal */}
-        <ScrollArea className="flex-1 py-2">
-          <nav className="flex flex-col gap-1 px-2">
-            {filteredNavItems.map((item) => {
-              const isActive = pathname?.startsWith(item.href)
-              const Icon = item.icon
-
-              // Si el sidebar está colapsado, mostrar tooltip con el nombre
-              if (collapsed) {
-                return (
-                  <Tooltip key={item.href}>
-                    <TooltipTrigger asChild>
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex h-10 w-10 items-center justify-center rounded-md mx-auto transition-colors",
-                          isActive
-                            ? "bg-secondary/10 text-secondary border-l-2 border-secondary"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                        )}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      {item.label}
-                    </TooltipContent>
-                  </Tooltip>
-                )
-              }
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-secondary/10 text-secondary border-l-2 border-secondary"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span>{item.label}</span>
-                </Link>
-              )
-            })}
-          </nav>
-        </ScrollArea>
-
-        <Separator />
-
-        {/* Información del usuario y controles */}
-        <div className="p-3">
-          {/* Toggle de modo oscuro */}
-          <div className={cn("flex mb-3", collapsed ? "justify-center" : "justify-end")}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="h-8 w-8"
-            >
-              <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Cambiar tema</span>
-            </Button>
+    <aside
+      className={cn(
+        "flex h-screen flex-col bg-propyte-aztec text-white transition-all duration-200 select-none",
+        collapsed ? "w-[56px]" : "w-[220px]"
+      )}
+    >
+      {/* Logo */}
+      <div className="flex h-14 items-center px-3">
+        {collapsed ? (
+          <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-propyte-aqua/15">
+            <span className="text-sm font-bold text-propyte-aqua">P</span>
           </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-propyte-aqua/15">
+              <span className="text-sm font-bold text-propyte-aqua">P</span>
+            </div>
+            <span className="text-base font-semibold tracking-tight">Propyte</span>
+            <span className="rounded bg-propyte-aqua/15 px-1.5 py-0.5 text-[10px] font-medium text-propyte-aqua">
+              CRM
+            </span>
+          </div>
+        )}
+      </div>
 
-          {/* Datos del usuario */}
+      {/* Navegación */}
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
+        <div className="space-y-0.5">
+          {filteredNavItems.map((item) => {
+            const isActive = pathname?.startsWith(item.href)
+            const Icon = item.icon
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+                  isActive
+                    ? "bg-propyte-aqua/10 text-propyte-aqua"
+                    : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                )}
+              >
+                <Icon className={cn(
+                  "h-[18px] w-[18px] shrink-0",
+                  isActive ? "text-propyte-aqua" : "text-gray-500 group-hover:text-gray-300"
+                )} />
+                {!collapsed && <span>{item.label}</span>}
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
+
+      {/* Footer: usuario + controles */}
+      <div className="border-t border-white/10 p-2">
+        {/* Tema + Colapsar */}
+        <div className={cn("flex gap-1 mb-2", collapsed ? "flex-col items-center" : "justify-end")}>
+          <button
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors"
+            title="Cambiar tema"
+          >
+            <Sun className="h-3.5 w-3.5 dark:hidden" />
+            <Moon className="hidden h-3.5 w-3.5 dark:block" />
+          </button>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-white/10 hover:text-gray-300 transition-colors"
+            title={collapsed ? "Expandir" : "Colapsar"}
+          >
+            {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+
+        {/* Usuario */}
+        <div className={cn(
+          "flex items-center gap-2 rounded-md p-2 hover:bg-white/5 transition-colors cursor-default",
+          collapsed && "justify-center p-1"
+        )}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-propyte-teal text-[11px] font-semibold text-white">
+            {initials}
+          </div>
           {!collapsed && (
-            <div className="flex items-center gap-3">
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={userImage} alt={userName} />
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col overflow-hidden">
-                <span className="truncate text-sm font-medium">{userName}</span>
-                <Badge variant="outline" className="w-fit text-[10px]">
-                  {userRole}
-                </Badge>
-              </div>
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <span className="truncate text-xs font-medium text-gray-200">{userName}</span>
+              <span className="text-[10px] text-propyte-aqua">{userRole}</span>
             </div>
           )}
-
-          {collapsed && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Avatar className="mx-auto h-9 w-9 cursor-pointer">
-                  <AvatarImage src={userImage} alt={userName} />
-                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-                </Avatar>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p>{userName}</p>
-                <p className="text-xs text-muted-foreground">{userRole}</p>
-              </TooltipContent>
-            </Tooltip>
+          {!collapsed && (
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 hover:bg-white/10 hover:text-red-400 transition-colors"
+              title="Cerrar sesión"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
-
-        {/* Botón para colapsar/expandir */}
-        <div className="border-t p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full"
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <>
-                <ChevronLeft className="h-4 w-4 mr-2" />
-                <span>Colapsar</span>
-              </>
-            )}
-          </Button>
-        </div>
-      </aside>
-    </TooltipProvider>
+      </div>
+    </aside>
   )
 }

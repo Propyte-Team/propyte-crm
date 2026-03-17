@@ -10,12 +10,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Paleta Propyte
-        "propyte-navy": "#1E3A5F",
-        "propyte-teal": "#00B4C8",
-        "propyte-amber": "#F5A623",
-        "propyte-graphite": "#2C2C2C",
-        "propyte-light": "#F4F6F8",
+        // Paleta Propyte (Manual de Identidad)
+        "propyte-aqua": "#99FFFF",
+        "propyte-teal": "#336666",
+        "propyte-onyx": "#2B3232",
+        "propyte-aztec": "#003333",
         // shadcn/ui variables
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
