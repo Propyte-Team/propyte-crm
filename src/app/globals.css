@@ -94,12 +94,39 @@
     --ring: 187 100% 39%;
   }
 
-  /* Light mode overrides for login/landing */
-  .light-page {
+  /* Light mode */
+  .light, [data-theme="light"] {
+    --bg-base:        #f5f7fa;
+    --bg-sidebar:     #ffffff;
+    --bg-surface:     #f0f2f5;
+    --bg-card:        #ffffff;
+    --bg-card-hover:  #f8f9fa;
+    --bg-input:       #ffffff;
+    --bg-input-focus: #ffffff;
+    --border-subtle:  rgba(0, 0, 0, 0.06);
+    --border-default: rgba(0, 0, 0, 0.12);
+    --border-strong:  rgba(0, 0, 0, 0.20);
+    --text-primary:   #1a1d21;
+    --text-secondary: #5a6270;
+    --text-tertiary:  #8c95a0;
+    --text-inverse:   #ffffff;
     --background: 210 20% 97%;
     --foreground: 210 15% 10%;
     --card: 0 0% 100%;
     --card-foreground: 210 15% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 15% 10%;
+    --primary: 187 100% 39%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 10% 94%;
+    --secondary-foreground: 210 15% 10%;
+    --muted: 210 10% 95%;
+    --muted-foreground: 210 5% 45%;
+    --accent: 210 10% 94%;
+    --accent-foreground: 210 15% 10%;
+    --border: 210 10% 88%;
+    --input: 210 10% 88%;
+    --ring: 187 100% 39%;
   }
 }
 
@@ -109,8 +136,6 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
-    background-color: var(--bg-base);
-    color: var(--text-primary);
   }
 
   /* Scrollbar styling */
