@@ -8,8 +8,8 @@ export default async function SyncPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  // Solo admin puede acceder
-  if (!["DIRECTOR", "GERENTE", "DEVELOPER_EXT"].includes(session.user.role)) {
+  // Solo ADMIN, DIRECTOR, GERENTE pueden acceder
+  if (!["ADMIN", "DIRECTOR", "GERENTE"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 

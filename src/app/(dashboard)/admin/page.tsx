@@ -9,8 +9,8 @@ export default async function AdminPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  // Solo DIRECTOR y GERENTE pueden acceder
-  if (!["DIRECTOR", "GERENTE"].includes(session.user.role)) {
+  // Solo ADMIN, DIRECTOR y GERENTE pueden acceder
+  if (!["ADMIN", "DIRECTOR", "GERENTE"].includes(session.user.role)) {
     redirect("/dashboard");
   }
 
