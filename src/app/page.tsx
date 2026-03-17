@@ -57,19 +57,22 @@ function IconLock() {
 
 // ─── Animated Counter ────────────────────────────────────────────────────────
 function AnimatedStat({ value, label, isVisible }: { value: string; label: string; isVisible: boolean }) {
-  const [display, setDisplay] = useState("0")
-  const numericMatch = value.match(/(\d+)/)
-  const prefix = value.match(/^[^0-9]*/)?.[0] || ""
-  const suffix = value.match(/[^0-9]*$/)?.[0] || ""
+  const [display, setDisplay] = useState(value)
+  const hasAnimated = useRef(false)
 
   useEffect(() => {
-    if (!isVisible || !numericMatch) {
-      if (!numericMatch) setDisplay(value)
-      return
-    }
+    if (!isVisible || hasAnimated.current) return
+    hasAnimated.current = true
+
+    const numericMatch = value.match(/(\d+)/)
+    if (!numericMatch) { setDisplay(value); return }
+
     const target = parseInt(numericMatch[1])
+    const prefix = value.slice(0, numericMatch.index)
+    const suffix = value.slice((numericMatch.index ?? 0) + numericMatch[1].length)
     const duration = 1500
     const start = performance.now()
+
     function tick(now: number) {
       const elapsed = now - start
       const progress = Math.min(elapsed / duration, 1)
@@ -79,12 +82,12 @@ function AnimatedStat({ value, label, isVisible }: { value: string; label: strin
       if (progress < 1) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
-  }, [isVisible, value, numericMatch, prefix, suffix])
+  }, [isVisible, value])
 
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-4">
       <span className="text-[40px] font-bold" style={{ color: "var(--color-teal)" }}>{display}</span>
-      <span className="text-sm" style={{ color: "rgba(255,255,255,0.65)" }}>{label}</span>
+      <span className="text-sm text-center" style={{ color: "rgba(255,255,255,0.65)" }}>{label}</span>
     </div>
   )
 }
@@ -373,10 +376,12 @@ export default function LandingPage() {
           </div>
 
           {/* CRM Mockup */}
-          <CrmMockup />
+          <div className="relative z-10">
+            <CrmMockup />
+          </div>
 
           {/* Bottom fade */}
-          <div className="absolute bottom-0 left-0 right-0 h-24" style={{ background: "linear-gradient(to top, white, transparent)" }} />
+          <div className="absolute bottom-0 left-0 right-0 z-0 h-32" style={{ background: "linear-gradient(to top, white, transparent)" }} />
         </section>
 
         {/* ─── FEATURES ─────────────────────────────────────────────── */}
@@ -423,13 +428,13 @@ export default function LandingPage() {
 
         {/* ─── STATS BAR ────────────────────────────────────────────── */}
         <section id="stats" ref={statsRef} className="px-4 py-16 md:py-20" style={{ background: "var(--color-navy)" }}>
-          <div ref={addSectionRef} className="landing-fade mx-auto grid max-w-[1280px] grid-cols-2 gap-4 md:grid-cols-4">
+          <div ref={addSectionRef} className="landing-fade mx-auto flex max-w-[1280px] flex-wrap items-center justify-center">
             <AnimatedStat value="< 5 min" label="Tiempo de respuesta a lead" isVisible={statsVisible} />
-            <div className="hidden md:block" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)" }} />
+            <div className="hidden h-16 md:block" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)" }} />
             <AnimatedStat value="78%" label="Cierres con el primer asesor" isVisible={statsVisible} />
-            <div className="hidden md:block" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)" }} />
+            <div className="hidden h-16 md:block" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)" }} />
             <AnimatedStat value="5%+" label="Meta de conversion visitante a lead" isVisible={statsVisible} />
-            <div className="hidden md:block" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)" }} />
+            <div className="hidden h-16 md:block" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)" }} />
             <AnimatedStat value="100%" label="Equipo Propyte conectado" isVisible={statsVisible} />
           </div>
         </section>
