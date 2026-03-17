@@ -198,7 +198,7 @@ function AnimatedStat({ value, label, isVisible }: { value: string; label: strin
 }
 
 // ─── CRM Mockup ──────────────────────────────────────────────────────────────
-function CrmMockup({ t }: { t: typeof translations.es }) {
+function CrmMockup({ t }: { t: typeof translations.es | typeof translations.en }) {
   const sidebarItems = ["Dashboard", "Contactos", "Pipeline", "Desarrollos", "Comisiones"]
   const columns = [
     { title: t.mockupCol1, color: "#00B4C8", cards: ["Ricardo D.", "Laura A."] },
