@@ -92,9 +92,9 @@ export function DashboardContent({
   monthlyTrend,
 }: DashboardContentProps) {
   // Verificar si el rol es de asesor (muestra acuerdo de actividad)
-  const isAdvisor = ["ASESOR_SR", "ASESOR_JR"].includes(role)
+  const isAdvisor = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"].includes(role)
   // Verificar si el rol es gerencial (muestra tabla de asesores)
-  const isManager = ["GERENTE", "DIRECTOR", "TEAM_LEADER"].includes(role)
+  const isManager = ["ADMIN", "GERENTE", "DIRECTOR", "TEAM_LEADER"].includes(role)
 
   return (
     <div className="space-y-6">

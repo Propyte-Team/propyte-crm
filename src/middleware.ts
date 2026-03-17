@@ -15,7 +15,7 @@ export default withAuth(
     // Verificar acceso al portal de desarrolladores externos
     if (pathname.startsWith("/portal")) {
       // Solo DEVELOPER_EXT puede acceder al portal
-      if (token.role !== "DEVELOPER_EXT") {
+      if (token.role !== "DEVELOPER_EXT" && token.role !== "ADMIN") {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
     }

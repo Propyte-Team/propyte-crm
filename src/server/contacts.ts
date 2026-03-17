@@ -12,13 +12,13 @@ import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 
 // Roles con acceso total a todos los contactos
-const FULL_ACCESS_ROLES = ["DIRECTOR", "DEVELOPER_EXT"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
 // Roles que ven contactos de su plaza
-const PLAZA_ACCESS_ROLES = ["GERENTE"];
+const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
 // Roles que ven contactos de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 // Roles que solo ven contactos propios
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR"];
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 
 // --- Esquema de validación para crear/editar contacto ---
 const contactSchema = z.object({

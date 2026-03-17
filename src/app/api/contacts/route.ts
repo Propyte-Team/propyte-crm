@@ -14,15 +14,15 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 
 // Roles que tienen acceso a todos los contactos
-const FULL_ACCESS_ROLES = ["DIRECTOR", "DEVELOPER_EXT"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
 // Roles que ven contactos de su plaza
-const PLAZA_ACCESS_ROLES = ["GERENTE"];
+const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
 // Roles que ven contactos de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 // Roles que solo ven contactos propios
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR"];
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 // Roles que pueden ver pero no modificar
-const READ_ONLY_ROLES = ["MARKETING", "HOSTESS"];
+const READ_ONLY_ROLES = ["MARKETING", "HOSTESS", "MANTENIMIENTO"];
 
 // Esquema de validación para crear contacto
 const createContactSchema = z.object({

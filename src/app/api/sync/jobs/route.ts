@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-const ADMIN_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"];
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 
 const triggerSyncSchema = z.object({
   monitoredFolderId: z.string().uuid("ID de carpeta inválido"),

@@ -103,7 +103,7 @@ export function CommissionsContent({
   const [isPending, startTransition] = useTransition();
 
   // Roles con permisos para cambiar estado
-  const canChangeStatus = userRole === "DIRECTOR" || userRole === "GERENTE";
+  const canChangeStatus = userRole === "ADMIN" || userRole === "DIRECTOR" || userRole === "GERENTE";
 
   // Filtrar comisiones localmente
   const filtered = commissions.filter((c) => {

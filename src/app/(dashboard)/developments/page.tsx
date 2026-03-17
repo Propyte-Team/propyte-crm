@@ -19,7 +19,7 @@ export default async function DevelopmentsPage() {
   }
 
   // Determinar si el usuario puede crear/editar desarrollos
-  const isAdmin = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"].includes(
+  const isAdmin = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"].includes(
     session.user.role
   );
 

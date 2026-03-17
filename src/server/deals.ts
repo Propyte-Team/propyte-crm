@@ -13,13 +13,13 @@ import type { Prisma, DealStage, DealType } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 
 // Roles con acceso completo a todos los deals
-const FULL_ACCESS_ROLES = ["DIRECTOR"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
 // Roles con acceso a deals de su plaza
-const PLAZA_ACCESS_ROLES = ["GERENTE"];
+const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
 // Roles con acceso a deals de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 // Roles con acceso solo a sus propios deals
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR"];
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 
 // --- Tipos de filtros para consultas ---
 interface DealFilters {

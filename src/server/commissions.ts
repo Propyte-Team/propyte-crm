@@ -10,16 +10,16 @@ import { getServerSession } from "@/lib/auth/session";
 import type { Prisma, CommissionStatus } from "@prisma/client";
 
 // Roles con acceso completo a todas las comisiones
-const FULL_ACCESS_ROLES = ["DIRECTOR"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
 // Roles con acceso a comisiones de su plaza
-const PLAZA_ACCESS_ROLES = ["GERENTE"];
+const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
 // Roles con acceso a comisiones de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 // Roles con acceso solo a sus propias comisiones
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR"];
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 
 // Roles que pueden cambiar estado de comisión
-const STATUS_CHANGE_ROLES = ["DIRECTOR", "GERENTE"];
+const STATUS_CHANGE_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 // Transiciones válidas de estado de comisión (solo hacia adelante)
 const VALID_TRANSITIONS: Record<CommissionStatus, CommissionStatus[]> = {

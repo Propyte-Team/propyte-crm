@@ -10,7 +10,7 @@ import { PIPELINE_STAGES } from "@/lib/constants"
 import { getActivityAgreementProgress, getOverdueTasks } from "./activities"
 
 // Roles con acceso total a todas las plazas
-const FULL_ACCESS_ROLES = ["DIRECTOR", "DEVELOPER_EXT"]
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"]
 
 // ============================================================
 // Interfaces de respuesta del dashboard

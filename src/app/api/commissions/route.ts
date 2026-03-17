@@ -10,11 +10,11 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 
 // Roles con acceso completo a todas las comisiones
-const FULL_ACCESS_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 // Roles con acceso a comisiones de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 // Roles con acceso solo a sus propias comisiones
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR"];
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 
 /**
  * GET /api/commissions

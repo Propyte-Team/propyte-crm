@@ -12,13 +12,13 @@ import { getServerSession } from "@/lib/auth/session";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 
 // Roles con acceso completo
-const FULL_ACCESS_ROLES = ["DIRECTOR"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
 // Roles con acceso a su plaza
-const PLAZA_ACCESS_ROLES = ["GERENTE"];
+const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
 // Roles con acceso a su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 // Roles con acceso solo a lo propio
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR"];
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 
 // Orden de etapas para validar transiciones
 const STAGE_ORDER = [

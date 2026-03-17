@@ -15,7 +15,7 @@ import type { UserRole, Plaza, CareerLevel } from "@prisma/client";
 import { generateApiKeyPair } from "@/lib/auth/api-key";
 
 // Roles permitidos para acceder a administración
-const ADMIN_ROLES = ["DIRECTOR", "GERENTE"];
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 /**
  * Verifica que el usuario actual tenga rol de administración.

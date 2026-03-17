@@ -11,9 +11,9 @@ import type { Prisma, VisitPurpose } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 
 // Roles con acceso completo a todos los walk-ins
-const FULL_ACCESS_ROLES = ["DIRECTOR", "GERENTE"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 // Roles con acceso a walk-ins de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 
 // --- Tipos ---
 interface WalkInRecord {

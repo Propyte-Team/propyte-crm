@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       const targetUserId = requestedUserId ?? session.user.id
 
       // RBAC: solo el propio usuario o roles superiores pueden ver el progreso de otro
-      const allowedToViewOthers = ["DIRECTOR", "GERENTE", "TEAM_LEADER", "DEVELOPER_EXT"]
+      const allowedToViewOthers = ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER", "DEVELOPER_EXT", "MANTENIMIENTO"]
       if (targetUserId !== session.user.id && !allowedToViewOthers.includes(session.user.role)) {
         return NextResponse.json({ error: "Acceso denegado" }, { status: 403 })
       }

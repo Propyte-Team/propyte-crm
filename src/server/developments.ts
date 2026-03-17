@@ -9,7 +9,7 @@ import { getServerSession } from "@/lib/auth/session";
 import type { Prisma, Plaza, DevelopmentStatus, DevelopmentType, UnitStatus, UnitType } from "@prisma/client";
 
 // Roles con permiso de administración de desarrollos
-const ADMIN_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"];
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 
 // --- Tipos de filtros ---
 interface DevelopmentFilters {

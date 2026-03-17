@@ -143,7 +143,7 @@ export function AdminContent({
 
   // Usuarios que pueden ser team leader (TL o Gerente)
   const teamLeaderUsers = users.filter((u) =>
-    ["TEAM_LEADER", "GERENTE", "DIRECTOR"].includes(u.role) && u.isActive
+    ["ADMIN", "TEAM_LEADER", "GERENTE", "DIRECTOR"].includes(u.role) && u.isActive
   );
 
   // --- Handlers de usuarios ---

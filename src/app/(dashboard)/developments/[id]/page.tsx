@@ -18,7 +18,7 @@ export default async function DevelopmentDetailPage({
   const development = await getDevelopment(params.id);
   if (!development) notFound();
 
-  const isAdmin = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"].includes(
+  const isAdmin = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"].includes(
     session.user.role
   );
 

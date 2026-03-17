@@ -9,11 +9,11 @@ import { ActivityType, ActivityStatus, Prisma } from "@prisma/client"
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher"
 
 // Roles con acceso total
-const FULL_ACCESS_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"]
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"]
 // Roles con acceso a su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"]
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"]
 // Roles con acceso solo a lo propio
-const OWN_ACCESS_ROLES = ["ASESOR_SR", "ASESOR_JR", "HOSTESS"]
+const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER", "HOSTESS"]
 
 // Tipos de actividad que se registran como COMPLETADA por defecto
 const AUTO_COMPLETED_TYPES: ActivityType[] = [

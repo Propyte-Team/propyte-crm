@@ -10,9 +10,9 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 
 // Roles con acceso completo a todos los usuarios
-const FULL_ACCESS_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 // Roles con acceso a miembros de su equipo
-const TEAM_ACCESS_ROLES = ["TEAM_LEADER"];
+const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
 
 /**
  * GET /api/users

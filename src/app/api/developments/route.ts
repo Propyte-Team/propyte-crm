@@ -12,7 +12,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 
 // Roles que pueden crear desarrollos
-const ADMIN_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT"];
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 
 // Esquema de validación para crear desarrollo
 const createDevelopmentSchema = z.object({

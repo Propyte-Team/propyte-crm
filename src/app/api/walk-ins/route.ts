@@ -12,9 +12,9 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 
 // Roles que pueden ver todos los walk-ins
-const FULL_ACCESS_ROLES = ["DIRECTOR", "GERENTE", "DEVELOPER_EXT", "TEAM_LEADER"];
+const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO", "TEAM_LEADER"];
 // Roles que pueden registrar walk-ins
-const CAN_REGISTER_ROLES = ["HOSTESS", "DIRECTOR", "GERENTE", "DEVELOPER_EXT"];
+const CAN_REGISTER_ROLES = ["ADMIN", "HOSTESS", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 
 // Esquema de validación para registrar walk-in
 const createWalkInSchema = z.object({

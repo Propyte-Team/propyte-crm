@@ -383,7 +383,7 @@ async function createSyncNotification(
   // Notificar a todos los directores y gerentes
   const admins = await prisma.user.findMany({
     where: {
-      role: { in: ["DIRECTOR", "GERENTE"] },
+      role: { in: ["ADMIN", "DIRECTOR", "GERENTE"] },
       isActive: true,
       deletedAt: null,
     },

@@ -16,7 +16,7 @@ export default async function DashboardPage() {
 
   const userId = session.user.id
   const userName = session.user.name ?? "Usuario"
-  const userRole = session.user.role ?? "ASESOR_JR"
+  const userRole = session.user.role ?? "ASESOR"
   const userPlaza = session.user.plaza
   const roleLabel = ROLE_LABELS[userRole] ?? userRole
 
