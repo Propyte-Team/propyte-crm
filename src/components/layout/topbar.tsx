@@ -36,7 +36,7 @@ export function Topbar() {
     .slice(0, 2)
 
   return (
-    <header className="flex h-16 items-center justify-between border-b bg-card px-6">
+    <header className="flex h-16 items-center justify-between px-6" style={{ background: "var(--bg-sidebar)", borderBottom: "1px solid var(--border-subtle)" }}>
       {/* Barra de búsqueda */}
       <div className="relative w-full max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
