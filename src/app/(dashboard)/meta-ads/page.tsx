@@ -1,4 +1,6 @@
 // Meta Ads — Vista General (Overview)
+export const dynamic = "force-dynamic"
+
 import { getServerSession } from "@/lib/auth/session"
 import { redirect } from "next/navigation"
 import { getMetaOverview, getMetaDailyTrend, getMetaAccounts, getMetaCampaigns, getMetaThresholds } from "@/server/meta-ads"

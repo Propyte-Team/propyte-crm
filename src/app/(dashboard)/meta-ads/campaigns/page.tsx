@@ -1,4 +1,6 @@
 // Meta Ads — Campanas
+export const dynamic = "force-dynamic"
+
 import { getServerSession } from "@/lib/auth/session"
 import { redirect } from "next/navigation"
 import { getMetaCampaigns, getMetaAccounts, getMetaThresholds } from "@/server/meta-ads"
