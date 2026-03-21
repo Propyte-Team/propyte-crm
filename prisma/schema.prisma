@@ -782,6 +782,92 @@ model SyncLog {
   @@map("sync_logs")
 }
 
+// =====================================================================
+// META ADS — Cache de campañas e insights para dashboard
+// =====================================================================
+
+// Cuenta publicitaria de Meta monitoreada
+model MetaAdAccount {
+  id            String   @id @default(uuid())
+  accountId     String   @unique // "act_803453467902414"
+  name          String
+  currency      String   @default("MXN")
+  isActive      Boolean  @default(true)
+  lastSyncAt    DateTime?
+
+  campaigns     MetaCampaignCache[]
+  dailyInsights MetaDailyInsight[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("meta_ad_accounts")
+}
+
+// Cache de campañas con métricas snapshot
+model MetaCampaignCache {
+  id             String   @id @default(uuid())
+  accountId      String
+  account        MetaAdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  metaCampaignId String
+  name           String
+  status         String   // ACTIVE, PAUSED, DELETED, etc.
+  objective      String
+  dailyBudget    Decimal? @db.Decimal(14, 2)
+  lifetimeBudget Decimal? @db.Decimal(14, 2)
+  startTime      DateTime?
+  stopTime       DateTime?
+
+  // Snapshot insights (período actual de sync)
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  spend          Decimal  @default(0) @db.Decimal(14, 2)
+  reach          Int      @default(0)
+  cpc            Decimal? @db.Decimal(10, 4)
+  ctr            Decimal? @db.Decimal(10, 4)
+  cpm            Decimal? @db.Decimal(10, 4)
+  leads          Int      @default(0)
+  costPerLead    Decimal? @db.Decimal(14, 2)
+
+  insightsPeriod String   @default("last_7d")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, metaCampaignId])
+  @@map("meta_campaign_cache")
+}
+
+// Insights diarios por cuenta/campaña (histórico para charts)
+model MetaDailyInsight {
+  id             String   @id @default(uuid())
+  accountId      String
+  account        MetaAdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date           DateTime @db.Date
+  level          String   // "account" o "campaign"
+  metaObjectId   String   // account ID o campaign ID
+  metaObjectName String?
+
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  spend          Decimal  @default(0) @db.Decimal(14, 2)
+  reach          Int      @default(0)
+  cpc            Decimal? @db.Decimal(10, 4)
+  ctr            Decimal? @db.Decimal(10, 4)
+  cpm            Decimal? @db.Decimal(10, 4)
+  frequency      Decimal? @db.Decimal(10, 4)
+  leads          Int      @default(0)
+  costPerLead    Decimal? @db.Decimal(14, 2)
+
+  actionsJson    Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, date, level, metaObjectId])
+  @@index([accountId, date])
+  @@map("meta_daily_insights")
+}
+
 // API Keys para integraciones entrantes (Zapier → CRM)
 model ApiKey {
   id         String   @id @default(uuid())

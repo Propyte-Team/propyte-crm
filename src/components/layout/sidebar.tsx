@@ -15,6 +15,7 @@ import {
   UserCheck,
   Settings,
   FolderSync,
+  Megaphone,
   ChevronLeft,
   ChevronRight,
   Moon,
@@ -31,6 +32,7 @@ const navItems = [
   { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
   { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
   { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "LIDER"] },
+  { label: "Meta Ads", href: "/meta-ads", icon: Megaphone, roles: ["DIRECTOR", "GERENTE", "LIDER", "MARKETING"] },
   { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["HOSTESS"] },
   { label: "Sync Drive", href: "/sync", icon: FolderSync, roles: ["DIRECTOR", "GERENTE", "MANTENIMIENTO"] },
   { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
@@ -39,8 +41,11 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const { theme, setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme()
   const [collapsed, setCollapsed] = React.useState(false)
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => setMounted(true), [])
 
   const userRole = (session?.user as { role?: string })?.role || "ASESOR"
   const userName = session?.user?.name || "Usuario"
@@ -56,33 +61,35 @@ export function Sidebar() {
     userRole === "ADMIN" || item.roles.includes(userRole)
   )
 
+  const isDark = resolvedTheme === "dark"
+
   return (
     <aside
       className={cn(
         "flex h-screen flex-col select-none transition-all duration-200",
-        collapsed ? "w-[56px]" : "w-[180px]"
+        collapsed ? "w-[56px]" : "w-[200px]"
       )}
       style={{ background: "var(--bg-sidebar)", borderRight: "1px solid var(--border-subtle)" }}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center px-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+      <div className="flex h-12 items-center px-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
         {collapsed ? (
-          <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "var(--color-teal-light)" }}>
-            <span className="text-sm font-bold" style={{ color: "var(--color-teal)" }}>P</span>
+          <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-md" style={{ background: "var(--color-teal)" }}>
+            <span className="text-xs font-bold text-white">P</span>
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "var(--color-teal-light)" }}>
-              <span className="text-sm font-bold" style={{ color: "var(--color-teal)" }}>P</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ background: "var(--color-teal)" }}>
+              <span className="text-xs font-bold text-white">P</span>
             </div>
-            <span className="text-base font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>Propyte</span>
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "var(--color-teal-light)", color: "var(--color-teal)" }}>CRM</span>
+            <span className="text-sm font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>Propyte</span>
+            <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--color-teal-light)", color: "var(--color-teal)" }}>CRM</span>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2">
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
         <div className="space-y-0.5">
           {filteredNavItems.map((item) => {
             const isActive = pathname?.startsWith(item.href)
@@ -94,7 +101,7 @@ export function Sidebar() {
                 href={item.href}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium",
+                  "group relative flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] font-medium",
                   "transition-colors"
                 )}
                 style={{
@@ -114,8 +121,11 @@ export function Sidebar() {
                   }
                 }}
               >
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r" style={{ background: "var(--color-teal)" }} />
+                )}
                 <Icon
-                  className="h-[16px] w-[16px] shrink-0"
+                  className="h-4 w-4 shrink-0"
                   style={{ color: isActive ? "var(--color-teal)" : "var(--text-tertiary)" }}
                 />
                 {!collapsed && <span>{item.label}</span>}
@@ -129,19 +139,24 @@ export function Sidebar() {
       <div className="p-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
         {/* Theme + Collapse */}
         <div className={cn("flex gap-1 mb-2", collapsed ? "flex-col items-center" : "justify-end")}>
-          <button
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-            style={{ color: "var(--text-tertiary)" }}
-            title="Cambiar tema"
-          >
-            <Sun className="h-3.5 w-3.5 dark:hidden" />
-            <Moon className="hidden h-3.5 w-3.5 dark:block" />
-          </button>
+          {mounted && (
+            <button
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+              style={{ color: "var(--text-tertiary)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent" }}
+              title={isDark ? "Modo claro" : "Modo oscuro"}
+            >
+              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
+          )}
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
             style={{ color: "var(--text-tertiary)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent" }}
             title={collapsed ? "Expandir" : "Colapsar"}
           >
             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
@@ -151,7 +166,7 @@ export function Sidebar() {
         {/* User */}
         <div className={cn("flex items-center gap-2 rounded-md p-2 cursor-default", collapsed && "justify-center p-1")}>
           <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
             style={{ background: "var(--color-teal)" }}
           >
             {initials}
@@ -159,14 +174,16 @@ export function Sidebar() {
           {!collapsed && (
             <div className="flex flex-1 flex-col overflow-hidden">
               <span className="truncate text-xs font-medium" style={{ color: "var(--text-primary)" }}>{userName}</span>
-              <span className="text-[10px]" style={{ color: "var(--color-teal)" }}>{userRole}</span>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--color-teal)" }}>{userRole}</span>
             </div>
           )}
           {!collapsed && (
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:text-red-400"
+              className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--text-tertiary)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#EF4444" }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)" }}
               title="Cerrar sesion"
             >
               <LogOut className="h-3.5 w-3.5" />

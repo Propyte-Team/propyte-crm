@@ -3,6 +3,10 @@
     {
       "path": "/api/sync/cron",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/meta-ads/sync",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
