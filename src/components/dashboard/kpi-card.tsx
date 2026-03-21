@@ -13,17 +13,20 @@ interface KpiCardProps {
   subtitle?: string
   icon: LucideIcon
   trend: number // positivo = sube, negativo = baja
-  color?: string // clase de color del icono (ej: "text-blue-600")
+  color?: string // color directo del icono (hex o var)
+  accentBg?: string // background del icono
 }
 
-export function KpiCard({ title, value, subtitle, icon: Icon, trend, color }: KpiCardProps) {
+export function KpiCard({ title, value, subtitle, icon: Icon, trend, color, accentBg }: KpiCardProps) {
   const isPositive = trend >= 0
+  const iconColor = color || "var(--color-teal)"
+  const iconBg = accentBg || "var(--color-teal-light)"
 
   return (
     <div className="crm-card">
       <div className="flex items-center justify-between">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-teal-light)" }}>
-          <Icon className={cn("h-5 w-5", color ?? "text-[var(--color-teal)]")} style={{ color: color ? undefined : "var(--color-teal)" }} />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: iconBg }}>
+          <Icon className="h-[18px] w-[18px]" style={{ color: iconColor }} />
         </div>
         <span
           className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold"
