@@ -2,7 +2,6 @@
 // Obtiene datos reales de Prisma y pasa como props al contenido cliente
 import { getServerSession } from "@/lib/auth/session"
 import { redirect } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
 import { ROLE_LABELS } from "@/lib/constants"
 import { DashboardContent } from "@/components/dashboard/dashboard-content"
 import { getDashboardStats } from "@/server/dashboard"
@@ -54,19 +53,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Encabezado con saludo y rol del usuario */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Bienvenido, {userName}
-          </h1>
-          <p className="text-muted-foreground">
-            Resumen general de tu operación
-          </p>
-        </div>
-        <Badge variant="secondary" className="text-sm">
-          {roleLabel}
-        </Badge>
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
+          Bienvenido, {userName}
+        </h1>
+        <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
+          Resumen general de tu operación
+        </p>
       </div>
 
       {/* Contenido principal del dashboard con datos reales */}

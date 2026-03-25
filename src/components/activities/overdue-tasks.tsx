@@ -1,19 +1,10 @@
-// ============================================================
-// Widget de tareas vencidas para el dashboard
-// Lista de tareas pendientes con fecha vencida y botón completar
-// ============================================================
+// Widget de tareas vencidas — Design System v2
 "use client"
 
 import { useState, useEffect } from "react"
 import { differenceInDays, format } from "date-fns"
-import { AlertTriangle, CheckCircle2 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { AlertTriangle, CheckCircle2, Check } from "lucide-react"
 
-// Interfaz de tarea vencida
 interface OverdueTask {
   id: string
   subject: string
@@ -27,7 +18,6 @@ export function OverdueTasks() {
   const [loading, setLoading] = useState(true)
   const [completingId, setCompletingId] = useState<string | null>(null)
 
-  // Cargar tareas vencidas
   useEffect(() => {
     fetchTasks()
   }, [])
@@ -37,7 +27,6 @@ export function OverdueTasks() {
       const res = await fetch("/api/activities?status=PENDIENTE&activityType=TASK&sortBy=dueDate&sortOrder=asc&pageSize=20")
       if (res.ok) {
         const json = await res.json()
-        // Filtrar solo las que tienen dueDate < ahora
         const now = new Date()
         const overdue = (json.data ?? []).filter(
           (t: OverdueTask) => t.dueDate && new Date(t.dueDate) < now
@@ -45,13 +34,12 @@ export function OverdueTasks() {
         setTasks(overdue)
       }
     } catch {
-      // Error silencioso
+      // silent
     } finally {
       setLoading(false)
     }
   }
 
-  // Completar una tarea
   async function handleComplete(taskId: string) {
     setCompletingId(taskId)
     try {
@@ -61,11 +49,10 @@ export function OverdueTasks() {
         body: JSON.stringify({ id: taskId, status: "COMPLETADA" }),
       })
       if (res.ok) {
-        // Remover de la lista
         setTasks((prev) => prev.filter((t) => t.id !== taskId))
       }
     } catch {
-      // Error silencioso
+      // silent
     } finally {
       setCompletingId(null)
     }
@@ -73,89 +60,77 @@ export function OverdueTasks() {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Tareas Vencidas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="crm-card">
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle className="h-4 w-4" style={{ color: "var(--color-error)" }} />
+          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Tareas Vencidas</h3>
+        </div>
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-12 rounded-md animate-pulse" style={{ background: "var(--bg-input)" }} />
+          ))}
+        </div>
+      </div>
     )
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-            Tareas Vencidas
-          </CardTitle>
-          {tasks.length > 0 && (
-            <Badge variant="destructive" className="text-xs">
-              {tasks.length}
-            </Badge>
-          )}
+    <div className="crm-card">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" style={{ color: "var(--color-error)" }} />
+          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Tareas Vencidas</h3>
         </div>
-      </CardHeader>
-      <CardContent>
-        {tasks.length === 0 ? (
-          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-            Sin tareas vencidas
-          </div>
-        ) : (
-          <ScrollArea className="max-h-[300px]">
-            <div className="space-y-2">
-              {tasks.map((task) => {
-                const dueDate = new Date(task.dueDate)
-                const daysOverdue = differenceInDays(new Date(), dueDate)
-
-                return (
-                  <div
-                    key={task.id}
-                    className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3"
-                  >
-                    <div className="flex-1 min-w-0">
-                      {/* Asunto de la tarea */}
-                      <p className="text-sm font-medium truncate">{task.subject}</p>
-                      {/* Contacto asociado */}
-                      <p className="text-xs text-muted-foreground">
-                        {task.contact.firstName} {task.contact.lastName}
-                      </p>
-                      {/* Fecha de vencimiento y días vencida */}
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className="text-xs text-red-600 font-medium">
-                          {format(dueDate, "dd/MM/yy")}
-                        </span>
-                        <Badge variant="destructive" className="text-[10px] px-1 py-0">
-                          {daysOverdue === 0 ? "Hoy" : `${daysOverdue}d vencida`}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Botón completar */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="ml-2 shrink-0 border-green-300 text-green-700 hover:bg-green-50"
-                      disabled={completingId === task.id}
-                      onClick={() => handleComplete(task.id)}
-                    >
-                      {completingId === task.id ? "..." : "Completar"}
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-          </ScrollArea>
+        {tasks.length > 0 && (
+          <span className="badge badge-error">{tasks.length}</span>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      {tasks.length === 0 ? (
+        <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+          <CheckCircle2 className="h-4 w-4" style={{ color: "var(--color-success)" }} />
+          Sin tareas vencidas
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          {tasks.map((task) => {
+            const dueDate = new Date(task.dueDate)
+            const daysOverdue = differenceInDays(new Date(), dueDate)
+
+            return (
+              <div
+                key={task.id}
+                className="flex items-center justify-between rounded-lg p-3"
+                style={{ background: "var(--color-error-bg)", border: "1px solid rgba(239, 68, 68, 0.15)" }}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium truncate" style={{ color: "var(--text-primary)" }}>{task.subject}</p>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {task.contact.firstName} {task.contact.lastName}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-[11px] font-medium" style={{ color: "var(--color-error)" }}>
+                      {format(dueDate, "dd/MM/yy")}
+                    </span>
+                    <span className="badge badge-error text-[10px]">
+                      {daysOverdue === 0 ? "Hoy" : `${daysOverdue}d vencida`}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
+                  style={{ background: "var(--color-success-bg)", color: "var(--color-success)" }}
+                  disabled={completingId === task.id}
+                  onClick={() => handleComplete(task.id)}
+                  title="Completar"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
