@@ -11,8 +11,19 @@ interface Development {
   estado: string;
   tipo_desarrollo: string;
   ext_precio_min_mxn: number | null;
+  ext_precio_max_mxn: number | null;
   fotos_desarrollo: string[] | null;
   unidades_disponibles: number | null;
+  ext_descripcion_es: string | null;
+  latitud: number | null;
+  longitud: number | null;
+  brochure_pdf: string | null;
+  ext_commission_rate: number | null;
+  tour_virtual_desarrollo: string | null;
+  zona: string | null;
+  calle: string | null;
+  etapa_construccion: string | null;
+  unidades_totales: number | null;
   zoho_pipeline_status: string;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
@@ -33,6 +44,9 @@ interface Unit {
   precio_usd: number | null;
   estado_unidad: string;
   fotos_unidad: string[] | null;
+  descripcion_corta_unidad: string | null;
+  plano_unidad: string | null;
+  ext_tiene_alberca: boolean | null;
   id_desarrollo: string;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
@@ -58,6 +72,71 @@ function getStatusBadge(status: string) {
     { value: status, label: status, color: "bg-gray-100 text-gray-700" };
 }
 
+// --- Completeness Score ---
+
+const DEV_FIELDS = [
+  { key: "nombre_desarrollo", label: "Nombre", weight: 1 },
+  { key: "ciudad", label: "Ciudad", weight: 1 },
+  { key: "tipo_desarrollo", label: "Tipo", weight: 1 },
+  { key: "ext_precio_min_mxn", label: "Precio", weight: 2 },
+  { key: "fotos_desarrollo", label: "Fotos", weight: 2, isArray: true },
+  { key: "ext_descripcion_es", label: "Descripción", weight: 2 },
+  { key: "latitud", label: "Coordenadas", weight: 1 },
+  { key: "zona", label: "Zona", weight: 1 },
+  { key: "calle", label: "Dirección", weight: 1 },
+  { key: "etapa_construccion", label: "Etapa", weight: 1 },
+  { key: "unidades_disponibles", label: "Unidades disp.", weight: 1 },
+  { key: "brochure_pdf", label: "Brochure", weight: 1 },
+  { key: "ext_commission_rate", label: "Comisión", weight: 1 },
+];
+
+const UNIT_FIELDS = [
+  { key: "ext_numero_unidad", label: "Número", weight: 1 },
+  { key: "tipo_unidad", label: "Tipo", weight: 1 },
+  { key: "recamaras", label: "Recámaras", weight: 1 },
+  { key: "banos_completos", label: "Baños", weight: 1 },
+  { key: "superficie_total_m2", label: "Superficie", weight: 2 },
+  { key: "precio_mxn", label: "Precio MXN", weight: 2, alt: "precio_usd" },
+  { key: "fotos_unidad", label: "Fotos", weight: 2, isArray: true },
+  { key: "estado_unidad", label: "Status", weight: 1 },
+  { key: "descripcion_corta_unidad", label: "Descripción", weight: 1 },
+  { key: "piso_numero", label: "Piso", weight: 1 },
+];
+
+function calcCompleteness(record: Record<string, unknown>, fields: typeof DEV_FIELDS): { pct: number; filled: number; total: number; missing: string[] } {
+  let totalWeight = 0;
+  let filledWeight = 0;
+  const missing: string[] = [];
+
+  for (const f of fields) {
+    totalWeight += f.weight;
+    const val = record[f.key];
+    const altVal = (f as { alt?: string }).alt ? record[(f as { alt: string }).alt] : null;
+    const hasValue = (f as { isArray?: boolean }).isArray
+      ? Array.isArray(val) && val.length > 0 && val.some((v: unknown) => v && String(v).length > 0)
+      : (val != null && val !== "" && val !== 0) || (altVal != null && altVal !== "" && altVal !== 0);
+
+    if (hasValue) {
+      filledWeight += f.weight;
+    } else {
+      missing.push(f.label);
+    }
+  }
+
+  return {
+    pct: Math.round((filledWeight / totalWeight) * 100),
+    filled: fields.filter((f) => {
+      const val = record[f.key];
+      const altVal = (f as { alt?: string }).alt ? record[(f as { alt: string }).alt] : null;
+      return (f as { isArray?: boolean }).isArray
+        ? Array.isArray(val) && val.length > 0
+        : (val != null && val !== "" && val !== 0) || (altVal != null && altVal !== "");
+    }).length,
+    total: fields.length,
+    missing,
+  };
+}
+
 // --- Main Component ---
 
 export function ZohoApprovalsClient() {
@@ -69,6 +148,8 @@ export function ZohoApprovalsClient() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCity, setFilterCity] = useState("all");
   const [filterDev, setFilterDev] = useState("all");
+  const [filterCompleteness, setFilterCompleteness] = useState(0); // min % completeness
+  const [sortBy, setSortBy] = useState<"name" | "completeness" | "city">("completeness");
   const [search, setSearch] = useState("");
   const [updating, setUpdating] = useState(false);
 
@@ -127,25 +208,51 @@ export function ZohoApprovalsClient() {
   const devCities = [...new Set(developments.map((d) => d.ciudad).filter(Boolean))].sort();
   const unitDevNames = [...new Set(units.map((u) => u.desarrollo_nombre).filter(Boolean))].sort();
 
-  const filteredDevs = developments.filter((d) => {
-    if (filterStatus !== "all" && d.zoho_pipeline_status !== filterStatus) return false;
-    if (filterCity !== "all" && d.ciudad !== filterCity) return false;
-    if (search && !d.nombre_desarrollo?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  // Add completeness to developments
+  const devsWithScore = developments.map((d) => ({
+    ...d,
+    _completeness: calcCompleteness(d as unknown as Record<string, unknown>, DEV_FIELDS),
+  }));
 
-  const filteredUnits = units.filter((u) => {
-    if (filterStatus !== "all") {
-      if (filterStatus === "synced" && !u.zoho_record_id) return false;
-      if (filterStatus === "pending" && u.zoho_record_id) return false;
-      if (filterStatus === "aprobado" && u.desarrollo_pipeline_status !== "aprobado" && u.desarrollo_pipeline_status !== "listo") return false;
-    }
-    if (filterDev !== "all" && u.desarrollo_nombre !== filterDev) return false;
-    if (search && !u.slug_unidad?.toLowerCase().includes(search.toLowerCase()) &&
-        !u.ext_numero_unidad?.toLowerCase().includes(search.toLowerCase()) &&
-        !u.desarrollo_nombre?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const filteredDevs = devsWithScore
+    .filter((d) => {
+      if (filterStatus !== "all" && d.zoho_pipeline_status !== filterStatus) return false;
+      if (filterCity !== "all" && d.ciudad !== filterCity) return false;
+      if (d._completeness.pct < filterCompleteness) return false;
+      if (search && !d.nombre_desarrollo?.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "completeness") return b._completeness.pct - a._completeness.pct;
+      if (sortBy === "city") return (a.ciudad || "").localeCompare(b.ciudad || "");
+      return (a.nombre_desarrollo || "").localeCompare(b.nombre_desarrollo || "");
+    });
+
+  // Add completeness to units
+  const unitsWithScore = units.map((u) => ({
+    ...u,
+    _completeness: calcCompleteness(u as unknown as Record<string, unknown>, UNIT_FIELDS),
+  }));
+
+  const filteredUnits = unitsWithScore
+    .filter((u) => {
+      if (filterStatus !== "all") {
+        if (filterStatus === "synced" && !u.zoho_record_id) return false;
+        if (filterStatus === "pending" && u.zoho_record_id) return false;
+        if (filterStatus === "aprobado" && u.desarrollo_pipeline_status !== "aprobado" && u.desarrollo_pipeline_status !== "listo") return false;
+      }
+      if (filterDev !== "all" && u.desarrollo_nombre !== filterDev) return false;
+      if (u._completeness.pct < filterCompleteness) return false;
+      if (search && !u.slug_unidad?.toLowerCase().includes(search.toLowerCase()) &&
+          !u.ext_numero_unidad?.toLowerCase().includes(search.toLowerCase()) &&
+          !u.desarrollo_nombre?.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "completeness") return b._completeness.pct - a._completeness.pct;
+      if (sortBy === "name") return (a.slug_unidad || "").localeCompare(b.slug_unidad || "");
+      return (a.desarrollo_nombre || "").localeCompare(b.desarrollo_nombre || "");
+    });
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -188,6 +295,8 @@ export function ZohoApprovalsClient() {
     setFilterStatus("all");
     setFilterCity("all");
     setFilterDev("all");
+    setFilterCompleteness(0);
+    setSortBy("completeness");
     setSearch("");
     setSelected(new Set());
   };
@@ -296,6 +405,24 @@ export function ZohoApprovalsClient() {
           </>
         )}
 
+        {/* Sort */}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "name" | "completeness" | "city")}
+          className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+          <option value="completeness">Ordenar: Más completos</option>
+          <option value="name">Ordenar: Nombre A-Z</option>
+          <option value="city">Ordenar: Ciudad</option>
+        </select>
+
+        {/* Min completeness filter */}
+        <select value={filterCompleteness} onChange={(e) => setFilterCompleteness(Number(e.target.value))}
+          className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+          <option value={0}>Completitud: Todos</option>
+          <option value={25}>≥ 25% completo</option>
+          <option value={50}>≥ 50% completo</option>
+          <option value={75}>≥ 75% completo</option>
+          <option value={90}>≥ 90% completo</option>
+        </select>
+
         {selected.size > 0 && activeTab === "developments" && (
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm font-medium">{selected.size} seleccionados →</span>
@@ -328,7 +455,7 @@ export function ZohoApprovalsClient() {
                   <th className="text-left px-3 py-3 font-medium">Ciudad</th>
                   <th className="text-left px-3 py-3 font-medium">Tipo</th>
                   <th className="text-right px-3 py-3 font-medium">Precio desde</th>
-                  <th className="text-center px-3 py-3 font-medium">Unidades</th>
+                  <th className="text-center px-3 py-3 font-medium">Completitud</th>
                   <th className="text-center px-3 py-3 font-medium">Pipeline</th>
                   <th className="text-center px-3 py-3 font-medium">Zoho</th>
                 </>
@@ -338,8 +465,8 @@ export function ZohoApprovalsClient() {
                   <th className="text-left px-3 py-3 font-medium">Desarrollo</th>
                   <th className="text-left px-3 py-3 font-medium">Tipo</th>
                   <th className="text-center px-3 py-3 font-medium">Rec.</th>
-                  <th className="text-center px-3 py-3 font-medium">m²</th>
                   <th className="text-right px-3 py-3 font-medium">Precio</th>
+                  <th className="text-center px-3 py-3 font-medium">Completitud</th>
                   <th className="text-center px-3 py-3 font-medium">Status</th>
                   <th className="text-center px-3 py-3 font-medium">Zoho</th>
                 </>
@@ -348,8 +475,8 @@ export function ZohoApprovalsClient() {
           </thead>
           <tbody>
             {activeTab === "developments"
-              ? filteredDevs.map((dev) => <DevelopmentRow key={dev.id} dev={dev} selected={selected.has(dev.id)} onToggle={() => toggleSelect(dev.id)} onStatusChange={(s) => updateDevStatus([dev.id], s)} updating={updating} />)
-              : filteredUnits.map((unit) => <UnitRow key={unit.id} unit={unit} selected={selected.has(unit.id)} onToggle={() => toggleSelect(unit.id)} />)
+              ? filteredDevs.map((dev) => <DevelopmentRow key={dev.id} dev={dev} completeness={dev._completeness} selected={selected.has(dev.id)} onToggle={() => toggleSelect(dev.id)} onStatusChange={(s) => updateDevStatus([dev.id], s)} updating={updating} />)
+              : filteredUnits.map((unit) => <UnitRow key={unit.id} unit={unit} completeness={unit._completeness} selected={selected.has(unit.id)} onToggle={() => toggleSelect(unit.id)} />)
             }
             {filtered.length === 0 && (
               <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-500">No se encontraron resultados</td></tr>
@@ -376,8 +503,10 @@ function StatCard({ label, value, color }: { label: string; value: number; color
   );
 }
 
-function DevelopmentRow({ dev, selected, onToggle, onStatusChange, updating }: {
-  dev: Development; selected: boolean; onToggle: () => void;
+interface CompletenessInfo { pct: number; filled: number; total: number; missing: string[] }
+
+function DevelopmentRow({ dev, completeness, selected, onToggle, onStatusChange, updating }: {
+  dev: Development; completeness: CompletenessInfo; selected: boolean; onToggle: () => void;
   onStatusChange: (status: string) => void; updating: boolean;
 }) {
   const badge = getStatusBadge(dev.zoho_pipeline_status);
@@ -395,7 +524,9 @@ function DevelopmentRow({ dev, selected, onToggle, onStatusChange, updating }: {
       <td className="px-3 py-3 text-right">
         {dev.ext_precio_min_mxn ? `$${(dev.ext_precio_min_mxn / 1_000_000).toFixed(1)}M` : "—"}
       </td>
-      <td className="px-3 py-3 text-center">{dev.unidades_disponibles ?? "—"}</td>
+      <td className="px-3 py-3 text-center">
+        <CompletenessBar pct={completeness.pct} filled={completeness.filled} total={completeness.total} missing={completeness.missing} />
+      </td>
       <td className="px-3 py-3 text-center">
         <select value={dev.zoho_pipeline_status} onChange={(e) => onStatusChange(e.target.value)}
           disabled={updating} className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 ${badge.color}`}>
@@ -409,7 +540,7 @@ function DevelopmentRow({ dev, selected, onToggle, onStatusChange, updating }: {
   );
 }
 
-function UnitRow({ unit, selected, onToggle }: { unit: Unit; selected: boolean; onToggle: () => void }) {
+function UnitRow({ unit, completeness, selected, onToggle }: { unit: Unit; completeness: CompletenessInfo; selected: boolean; onToggle: () => void }) {
   const isDevApproved = ["aprobado", "listo"].includes(unit.desarrollo_pipeline_status);
   return (
     <tr className={`border-b hover:opacity-90 ${selected ? "bg-blue-50" : ""}`}>
@@ -428,9 +559,11 @@ function UnitRow({ unit, selected, onToggle }: { unit: Unit; selected: boolean; 
       </td>
       <td className="px-3 py-3 capitalize">{unit.tipo_unidad || "—"}</td>
       <td className="px-3 py-3 text-center">{unit.recamaras ?? "—"}</td>
-      <td className="px-3 py-3 text-center">{unit.superficie_total_m2 ? `${unit.superficie_total_m2}` : "—"}</td>
       <td className="px-3 py-3 text-right">
         {unit.precio_mxn ? `$${(unit.precio_mxn / 1_000_000).toFixed(1)}M` : unit.precio_usd ? `$${(unit.precio_usd / 1000).toFixed(0)}K USD` : "—"}
+      </td>
+      <td className="px-3 py-3 text-center">
+        <CompletenessBar pct={completeness.pct} filled={completeness.filled} total={completeness.total} missing={completeness.missing} />
       </td>
       <td className="px-3 py-3 text-center">
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -446,6 +579,29 @@ function UnitRow({ unit, selected, onToggle }: { unit: Unit; selected: boolean; 
         <ZohoDot synced={!!unit.zoho_record_id} approved={isDevApproved} />
       </td>
     </tr>
+  );
+}
+
+function CompletenessBar({ pct, filled, total, missing }: { pct: number; filled: number; total: number; missing: string[] }) {
+  const color = pct >= 75 ? "bg-green-500" : pct >= 50 ? "bg-amber-500" : pct >= 25 ? "bg-orange-400" : "bg-red-400";
+  const textColor = pct >= 75 ? "text-green-700" : pct >= 50 ? "text-amber-700" : pct >= 25 ? "text-orange-700" : "text-red-700";
+
+  return (
+    <div className="group relative flex items-center gap-2 min-w-[80px]" title={missing.length > 0 ? `Falta: ${missing.join(", ")}` : "Completo"}>
+      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`text-xs font-semibold ${textColor} w-8 text-right`}>{pct}%</span>
+      {/* Tooltip on hover */}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50">
+        <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
+          <div className="font-semibold mb-1">{filled}/{total} campos completos</div>
+          {missing.length > 0 && (
+            <div className="text-gray-300">Falta: {missing.join(", ")}</div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

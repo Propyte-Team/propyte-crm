@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
         "id, slug_unidad, ext_numero_unidad, tipo_unidad, ext_tipologia, " +
           "recamaras, banos_completos, superficie_total_m2, piso_numero, " +
           "precio_mxn, precio_usd, estado_unidad, fotos_unidad, ext_publicado, " +
+          "descripcion_corta_unidad, plano_unidad, ext_tiene_alberca, " +
           "id_desarrollo, zoho_record_id, zoho_last_synced_at, updated_at",
         "slug_unidad"
       );
@@ -104,13 +105,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ units: unitsWithDev });
     }
 
-    // Default: developments
+    // Default: developments — include extra fields for completeness score
     const developments = await fetchAllPages(
       supabase,
       "real_estate_hub",
       "Propyte_desarrollos",
       "id, nombre_desarrollo, ciudad, estado, tipo_desarrollo, " +
-        "ext_precio_min_mxn, fotos_desarrollo, unidades_disponibles, " +
+        "ext_precio_min_mxn, ext_precio_max_mxn, fotos_desarrollo, unidades_disponibles, " +
+        "ext_descripcion_es, latitud, longitud, brochure_pdf, " +
+        "ext_commission_rate, tour_virtual_desarrollo, zona, calle, " +
+        "etapa_construccion, unidades_totales, " +
         "zoho_pipeline_status, zoho_record_id, zoho_last_synced_at, updated_at",
       "nombre_desarrollo"
     );
