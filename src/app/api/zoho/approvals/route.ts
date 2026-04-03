@@ -19,16 +19,36 @@ export async function GET() {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  const { data, error } = await supabase
-    .schema("real_estate_hub")
-    .from("Propyte_desarrollos")
-    .select(
-      "id, nombre_desarrollo, ciudad, estado, tipo_desarrollo, " +
-        "ext_precio_min_mxn, fotos_desarrollo, unidades_disponibles, " +
-        "zoho_pipeline_status, zoho_record_id, zoho_last_synced_at, updated_at"
-    )
-    .is("deleted_at", null)
-    .order("nombre_desarrollo", { ascending: true });
+  // Paginar para traer todos los registros (Supabase limit default = 1000)
+  const allData: Record<string, unknown>[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: page, error: pageError } = await supabase
+      .schema("real_estate_hub")
+      .from("Propyte_desarrollos")
+      .select(
+        "id, nombre_desarrollo, ciudad, estado, tipo_desarrollo, " +
+          "ext_precio_min_mxn, fotos_desarrollo, unidades_disponibles, " +
+          "zoho_pipeline_status, zoho_record_id, zoho_last_synced_at, updated_at"
+      )
+      .is("deleted_at", null)
+      .order("nombre_desarrollo", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (pageError) {
+      return NextResponse.json({ error: pageError.message }, { status: 500 });
+    }
+
+    allData.push(...(page || []));
+    hasMore = (page?.length || 0) === pageSize;
+    from += pageSize;
+  }
+
+  const data = allData;
+  const error = null;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
