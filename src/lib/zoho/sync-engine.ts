@@ -274,15 +274,23 @@ async function syncUnitsToZoho(
 
   if (error || !units?.length) return;
 
-  const batch = units.slice(0, 100).map((u: Record<string, unknown>) =>
-    unitToZoho(u, devZohoMap.get(u.id_desarrollo as string) || "")
-  );
+  // Filtrar unidades cuyo desarrollo padre tiene Zoho ID
+  const unitsWithParent = units
+    .filter((u: Record<string, unknown>) => devZohoMap.has(u.id_desarrollo as string))
+    .slice(0, 100);
+
+  if (unitsWithParent.length === 0) return;
+
+  const batch = unitsWithParent.map((u: Record<string, unknown>) => {
+    const parentId = devZohoMap.get(u.id_desarrollo as string) as string;
+    return unitToZoho(u, parentId);
+  });
 
   try {
     const res = await zoho.upsertRecords("Products", batch);
     for (let i = 0; i < res.data.length; i++) {
       const item = res.data[i];
-      const unit = units[i];
+      const unit = unitsWithParent[i];
       if (item.status === "success") {
         await supabase
           .schema("real_estate_hub")
@@ -329,7 +337,7 @@ async function syncUnitsToZoho(
       }
     }
   } catch (err) {
-    result.to_zoho.errors += units.length;
+    result.to_zoho.errors += unitsWithParent.length;
     logs.push({
       sync_run_id: syncRunId,
       direction: "to_zoho",
