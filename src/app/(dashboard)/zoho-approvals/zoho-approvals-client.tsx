@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 
 // --- Types ---
 
@@ -47,6 +47,7 @@ interface Unit {
   descripcion_corta_unidad: string | null;
   plano_unidad: string | null;
   ext_tiene_alberca: boolean | null;
+  ext_publicado: boolean | null;
   id_desarrollo: string;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
@@ -111,6 +112,54 @@ interface FieldDef {
   alt?: string;
 }
 
+// --- Unit Detail Sections (for expandable panel) ---
+
+interface DetailField {
+  key: string;
+  label: string;
+  zoho: boolean;
+  web: boolean;
+  isArray?: boolean;
+}
+
+const UNIT_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
+  {
+    title: "Datos Generales",
+    fields: [
+      { key: "ext_numero_unidad", label: "Número de unidad", zoho: true, web: true },
+      { key: "slug_unidad", label: "Slug", zoho: false, web: true },
+      { key: "tipo_unidad", label: "Tipo", zoho: false, web: true },
+      { key: "ext_tipologia", label: "Tipología", zoho: true, web: true },
+      { key: "estado_unidad", label: "Estado", zoho: true, web: true },
+    ],
+  },
+  {
+    title: "Características",
+    fields: [
+      { key: "recamaras", label: "Recámaras", zoho: true, web: true },
+      { key: "banos_completos", label: "Baños completos", zoho: true, web: true },
+      { key: "superficie_total_m2", label: "Superficie (m²)", zoho: true, web: true },
+      { key: "piso_numero", label: "Piso / Nivel", zoho: true, web: true },
+      { key: "ext_tiene_alberca", label: "Alberca", zoho: true, web: true },
+    ],
+  },
+  {
+    title: "Precios",
+    fields: [
+      { key: "precio_mxn", label: "Precio MXN", zoho: true, web: true },
+      { key: "precio_usd", label: "Precio USD", zoho: false, web: true },
+    ],
+  },
+  {
+    title: "Media y Contenido",
+    fields: [
+      { key: "fotos_unidad", label: "Fotos", zoho: true, web: true, isArray: true },
+      { key: "plano_unidad", label: "Plano", zoho: false, web: true },
+      { key: "descripcion_corta_unidad", label: "Descripción", zoho: false, web: true },
+    ],
+  },
+];
+
 function calcCompleteness(record: Record<string, unknown>, fields: FieldDef[]): { pct: number; filled: number; total: number; missing: string[] } {
   let totalWeight = 0;
   let filledWeight = 0;
@@ -160,6 +209,7 @@ export function ZohoApprovalsClient() {
   const [sortBy, setSortBy] = useState<"name" | "completeness" | "city">("completeness");
   const [search, setSearch] = useState("");
   const [updating, setUpdating] = useState(false);
+  const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
 
   // Fetch data based on active tab
   const fetchData = useCallback(async () => {
@@ -209,6 +259,24 @@ export function ZohoApprovalsClient() {
       console.error("Error updating:", err);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  // Toggle web publication for a unit
+  const toggleWebApproval = async (unitId: string, value: boolean) => {
+    try {
+      const res = await fetch("/api/zoho/approvals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [unitId], entity_type: "unit", action: "toggle_web", value }),
+      });
+      if (res.ok) {
+        setUnits((prev) =>
+          prev.map((u) => u.id === unitId ? { ...u, ext_publicado: value } : u)
+        );
+      }
+    } catch (err) {
+      console.error("Error toggling web:", err);
     }
   };
 
@@ -484,7 +552,12 @@ export function ZohoApprovalsClient() {
           <tbody>
             {activeTab === "developments"
               ? filteredDevs.map((dev) => <DevelopmentRow key={dev.id} dev={dev} completeness={dev._completeness} selected={selected.has(dev.id)} onToggle={() => toggleSelect(dev.id)} onStatusChange={(s) => updateDevStatus([dev.id], s)} updating={updating} />)
-              : filteredUnits.map((unit) => <UnitRow key={unit.id} unit={unit} completeness={unit._completeness} selected={selected.has(unit.id)} onToggle={() => toggleSelect(unit.id)} />)
+              : filteredUnits.map((unit) => (
+                  <Fragment key={unit.id}>
+                    <UnitRow unit={unit} completeness={unit._completeness} selected={selected.has(unit.id)} onToggle={() => toggleSelect(unit.id)} expanded={expandedUnit === unit.id} onExpand={() => setExpandedUnit(expandedUnit === unit.id ? null : unit.id)} />
+                    {expandedUnit === unit.id && <UnitDetailPanel unit={unit} onToggleWeb={toggleWebApproval} />}
+                  </Fragment>
+                ))
             }
             {filtered.length === 0 && (
               <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-500">No se encontraron resultados</td></tr>
@@ -548,15 +621,21 @@ function DevelopmentRow({ dev, completeness, selected, onToggle, onStatusChange,
   );
 }
 
-function UnitRow({ unit, completeness, selected, onToggle }: { unit: Unit; completeness: CompletenessInfo; selected: boolean; onToggle: () => void }) {
+function UnitRow({ unit, completeness, selected, onToggle, expanded, onExpand }: {
+  unit: Unit; completeness: CompletenessInfo; selected: boolean; onToggle: () => void;
+  expanded: boolean; onExpand: () => void;
+}) {
   const isDevApproved = ["aprobado", "listo"].includes(unit.desarrollo_pipeline_status);
   return (
-    <tr className={`border-b hover:opacity-90 ${selected ? "bg-blue-50" : ""}`}>
-      <td className="px-3 py-3"><input type="checkbox" checked={selected} onChange={onToggle} className="rounded" /></td>
+    <tr className={`border-b hover:opacity-90 cursor-pointer ${selected ? "bg-blue-50" : ""} ${expanded ? "bg-blue-50/50" : ""}`} onClick={onExpand}>
+      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        <input type="checkbox" checked={selected} onChange={onToggle} className="rounded" />
+      </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-2">
+          <span className={`text-gray-400 text-xs transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}>&#9654;</span>
           {unit.fotos_unidad?.[0] && <img src={unit.fotos_unidad[0]} alt="" className="w-8 h-8 rounded object-cover" />}
-          <span className="font-medium truncate max-w-[180px]">{unit.ext_numero_unidad || unit.slug_unidad}</span>
+          <span className="font-medium truncate max-w-[180px] hover:text-blue-600">{unit.ext_numero_unidad || unit.slug_unidad}</span>
         </div>
       </td>
       <td className="px-3 py-3">
@@ -610,6 +689,162 @@ function CompletenessBar({ pct, filled, total, missing }: { pct: number; filled:
         </div>
       </div>
     </div>
+  );
+}
+
+function formatFieldValue(key: string, val: unknown): string {
+  if (typeof val === "boolean") return val ? "Sí" : "No";
+  if (val == null || val === "" || val === 0) return "Sin datos";
+  if (key === "precio_mxn" && typeof val === "number")
+    return `$${val.toLocaleString("es-MX")} MXN`;
+  if (key === "precio_usd" && typeof val === "number")
+    return `$${val.toLocaleString("en-US")} USD`;
+  if (key === "superficie_total_m2" && typeof val === "number")
+    return `${val.toLocaleString()} m²`;
+  if (Array.isArray(val))
+    return val.length > 0 ? `${val.length} elemento${val.length > 1 ? "s" : ""}` : "Sin datos";
+  if (typeof val === "number") return val.toLocaleString();
+  return String(val);
+}
+
+function fieldHasValue(field: DetailField, record: Record<string, unknown>): boolean {
+  const val = record[field.key];
+  if (field.isArray) return Array.isArray(val) && val.length > 0;
+  if (typeof val === "boolean") return true;
+  return val != null && val !== "" && val !== 0;
+}
+
+function UnitDetailPanel({ unit, onToggleWeb }: {
+  unit: Unit & { _completeness: CompletenessInfo };
+  onToggleWeb: (id: string, value: boolean) => void;
+}) {
+  const isDevApproved = ["aprobado", "listo"].includes(unit.desarrollo_pipeline_status);
+  const rec = unit as unknown as Record<string, unknown>;
+
+  const zohoFields = UNIT_DETAIL_SECTIONS.flatMap((s) => s.fields.filter((f) => f.zoho));
+  const zohoFilled = zohoFields.filter((f) => fieldHasValue(f, rec)).length;
+
+  const webFields = UNIT_DETAIL_SECTIONS.flatMap((s) => s.fields.filter((f) => f.web));
+  const webFilled = webFields.filter((f) => fieldHasValue(f, rec)).length;
+
+  const zohoPct = Math.round((zohoFilled / zohoFields.length) * 100);
+  const webPct = Math.round((webFilled / webFields.length) * 100);
+
+  return (
+    <tr>
+      <td colSpan={9} className="px-0 py-0">
+        <div className="border-t-2 border-blue-200 bg-slate-50 px-6 py-5" onClick={(e) => e.stopPropagation()}>
+          {/* Field sections grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+            {UNIT_DETAIL_SECTIONS.map((section) => (
+              <div key={section.title}>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+                  {section.title}
+                </h4>
+                <div className="space-y-2">
+                  {section.fields.map((field) => {
+                    const val = rec[field.key];
+                    const hasVal = fieldHasValue(field, rec);
+
+                    return (
+                      <div key={field.key} className="flex items-start gap-2 text-sm">
+                        <span className={`mt-0.5 flex-shrink-0 ${hasVal ? "text-green-500" : "text-red-400"}`}>
+                          {hasVal ? "\u2713" : "\u2717"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-gray-500">{field.label}: </span>
+                          <span className={hasVal ? "font-medium text-gray-900" : "text-red-400 italic"}>
+                            {formatFieldValue(field.key, val)}
+                          </span>
+                        </div>
+                        <div className="flex gap-1 flex-shrink-0">
+                          {field.zoho && (
+                            <span className={`w-4 h-4 rounded text-[9px] flex items-center justify-center font-bold ${hasVal ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-400"}`} title="Campo Zoho CRM">Z</span>
+                          )}
+                          {field.web && (
+                            <span className={`w-4 h-4 rounded text-[9px] flex items-center justify-center font-bold ${hasVal ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400"}`} title="Campo Sitio Web">W</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Destination summary */}
+          <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Zoho CRM */}
+            <div className="rounded-lg border bg-white p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-6 h-6 rounded bg-orange-100 text-orange-600 text-xs font-bold flex items-center justify-center">Z</span>
+                <span className="text-sm font-semibold">Zoho CRM</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                  {zohoFilled}/{zohoFields.length} campos
+                </span>
+              </div>
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-3">
+                <div
+                  className={`h-full rounded-full transition-all ${zohoPct >= 75 ? "bg-green-500" : zohoPct >= 50 ? "bg-amber-500" : "bg-red-400"}`}
+                  style={{ width: `${zohoPct}%` }}
+                />
+              </div>
+              <div className="flex items-center gap-2 text-xs mb-1">
+                <span className={`inline-block w-2 h-2 rounded-full ${isDevApproved ? "bg-green-500" : "bg-gray-300"}`} />
+                <span className="text-gray-600">
+                  Desarrollo: <span className="font-medium">{unit.desarrollo_nombre}</span>
+                  {" \u2014 "}
+                  <span className={isDevApproved ? "text-green-600 font-medium" : "text-gray-500"}>
+                    {isDevApproved ? "Aprobado" : "No aprobado"}
+                  </span>
+                </span>
+              </div>
+              {unit.zoho_record_id ? (
+                <div className="text-xs text-green-600 mt-1">{"\u2713"} Synced — ID: {unit.zoho_record_id}</div>
+              ) : isDevApproved ? (
+                <div className="text-xs text-amber-600 mt-1">Pendiente de sync (siguiente ciclo)</div>
+              ) : (
+                <div className="text-xs text-gray-500 mt-1">Para sincronizar, aprueba el desarrollo padre</div>
+              )}
+            </div>
+
+            {/* Sitio Web */}
+            <div className="rounded-lg border bg-white p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-6 h-6 rounded bg-blue-100 text-blue-600 text-xs font-bold flex items-center justify-center">W</span>
+                <span className="text-sm font-semibold">Sitio Web</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                  {webFilled}/{webFields.length} campos
+                </span>
+              </div>
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-3">
+                <div
+                  className={`h-full rounded-full transition-all ${webPct >= 75 ? "bg-green-500" : webPct >= 50 ? "bg-amber-500" : "bg-red-400"}`}
+                  style={{ width: `${webPct}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-600">Publicar en sitio web:</span>
+                <button
+                  onClick={() => onToggleWeb(unit.id, !unit.ext_publicado)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    unit.ext_publicado ? "bg-blue-600" : "bg-gray-300"
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    unit.ext_publicado ? "translate-x-6" : "translate-x-1"
+                  }`} />
+                </button>
+              </div>
+              <div className={`text-xs mt-2 ${unit.ext_publicado ? "text-blue-600 font-medium" : "text-gray-500"}`}>
+                {unit.ext_publicado ? "\u2713 Publicado en web" : "No publicado"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 

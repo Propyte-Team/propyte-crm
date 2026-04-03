@@ -146,13 +146,29 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  // Units: toggle sync (mark for sync / unmark)
+  // Units: toggle web publication or other actions
   if (entity_type === "unit") {
     if (!ids?.length) {
       return NextResponse.json({ error: "ids requeridos" }, { status: 400 });
     }
-    // For units, we don't have pipeline status — we just ensure they're linked to an approved development
-    // The sync engine handles this automatically
+
+    const { action, value } = body;
+
+    if (action === "toggle_web") {
+      const { error } = await supabase
+        .schema("real_estate_hub")
+        .from("Propyte_unidades")
+        .update({ ext_publicado: !!value })
+        .in("id", ids);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, updated: ids.length, ext_publicado: !!value });
+    }
+
+    // Default: Zoho sync is automatic when parent development is approved
     return NextResponse.json({ success: true, message: "Units sync is automatic when parent development is approved" });
   }
 
