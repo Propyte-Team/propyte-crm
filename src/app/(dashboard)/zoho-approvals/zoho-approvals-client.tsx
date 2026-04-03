@@ -103,7 +103,15 @@ const UNIT_FIELDS = [
   { key: "piso_numero", label: "Piso", weight: 1 },
 ];
 
-function calcCompleteness(record: Record<string, unknown>, fields: typeof DEV_FIELDS): { pct: number; filled: number; total: number; missing: string[] } {
+interface FieldDef {
+  key: string;
+  label: string;
+  weight: number;
+  isArray?: boolean;
+  alt?: string;
+}
+
+function calcCompleteness(record: Record<string, unknown>, fields: FieldDef[]): { pct: number; filled: number; total: number; missing: string[] } {
   let totalWeight = 0;
   let filledWeight = 0;
   const missing: string[] = [];
@@ -111,8 +119,8 @@ function calcCompleteness(record: Record<string, unknown>, fields: typeof DEV_FI
   for (const f of fields) {
     totalWeight += f.weight;
     const val = record[f.key];
-    const altVal = (f as { alt?: string }).alt ? record[(f as { alt: string }).alt] : null;
-    const hasValue = (f as { isArray?: boolean }).isArray
+    const altVal = f.alt ? record[f.alt] : null;
+    const hasValue = f.isArray
       ? Array.isArray(val) && val.length > 0 && val.some((v: unknown) => v && String(v).length > 0)
       : (val != null && val !== "" && val !== 0) || (altVal != null && altVal !== "" && altVal !== 0);
 
@@ -127,8 +135,8 @@ function calcCompleteness(record: Record<string, unknown>, fields: typeof DEV_FI
     pct: Math.round((filledWeight / totalWeight) * 100),
     filled: fields.filter((f) => {
       const val = record[f.key];
-      const altVal = (f as { alt?: string }).alt ? record[(f as { alt: string }).alt] : null;
-      return (f as { isArray?: boolean }).isArray
+      const altVal = f.alt ? record[f.alt] : null;
+      return f.isArray
         ? Array.isArray(val) && val.length > 0
         : (val != null && val !== "" && val !== 0) || (altVal != null && altVal !== "");
     }).length,
