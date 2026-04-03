@@ -1,18 +1,26 @@
 // ============================================================
 // API Route: GET /api/zoho/status
 // Dashboard data: último sync, rate limits, errores recientes
+// Auth: sesión de usuario (ADMIN/DIRECTOR/GERENTE) O CRON_SECRET
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { getZohoClient } from "@/lib/zoho/client";
 import { getSupabaseServiceClient } from "@/lib/supabase";
+import { getServerSession } from "@/lib/auth/session";
+
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 export async function GET(request: NextRequest) {
+  // Auth: sesión del usuario O CRON_SECRET (para cron jobs)
+  const session = await getServerSession();
   const authHeader = request.headers.get("authorization");
-  const secret =
-    process.env.ZOHO_SYNC_CRON_SECRET || process.env.CRON_SECRET;
+  const secret = process.env.ZOHO_SYNC_CRON_SECRET || process.env.CRON_SECRET;
 
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  const hasSession = session?.user && ADMIN_ROLES.includes(session.user.role);
+  const hasSecret = secret && authHeader === `Bearer ${secret}`;
+
+  if (!hasSession && !hasSecret) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

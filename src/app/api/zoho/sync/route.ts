@@ -1,19 +1,24 @@
 // ============================================================
 // API Route: POST /api/zoho/sync
 // Trigger manual de sync Supabase ↔ Zoho CRM
-// Protegido por API key
+// Auth: sesión de usuario (ADMIN/DIRECTOR/GERENTE) O CRON_SECRET
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { runSync } from "@/lib/zoho/sync-engine";
+import { getServerSession } from "@/lib/auth/session";
+
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 export async function POST(request: NextRequest) {
-  // Auth: CRON_SECRET o ZOHO_SYNC_CRON_SECRET
+  const session = await getServerSession();
   const authHeader = request.headers.get("authorization");
-  const secret =
-    process.env.ZOHO_SYNC_CRON_SECRET || process.env.CRON_SECRET;
+  const secret = process.env.ZOHO_SYNC_CRON_SECRET || process.env.CRON_SECRET;
 
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  const hasSession = session?.user && ADMIN_ROLES.includes(session.user.role);
+  const hasSecret = secret && authHeader === `Bearer ${secret}`;
+
+  if (!hasSession && !hasSecret) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

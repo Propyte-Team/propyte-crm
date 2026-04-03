@@ -26,17 +26,9 @@ export function ZohoSyncDashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
-  const secret =
-    typeof window !== "undefined"
-      ? prompt("Ingresa el CRON_SECRET para acceder al dashboard:")
-      : null;
-
   const fetchStatus = useCallback(async () => {
-    if (!secret) return;
     try {
-      const res = await fetch("/api/zoho/status", {
-        headers: { Authorization: `Bearer ${secret}` },
-      });
+      const res = await fetch("/api/zoho/status");
       if (res.ok) {
         setStatus(await res.json());
       }
@@ -45,21 +37,17 @@ export function ZohoSyncDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [secret]);
+  }, []);
 
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
 
   const triggerSync = async () => {
-    if (!secret) return;
     setSyncing(true);
     setSyncResult(null);
     try {
-      const res = await fetch("/api/zoho/sync", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${secret}` },
-      });
+      const res = await fetch("/api/zoho/sync", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         setSyncResult(
@@ -89,7 +77,7 @@ export function ZohoSyncDashboard() {
   if (!status) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-red-500">No se pudo cargar el status. Verifica el CRON_SECRET.</div>
+        <div className="text-red-500">No se pudo cargar el status. Verifica la conexión.</div>
       </div>
     );
   }
