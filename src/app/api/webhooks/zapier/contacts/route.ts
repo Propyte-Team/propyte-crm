@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
+import { sendCAPILead } from "@/lib/meta/capi";
 import { z } from "zod";
 
 const zapierContactUpdateSchema = z.object({
@@ -47,6 +48,18 @@ export async function POST(req: NextRequest) {
         tags: body.tags || [],
       },
     });
+
+    // Send Lead event to Meta CAPI (non-blocking)
+    sendCAPILead({
+      id: contact.id,
+      email: contact.email,
+      phone: contact.phone,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      residenceCity: contact.residenceCity,
+      residenceCountry: contact.residenceCountry,
+      leadSource: contact.leadSource,
+    }).catch((err) => console.error("[CAPI] Failed to send lead event:", err));
 
     return NextResponse.json({ id: contact.id, created: true }, { status: 201 });
   } catch (error) {

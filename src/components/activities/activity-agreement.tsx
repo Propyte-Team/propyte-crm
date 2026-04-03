@@ -1,17 +1,9 @@
-// ============================================================
-// Widget de progreso del acuerdo de actividad
-// Muestra métricas diarias y semanales con barras de progreso
-// ============================================================
+// Widget de acuerdo de actividad — Design System v2
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
-// Interfaz de métrica individual
 interface AgreementMetric {
   label: string
   current: number
@@ -20,7 +12,6 @@ interface AgreementMetric {
   period: string
 }
 
-// Interfaz de respuesta del progreso
 interface AgreementProgressData {
   metrics: AgreementMetric[]
   overallPercentage: number
@@ -34,7 +25,6 @@ export function ActivityAgreement({ userId }: ActivityAgreementProps) {
   const [data, setData] = useState<AgreementProgressData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Cargar datos del progreso desde la API del dashboard
   useEffect(() => {
     async function fetchProgress() {
       try {
@@ -46,7 +36,7 @@ export function ActivityAgreement({ userId }: ActivityAgreementProps) {
           }
         }
       } catch {
-        // Error silencioso
+        // silent
       } finally {
         setLoading(false)
       }
@@ -56,96 +46,84 @@ export function ActivityAgreement({ userId }: ActivityAgreementProps) {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Acuerdo de Actividad</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <div className="crm-card">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Acuerdo de Actividad</h3>
+        <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
+            <div key={i} className="h-8 rounded-md animate-pulse" style={{ background: "var(--bg-input)" }} />
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     )
   }
 
   if (!data) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Acuerdo de Actividad</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Sin datos disponibles</p>
-        </CardContent>
-      </Card>
+      <div className="crm-card">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Acuerdo de Actividad</h3>
+        <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>Sin datos disponibles</p>
+      </div>
     )
   }
 
-  // Determinar color según porcentaje
-  function getProgressColor(percentage: number): string {
-    if (percentage >= 100) return "bg-green-500"
-    if (percentage >= 70) return "bg-amber-500"
-    return "bg-red-500"
+  function getBarColor(percentage: number): string {
+    if (percentage >= 100) return "var(--color-success)"
+    if (percentage >= 70) return "var(--color-amber)"
+    return "var(--color-error)"
   }
 
-  // Determinar color del badge de cumplimiento general
-  function getOverallBadge(percentage: number) {
-    if (percentage >= 100) {
-      return <Badge className="bg-green-100 text-green-700">{percentage}%</Badge>
-    }
-    if (percentage >= 70) {
-      return <Badge className="bg-amber-100 text-amber-700">{percentage}%</Badge>
-    }
-    return <Badge variant="destructive">{percentage}%</Badge>
+  function getOverallBadgeStyle(percentage: number) {
+    if (percentage >= 100) return { background: "var(--color-success-bg)", color: "var(--color-success)" }
+    if (percentage >= 70) return { background: "var(--color-warning-bg)", color: "var(--color-warning)" }
+    return { background: "var(--color-error-bg)", color: "var(--color-error)" }
   }
 
-  // Separar métricas por período
   const dailyMetrics = data.metrics.filter((m) => m.period === "daily")
   const weeklyMetrics = data.metrics.filter((m) => m.period === "weekly")
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Acuerdo de Actividad</CardTitle>
-          {getOverallBadge(data.overallPercentage)}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Métricas diarias */}
+    <div className="crm-card">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Acuerdo de Actividad</h3>
+        <span
+          className="badge font-semibold"
+          style={getOverallBadgeStyle(data.overallPercentage)}
+        >
+          {data.overallPercentage}%
+        </span>
+      </div>
+
+      <div className="space-y-4">
         {dailyMetrics.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
               Hoy
             </p>
             <div className="space-y-3">
               {dailyMetrics.map((metric) => (
-                <MetricBar key={metric.label} metric={metric} getColor={getProgressColor} />
+                <MetricBar key={metric.label} metric={metric} getColor={getBarColor} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Métricas semanales */}
         {weeklyMetrics.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
               Esta semana
             </p>
             <div className="space-y-3">
               {weeklyMetrics.map((metric) => (
-                <MetricBar key={metric.label} metric={metric} getColor={getProgressColor} />
+                <MetricBar key={metric.label} metric={metric} getColor={getBarColor} />
               ))}
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
-// Componente interno: barra de progreso de una métrica
 function MetricBar({
   metric,
   getColor,
@@ -158,15 +136,15 @@ function MetricBar({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium">{metric.label}</span>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{metric.label}</span>
+        <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
           {metric.current} / {metric.target}
         </span>
       </div>
-      <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+      <div className="relative h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--border-subtle)" }}>
         <div
-          className={cn("h-full rounded-full transition-all", getColor(metric.percentage))}
-          style={{ width: `${capped}%` }}
+          className="h-full rounded-full transition-all"
+          style={{ width: `${capped}%`, background: getColor(metric.percentage) }}
         />
       </div>
     </div>

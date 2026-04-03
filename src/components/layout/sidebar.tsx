@@ -21,6 +21,8 @@ import {
   Moon,
   Sun,
   LogOut,
+  ShieldCheck,
+  RefreshCcw,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
@@ -35,6 +37,8 @@ const navItems = [
   { label: "Meta Ads", href: "/meta-ads", icon: Megaphone, roles: ["DIRECTOR", "GERENTE", "LIDER", "MARKETING"] },
   { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["HOSTESS"] },
   { label: "Sync Drive", href: "/sync", icon: FolderSync, roles: ["DIRECTOR", "GERENTE", "MANTENIMIENTO"] },
+  { label: "Zoho Aprobaciones", href: "/zoho-approvals", icon: ShieldCheck, roles: ["DIRECTOR", "GERENTE"] },
+  { label: "Zoho Sync", href: "/zoho-sync", icon: RefreshCcw, roles: ["DIRECTOR", "GERENTE"] },
   { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
 ]
 
