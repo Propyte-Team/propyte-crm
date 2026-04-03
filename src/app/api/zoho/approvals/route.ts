@@ -47,14 +47,7 @@ export async function GET() {
     from += pageSize;
   }
 
-  const data = allData;
-  const error = null;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ developments: data || [] });
+  return NextResponse.json({ developments: allData });
 }
 
 export async function PATCH(request: NextRequest) {
