@@ -1,8 +1,8 @@
 // ============================================================
 // API Route: /api/zoho/approvals
-// GET: lista desarrollos y unidades con su status de sync
-// PATCH: actualiza zoho_pipeline_status (desarrollos) o zoho status (unidades)
-// Query param: ?tab=developments | ?tab=units
+// GET: lista desarrolladores, desarrollos y unidades con su status de sync
+// PATCH: actualiza zoho_pipeline_status o toggles de publicación
+// Query param: ?tab=developers | ?tab=developments | ?tab=units
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -53,6 +53,19 @@ export async function GET(request: NextRequest) {
   const tab = request.nextUrl.searchParams.get("tab") || "developments";
 
   try {
+    if (tab === "developers") {
+      const devCompanies = await fetchAllPages(
+        supabase,
+        "real_estate_hub",
+        "Propyte_desarrolladores",
+        "id, nombre_desarrollador, ext_slug_desarrollador, logo, sitio_web, " +
+          "telefono, email, descripcion, ext_descripcion_en, ext_ciudad, ext_estado, " +
+          "es_verificado, zoho_pipeline_status, zoho_record_id, zoho_last_synced_at, updated_at",
+        "nombre_desarrollador"
+      );
+      return NextResponse.json({ developers: devCompanies });
+    }
+
     if (tab === "units") {
       // Fetch units with parent development name
       const units = await fetchAllPages(
@@ -172,7 +185,9 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, message: "Units sync is automatic when parent development is approved" });
   }
 
-  // Developments: update pipeline status
+  // Developers or Developments: update pipeline status
+  const targetTable = entity_type === "developer" ? "Propyte_desarrolladores" : "Propyte_desarrollos";
+
   if (!ids?.length || !zoho_pipeline_status) {
     return NextResponse.json(
       { error: "ids y zoho_pipeline_status son requeridos" },
@@ -203,7 +218,7 @@ export async function PATCH(request: NextRequest) {
 
   const { error } = await supabase
     .schema("real_estate_hub")
-    .from("Propyte_desarrollos")
+    .from(targetTable)
     .update(updateData)
     .in("id", ids);
 
