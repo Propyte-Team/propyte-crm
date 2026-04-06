@@ -4,14 +4,27 @@
 // ============================================================
 
 import { NextResponse } from "next/server"
+import { getServerSession } from "@/lib/auth/session"
 import { syncMetaLeads } from "@/server/meta-leads"
 
+const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"]
+
 export async function POST(request: Request) {
+  // Auth: cron secret OR authenticated user with allowed role
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    // Cron auth — OK
+  } else {
+    const session = await getServerSession()
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    const role = (session.user as { role?: string }).role || ""
+    if (!ALLOWED_ROLES.includes(role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
   }
 
   try {
