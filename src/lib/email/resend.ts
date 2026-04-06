@@ -44,3 +44,33 @@ export async function sendLoginCode(email: string, code: string) {
     throw new Error("No se pudo enviar el código de acceso");
   }
 }
+
+/**
+ * Envía un código para restablecer la contraseña.
+ */
+export async function sendPasswordResetCode(email: string, code: string) {
+  const resend = getResend();
+
+  const { error } = await resend.emails.send({
+    from: "Propyte CRM <noreply@propyte.com>",
+    to: email,
+    subject: `Restablecer contraseña — código: ${code}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <h2 style="color: #1a1a1a; margin-bottom: 8px;">Propyte CRM</h2>
+        <p style="color: #666; margin-bottom: 24px;">Has solicitado restablecer tu contraseña. Usa este código:</p>
+        <div style="background: #f4f4f5; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 24px;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">${code}</span>
+        </div>
+        <p style="color: #999; font-size: 13px;">
+          Este código expira en 10 minutos. Si no solicitaste este cambio, ignora este correo.
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error("Error enviando código de restablecimiento:", error);
+    throw new Error("No se pudo enviar el código de restablecimiento");
+  }
+}
