@@ -956,6 +956,69 @@ model MetaDailyInsight {
   @@schema("propyte_crm")
 }
 
+// =====================================================================
+// META LEADS — Backup directo de leads de formularios Meta
+// =====================================================================
+
+enum MetaLeadStatus {
+  PENDING           // Recién descargado, aún no comparado
+  MATCHED           // Encontrado en CRM (Contact)
+  MISSING_IN_CRM    // NO encontrado en CRM — discrepancia
+  DUPLICATE         // Duplicado dentro de Meta
+
+  @@schema("propyte_crm")
+}
+
+model MetaLead {
+  id               String          @id @default(uuid())
+  metaLeadId       String          @unique  // ID del lead en Meta (ej. "1234567890")
+  createdOnMeta    DateTime                 // Fecha/hora en que se creó en Meta
+
+  // Datos del formulario
+  firstName        String?
+  lastName         String?
+  email            String?
+  phone            String?
+  country          String?
+  language         String?          // "Espanol" | "Ingles"
+
+  // Campos custom del formulario (urgencia, presupuesto, etc.)
+  urgency          String?          // ¿Con qué urgencia quieres comprar?
+  acquisition      String?          // ¿Cómo planeas adquirir tu propiedad?
+  budget           String?          // Rango de presupuesto estimado
+  description      String?          // Interés en inmueble
+  extraFields      Json?            // Campos adicionales no mapeados
+
+  // Atribución Meta
+  campaignId       String?
+  campaignName     String?
+  adsetId          String?
+  adsetName        String?
+  adId             String?
+  adName           String?
+  formId           String?
+  formName         String?
+  platform         String?          // facebook, instagram, etc.
+  pageName         String?
+
+  // Matching con CRM
+  status           MetaLeadStatus   @default(PENDING)
+  matchedContactId String?          // UUID del Contact si se encontró match
+  matchedAt        DateTime?
+  matchMethod      String?          // "email", "phone", "both"
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([status])
+  @@index([email])
+  @@index([phone])
+  @@index([createdOnMeta])
+  @@index([campaignName])
+  @@map("meta_leads")
+  @@schema("propyte_crm")
+}
+
 // API Keys para integraciones entrantes (Zapier → CRM)
 model ApiKey {
   id         String   @id @default(uuid())
