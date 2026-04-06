@@ -322,14 +322,16 @@ export class ZohoClient {
       modifiedSince?: string;
       fields?: string[];
       maxPages?: number;
+      startPage?: number;
     } = {}
   ): Promise<{ records: ZohoRecord[]; hasMore: boolean; lastPage: number }> {
     const maxPages = options.maxPages || 5;
     const allRecords: ZohoRecord[] = [];
-    let page = 1;
+    const startPage = options.startPage || 1;
+    let page = startPage;
     let hasMore = true;
 
-    while (hasMore && page <= maxPages) {
+    while (hasMore && page < startPage + maxPages) {
       if (!this.rateLimiter.canMakeCall()) {
         return { records: allRecords, hasMore: true, lastPage: page - 1 };
       }

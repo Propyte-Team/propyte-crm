@@ -350,6 +350,65 @@ async function syncUnitsToZoho(
 
 // --- FASE 2: Zoho → Supabase ---
 
+// Helper: check if initial bulk sync is complete for a module
+async function getInitialSyncState(
+  supabase: ReturnType<typeof getSupabaseServiceClient>,
+  entityType: string
+): Promise<{ complete: boolean; lastPage: number }> {
+  // Check for "initial_sync_complete" marker
+  const { data: completeMarker } = await supabase
+    .schema("real_estate_hub")
+    .from("Propyte_zoho_sync_log")
+    .select("details")
+    .eq("entity_type", entityType)
+    .eq("direction", "from_zoho")
+    .eq("operation", "skip")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (completeMarker?.length) {
+    for (const entry of completeMarker) {
+      const details = entry.details as Record<string, unknown> | null;
+      if (details?.initial_sync_complete) {
+        return { complete: true, lastPage: 0 };
+      }
+      if (typeof details?.last_page === "number") {
+        return { complete: false, lastPage: details.last_page as number };
+      }
+    }
+  }
+
+  return { complete: false, lastPage: 0 };
+}
+
+// Helper: batch upsert records to Supabase in chunks
+async function batchUpsertToSupabase(
+  supabase: ReturnType<typeof getSupabaseServiceClient>,
+  table: string,
+  records: Record<string, unknown>[],
+  onConflict: string,
+  chunkSize = 500
+): Promise<{ succeeded: number; errors: string[] }> {
+  let succeeded = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < records.length; i += chunkSize) {
+    const chunk = records.slice(i, i + chunkSize);
+    const { error } = await supabase
+      .schema("real_estate_hub")
+      .from(table)
+      .upsert(chunk, { onConflict });
+
+    if (error) {
+      errors.push(`Chunk ${i}-${i + chunk.length}: ${error.message}`);
+    } else {
+      succeeded += chunk.length;
+    }
+  }
+
+  return { succeeded, errors };
+}
+
 async function syncModuleFromZoho(
   supabase: ReturnType<typeof getSupabaseServiceClient>,
   zoho: ReturnType<typeof getZohoClient>,
@@ -364,68 +423,137 @@ async function syncModuleFromZoho(
     maxPages: number;
   }
 ): Promise<void> {
-  // Get last sync time for this module
-  const { data: lastSync } = await supabase
-    .schema("real_estate_hub")
-    .from(config.supabaseTable)
-    .select("zoho_modified_time")
-    .order("zoho_modified_time", { ascending: false })
-    .limit(1);
+  // Determine sync mode: initial bulk vs incremental
+  const syncState = await getInitialSyncState(supabase, config.entityType);
 
-  const modifiedSince = lastSync?.[0]?.zoho_modified_time || undefined;
+  let modifiedSince: string | undefined;
+  let startPage = 1;
+
+  if (syncState.complete) {
+    // Incremental mode: only fetch records modified since last sync
+    const { data: lastSync } = await supabase
+      .schema("real_estate_hub")
+      .from(config.supabaseTable)
+      .select("zoho_modified_time")
+      .order("zoho_modified_time", { ascending: false })
+      .limit(1);
+
+    modifiedSince = lastSync?.[0]?.zoho_modified_time || undefined;
+  } else {
+    // Initial bulk sync: continue from where we left off
+    startPage = syncState.lastPage > 0 ? syncState.lastPage + 1 : 1;
+    console.log(
+      `[SYNC] ${config.entityType}: initial sync mode, starting page ${startPage}`
+    );
+  }
 
   try {
-    const { records, hasMore } = await zoho.getAllRecords(config.zohoModule, {
-      modifiedSince,
-      maxPages: config.maxPages,
-    });
+    const { records, hasMore, lastPage } = await zoho.getAllRecords(
+      config.zohoModule,
+      {
+        modifiedSince,
+        maxPages: config.maxPages,
+        startPage,
+      }
+    );
 
-    for (const record of records) {
-      const mapped = config.transformer(record);
-      mapped.synced_at = new Date().toISOString();
-      mapped.updated_at = new Date().toISOString();
-
-      const { error } = await supabase
-        .schema("real_estate_hub")
-        .from(config.supabaseTable)
-        .upsert(mapped, { onConflict: "zoho_record_id" });
-
-      if (error) {
-        result.from_zoho.errors++;
+    if (records.length === 0) {
+      // No new records — if we're in initial mode and no more pages, mark complete
+      if (!syncState.complete && !hasMore) {
         logs.push({
           sync_run_id: syncRunId,
           direction: "from_zoho",
           entity_type: config.entityType,
-          operation: "error",
-          zoho_record_id: record.id as string,
-          error_message: error.message,
+          operation: "skip",
+          details: { initial_sync_complete: true, total_pages: lastPage },
         });
-      } else {
-        // Check if it was create or update based on synced_at vs created_at
-        const isNew = !modifiedSince;
-        result.from_zoho[isNew ? "created" : "updated"]++;
-
-        // Update ID map
-        await supabase
-          .schema("real_estate_hub")
-          .from("Propyte_zoho_id_map")
-          .upsert({
-            entity_type: config.entityType,
-            supabase_id: mapped.zoho_record_id as string,
-            zoho_module: config.zohoModule,
-            zoho_record_id: record.id as string,
-            zoho_modified_time: record.Modified_Time as string,
-          }, { onConflict: "zoho_module,zoho_record_id" });
       }
+      return;
     }
 
-    if (hasMore) {
+    // Transform all records
+    const now = new Date().toISOString();
+    const mapped = records.map((record) => {
+      const row = config.transformer(record);
+      row.synced_at = now;
+      row.updated_at = now;
+      return row;
+    });
+
+    // Batch upsert to main table
+    const { succeeded, errors } = await batchUpsertToSupabase(
+      supabase,
+      config.supabaseTable,
+      mapped,
+      "zoho_record_id"
+    );
+
+    result.from_zoho.created += succeeded;
+    for (const errMsg of errors) {
+      result.from_zoho.errors++;
+      logs.push({
+        sync_run_id: syncRunId,
+        direction: "from_zoho",
+        entity_type: config.entityType,
+        operation: "error",
+        error_message: errMsg,
+      });
+    }
+
+    // Batch upsert to ID map
+    const idMapRows = records.map((record) => ({
+      entity_type: config.entityType,
+      supabase_id: record.id as string,
+      zoho_module: config.zohoModule,
+      zoho_record_id: record.id as string,
+      zoho_modified_time: record.Modified_Time as string,
+    }));
+
+    await batchUpsertToSupabase(
+      supabase,
+      "Propyte_zoho_id_map",
+      idMapRows,
+      "zoho_module,zoho_record_id"
+    );
+
+    // Track continuation state
+    if (hasMore && !syncState.complete) {
+      // Still more pages to fetch — save progress for next run
       logs.push({
         sync_run_id: syncRunId,
         direction: "from_zoho",
         entity_type: config.entityType,
         operation: "skip",
-        details: { reason: "more_records_available", fetched: records.length },
+        details: {
+          reason: "continuation",
+          last_page: lastPage,
+          fetched_this_run: records.length,
+        },
+      });
+    } else if (!hasMore && !syncState.complete) {
+      // Initial sync finished for this module
+      logs.push({
+        sync_run_id: syncRunId,
+        direction: "from_zoho",
+        entity_type: config.entityType,
+        operation: "skip",
+        details: {
+          initial_sync_complete: true,
+          total_pages: lastPage,
+          total_fetched: records.length,
+        },
+      });
+      console.log(
+        `[SYNC] ${config.entityType}: initial sync COMPLETE (${lastPage} pages)`
+      );
+    } else if (hasMore && syncState.complete) {
+      // Incremental sync has more — unusual but possible with large batch of changes
+      logs.push({
+        sync_run_id: syncRunId,
+        direction: "from_zoho",
+        entity_type: config.entityType,
+        operation: "skip",
+        details: { reason: "more_incremental_records", fetched: records.length },
       });
     }
   } catch (err) {
@@ -462,7 +590,7 @@ async function syncLeadsFromZoho(
     supabaseTable: "Propyte_zoho_leads",
     entityType: "lead",
     transformer: (r) => zohoLeadToSupabase(r as ZohoLead),
-    maxPages: 3, // ~600 records per run, budget-friendly
+    maxPages: 25, // ~5,000 records per run — 20K leads in ~4 runs
   });
 }
 
@@ -478,7 +606,7 @@ async function syncContactsFromZoho(
     supabaseTable: "Propyte_zoho_contacts",
     entityType: "contact",
     transformer: zohoContactToSupabase,
-    maxPages: 2,
+    maxPages: 25, // 4,032 contacts — completa en 1 run
   });
 }
 
@@ -494,7 +622,7 @@ async function syncDealsFromZoho(
     supabaseTable: "Propyte_zoho_deals",
     entityType: "deal",
     transformer: (r) => zohoDealToSupabase(r as ZohoDeal),
-    maxPages: 2,
+    maxPages: 5, // 225 deals — completa en 1 run
   });
 }
 
@@ -510,7 +638,7 @@ async function syncAccountsFromZoho(
     supabaseTable: "Propyte_zoho_accounts",
     entityType: "account",
     transformer: (r) => zohoAccountToSupabase(r as ZohoAccount),
-    maxPages: 2,
+    maxPages: 10, // 1,340 accounts — completa en 1 run
   });
 }
 
