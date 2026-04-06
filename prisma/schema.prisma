@@ -3,12 +3,14 @@
 // =====================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["propyte_crm"]
 }
 
 // =====================================================================
@@ -30,6 +32,8 @@ enum UserRole {
   HOSTESS
   MARKETING
   DEVELOPER_EXT
+
+  @@schema("propyte_crm")
 }
 
 // Nivel en plan de carrera
@@ -39,6 +43,8 @@ enum CareerLevel {
   TOP_PRODUCER
   TEAM_LEADER
   GERENTE
+
+  @@schema("propyte_crm")
 }
 
 // Plazas activas
@@ -46,6 +52,8 @@ enum Plaza {
   PDC
   TULUM
   MERIDA
+
+  @@schema("propyte_crm")
 }
 
 // Tipo de contacto
@@ -56,6 +64,8 @@ enum ContactType {
   INVERSIONISTA
   BROKER_EXTERNO
   REFERIDO
+
+  @@schema("propyte_crm")
 }
 
 // Fuente del lead (crítico para atribución de marketing)
@@ -72,12 +82,16 @@ enum LeadSource {
   WEBSITE
   WHATSAPP
   OTRO
+
+  @@schema("propyte_crm")
 }
 
 // Idioma preferido del contacto
 enum PreferredLanguage {
   ES
   EN
+
+  @@schema("propyte_crm")
 }
 
 // Perfil de inversión (del discovery call)
@@ -87,6 +101,8 @@ enum InvestmentProfile {
   INVESTOR_FLIP
   INVESTOR_LAND
   MIXED
+
+  @@schema("propyte_crm")
 }
 
 // Tipo de propiedad buscada
@@ -97,6 +113,8 @@ enum PropertyType {
   MACROLOTE
   LOCAL_COMERCIAL
   OTRO
+
+  @@schema("propyte_crm")
 }
 
 // Horizonte de compra
@@ -105,6 +123,8 @@ enum PurchaseTimeline {
   ONE_TO_THREE_MONTHS
   THREE_TO_SIX_MONTHS
   SIX_PLUS_MONTHS
+
+  @@schema("propyte_crm")
 }
 
 // Forma de pago
@@ -113,6 +133,8 @@ enum PaymentMethod {
   CREDITO_HIPOTECARIO
   FINANCIAMIENTO_DIRECTO
   MIXTO
+
+  @@schema("propyte_crm")
 }
 
 // Modalidad de compra preferida
@@ -121,6 +143,8 @@ enum PurchaseModality {
   ENTREGA_INMEDIATA
   REVENTA
   ABIERTO
+
+  @@schema("propyte_crm")
 }
 
 // Estrategia de renta
@@ -129,6 +153,8 @@ enum RentalStrategy {
   AIRBNB
   BOTH
   NA
+
+  @@schema("propyte_crm")
 }
 
 // Temperatura del lead
@@ -137,6 +163,8 @@ enum LeadTemperature {
   WARM
   COLD
   DEAD
+
+  @@schema("propyte_crm")
 }
 
 // Tipo de desarrollo (relación comercial)
@@ -144,12 +172,16 @@ enum DevelopmentType {
   PROPIO
   MASTERBROKER
   CORRETAJE
+
+  @@schema("propyte_crm")
 }
 
 // Moneda
 enum Currency {
   MXN
   USD
+
+  @@schema("propyte_crm")
 }
 
 // Estado del desarrollo
@@ -159,6 +191,8 @@ enum DevelopmentStatus {
   ENTREGA_INMEDIATA
   VENDIDO
   SUSPENDIDO
+
+  @@schema("propyte_crm")
 }
 
 // Tipo de unidad individual
@@ -171,6 +205,8 @@ enum UnitType {
   TERRENO
   MACROLOTE
   LOCAL
+
+  @@schema("propyte_crm")
 }
 
 // Estado de la unidad
@@ -179,6 +215,8 @@ enum UnitStatus {
   APARTADA
   VENDIDA
   NO_DISPONIBLE
+
+  @@schema("propyte_crm")
 }
 
 // Etapas del pipeline de ventas
@@ -196,6 +234,8 @@ enum DealStage {
   WON
   LOST
   FROZEN
+
+  @@schema("propyte_crm")
 }
 
 // Tipo de operación (determina tabla de comisiones)
@@ -205,6 +245,8 @@ enum DealType {
   MACROLOTE
   CORRETAJE
   MASTERBROKER
+
+  @@schema("propyte_crm")
 }
 
 // Razón de pérdida del deal
@@ -217,6 +259,8 @@ enum LostReason {
   COMPRO_DIRECTO
   DESARROLLO_CANCELADO
   OTRO
+
+  @@schema("propyte_crm")
 }
 
 // Estado del pago de comisión
@@ -224,6 +268,8 @@ enum CommissionStatus {
   PENDIENTE
   FACTURADA
   PAGADA
+
+  @@schema("propyte_crm")
 }
 
 // Tipo de actividad
@@ -247,18 +293,24 @@ enum ActivityType {
   TASK
   CONTRACT_REVIEW
   CLOSING_ACTIVITY
+
+  @@schema("propyte_crm")
 }
 
 // Canal de mensaje (Twilio)
 enum MessageChannel {
   WHATSAPP
   SMS
+
+  @@schema("propyte_crm")
 }
 
 // Dirección del mensaje
 enum MessageDirection {
   INBOUND
   OUTBOUND
+
+  @@schema("propyte_crm")
 }
 
 // Estado del mensaje (Twilio)
@@ -268,6 +320,8 @@ enum MessageStatus {
   DELIVERED
   READ
   FAILED
+
+  @@schema("propyte_crm")
 }
 
 // Estado de actividad
@@ -276,6 +330,8 @@ enum ActivityStatus {
   COMPLETADA
   VENCIDA
   CANCELADA
+
+  @@schema("propyte_crm")
 }
 
 // Propósito de visita (walk-in)
@@ -284,6 +340,8 @@ enum VisitPurpose {
   USO_PROPIO
   INFORMACION
   OTRO
+
+  @@schema("propyte_crm")
 }
 
 // Acción de auditoría
@@ -294,6 +352,8 @@ enum AuditAction {
   LOGIN
   LOGOUT
   EXPORT
+
+  @@schema("propyte_crm")
 }
 
 // Categoría de fuente del lead (para reglas de comisión)
@@ -301,6 +361,8 @@ enum LeadSourceCategory {
   PROPYTE_LEAD
   BROKER_LEAD
   ASESOR_LEAD
+
+  @@schema("propyte_crm")
 }
 
 // Modo de asignación de leads
@@ -309,6 +371,8 @@ enum LeadAssignmentMode {
   PERFORMANCE
   MANUAL
   GUARDIA
+
+  @@schema("propyte_crm")
 }
 
 // =====================================================================
@@ -351,6 +415,7 @@ model User {
   deletedAt DateTime?
 
   @@map("users")
+  @@schema("propyte_crm")
 }
 
 // Contactos / Leads
@@ -399,6 +464,7 @@ model Contact {
   deletedAt DateTime?
 
   @@map("contacts")
+  @@schema("propyte_crm")
 }
 
 // Desarrollos inmobiliarios
@@ -439,6 +505,7 @@ model Development {
   deletedAt DateTime?
 
   @@map("developments")
+  @@schema("propyte_crm")
 }
 
 // Unidades individuales de un desarrollo
@@ -471,6 +538,7 @@ model Unit {
   deletedAt DateTime?
 
   @@map("units")
+  @@schema("propyte_crm")
 }
 
 // Operaciones / Pipeline de ventas
@@ -518,6 +586,7 @@ model Deal {
   deletedAt DateTime?
 
   @@map("deals")
+  @@schema("propyte_crm")
 }
 
 // Actividades e interacciones
@@ -543,6 +612,7 @@ model Activity {
   deletedAt DateTime?
 
   @@map("activities")
+  @@schema("propyte_crm")
 }
 
 // Reglas de comisión configurables
@@ -558,6 +628,7 @@ model CommissionRule {
   updatedAt DateTime @updatedAt
 
   @@map("commission_rules")
+  @@schema("propyte_crm")
 }
 
 // Registro de walk-ins
@@ -580,6 +651,7 @@ model WalkIn {
   deletedAt DateTime?
 
   @@map("walk_ins")
+  @@schema("propyte_crm")
 }
 
 // Registro de auditoría
@@ -596,6 +668,7 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@map("audit_logs")
+  @@schema("propyte_crm")
 }
 
 // Notificaciones in-app
@@ -612,6 +685,7 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@map("notifications")
+  @@schema("propyte_crm")
 }
 
 // Configuración global del sistema
@@ -623,6 +697,7 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 
   @@map("system_config")
+  @@schema("propyte_crm")
 }
 
 // Mensajes SMS/WhatsApp via Twilio
@@ -645,6 +720,7 @@ model Message {
 
   @@index([contactId, createdAt])
   @@map("messages")
+  @@schema("propyte_crm")
 }
 
 // Configuración de webhooks salientes (CRM → Zapier)
@@ -659,6 +735,7 @@ model WebhookConfig {
   updatedAt DateTime @updatedAt
 
   @@map("webhook_configs")
+  @@schema("propyte_crm")
 }
 
 // =====================================================================
@@ -669,6 +746,8 @@ model WebhookConfig {
 enum StorageProvider {
   GOOGLE_DRIVE
   DROPBOX
+
+  @@schema("propyte_crm")
 }
 
 enum SyncJobStatus {
@@ -679,6 +758,8 @@ enum SyncJobStatus {
   UPLOADING
   COMPLETED
   FAILED
+
+  @@schema("propyte_crm")
 }
 
 // Carpetas monitoreadas (1 carpeta = 1 desarrollo)
@@ -706,6 +787,7 @@ model MonitoredFolder {
 
   @@unique([provider, externalFolderId])
   @@map("monitored_folders")
+  @@schema("propyte_crm")
 }
 
 // Archivo individual rastreado dentro de una carpeta
@@ -728,6 +810,7 @@ model SyncFile {
 
   @@unique([monitoredFolderId, externalFileId])
   @@map("sync_files")
+  @@schema("propyte_crm")
 }
 
 // Job de sincronización (un pipeline completo: crawl → parse → map → upload)
@@ -764,6 +847,7 @@ model SyncJob {
 
   @@index([monitoredFolderId, createdAt])
   @@map("sync_jobs")
+  @@schema("propyte_crm")
 }
 
 // Logs detallados de cada paso del pipeline
@@ -780,6 +864,7 @@ model SyncLog {
 
   @@index([syncJobId, createdAt])
   @@map("sync_logs")
+  @@schema("propyte_crm")
 }
 
 // =====================================================================
@@ -802,6 +887,7 @@ model MetaAdAccount {
   updatedAt DateTime @updatedAt
 
   @@map("meta_ad_accounts")
+  @@schema("propyte_crm")
 }
 
 // Cache de campañas con métricas snapshot
@@ -836,6 +922,7 @@ model MetaCampaignCache {
 
   @@unique([accountId, metaCampaignId])
   @@map("meta_campaign_cache")
+  @@schema("propyte_crm")
 }
 
 // Insights diarios por cuenta/campaña (histórico para charts)
@@ -866,6 +953,7 @@ model MetaDailyInsight {
   @@unique([accountId, date, level, metaObjectId])
   @@index([accountId, date])
   @@map("meta_daily_insights")
+  @@schema("propyte_crm")
 }
 
 // API Keys para integraciones entrantes (Zapier → CRM)
@@ -880,4 +968,5 @@ model ApiKey {
   createdAt DateTime @default(now())
 
   @@map("api_keys")
+  @@schema("propyte_crm")
 }
