@@ -1,33 +1,86 @@
 "use client";
 
 import { useState, useEffect, useCallback, Fragment } from "react";
+import { EditPanel } from "./components/edit-panel";
 
 // --- Types ---
 
 interface Development {
   id: string;
   nombre_desarrollo: string;
+  ext_slug_desarrollo: string | null;
   ciudad: string;
   estado: string;
   tipo_desarrollo: string;
+  etapa_construccion: string | null;
+  avance_obra_porcentaje: number | null;
+  fecha_entrega: string | null;
+  ext_fecha_entrega_texto: string | null;
+  unidades_totales: number | null;
+  unidades_disponibles: number | null;
+  ext_reserved_units: number | null;
+  ext_sold_units: number | null;
   ext_precio_min_mxn: number | null;
   ext_precio_max_mxn: number | null;
-  fotos_desarrollo: string[] | null;
-  unidades_disponibles: number | null;
+  ext_moneda: string | null;
+  ext_commission_rate: number | null;
+  ext_roi_proyectado: number | null;
+  ext_roi_renta_mensual: number | null;
+  ext_roi_apreciacion: number | null;
+  ext_enganche_porcentaje: number | null;
+  ext_meses_financiamiento: number | null;
+  ext_tasa_interes: number | null;
   ext_descripcion_es: string | null;
+  ext_descripcion_en: string | null;
+  ext_descripcion_corta_es: string | null;
+  ext_descripcion_corta_en: string | null;
+  ext_texto_brochure: string | null;
+  fotos_desarrollo: string[] | null;
+  brochure_pdf: string | null;
+  tour_virtual_desarrollo: string | null;
+  video_desarrollo: string | null;
+  url_drive_general: string | null;
   latitud: number | null;
   longitud: number | null;
-  brochure_pdf: string | null;
-  ext_commission_rate: number | null;
-  tour_virtual_desarrollo: string | null;
   zona: string | null;
   calle: string | null;
-  etapa_construccion: string | null;
-  unidades_totales: number | null;
+  ext_publicado: boolean | null;
+  ext_destacado: boolean | null;
+  ext_crm_relationship: string | null;
+  ext_property_types: string | null;
+  ext_usage: string | null;
+  ext_badge: string | null;
+  ext_plaza: string | null;
+  ext_contacto_nombre: string | null;
+  ext_contacto_telefono: string | null;
+  ext_detection_source: string | null;
+  ext_source_url: string | null;
+  id_desarrollador: string | null;
+  amenidad_lobby: boolean | null;
+  amenidad_gym: boolean | null;
+  amenidad_alberca_privada: boolean | null;
+  amenidad_alberca_comunitaria: boolean | null;
+  amenidad_spa: boolean | null;
+  amenidad_rooftop: boolean | null;
+  amenidad_coworking: boolean | null;
+  amenidad_yoga: boolean | null;
+  amenidad_bodega: boolean | null;
+  amenidad_elevador: boolean | null;
+  amenidad_cancha: boolean | null;
+  amenidad_pet_zone: boolean | null;
+  amenidad_fire_pit: boolean | null;
+  amenidad_restaurante: boolean | null;
+  amenidad_concierge: boolean | null;
+  amenidad_jardin_comunitario: boolean | null;
+  amenidades_adicionales: unknown;
   zoho_pipeline_status: string;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
+  zoho_sync_error: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
   updated_at: string;
+  [key: string]: unknown;
 }
 
 interface Unit {
@@ -42,18 +95,29 @@ interface Unit {
   piso_numero: number | null;
   precio_mxn: number | null;
   precio_usd: number | null;
+  ext_precio_venta: number | null;
   estado_unidad: string;
   fotos_unidad: string[] | null;
   descripcion_corta_unidad: string | null;
+  ext_descripcion_en: string | null;
   plano_unidad: string | null;
   ext_tiene_alberca: boolean | null;
   ext_publicado: boolean | null;
   id_desarrollo: string;
+  ext_reserved_by_contact_id: string | null;
+  ext_reserved_at: string | null;
+  ext_sold_at: string | null;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
+  zoho_sync_error: string | null;
+  zoho_pipeline_status: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  updated_at: string;
   desarrollo_nombre: string;
   desarrollo_zoho_id: string | null;
   desarrollo_pipeline_status: string;
+  [key: string]: unknown;
 }
 
 interface Developer {
@@ -72,7 +136,11 @@ interface Developer {
   zoho_pipeline_status: string;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
+  zoho_sync_error: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
   updated_at: string;
+  [key: string]: unknown;
 }
 
 type TabType = "developers" | "developments" | "units";
@@ -113,29 +181,39 @@ const DEVELOPER_FIELDS: FieldDef[] = [
   { key: "telefono", label: "Teléfono", weight: 1 },
   { key: "email", label: "Email", weight: 1 },
   { key: "descripcion", label: "Descripción", weight: 2 },
+  { key: "ext_descripcion_en", label: "Descripción EN", weight: 1 },
   { key: "ext_ciudad", label: "Ciudad", weight: 1 },
   { key: "ext_estado", label: "Estado", weight: 1 },
+  { key: "ext_slug_desarrollador", label: "Slug", weight: 1 },
 ];
 
 const DEV_FIELDS: FieldDef[] = [
   { key: "nombre_desarrollo", label: "Nombre", weight: 1 },
   { key: "ciudad", label: "Ciudad", weight: 1 },
   { key: "tipo_desarrollo", label: "Tipo", weight: 1 },
-  { key: "ext_precio_min_mxn", label: "Precio", weight: 2 },
+  { key: "ext_precio_min_mxn", label: "Precio Min", weight: 2 },
+  { key: "ext_precio_max_mxn", label: "Precio Max", weight: 1 },
   { key: "fotos_desarrollo", label: "Fotos", weight: 2, isArray: true },
   { key: "ext_descripcion_es", label: "Descripción", weight: 2 },
+  { key: "ext_descripcion_en", label: "Descripción EN", weight: 1 },
   { key: "latitud", label: "Coordenadas", weight: 1 },
   { key: "zona", label: "Zona", weight: 1 },
   { key: "calle", label: "Dirección", weight: 1 },
   { key: "etapa_construccion", label: "Etapa", weight: 1 },
   { key: "unidades_disponibles", label: "Unidades disp.", weight: 1 },
+  { key: "unidades_totales", label: "Unidades totales", weight: 1 },
   { key: "brochure_pdf", label: "Brochure", weight: 1 },
+  { key: "tour_virtual_desarrollo", label: "Tour Virtual", weight: 1 },
   { key: "ext_commission_rate", label: "Comisión", weight: 1 },
+  { key: "ext_roi_proyectado", label: "ROI Proyectado", weight: 1 },
+  { key: "ext_enganche_porcentaje", label: "Enganche %", weight: 1 },
+  { key: "id_desarrollador", label: "Desarrollador", weight: 1 },
 ];
 
 const UNIT_FIELDS: FieldDef[] = [
   { key: "ext_numero_unidad", label: "Número", weight: 1 },
   { key: "tipo_unidad", label: "Tipo", weight: 1 },
+  { key: "ext_tipologia", label: "Tipología", weight: 1 },
   { key: "recamaras", label: "Recámaras", weight: 1 },
   { key: "banos_completos", label: "Baños", weight: 1 },
   { key: "superficie_total_m2", label: "Superficie", weight: 2 },
@@ -143,7 +221,9 @@ const UNIT_FIELDS: FieldDef[] = [
   { key: "fotos_unidad", label: "Fotos", weight: 2, isArray: true },
   { key: "estado_unidad", label: "Status", weight: 1 },
   { key: "descripcion_corta_unidad", label: "Descripción", weight: 1 },
+  { key: "ext_descripcion_en", label: "Descripción EN", weight: 1 },
   { key: "piso_numero", label: "Piso", weight: 1 },
+  { key: "plano_unidad", label: "Plano", weight: 1 },
 ];
 
 // --- Detail Sections (for expandable panels) ---
@@ -188,6 +268,17 @@ const DEVELOPER_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
       { key: "ext_descripcion_en", label: "Descripción (EN)", zoho: false, web: true },
     ],
   },
+  {
+    title: "Zoho Sync",
+    fields: [
+      { key: "zoho_pipeline_status", label: "Pipeline Status", zoho: true, web: false },
+      { key: "zoho_record_id", label: "Zoho ID", zoho: true, web: false },
+      { key: "zoho_last_synced_at", label: "Último Sync", zoho: true, web: false },
+      { key: "zoho_sync_error", label: "Error de Sync", zoho: true, web: false },
+      { key: "approved_at", label: "Aprobado el", zoho: false, web: false },
+      { key: "approved_by", label: "Aprobado por", zoho: false, web: false },
+    ],
+  },
 ];
 
 const DEV_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
@@ -195,10 +286,15 @@ const DEV_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
     title: "Datos Generales",
     fields: [
       { key: "nombre_desarrollo", label: "Nombre", zoho: true, web: true },
+      { key: "ext_slug_desarrollo", label: "Slug", zoho: false, web: true },
       { key: "ciudad", label: "Ciudad / Municipio", zoho: true, web: true },
       { key: "estado", label: "Estado", zoho: true, web: true },
       { key: "tipo_desarrollo", label: "Tipo", zoho: false, web: true },
       { key: "etapa_construccion", label: "Etapa", zoho: false, web: true },
+      { key: "avance_obra_porcentaje", label: "Avance obra %", zoho: false, web: true },
+      { key: "fecha_entrega", label: "Fecha entrega", zoho: false, web: true },
+      { key: "ext_fecha_entrega_texto", label: "Entrega (texto)", zoho: false, web: true },
+      { key: "id_desarrollador", label: "ID Desarrollador", zoho: false, web: true },
     ],
   },
   {
@@ -215,18 +311,91 @@ const DEV_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
     fields: [
       { key: "ext_precio_min_mxn", label: "Precio mín. MXN", zoho: false, web: true },
       { key: "ext_precio_max_mxn", label: "Precio máx. MXN", zoho: false, web: true },
+      { key: "ext_moneda", label: "Moneda", zoho: false, web: true },
       { key: "ext_commission_rate", label: "Comisión %", zoho: true, web: false },
-      { key: "unidades_disponibles", label: "Unidades disponibles", zoho: true, web: true },
+      { key: "ext_crm_relationship", label: "Relación CRM", zoho: false, web: false },
+      { key: "ext_plaza", label: "Plaza", zoho: false, web: false },
+    ],
+  },
+  {
+    title: "Inventario",
+    fields: [
       { key: "unidades_totales", label: "Unidades totales", zoho: false, web: true },
+      { key: "unidades_disponibles", label: "Unidades disponibles", zoho: true, web: true },
+      { key: "ext_reserved_units", label: "Unidades apartadas", zoho: false, web: true },
+      { key: "ext_sold_units", label: "Unidades vendidas", zoho: false, web: true },
+    ],
+  },
+  {
+    title: "ROI y Financiamiento",
+    fields: [
+      { key: "ext_roi_proyectado", label: "ROI Proyectado %", zoho: false, web: true },
+      { key: "ext_roi_renta_mensual", label: "ROI Renta Mensual", zoho: false, web: true },
+      { key: "ext_roi_apreciacion", label: "ROI Apreciación", zoho: false, web: true },
+      { key: "ext_enganche_porcentaje", label: "Enganche %", zoho: false, web: true },
+      { key: "ext_meses_financiamiento", label: "Meses Financ.", zoho: false, web: true },
+      { key: "ext_tasa_interes", label: "Tasa Interés %", zoho: false, web: true },
+    ],
+  },
+  {
+    title: "Amenidades",
+    fields: [
+      { key: "amenidad_lobby", label: "Lobby", zoho: false, web: true },
+      { key: "amenidad_gym", label: "Gimnasio", zoho: false, web: true },
+      { key: "amenidad_alberca_privada", label: "Alberca Privada", zoho: false, web: true },
+      { key: "amenidad_alberca_comunitaria", label: "Alberca Comunitaria", zoho: false, web: true },
+      { key: "amenidad_spa", label: "Spa", zoho: false, web: true },
+      { key: "amenidad_rooftop", label: "Rooftop", zoho: false, web: true },
+      { key: "amenidad_coworking", label: "Coworking", zoho: false, web: true },
+      { key: "amenidad_yoga", label: "Yoga", zoho: false, web: true },
+      { key: "amenidad_bodega", label: "Bodega", zoho: false, web: true },
+      { key: "amenidad_elevador", label: "Elevador", zoho: false, web: true },
+      { key: "amenidad_cancha", label: "Cancha", zoho: false, web: true },
+      { key: "amenidad_pet_zone", label: "Pet Friendly", zoho: false, web: true },
+      { key: "amenidad_fire_pit", label: "Fire Pit", zoho: false, web: true },
+      { key: "amenidad_restaurante", label: "Restaurante", zoho: false, web: true },
+      { key: "amenidad_concierge", label: "Concierge", zoho: false, web: true },
+      { key: "amenidad_jardin_comunitario", label: "Jardín Comunitario", zoho: false, web: true },
     ],
   },
   {
     title: "Media y Contenido",
     fields: [
       { key: "fotos_desarrollo", label: "Fotos", zoho: true, web: true, isArray: true },
-      { key: "ext_descripcion_es", label: "Descripción", zoho: true, web: true },
+      { key: "ext_descripcion_es", label: "Descripción (ES)", zoho: true, web: true },
+      { key: "ext_descripcion_en", label: "Descripción (EN)", zoho: false, web: true },
+      { key: "ext_descripcion_corta_es", label: "Desc. corta (ES)", zoho: false, web: true },
+      { key: "ext_descripcion_corta_en", label: "Desc. corta (EN)", zoho: false, web: true },
+      { key: "ext_texto_brochure", label: "Texto Brochure", zoho: false, web: true },
       { key: "brochure_pdf", label: "Brochure / Sitio", zoho: true, web: true },
       { key: "tour_virtual_desarrollo", label: "Tour Virtual", zoho: false, web: true },
+      { key: "video_desarrollo", label: "Video", zoho: false, web: true },
+      { key: "url_drive_general", label: "Drive URL", zoho: false, web: false },
+    ],
+  },
+  {
+    title: "Clasificación y Admin",
+    fields: [
+      { key: "ext_publicado", label: "Publicado en Web", zoho: false, web: true },
+      { key: "ext_destacado", label: "Destacado", zoho: false, web: true },
+      { key: "ext_property_types", label: "Tipos de Propiedad", zoho: false, web: true },
+      { key: "ext_usage", label: "Uso", zoho: false, web: true },
+      { key: "ext_badge", label: "Badge", zoho: false, web: true },
+      { key: "ext_contacto_nombre", label: "Contacto Nombre", zoho: false, web: false },
+      { key: "ext_contacto_telefono", label: "Contacto Teléfono", zoho: false, web: false },
+      { key: "ext_detection_source", label: "Fuente Detección", zoho: false, web: false },
+      { key: "ext_source_url", label: "URL Fuente", zoho: false, web: false },
+    ],
+  },
+  {
+    title: "Zoho Sync",
+    fields: [
+      { key: "zoho_pipeline_status", label: "Pipeline Status", zoho: true, web: false },
+      { key: "zoho_record_id", label: "Zoho ID", zoho: true, web: false },
+      { key: "zoho_last_synced_at", label: "Último Sync", zoho: true, web: false },
+      { key: "zoho_sync_error", label: "Error de Sync", zoho: true, web: false },
+      { key: "approved_at", label: "Aprobado el", zoho: false, web: false },
+      { key: "approved_by", label: "Aprobado por", zoho: false, web: false },
     ],
   },
 ];
@@ -240,6 +409,7 @@ const UNIT_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
       { key: "tipo_unidad", label: "Tipo", zoho: false, web: true },
       { key: "ext_tipologia", label: "Tipología", zoho: true, web: true },
       { key: "estado_unidad", label: "Estado", zoho: true, web: true },
+      { key: "ext_publicado", label: "Publicado en Web", zoho: false, web: true },
     ],
   },
   {
@@ -253,10 +423,14 @@ const UNIT_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
     ],
   },
   {
-    title: "Precios",
+    title: "Precios y Ventas",
     fields: [
       { key: "precio_mxn", label: "Precio MXN", zoho: true, web: true },
       { key: "precio_usd", label: "Precio USD", zoho: false, web: true },
+      { key: "ext_precio_venta", label: "Precio Venta Final", zoho: false, web: false },
+      { key: "ext_reserved_by_contact_id", label: "Apartado por (contacto)", zoho: false, web: false },
+      { key: "ext_reserved_at", label: "Fecha apartado", zoho: false, web: false },
+      { key: "ext_sold_at", label: "Fecha vendido", zoho: false, web: false },
     ],
   },
   {
@@ -264,7 +438,19 @@ const UNIT_DETAIL_SECTIONS: { title: string; fields: DetailField[] }[] = [
     fields: [
       { key: "fotos_unidad", label: "Fotos", zoho: true, web: true, isArray: true },
       { key: "plano_unidad", label: "Plano", zoho: false, web: true },
-      { key: "descripcion_corta_unidad", label: "Descripción", zoho: false, web: true },
+      { key: "descripcion_corta_unidad", label: "Descripción (ES)", zoho: false, web: true },
+      { key: "ext_descripcion_en", label: "Descripción (EN)", zoho: false, web: true },
+    ],
+  },
+  {
+    title: "Zoho Sync",
+    fields: [
+      { key: "zoho_record_id", label: "Zoho ID", zoho: true, web: false },
+      { key: "zoho_last_synced_at", label: "Último Sync", zoho: true, web: false },
+      { key: "zoho_sync_error", label: "Error de Sync", zoho: true, web: false },
+      { key: "zoho_pipeline_status", label: "Pipeline Status", zoho: true, web: false },
+      { key: "approved_at", label: "Aprobado el", zoho: false, web: false },
+      { key: "approved_by", label: "Aprobado por", zoho: false, web: false },
     ],
   },
 ];
@@ -318,6 +504,7 @@ export function ZohoApprovalsClient() {
   const [filterCity, setFilterCity] = useState("all");
   const [filterDev, setFilterDev] = useState("all");
   const [filterCompleteness, setFilterCompleteness] = useState(0);
+  const [filterZoho, setFilterZoho] = useState<"all" | "synced" | "not_synced">("all");
   const [sortBy, setSortBy] = useState<"name" | "completeness" | "city">("completeness");
   const [search, setSearch] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -413,6 +600,8 @@ export function ZohoApprovalsClient() {
     .filter((d) => {
       if (filterStatus !== "all" && d.zoho_pipeline_status !== filterStatus) return false;
       if (filterCity !== "all" && d.ext_ciudad !== filterCity) return false;
+      if (filterZoho === "synced" && !d.zoho_record_id) return false;
+      if (filterZoho === "not_synced" && d.zoho_record_id) return false;
       if (d._completeness.pct < filterCompleteness) return false;
       if (search && !d.nombre_desarrollador?.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
@@ -433,6 +622,8 @@ export function ZohoApprovalsClient() {
     .filter((d) => {
       if (filterStatus !== "all" && d.zoho_pipeline_status !== filterStatus) return false;
       if (filterCity !== "all" && d.ciudad !== filterCity) return false;
+      if (filterZoho === "synced" && !d.zoho_record_id) return false;
+      if (filterZoho === "not_synced" && d.zoho_record_id) return false;
       if (d._completeness.pct < filterCompleteness) return false;
       if (search && !d.nombre_desarrollo?.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
@@ -454,6 +645,7 @@ export function ZohoApprovalsClient() {
       if (filterStatus !== "all") {
         if (filterStatus === "synced" && !u.zoho_record_id) return false;
         if (filterStatus === "pending" && u.zoho_record_id) return false;
+        if (filterStatus === "not_synced" && u.zoho_record_id) return false;
         if (filterStatus === "aprobado" && u.desarrollo_pipeline_status !== "aprobado" && u.desarrollo_pipeline_status !== "listo") return false;
       }
       if (filterDev !== "all" && u.desarrollo_nombre !== filterDev) return false;
@@ -495,7 +687,7 @@ export function ZohoApprovalsClient() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterStatus, filterCity, filterDev, filterCompleteness, sortBy]);
+  }, [search, filterStatus, filterCity, filterDev, filterCompleteness, filterZoho, sortBy]);
 
   // --- Stats ---
   const developerStats = {
@@ -526,6 +718,7 @@ export function ZohoApprovalsClient() {
     setFilterCity("all");
     setFilterDev("all");
     setFilterCompleteness(0);
+    setFilterZoho("all");
     setSortBy("completeness");
     setSearch("");
     setSelected(new Set());
@@ -626,6 +819,12 @@ export function ZohoApprovalsClient() {
               <option value="all">Todas las ciudades</option>
               {developerCities.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            <select value={filterZoho} onChange={(e) => setFilterZoho(e.target.value as "all" | "synced" | "not_synced")}
+              className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+              <option value="all">Zoho: Todos</option>
+              <option value="synced">En Zoho CRM</option>
+              <option value="not_synced">Sin Zoho CRM</option>
+            </select>
           </>
         ) : activeTab === "developments" ? (
           <>
@@ -639,6 +838,12 @@ export function ZohoApprovalsClient() {
               <option value="all">Todas las ciudades</option>
               {devCities.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            <select value={filterZoho} onChange={(e) => setFilterZoho(e.target.value as "all" | "synced" | "not_synced")}
+              className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+              <option value="all">Zoho: Todos</option>
+              <option value="synced">En Zoho CRM</option>
+              <option value="not_synced">Sin Zoho CRM</option>
+            </select>
           </>
         ) : (
           <>
@@ -648,6 +853,7 @@ export function ZohoApprovalsClient() {
               <option value="aprobado">De desarrollo aprobado</option>
               <option value="synced">Synced a Zoho</option>
               <option value="pending">Pendientes de sync</option>
+              <option value="not_synced">Sin Zoho CRM</option>
             </select>
             <select value={filterDev} onChange={(e) => setFilterDev(e.target.value)}
               className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
@@ -784,7 +990,8 @@ export function ZohoApprovalsClient() {
                       onExpand={() => setExpandedRow(expandedRow === dev.id ? null : dev.id)} />
                     {expandedRow === dev.id && (
                       <EntityDetailPanel sections={DEVELOPER_DETAIL_SECTIONS} record={dev as unknown as Record<string, unknown>}
-                        colSpan={colSpan} zohoStatus={{ pipeline: dev.zoho_pipeline_status, recordId: dev.zoho_record_id, entityLabel: "Desarrollador" }} />
+                        colSpan={colSpan} zohoStatus={{ pipeline: dev.zoho_pipeline_status, recordId: dev.zoho_record_id, entityLabel: "Desarrollador" }}
+                        entityType="developer" entityId={dev.id} onRefresh={fetchData} />
                     )}
                   </Fragment>
                 ))
@@ -797,7 +1004,8 @@ export function ZohoApprovalsClient() {
                       onExpand={() => setExpandedRow(expandedRow === dev.id ? null : dev.id)} />
                     {expandedRow === dev.id && (
                       <EntityDetailPanel sections={DEV_DETAIL_SECTIONS} record={dev as unknown as Record<string, unknown>}
-                        colSpan={colSpan} zohoStatus={{ pipeline: dev.zoho_pipeline_status, recordId: dev.zoho_record_id, entityLabel: "Desarrollo" }} />
+                        colSpan={colSpan} zohoStatus={{ pipeline: dev.zoho_pipeline_status, recordId: dev.zoho_record_id, entityLabel: "Desarrollo" }}
+                        entityType="development" entityId={dev.id} onRefresh={fetchData} />
                     )}
                   </Fragment>
                 ))
@@ -806,7 +1014,7 @@ export function ZohoApprovalsClient() {
                     <UnitRow unit={unit} completeness={unit._completeness} selected={selected.has(unit.id)}
                       onToggle={() => toggleSelect(unit.id)} expanded={expandedRow === unit.id}
                       onExpand={() => setExpandedRow(expandedRow === unit.id ? null : unit.id)} />
-                    {expandedRow === unit.id && <UnitDetailPanel unit={unit} onToggleWeb={toggleWebApproval} />}
+                    {expandedRow === unit.id && <UnitDetailPanel unit={unit} onToggleWeb={toggleWebApproval} onRefresh={fetchData} />}
                   </Fragment>
                 ))
             }
@@ -1063,11 +1271,14 @@ function FieldGrid({ sections, record }: { sections: { title: string; fields: De
 
 // --- Detail Panels ---
 
-function EntityDetailPanel({ sections, record, colSpan, zohoStatus }: {
+function EntityDetailPanel({ sections, record, colSpan, zohoStatus, entityType, entityId, onRefresh }: {
   sections: { title: string; fields: DetailField[] }[];
   record: Record<string, unknown>;
   colSpan: number;
   zohoStatus: { pipeline: string; recordId: string | null; entityLabel: string };
+  entityType: "developer" | "development" | "unit";
+  entityId: string;
+  onRefresh: () => void;
 }) {
   const zohoFields = sections.flatMap((s) => s.fields.filter((f) => f.zoho));
   const zohoFilled = zohoFields.filter((f) => fieldHasValue(f, record)).length;
@@ -1081,6 +1292,7 @@ function EntityDetailPanel({ sections, record, colSpan, zohoStatus }: {
     <tr>
       <td colSpan={colSpan} className="px-0 py-0">
         <div className="border-t-2 border-blue-200 bg-slate-50 px-6 py-5" onClick={(e) => e.stopPropagation()}>
+          <EditPanel sections={sections} record={record} entityType={entityType} entityId={entityId} onSaved={onRefresh} />
           <FieldGrid sections={sections} record={record} />
           <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-lg border bg-white p-4">
@@ -1126,9 +1338,10 @@ function EntityDetailPanel({ sections, record, colSpan, zohoStatus }: {
   );
 }
 
-function UnitDetailPanel({ unit, onToggleWeb }: {
+function UnitDetailPanel({ unit, onToggleWeb, onRefresh }: {
   unit: Unit & { _completeness: CompletenessInfo };
   onToggleWeb: (id: string, value: boolean) => void;
+  onRefresh: () => void;
 }) {
   const isDevApproved = ["aprobado", "listo"].includes(unit.desarrollo_pipeline_status);
   const rec = unit as unknown as Record<string, unknown>;
@@ -1144,6 +1357,7 @@ function UnitDetailPanel({ unit, onToggleWeb }: {
     <tr>
       <td colSpan={9} className="px-0 py-0">
         <div className="border-t-2 border-blue-200 bg-slate-50 px-6 py-5" onClick={(e) => e.stopPropagation()}>
+          <EditPanel sections={UNIT_DETAIL_SECTIONS} record={rec} entityType="unit" entityId={unit.id} onSaved={onRefresh} />
           <FieldGrid sections={UNIT_DETAIL_SECTIONS} record={rec} />
           <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Zoho CRM */}

@@ -58,9 +58,7 @@ export async function GET(request: NextRequest) {
         supabase,
         "real_estate_hub",
         "Propyte_desarrolladores",
-        "id, nombre_desarrollador, ext_slug_desarrollador, logo, sitio_web, " +
-          "telefono, email, descripcion, ext_descripcion_en, ext_ciudad, ext_estado, " +
-          "es_verificado, zoho_pipeline_status, zoho_record_id, zoho_last_synced_at, updated_at",
+        "*",
         "nombre_desarrollador"
       );
       return NextResponse.json({ developers: devCompanies });
@@ -72,11 +70,7 @@ export async function GET(request: NextRequest) {
         supabase,
         "real_estate_hub",
         "Propyte_unidades",
-        "id, slug_unidad, ext_numero_unidad, tipo_unidad, ext_tipologia, " +
-          "recamaras, banos_completos, superficie_total_m2, piso_numero, " +
-          "precio_mxn, precio_usd, estado_unidad, fotos_unidad, ext_publicado, " +
-          "descripcion_corta_unidad, plano_unidad, ext_tiene_alberca, " +
-          "id_desarrollo, zoho_record_id, zoho_last_synced_at, updated_at",
+        "*",
         "slug_unidad"
       );
 
@@ -123,12 +117,7 @@ export async function GET(request: NextRequest) {
       supabase,
       "real_estate_hub",
       "Propyte_desarrollos",
-      "id, nombre_desarrollo, ciudad, estado, tipo_desarrollo, " +
-        "ext_precio_min_mxn, ext_precio_max_mxn, fotos_desarrollo, unidades_disponibles, " +
-        "ext_descripcion_es, latitud, longitud, brochure_pdf, " +
-        "ext_commission_rate, tour_virtual_desarrollo, zona, calle, " +
-        "etapa_construccion, unidades_totales, " +
-        "zoho_pipeline_status, zoho_record_id, zoho_last_synced_at, updated_at",
+      "*",
       "nombre_desarrollo"
     );
 
