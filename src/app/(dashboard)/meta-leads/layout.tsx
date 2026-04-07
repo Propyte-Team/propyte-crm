@@ -8,6 +8,7 @@ import { DatabaseZap } from "lucide-react"
 const tabs = [
   { label: "Overview", href: "/meta-leads" },
   { label: "Discrepancias", href: "/meta-leads/discrepancies" },
+  { label: "WhatsApp", href: "/meta-leads/whatsapp" },
 ]
 
 export default function MetaLeadsLayout({ children }: { children: React.ReactNode }) {

@@ -7,7 +7,7 @@ import { getMetaLeadStats, getMetaLeads, getMetaLeadCampaigns } from "@/server/m
 import { MetaLeadsOverview } from "./overview-content"
 
 interface Props {
-  searchParams: Promise<{ status?: string; campaign?: string; search?: string; page?: string }>
+  searchParams: Promise<{ status?: string; campaign?: string; search?: string; dateFrom?: string; dateTo?: string; page?: string }>
 }
 
 export default async function MetaLeadsPage({ searchParams }: Props) {
@@ -22,11 +22,12 @@ export default async function MetaLeadsPage({ searchParams }: Props) {
   const status = params.status as "MATCHED" | "MISSING_IN_CRM" | "PENDING" | "DUPLICATE" | undefined
   const campaign = params.campaign
   const search = params.search
+  const dateFrom = params.dateFrom
+  const dateTo = params.dateTo
   const page = parseInt(params.page || "1", 10)
 
-  // Sequential to reduce DB connection pressure
   const stats = await getMetaLeadStats()
-  const leadsData = await getMetaLeads({ status, campaign, search, page, pageSize: 50 })
+  const leadsData = await getMetaLeads({ status, campaign, search, dateFrom, dateTo, page, pageSize: 50 })
   const campaigns = await getMetaLeadCampaigns()
 
   return (
@@ -37,7 +38,7 @@ export default async function MetaLeadsPage({ searchParams }: Props) {
       pageCount={leadsData.pageCount}
       currentPage={page}
       campaigns={campaigns}
-      filters={{ status, campaign, search }}
+      filters={{ status, campaign, search, dateFrom, dateTo }}
     />
   )
 }

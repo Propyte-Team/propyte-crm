@@ -459,12 +459,16 @@ export async function getMetaLeads(opts: {
   status?: MetaLeadStatus
   campaign?: string
   search?: string
+  dateFrom?: string
+  dateTo?: string
+  isWhatsApp?: boolean
   page?: number
   pageSize?: number
 }): Promise<{ leads: MetaLeadRow[]; totalCount: number; pageCount: number }> {
-  const { status, campaign, search, page = 1, pageSize = 50 } = opts
+  const { status, campaign, search, dateFrom, dateTo, isWhatsApp, page = 1, pageSize = 50 } = opts
 
-  const where: Record<string, unknown> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: Record<string, any> = {}
   if (status) where.status = status
   if (campaign) where.campaignName = campaign
   if (search) {
@@ -473,6 +477,26 @@ export async function getMetaLeads(opts: {
       { lastName: { contains: search, mode: "insensitive" } },
       { email: { contains: search, mode: "insensitive" } },
       { phone: { contains: search } },
+    ]
+  }
+
+  // Date range filter
+  if (dateFrom || dateTo) {
+    where.createdOnMeta = {}
+    if (dateFrom) where.createdOnMeta.gte = new Date(dateFrom)
+    if (dateTo) where.createdOnMeta.lte = new Date(dateTo + "T23:59:59.999Z")
+  }
+
+  // WhatsApp filter: campaigns with WSP or WHATSAPP in name
+  if (isWhatsApp) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { campaignName: { contains: "WSP", mode: "insensitive" } },
+          { campaignName: { contains: "WHATSAPP", mode: "insensitive" } },
+        ],
+      },
     ]
   }
 

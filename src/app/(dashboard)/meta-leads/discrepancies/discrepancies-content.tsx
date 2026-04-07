@@ -18,7 +18,7 @@ interface Props {
   pageCount: number
   currentPage: number
   campaigns: string[]
-  filters: { campaign?: string; search?: string }
+  filters: { campaign?: string; search?: string; dateFrom?: string; dateTo?: string }
 }
 
 export function DiscrepanciesContent({
@@ -126,6 +126,33 @@ export function DiscrepanciesContent({
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+
+        {/* Date filters */}
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={filters.dateFrom || ""}
+            onChange={(e) => updateFilter("dateFrom", e.target.value || undefined)}
+            className="h-9 rounded-md border px-2 text-[13px]"
+            style={{
+              background: "var(--bg-secondary)",
+              borderColor: "var(--border-subtle)",
+              color: "var(--text-primary)",
+            }}
+          />
+          <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>a</span>
+          <input
+            type="date"
+            value={filters.dateTo || ""}
+            onChange={(e) => updateFilter("dateTo", e.target.value || undefined)}
+            className="h-9 rounded-md border px-2 text-[13px]"
+            style={{
+              background: "var(--bg-secondary)",
+              borderColor: "var(--border-subtle)",
+              color: "var(--text-primary)",
+            }}
+          />
+        </div>
 
         <button
           onClick={handleRecompare}
