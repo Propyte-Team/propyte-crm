@@ -270,13 +270,17 @@ export async function syncMetaLeads(): Promise<{
 }
 
 // ============================================================
-// compareLeadsWithCRM — Match MetaLeads against Contact table
+// compareLeadsWithCRM — Match MetaLeads against Zoho leads in Supabase
+// Compares against Propyte_zoho_leads (real_estate_hub schema)
 // ============================================================
 
 export async function compareLeadsWithCRM(): Promise<{
   matched: number
   missing: number
 }> {
+  const { getSupabaseServiceClient } = await import("@/lib/supabase")
+  const supabase = getSupabaseServiceClient()
+
   const pendingLeads = await prisma.metaLead.findMany({
     where: { status: "PENDING" },
     select: { id: true, email: true, phone: true },
@@ -285,57 +289,70 @@ export async function compareLeadsWithCRM(): Promise<{
   let matched = 0
   let missing = 0
 
+  // Pre-fetch all Zoho leads emails and phones for fast lookup
+  const { data: zohoLeads } = await supabase!
+    .schema("real_estate_hub")
+    .from("Propyte_zoho_leads")
+    .select("zoho_record_id, email, phone, mobile")
+
+  // Build lookup sets (normalized)
+  const zohoEmailSet = new Set<string>()
+  const zohoPhoneSet = new Set<string>()
+  const zohoEmailToId = new Map<string, string>()
+  const zohoPhoneToId = new Map<string, string>()
+
+  for (const zl of zohoLeads || []) {
+    if (zl.email) {
+      const norm = zl.email.toLowerCase().trim()
+      zohoEmailSet.add(norm)
+      zohoEmailToId.set(norm, zl.zoho_record_id)
+    }
+    if (zl.phone) {
+      const norm = zl.phone.replace(/[\s\-\(\)\+]/g, "").slice(-10)
+      if (norm.length >= 7) {
+        zohoPhoneSet.add(norm)
+        zohoPhoneToId.set(norm, zl.zoho_record_id)
+      }
+    }
+    if (zl.mobile) {
+      const norm = zl.mobile.replace(/[\s\-\(\)\+]/g, "").slice(-10)
+      if (norm.length >= 7) {
+        zohoPhoneSet.add(norm)
+        zohoPhoneToId.set(norm, zl.zoho_record_id)
+      }
+    }
+  }
+
   for (const lead of pendingLeads) {
     const normEmail = normalizeEmail(lead.email)
     const normPhone = normalizePhone(lead.phone)
 
-    let contact = null
+    let matchedId: string | null = null
     let matchMethod = ""
 
-    // Try email match first
-    if (normEmail) {
-      contact = await prisma.contact.findFirst({
-        where: { email: { equals: normEmail, mode: "insensitive" } },
-        select: { id: true },
-      })
-      if (contact) matchMethod = "email"
+    // Try email match
+    if (normEmail && zohoEmailSet.has(normEmail)) {
+      matchedId = zohoEmailToId.get(normEmail) || null
+      matchMethod = "email"
     }
 
     // Try phone match
-    if (!contact && normPhone) {
-      contact = await prisma.contact.findFirst({
-        where: {
-          OR: [
-            { phone: { contains: normPhone } },
-            { secondaryPhone: { contains: normPhone } },
-          ],
-        },
-        select: { id: true },
-      })
-      if (contact) matchMethod = "phone"
+    if (!matchedId && normPhone && normPhone.length >= 7 && zohoPhoneSet.has(normPhone)) {
+      matchedId = zohoPhoneToId.get(normPhone) || null
+      matchMethod = "phone"
     }
 
-    // If both matched, upgrade to "both"
-    if (contact && normEmail && normPhone && matchMethod === "email") {
-      const phoneMatch = await prisma.contact.findFirst({
-        where: {
-          id: contact.id,
-          OR: [
-            { phone: { contains: normPhone } },
-            { secondaryPhone: { contains: normPhone } },
-          ],
-        },
-        select: { id: true },
-      })
-      if (phoneMatch) matchMethod = "both"
+    // Check for both
+    if (matchedId && matchMethod === "email" && normPhone && normPhone.length >= 7 && zohoPhoneSet.has(normPhone)) {
+      matchMethod = "both"
     }
 
-    if (contact) {
+    if (matchedId) {
       await prisma.metaLead.update({
         where: { id: lead.id },
         data: {
           status: "MATCHED",
-          matchedContactId: contact.id,
+          matchedContactId: matchedId,
           matchedAt: new Date(),
           matchMethod,
         },
@@ -350,7 +367,7 @@ export async function compareLeadsWithCRM(): Promise<{
     }
   }
 
-  // Check for duplicates (same email or phone appearing multiple times in meta_leads)
+  // Check for duplicates (same email appearing multiple times in meta_leads)
   const duplicateEmails = await prisma.$queryRaw<{ email: string }[]>`
     SELECT email FROM propyte_crm.meta_leads
     WHERE email IS NOT NULL
@@ -361,15 +378,11 @@ export async function compareLeadsWithCRM(): Promise<{
     const leads = await prisma.metaLead.findMany({
       where: { email: dup.email },
       orderBy: { createdOnMeta: "asc" },
-      select: { id: true },
+      select: { id: true, status: true },
     })
-    // Mark all except the first as DUPLICATE
+    // Mark all except the first as DUPLICATE (only if still PENDING)
     for (let i = 1; i < leads.length; i++) {
-      const current = await prisma.metaLead.findUnique({
-        where: { id: leads[i].id },
-        select: { status: true },
-      })
-      if (current?.status === "PENDING") {
+      if (leads[i].status === "PENDING") {
         await prisma.metaLead.update({
           where: { id: leads[i].id },
           data: { status: "DUPLICATE" },
