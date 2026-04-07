@@ -286,42 +286,49 @@ export async function compareLeadsWithCRM(): Promise<{
     select: { id: true, email: true, phone: true },
   })
 
-  let matched = 0
-  let missing = 0
+  if (pendingLeads.length === 0) return { matched: 0, missing: 0 }
 
-  // Pre-fetch all Zoho leads emails and phones for fast lookup
-  const { data: zohoLeads } = await supabase!
-    .schema("real_estate_hub")
-    .from("Propyte_zoho_leads")
-    .select("zoho_record_id, email, phone, mobile")
-
-  // Build lookup sets (normalized)
+  // Pre-fetch all Zoho leads emails and phones in pages (Supabase max 1000 per request)
   const zohoEmailSet = new Set<string>()
   const zohoPhoneSet = new Set<string>()
   const zohoEmailToId = new Map<string, string>()
   const zohoPhoneToId = new Map<string, string>()
 
-  for (const zl of zohoLeads || []) {
-    if (zl.email) {
-      const norm = zl.email.toLowerCase().trim()
-      zohoEmailSet.add(norm)
-      zohoEmailToId.set(norm, zl.zoho_record_id)
-    }
-    if (zl.phone) {
-      const norm = zl.phone.replace(/[\s\-\(\)\+]/g, "").slice(-10)
-      if (norm.length >= 7) {
-        zohoPhoneSet.add(norm)
-        zohoPhoneToId.set(norm, zl.zoho_record_id)
+  let from = 0
+  const pageSize = 1000
+  while (true) {
+    const { data: page } = await supabase!
+      .schema("real_estate_hub")
+      .from("Propyte_zoho_leads")
+      .select("zoho_record_id, email, phone, mobile")
+      .range(from, from + pageSize - 1)
+
+    if (!page || page.length === 0) break
+
+    for (const zl of page) {
+      if (zl.email) {
+        const norm = zl.email.toLowerCase().trim()
+        zohoEmailSet.add(norm)
+        zohoEmailToId.set(norm, zl.zoho_record_id)
+      }
+      if (zl.phone) {
+        const norm = zl.phone.replace(/[\s\-\(\)\+]/g, "").slice(-10)
+        if (norm.length >= 7) { zohoPhoneSet.add(norm); zohoPhoneToId.set(norm, zl.zoho_record_id) }
+      }
+      if (zl.mobile) {
+        const norm = zl.mobile.replace(/[\s\-\(\)\+]/g, "").slice(-10)
+        if (norm.length >= 7) { zohoPhoneSet.add(norm); zohoPhoneToId.set(norm, zl.zoho_record_id) }
       }
     }
-    if (zl.mobile) {
-      const norm = zl.mobile.replace(/[\s\-\(\)\+]/g, "").slice(-10)
-      if (norm.length >= 7) {
-        zohoPhoneSet.add(norm)
-        zohoPhoneToId.set(norm, zl.zoho_record_id)
-      }
-    }
+
+    if (page.length < pageSize) break
+    from += pageSize
   }
+
+  // Classify leads in memory
+  const matchedIds: string[] = []
+  const missingIds: string[] = []
+  const matchData: { id: string; contactId: string; method: string }[] = []
 
   for (const lead of pendingLeads) {
     const normEmail = normalizeEmail(lead.email)
@@ -330,47 +337,58 @@ export async function compareLeadsWithCRM(): Promise<{
     let matchedId: string | null = null
     let matchMethod = ""
 
-    // Try email match
     if (normEmail && zohoEmailSet.has(normEmail)) {
       matchedId = zohoEmailToId.get(normEmail) || null
       matchMethod = "email"
     }
-
-    // Try phone match
     if (!matchedId && normPhone && normPhone.length >= 7 && zohoPhoneSet.has(normPhone)) {
       matchedId = zohoPhoneToId.get(normPhone) || null
       matchMethod = "phone"
     }
-
-    // Check for both
     if (matchedId && matchMethod === "email" && normPhone && normPhone.length >= 7 && zohoPhoneSet.has(normPhone)) {
       matchMethod = "both"
     }
 
     if (matchedId) {
-      await prisma.metaLead.update({
-        where: { id: lead.id },
-        data: {
-          status: "MATCHED",
-          matchedContactId: matchedId,
-          matchedAt: new Date(),
-          matchMethod,
-        },
-      })
-      matched++
+      matchedIds.push(lead.id)
+      matchData.push({ id: lead.id, contactId: matchedId, method: matchMethod })
     } else {
-      await prisma.metaLead.update({
-        where: { id: lead.id },
-        data: { status: "MISSING_IN_CRM" },
-      })
-      missing++
+      missingIds.push(lead.id)
     }
   }
 
-  // Check for duplicates (same email appearing multiple times in meta_leads)
+  // Batch update: mark all missing in one query
+  if (missingIds.length > 0) {
+    await prisma.metaLead.updateMany({
+      where: { id: { in: missingIds } },
+      data: { status: "MISSING_IN_CRM" },
+    })
+  }
+
+  // Batch update matched leads (need individual updates for matchedContactId/matchMethod)
+  // Process in chunks of 50 to avoid connection issues
+  const now = new Date()
+  for (let i = 0; i < matchData.length; i += 50) {
+    const chunk = matchData.slice(i, i + 50)
+    await prisma.$transaction(
+      chunk.map((m) =>
+        prisma.metaLead.update({
+          where: { id: m.id },
+          data: {
+            status: "MATCHED",
+            matchedContactId: m.contactId,
+            matchedAt: now,
+            matchMethod: m.method,
+          },
+        })
+      )
+    )
+  }
+
+  // Mark duplicates in bulk
   const duplicateEmails = await prisma.$queryRaw<{ email: string }[]>`
     SELECT email FROM propyte_crm.meta_leads
-    WHERE email IS NOT NULL
+    WHERE email IS NOT NULL AND status != 'DUPLICATE'
     GROUP BY email
     HAVING COUNT(*) > 1
   `
@@ -378,20 +396,18 @@ export async function compareLeadsWithCRM(): Promise<{
     const leads = await prisma.metaLead.findMany({
       where: { email: dup.email },
       orderBy: { createdOnMeta: "asc" },
-      select: { id: true, status: true },
+      select: { id: true },
     })
-    // Mark all except the first as DUPLICATE (only if still PENDING)
-    for (let i = 1; i < leads.length; i++) {
-      if (leads[i].status === "PENDING") {
-        await prisma.metaLead.update({
-          where: { id: leads[i].id },
-          data: { status: "DUPLICATE" },
-        })
-      }
+    if (leads.length > 1) {
+      const dupIds = leads.slice(1).map((l) => l.id)
+      await prisma.metaLead.updateMany({
+        where: { id: { in: dupIds }, status: "PENDING" },
+        data: { status: "DUPLICATE" },
+      })
     }
   }
 
-  return { matched, missing }
+  return { matched: matchedIds.length, missing: missingIds.length }
 }
 
 // ============================================================
