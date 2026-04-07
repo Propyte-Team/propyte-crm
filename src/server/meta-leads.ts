@@ -623,3 +623,57 @@ export async function rerunComparison(): Promise<{ matched: number; missing: num
 
   return compareLeadsWithCRM()
 }
+
+// ============================================================
+// syncZohoThenCompare — Sync Zoho leads to Supabase, then recompare
+// Used on page load and by cron
+// ============================================================
+
+export async function syncZohoThenCompare(): Promise<{
+  zohoSynced: boolean
+  matched: number
+  missing: number
+}> {
+  let zohoSynced = false
+
+  // Run Zoho sync to get latest leads into Supabase
+  try {
+    const { runSync } = await import("@/lib/zoho/sync-engine")
+    await runSync()
+    zohoSynced = true
+  } catch (err) {
+    console.error("[Meta Leads] Zoho sync error (continuing with recompare):", err)
+  }
+
+  // Only recompare if there are pending leads
+  const pendingCount = await prisma.metaLead.count({ where: { status: "MISSING_IN_CRM" } })
+  if (pendingCount === 0) {
+    const matched = await prisma.metaLead.count({ where: { status: "MATCHED" } })
+    const missing = 0
+    return { zohoSynced, matched, missing }
+  }
+
+  // Reset MISSING_IN_CRM leads back to PENDING for recheck
+  await prisma.metaLead.updateMany({
+    where: { status: "MISSING_IN_CRM" },
+    data: { status: "PENDING", matchedContactId: null, matchedAt: null, matchMethod: null },
+  })
+
+  const result = await compareLeadsWithCRM()
+  return { zohoSynced, ...result }
+}
+
+// ============================================================
+// shouldAutoSync — Check if enough time has passed since last sync
+// ============================================================
+
+const AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000 // 15 minutes
+
+export async function shouldAutoSync(): Promise<boolean> {
+  const lastLead = await prisma.metaLead.findFirst({
+    orderBy: { updatedAt: "desc" },
+    select: { updatedAt: true },
+  })
+  if (!lastLead) return true
+  return Date.now() - lastLead.updatedAt.getTime() > AUTO_SYNC_INTERVAL_MS
+}

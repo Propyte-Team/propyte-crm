@@ -1,11 +1,11 @@
 // ============================================================
 // API Route: POST /api/meta-leads/recompare
-// Re-run comparison after manual CRM import
+// Syncs Zoho leads to Supabase, then re-runs comparison
 // ============================================================
 
 import { NextResponse } from "next/server"
 import { getServerSession } from "@/lib/auth/session"
-import { rerunComparison } from "@/server/meta-leads"
+import { syncZohoThenCompare } from "@/server/meta-leads"
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"]
 
@@ -17,7 +17,7 @@ export async function POST() {
   if (!ALLOWED_ROLES.includes(role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   try {
-    const results = await rerunComparison()
+    const results = await syncZohoThenCompare()
     return NextResponse.json({ ok: true, ...results })
   } catch (error) {
     console.error("[Meta Leads Recompare] Error:", error)

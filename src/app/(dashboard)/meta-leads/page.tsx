@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic"
 
 import { getServerSession } from "@/lib/auth/session"
 import { redirect } from "next/navigation"
-import { getMetaLeadStats, getMetaLeads, getMetaLeadCampaigns } from "@/server/meta-leads"
+import { getMetaLeadStats, getMetaLeads, getMetaLeadCampaigns, shouldAutoSync, syncZohoThenCompare } from "@/server/meta-leads"
 import { MetaLeadsOverview } from "./overview-content"
 
 interface Props {
@@ -25,6 +25,11 @@ export default async function MetaLeadsPage({ searchParams }: Props) {
   const dateFrom = params.dateFrom
   const dateTo = params.dateTo
   const page = parseInt(params.page || "1", 10)
+
+  // Auto-sync Zoho + recompare if 15+ min since last update
+  if (await shouldAutoSync()) {
+    await syncZohoThenCompare().catch(() => {})
+  }
 
   const stats = await getMetaLeadStats()
   const leadsData = await getMetaLeads({ status, campaign, search, dateFrom, dateTo, page, pageSize: 50 })

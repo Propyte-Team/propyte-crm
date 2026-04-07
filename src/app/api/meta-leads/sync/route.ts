@@ -1,11 +1,12 @@
 // ============================================================
 // API Route: POST /api/meta-leads/sync
-// Cron job — pulls Meta leads and compares with CRM
+// Full pipeline: Zoho sync → Meta leads pull → compare
+// Called by cron every 15 min or manually from UI
 // ============================================================
 
 import { NextResponse } from "next/server"
 import { getServerSession } from "@/lib/auth/session"
-import { syncMetaLeads } from "@/server/meta-leads"
+import { syncMetaLeads, syncZohoThenCompare } from "@/server/meta-leads"
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"]
 
@@ -28,11 +29,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const results = await syncMetaLeads()
+    // Step 1: Pull new leads from Meta API
+    const metaResults = await syncMetaLeads()
+
+    // Step 2: Sync Zoho → Supabase, then recompare all
+    const compareResults = await syncZohoThenCompare()
+
     return NextResponse.json({
       ok: true,
       syncedAt: new Date().toISOString(),
-      ...results,
+      meta: metaResults,
+      compare: compareResults,
     })
   } catch (error) {
     console.error("[Meta Leads Sync] Error:", error)
