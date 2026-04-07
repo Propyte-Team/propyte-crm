@@ -24,11 +24,10 @@ export default async function MetaLeadsPage({ searchParams }: Props) {
   const search = params.search
   const page = parseInt(params.page || "1", 10)
 
-  const [stats, leadsData, campaigns] = await Promise.all([
-    getMetaLeadStats(),
-    getMetaLeads({ status, campaign, search, page, pageSize: 50 }),
-    getMetaLeadCampaigns(),
-  ])
+  // Sequential to reduce DB connection pressure
+  const stats = await getMetaLeadStats()
+  const leadsData = await getMetaLeads({ status, campaign, search, page, pageSize: 50 })
+  const campaigns = await getMetaLeadCampaigns()
 
   return (
     <MetaLeadsOverview

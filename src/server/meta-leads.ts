@@ -386,13 +386,23 @@ export async function compareLeadsWithCRM(): Promise<{
 // ============================================================
 
 export async function getMetaLeadStats(): Promise<MetaLeadStats> {
-  const [total, matched, missingInCrm, pending, duplicate] = await Promise.all([
-    prisma.metaLead.count(),
-    prisma.metaLead.count({ where: { status: "MATCHED" } }),
-    prisma.metaLead.count({ where: { status: "MISSING_IN_CRM" } }),
-    prisma.metaLead.count({ where: { status: "PENDING" } }),
-    prisma.metaLead.count({ where: { status: "DUPLICATE" } }),
-  ])
+  // Single query to get all counts by status
+  const statusCounts = await prisma.metaLead.groupBy({
+    by: ["status"],
+    _count: true,
+  })
+
+  const countMap: Record<string, number> = {}
+  let total = 0
+  for (const row of statusCounts) {
+    countMap[row.status] = row._count
+    total += row._count
+  }
+
+  const matched = countMap["MATCHED"] || 0
+  const missingInCrm = countMap["MISSING_IN_CRM"] || 0
+  const pending = countMap["PENDING"] || 0
+  const duplicate = countMap["DUPLICATE"] || 0
 
   const lastLead = await prisma.metaLead.findFirst({
     orderBy: { createdAt: "desc" },
