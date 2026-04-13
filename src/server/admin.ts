@@ -553,16 +553,24 @@ export async function generateNewApiKey(name: string) {
 
   const { raw, hashed, prefix } = generateApiKeyPair();
 
-  await prisma.apiKey.create({
+  const apiKey = await prisma.apiKey.create({
     data: {
       name,
       hashedKey: hashed,
       prefix,
     },
+    select: {
+      id: true,
+      name: true,
+      prefix: true,
+      lastUsedAt: true,
+      isActive: true,
+      createdAt: true,
+    },
   });
 
   // La key raw solo se muestra una vez
-  return { key: raw, prefix };
+  return { key: raw, apiKey };
 }
 
 /**

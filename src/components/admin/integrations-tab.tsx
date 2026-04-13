@@ -149,9 +149,8 @@ export function IntegrationsTab({
       try {
         const result = await generateNewApiKey(newApiKeyName);
         setGeneratedKey(result.key);
+        setApiKeys((prev) => [result.apiKey as ApiKeyData, ...prev]);
         setNewApiKeyName("");
-        // Recargar lista
-        window.location.reload();
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
