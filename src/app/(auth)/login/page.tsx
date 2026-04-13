@@ -3,7 +3,6 @@
 
 import { useState, useEffect, useCallback, FormEvent } from "react"
 import { signIn } from "next-auth/react"
-import { useRouter } from "next/navigation"
 
 type Lang = "es" | "en"
 type LoginMode = "password" | "otp-request" | "otp-verify" | "forgot-request" | "forgot-code" | "forgot-new-password"
@@ -108,7 +107,6 @@ function GlobeIcon() {
 }
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
@@ -140,10 +138,9 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const result = await signIn("credentials", { email, password, loginMethod: "password", redirect: false })
-      if (result?.error) setError(l.errInvalid)
-      else router.push("/dashboard")
-    } catch { setError(l.errConnection) }
-    finally { setLoading(false) }
+      if (result?.error) { setError(l.errInvalid); setLoading(false) }
+      else window.location.href = "/dashboard"
+    } catch { setError(l.errConnection); setLoading(false) }
   }
 
   async function handleRequestCode(e?: FormEvent) {
@@ -166,10 +163,9 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const result = await signIn("credentials", { email, password: code, loginMethod: "otp", redirect: false })
-      if (result?.error) setError(l.errCodeInvalid)
-      else router.push("/dashboard")
-    } catch { setError(l.errConnection) }
-    finally { setLoading(false) }
+      if (result?.error) { setError(l.errCodeInvalid); setLoading(false) }
+      else window.location.href = "/dashboard"
+    } catch { setError(l.errConnection); setLoading(false) }
   }
 
   async function handleForgotRequest(e?: FormEvent) {
