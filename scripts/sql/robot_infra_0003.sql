@@ -18,12 +18,11 @@ COMMENT ON COLUMN real_estate_hub."Propyte_unidades".ext_legacy_property_id IS
   'UUID de public.properties.id que dio origen a esta unidad. Clave canonica de dedup para Robot 1 (estable independiente del status).';
 
 -- 2. Limpiar duplicados existentes (unidades creadas antes del fix)
---    Sin legacy_property_id no podemos deduplicar retroactivamente con seguridad,
---    asi que borramos TODAS las unidades del robot-01-classifier y dejamos
---    que la proxima corrida las recree con la clave correcta.
---    Esto es seguro porque son datos derivados — la fuente (public.properties) persiste.
+--    Solo borra si hay unidades SIN legacy_property_id (= creadas con el esquema viejo).
+--    Si ya tienen ext_legacy_property_id, no se borran (ya están correctas).
 DELETE FROM real_estate_hub."Propyte_unidades"
-WHERE ext_detection_source = 'robot-01-classifier';
+WHERE ext_detection_source = 'robot-01-classifier'
+  AND ext_legacy_property_id IS NULL;
 
 -- 3. Drop viejo partial index sobre ext_source_url (no va a ser util)
 DROP INDEX IF EXISTS real_estate_hub.idx_unidades_ext_source_url;

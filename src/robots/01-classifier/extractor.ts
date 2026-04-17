@@ -13,6 +13,36 @@
 import { resolveDeveloper } from "./dedup-developers";
 import { aggregatePrices, aggregateAmenities, pickByTieBreaker } from "./aggregators";
 import { normalizePriceToMxn } from "../shared/fx";
+
+/**
+ * Extrae un campo string de primer nivel del JSONB content.
+ * Ej: extractField(content_es, "metaTitle") → "Depto 2 Recs Preventa..."
+ */
+function extractField(
+  content: ContentJsonb | null | undefined,
+  key: string
+): string | null {
+  if (!content) return null;
+  const val = (content as Record<string, unknown>)[key];
+  return typeof val === "string" && val.trim() ? val.trim() : null;
+}
+
+/**
+ * Extrae un campo string de un sub-objeto del JSONB content.
+ * Ej: extractNested(content_es, "hero", "intro") → "Descubre una nueva..."
+ *     extractNested(content_es, "features", "body") → "Este departamento..."
+ */
+function extractNested(
+  content: ContentJsonb | null | undefined,
+  objectKey: string,
+  fieldKey: string
+): string | null {
+  if (!content) return null;
+  const obj = (content as Record<string, unknown>)[objectKey];
+  if (!obj || typeof obj !== "object") return null;
+  const val = (obj as Record<string, unknown>)[fieldKey];
+  return typeof val === "string" && val.trim() ? val.trim() : null;
+}
 import type { DryRunContext } from "../shared/dry-run";
 import type { DevelopmentGroup } from "./classifier";
 import type {
@@ -60,15 +90,29 @@ async function extractUnidad(
 
   const isPublished = p.status === "published";
 
+  // Extraer campos individuales del JSONB content → columnas TEXT separadas
+  const contentEs = isPublished ? p.content_es : null;
+  const contentEn = isPublished ? p.content_en : null;
+  const heroIntroEs = extractNested(contentEs, "hero", "intro");
+  const heroIntroEn = extractNested(contentEn, "hero", "intro");
+  const metaTitleEs = extractField(contentEs, "metaTitle");
+  const metaDescEs = extractField(contentEs, "metaDescription");
+
   return {
     id_desarrollo: idDesarrollo,
     id_desarrollador: idDesarrollador,
-    titulo_unidad: isPublished ? p.title : null, // SENSITIVE
+    // titulo: metaTitle del content (NO nombre del desarrollo para evitar deteccion)
+    titulo_unidad: metaTitleEs ?? (isPublished ? p.title : null),
+    descripcion_larga_unidad: heroIntroEs,
+    descripcion_corta_unidad: heroIntroEs ? heroIntroEs.slice(0, 250) : null,
+    ext_descripcion_en: heroIntroEn,
+    meta_title_unidad: metaTitleEs,
+    meta_description_unidad: metaDescEs,
     // slug_unidad: NO setear desde scraper (slug_adjective de Felipe trae
     //   adjetivos repetidos como "privado", "de-lujo" que chocan con UNIQUE).
     //   Un humano debe asignar slug URL-safe al publicar.
-    ext_content_es: isPublished ? p.content_es : null, // SENSITIVE
-    ext_content_en: isPublished ? p.content_en : null,
+    ext_content_es: contentEs, // JSONB raw como respaldo
+    ext_content_en: contentEn,
     ext_content_fr: isPublished ? p.content_fr : null,
     ext_content_hash: p.content_hash,
     ext_source_url: isPublished ? p.source_url : null, // SENSITIVE (revela rival domain)
@@ -188,6 +232,12 @@ async function extractDesarrollo(
   // Property types unicos del grupo (para ext_property_types array)
   const propertyTypesSet = new Set(properties.map((p) => p.property_type).filter(Boolean));
 
+  // Extraer campos individuales del JSONB content → columnas TEXT separadas
+  const heroIntroEs = extractNested(contentEs, "hero", "intro");
+  const heroIntroEn = extractNested(contentEn, "hero", "intro");
+  const metaTitleEs = extractField(contentEs, "metaTitle");
+  const metaDescEs = extractField(contentEs, "metaDescription");
+
   return {
     nombre_desarrollo: displayName,
     id_desarrollador: idDesarrollador,
@@ -195,6 +245,14 @@ async function extractDesarrollo(
     ext_precio_min_mxn: prices.minMxn,
     ext_precio_max_mxn: prices.maxMxn,
     ext_moneda: "MXN", // siempre guardamos en MXN normalizado
+    // Contenido separado en columnas TEXT
+    ext_descripcion_es: heroIntroEs,
+    ext_descripcion_en: heroIntroEn,
+    ext_descripcion_corta_es: heroIntroEs ? heroIntroEs.slice(0, 250) : null,
+    ext_descripcion_corta_en: heroIntroEn ? heroIntroEn.slice(0, 250) : null,
+    ext_meta_title_desarrollo: metaTitleEs,
+    ext_meta_description_desarrollo: metaDescEs,
+    // JSONB raw como respaldo
     ext_content_es: contentEs,
     ext_content_en: contentEn,
     ext_content_fr: contentFr,

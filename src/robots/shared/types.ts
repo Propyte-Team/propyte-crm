@@ -147,6 +147,10 @@ export interface PropyteDesarrolloWrite {
   ext_moneda?: string | null;
   ext_descripcion_es?: string | null;
   ext_descripcion_en?: string | null;
+  ext_descripcion_corta_es?: string | null;
+  ext_descripcion_corta_en?: string | null;
+  ext_meta_title_desarrollo?: string | null;
+  ext_meta_description_desarrollo?: string | null;
   ext_content_es?: ContentJsonb | null;
   ext_content_en?: ContentJsonb | null;
   ext_content_fr?: ContentJsonb | null;
@@ -206,6 +210,10 @@ export interface PropyteUnidadWrite {
   ext_tipologia?: string | null;
   ext_precio_venta?: number | null;
   ext_descripcion_en?: string | null;
+  descripcion_corta_unidad?: string | null;
+  descripcion_larga_unidad?: string | null;
+  meta_title_unidad?: string | null;
+  meta_description_unidad?: string | null;
   ext_content_es?: ContentJsonb | null;
   ext_content_en?: ContentJsonb | null;
   ext_content_fr?: ContentJsonb | null;
