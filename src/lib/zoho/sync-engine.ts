@@ -98,18 +98,27 @@ async function syncDevelopmentsToZoho(
   result: SyncRunResult,
   logs: SyncLogEntry[]
 ): Promise<void> {
-  // Get approved developments that need sync
-  const { data: developments, error } = await supabase
+  // Get approved developments — filter sync-needed in JS
+  // (PostgREST can't compare column vs column in .or())
+  const { data: allApproved, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_desarrollos")
     .select("*")
-    .in("zoho_pipeline_status", ["aprobado", "listo"])
-    .or("zoho_record_id.is.null,updated_at.gt.zoho_last_synced_at");
+    .in("zoho_pipeline_status", ["aprobado", "listo"]);
 
-  if (error || !developments?.length) {
+  if (error || !allApproved?.length) {
     if (error) console.error("[SYNC] Error fetching developments:", error.message);
     return;
   }
+
+  // Filter: needs sync if no zoho_record_id OR updated after last sync
+  const developments = allApproved.filter((d: Record<string, unknown>) => {
+    if (!d.zoho_record_id) return true;
+    if (!d.zoho_last_synced_at) return true;
+    return new Date(d.updated_at as string) > new Date(d.zoho_last_synced_at as string);
+  });
+
+  if (!developments.length) return;
 
   // Split into creates (no zoho_record_id) and updates
   const toCreate = developments.filter((d: Record<string, unknown>) => !d.zoho_record_id);
@@ -264,15 +273,22 @@ async function syncUnitsToZoho(
     approvedDevs.map((d: Record<string, unknown>) => [d.id as string, d.zoho_record_id as string])
   );
 
-  // Get units that need sync
-  const { data: units, error } = await supabase
+  // Get units from approved developments — filter sync-needed in JS
+  const { data: allUnits, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_unidades")
     .select("*")
-    .in("id_desarrollo", devIds)
-    .or("zoho_record_id.is.null,updated_at.gt.zoho_last_synced_at");
+    .in("id_desarrollo", devIds);
 
-  if (error || !units?.length) return;
+  if (error || !allUnits?.length) return;
+
+  const units = allUnits.filter((u: Record<string, unknown>) => {
+    if (!u.zoho_record_id) return true;
+    if (!u.zoho_last_synced_at) return true;
+    return new Date(u.updated_at as string) > new Date(u.zoho_last_synced_at as string);
+  });
+
+  if (!units.length) return;
 
   // Filtrar unidades cuyo desarrollo padre tiene Zoho ID
   const unitsWithParent = units
