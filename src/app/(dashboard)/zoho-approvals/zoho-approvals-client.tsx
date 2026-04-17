@@ -133,6 +133,7 @@ interface Developer {
   ext_ciudad: string | null;
   ext_estado: string | null;
   es_verificado: boolean | null;
+  ext_publicado: boolean | null;
   zoho_pipeline_status: string;
   zoho_record_id: string | null;
   zoho_last_synced_at: string | null;
@@ -505,6 +506,7 @@ export function ZohoApprovalsClient() {
   const [filterDev, setFilterDev] = useState("all");
   const [filterCompleteness, setFilterCompleteness] = useState(0);
   const [filterZoho, setFilterZoho] = useState<"all" | "synced" | "not_synced">("all");
+  const [filterWeb, setFilterWeb] = useState<"all" | "published" | "not_published">("all");
   const [sortBy, setSortBy] = useState<"name" | "completeness" | "city">("completeness");
   const [search, setSearch] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -602,6 +604,8 @@ export function ZohoApprovalsClient() {
       if (filterCity !== "all" && d.ext_ciudad !== filterCity) return false;
       if (filterZoho === "synced" && !d.zoho_record_id) return false;
       if (filterZoho === "not_synced" && d.zoho_record_id) return false;
+      if (filterWeb === "published" && !d.ext_publicado) return false;
+      if (filterWeb === "not_published" && d.ext_publicado) return false;
       if (d._completeness.pct < filterCompleteness) return false;
       if (search && !d.nombre_desarrollador?.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
@@ -624,6 +628,8 @@ export function ZohoApprovalsClient() {
       if (filterCity !== "all" && d.ciudad !== filterCity) return false;
       if (filterZoho === "synced" && !d.zoho_record_id) return false;
       if (filterZoho === "not_synced" && d.zoho_record_id) return false;
+      if (filterWeb === "published" && !d.ext_publicado) return false;
+      if (filterWeb === "not_published" && d.ext_publicado) return false;
       if (d._completeness.pct < filterCompleteness) return false;
       if (search && !d.nombre_desarrollo?.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
@@ -648,6 +654,8 @@ export function ZohoApprovalsClient() {
         if (filterStatus === "not_synced" && u.zoho_record_id) return false;
         if (filterStatus === "aprobado" && u.desarrollo_pipeline_status !== "aprobado" && u.desarrollo_pipeline_status !== "listo") return false;
       }
+      if (filterWeb === "published" && !u.ext_publicado) return false;
+      if (filterWeb === "not_published" && u.ext_publicado) return false;
       if (filterDev !== "all" && u.desarrollo_nombre !== filterDev) return false;
       if (u._completeness.pct < filterCompleteness) return false;
       if (search && !u.slug_unidad?.toLowerCase().includes(search.toLowerCase()) &&
@@ -687,7 +695,7 @@ export function ZohoApprovalsClient() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterStatus, filterCity, filterDev, filterCompleteness, filterZoho, sortBy]);
+  }, [search, filterStatus, filterCity, filterDev, filterCompleteness, filterZoho, filterWeb, sortBy]);
 
   // --- Stats ---
   const developerStats = {
@@ -727,7 +735,7 @@ export function ZohoApprovalsClient() {
   };
 
   const tabLabel = activeTab === "developers" ? "desarrolladores" : activeTab === "developments" ? "desarrollos" : "propiedades";
-  const colSpan = activeTab === "units" ? 9 : 8;
+  const colSpan = activeTab === "units" ? 10 : 9;
 
   if (loading) {
     return (
@@ -825,6 +833,12 @@ export function ZohoApprovalsClient() {
               <option value="synced">En Zoho CRM</option>
               <option value="not_synced">Sin Zoho CRM</option>
             </select>
+            <select value={filterWeb} onChange={(e) => setFilterWeb(e.target.value as "all" | "published" | "not_published")}
+              className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+              <option value="all">Web: Todos</option>
+              <option value="published">En sitio web</option>
+              <option value="not_published">No en sitio web</option>
+            </select>
           </>
         ) : activeTab === "developments" ? (
           <>
@@ -844,6 +858,12 @@ export function ZohoApprovalsClient() {
               <option value="synced">En Zoho CRM</option>
               <option value="not_synced">Sin Zoho CRM</option>
             </select>
+            <select value={filterWeb} onChange={(e) => setFilterWeb(e.target.value as "all" | "published" | "not_published")}
+              className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+              <option value="all">Web: Todos</option>
+              <option value="published">En sitio web</option>
+              <option value="not_published">No en sitio web</option>
+            </select>
           </>
         ) : (
           <>
@@ -859,6 +879,12 @@ export function ZohoApprovalsClient() {
               className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
               <option value="all">Todos los desarrollos</option>
               {unitDevNames.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <select value={filterWeb} onChange={(e) => setFilterWeb(e.target.value as "all" | "published" | "not_published")}
+              className="rounded-md border px-3 py-2 text-sm" style={{ background: "var(--bg-base)" }}>
+              <option value="all">Web: Todos</option>
+              <option value="published">En sitio web</option>
+              <option value="not_published">No en sitio web</option>
             </select>
           </>
         )}
@@ -964,6 +990,7 @@ export function ZohoApprovalsClient() {
                   <th className="text-right px-3 py-3 font-medium">Precio desde</th>
                   <th className="text-center px-3 py-3 font-medium">Completitud</th>
                   <th className="text-center px-3 py-3 font-medium">Pipeline</th>
+                  <th className="text-center px-3 py-3 font-medium">Web</th>
                   <th className="text-center px-3 py-3 font-medium">Zoho</th>
                 </>
               ) : (
@@ -975,6 +1002,7 @@ export function ZohoApprovalsClient() {
                   <th className="text-right px-3 py-3 font-medium">Precio</th>
                   <th className="text-center px-3 py-3 font-medium">Completitud</th>
                   <th className="text-center px-3 py-3 font-medium">Status</th>
+                  <th className="text-center px-3 py-3 font-medium">Web</th>
                   <th className="text-center px-3 py-3 font-medium">Zoho</th>
                 </>
               )}
@@ -1091,6 +1119,12 @@ function DeveloperRow({ dev, ...props }: { dev: Developer } & ExpandableRowProps
         </select>
       </td>
       <td className="px-3 py-3 text-center">
+        {dev.ext_publicado
+          ? <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" title="En sitio web" />
+          : <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" title="No en sitio web" />
+        }
+      </td>
+      <td className="px-3 py-3 text-center">
         <ZohoDot synced={!!dev.zoho_record_id} approved={["aprobado", "listo"].includes(dev.zoho_pipeline_status)} />
       </td>
     </tr>
@@ -1124,6 +1158,12 @@ function DevelopmentRow({ dev, ...props }: { dev: Development } & ExpandableRowP
           disabled={props.updating} className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 ${badge.color}`}>
           {PIPELINE_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
+      </td>
+      <td className="px-3 py-3 text-center">
+        {dev.ext_publicado
+          ? <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" title="En sitio web" />
+          : <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" title="No en sitio web" />
+        }
       </td>
       <td className="px-3 py-3 text-center">
         <ZohoDot synced={!!dev.zoho_record_id} approved={["aprobado", "listo"].includes(dev.zoho_pipeline_status)} />
@@ -1172,6 +1212,12 @@ function UnitRow({ unit, completeness, selected, onToggle, expanded, onExpand }:
         }`}>
           {unit.estado_unidad || "\u2014"}
         </span>
+      </td>
+      <td className="px-3 py-3 text-center">
+        {unit.ext_publicado
+          ? <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" title="En sitio web" />
+          : <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" title="No en sitio web" />
+        }
       </td>
       <td className="px-3 py-3 text-center">
         <ZohoDot synced={!!unit.zoho_record_id} approved={isDevApproved} />
@@ -1280,6 +1326,30 @@ function EntityDetailPanel({ sections, record, colSpan, zohoStatus, entityType, 
   entityId: string;
   onRefresh: () => void;
 }) {
+  const [duplicating, setDuplicating] = useState(false);
+
+  const handleDuplicate = async () => {
+    if (!confirm("¿Duplicar este registro? Se creará una copia con status 'Discovery' y sin datos de Zoho.")) return;
+    setDuplicating(true);
+    try {
+      const res = await fetch("/api/zoho/approvals/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: entityId, entity_type: entityType }),
+      });
+      if (res.ok) {
+        onRefresh();
+      } else {
+        const err = await res.json();
+        alert("Error al duplicar: " + (err.error || "Error desconocido"));
+      }
+    } catch {
+      alert("Error de red al duplicar");
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const zohoFields = sections.flatMap((s) => s.fields.filter((f) => f.zoho));
   const zohoFilled = zohoFields.filter((f) => fieldHasValue(f, record)).length;
   const webFields = sections.flatMap((s) => s.fields.filter((f) => f.web));
@@ -1332,6 +1402,12 @@ function EntityDetailPanel({ sections, record, colSpan, zohoStatus, entityType, 
               </div>
             </div>
           </div>
+          <div className="border-t pt-4 mt-4 flex gap-2">
+            <button onClick={handleDuplicate} disabled={duplicating}
+              className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1.5">
+              {duplicating ? "Duplicando..." : "\u2398 Duplicar registro"}
+            </button>
+          </div>
         </div>
       </td>
     </tr>
@@ -1343,6 +1419,30 @@ function UnitDetailPanel({ unit, onToggleWeb, onRefresh }: {
   onToggleWeb: (id: string, value: boolean) => void;
   onRefresh: () => void;
 }) {
+  const [duplicating, setDuplicating] = useState(false);
+
+  const handleDuplicate = async () => {
+    if (!confirm("¿Duplicar esta unidad? Se creará una copia con status 'Discovery' y sin datos de Zoho.")) return;
+    setDuplicating(true);
+    try {
+      const res = await fetch("/api/zoho/approvals/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: unit.id, entity_type: "unit" }),
+      });
+      if (res.ok) {
+        onRefresh();
+      } else {
+        const err = await res.json();
+        alert("Error al duplicar: " + (err.error || "Error desconocido"));
+      }
+    } catch {
+      alert("Error de red al duplicar");
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const isDevApproved = ["aprobado", "listo"].includes(unit.desarrollo_pipeline_status);
   const rec = unit as unknown as Record<string, unknown>;
 
@@ -1355,7 +1455,7 @@ function UnitDetailPanel({ unit, onToggleWeb, onRefresh }: {
 
   return (
     <tr>
-      <td colSpan={9} className="px-0 py-0">
+      <td colSpan={10} className="px-0 py-0">
         <div className="border-t-2 border-blue-200 bg-slate-50 px-6 py-5" onClick={(e) => e.stopPropagation()}>
           <EditPanel sections={UNIT_DETAIL_SECTIONS} record={rec} entityType="unit" entityId={unit.id} onSaved={onRefresh} />
           <FieldGrid sections={UNIT_DETAIL_SECTIONS} record={rec} />
@@ -1416,6 +1516,12 @@ function UnitDetailPanel({ unit, onToggleWeb, onRefresh }: {
                 {unit.ext_publicado ? "\u2713 Publicado en web" : "No publicado"}
               </div>
             </div>
+          </div>
+          <div className="border-t pt-4 mt-4 flex gap-2">
+            <button onClick={handleDuplicate} disabled={duplicating}
+              className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1.5">
+              {duplicating ? "Duplicando..." : "\u2398 Duplicar registro"}
+            </button>
           </div>
         </div>
       </td>
