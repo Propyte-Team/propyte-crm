@@ -198,11 +198,11 @@ export function aggregateAmenities(
 // Tie-breaker helper para scalars desde PublicProperty
 // ============================================================
 
+type TieBreakerProperty = PublicProperty & { source_domain: string };
+
 export function buildCandidates<T>(
-  properties: Array<
-    Pick<PublicProperty, "id" | "status" | "last_seen_at"> & { source_domain: string }
-  >,
-  extractor: (p: (typeof properties)[number]) => T | null
+  properties: TieBreakerProperty[],
+  extractor: (p: TieBreakerProperty) => T | null
 ): Candidate<T>[] {
   return properties.map((p) => ({
     propertyId: p.id,
@@ -214,10 +214,8 @@ export function buildCandidates<T>(
 }
 
 export function pickByTieBreaker<T>(
-  properties: Array<
-    Pick<PublicProperty, "id" | "status" | "last_seen_at"> & { source_domain: string }
-  >,
-  extractor: (p: (typeof properties)[number]) => T | null,
+  properties: TieBreakerProperty[],
+  extractor: (p: TieBreakerProperty) => T | null,
   fieldName: string
 ): T | null {
   const candidates = buildCandidates(properties, extractor);
