@@ -13,7 +13,14 @@
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
     "create:user-marketing": "tsx scripts/create-user-marketing.ts",
-    "seed:admins": "tsx scripts/seed-admin-users.ts"
+    "seed:admins": "tsx scripts/seed-admin-users.ts",
+    "robot:01": "tsx src/robots/01-classifier/run.ts",
+    "robot:02": "tsx src/robots/02-images/run.ts",
+    "robot:04": "tsx src/robots/04-geo/run.ts",
+    "robot:05": "tsx src/robots/05-ai-content/run.ts",
+    "robot:smoke": "tsx src/robots/shared/__smoke__.ts",
+    "robot:migrate": "tsx scripts/apply-robot-migrations.ts",
+    "robot:verify": "tsx scripts/verify-robot-run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

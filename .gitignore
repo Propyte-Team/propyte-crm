@@ -41,3 +41,4 @@ next-env.d.ts
 *.p12
 *.pfx
 .claude/settings.local.json
+scripts/migrated-users.json

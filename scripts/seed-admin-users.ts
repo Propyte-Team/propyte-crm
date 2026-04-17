@@ -7,11 +7,11 @@ const prisma = new PrismaClient();
 
 const adminUsers = [
   {
-    email: "fluksic@nativatulum.mx",
-    name: "Felipe Solar Luksic",
-    password: "Luisesmifav",
+    email: "nacho@propyte.com",
+    name: "Nacho Propyte",
+    password: "Propyte2026",
     role: "ADMIN" as const,
-    plaza: "TULUM" as const,
+    plaza: "PDC" as const,
   },
   {
     email: "marketing@nativatulum.mx",
