@@ -1,0 +1,25 @@
+name: Refresh rental_estimates (materialized view)
+
+on:
+  schedule:
+    # Diario a las 05:00 UTC (23:00 CDMX)
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Refresh materialized view
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: npx tsx scripts/refresh-rental-estimates.ts
