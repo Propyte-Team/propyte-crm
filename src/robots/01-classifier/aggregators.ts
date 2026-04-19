@@ -87,10 +87,10 @@ export const AMENITY_MAP: AmenityMapping[] = [
   { pattern: /alberca|piscina|pool|swimming|chapoteadero/, target: "amenidad_alberca_comunitaria" },
   // Gym / fitness
   { pattern: /gimnasio|gym|fitness/, target: "amenidad_gym" },
-  // Salon eventos / casa club (eventos sociales)
-  { pattern: /salon[\s_]eventos|salon[\s_]de[\s_]eventos|event[\s_]hall|salon[\s_]fiestas|casa[\s_]club|club[\s_]house|teens?[\s_]club/, target: "amenidad_salon_eventos" },
-  // Coworking
-  { pattern: /coworking|workspace|business[\s_]center/, target: "amenidad_coworking" },
+  // Salon eventos / casa club (eventos sociales, incluye usos multiples/SUM)
+  { pattern: /salon[\s_]eventos|salon[\s_]de[\s_]eventos|event[\s_]hall|salon[\s_]fiestas|casa[\s_]club|club[\s_]house|teens?[\s_]club|usos[\s_]multiples|salon[\s_]multiple|^sum$|\bsum\b/, target: "amenidad_salon_eventos" },
+  // Coworking (incluye "cowork" sin -ing, "area cowork")
+  { pattern: /cowork|workspace|business[\s_]center/, target: "amenidad_coworking" },
   // Rooftop (azotea, roof garden, sky bar, motor lobby NO, palapa si)
   { pattern: /rooftop|roof[\s_]garden|azotea|sky[\s_]bar|sky[\s_]deck|palapa|terraza[\s_]principal/, target: "amenidad_rooftop" },
   // Fire pit / asadores / bbq
@@ -111,8 +111,8 @@ export const AMENITY_MAP: AmenityMapping[] = [
   { pattern: /seguridad|vigilancia|caseta[\s_]seguridad/, target: "amenidad_seguridad_24h" },
   // CCTV / camaras (sin acentos - normalizado)
   { pattern: /cctv|camaras?|video[\s_]vigilancia/, target: "amenidad_cctv" },
-  // Acceso controlado
-  { pattern: /acceso[\s_]contr|controlled[\s_]access|access[\s_]control/, target: "amenidad_acceso_controlado" },
+  // Acceso controlado (incluye "control de acceso" en orden inverso)
+  { pattern: /acceso[\s_]contr|control[\s_]de[\s_]acceso|controlled[\s_]access|access[\s_]control/, target: "amenidad_acceso_controlado" },
   // Lobby
   { pattern: /^lobby|lobby[\s_]|motor[\s_]lobby/, target: "amenidad_lobby" },
   // Elevador
