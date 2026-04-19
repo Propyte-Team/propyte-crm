@@ -199,40 +199,6 @@ async function upsertUnidad(ctx: DryRunContext, payload: PropyteUnidadWrite): Pr
   );
 }
 
-/**
- * Serializa un valor JS para $executeRawUnsafe / $queryRawUnsafe.
- * - Date → ISO string (Postgres lo acepta como timestamptz)
- * - objects/arrays → JSON string (Postgres lo acepta como jsonb via cast implicito... NO)
- *
- * Para jsonb necesitamos JSON string Y cast en el SQL. Para evitar complejidad
- * del SQL generador, hacemos JSON.stringify aqui y asumimos que la columna
- * es jsonb (Postgres hace el cast automatico desde text en INSERT).
- *
- * NOTA: Postgres NO hace cast text→jsonb automatico. Usamos $N::jsonb en el SQL.
- * Por ahora: pasamos el string y confiamos en que las columnas jsonb acepten text
- * via cast explicito. Si falla, mejoramos el generador.
- */
-function serializeValue(v: unknown): unknown {
-  if (v == null) return null;
-  if (v instanceof Date) return v.toISOString();
-  if (typeof v === "bigint") return Number(v);
-
-  // Prisma Decimal (numeric columns): tiene .toNumber() y .toFixed()
-  // Detectable por el method toNumber que no existe en objetos planos
-  if (typeof v === "object") {
-    const asAny = v as { toNumber?: () => number; s?: number; e?: number; d?: number[] };
-    if (typeof asAny.toNumber === "function" && Array.isArray(asAny.d)) {
-      return asAny.toNumber();
-    }
-    // Array JS plano (ej text[] de Postgres) pasa directo
-    if (Array.isArray(v)) return v;
-    // jsonb objetos: JSON.stringify
-    return JSON.stringify(v);
-  }
-
-  return v;
-}
-
 async function main() {
   const opts = parseCli();
   const logger = new RobotLogger("01-classifier");
