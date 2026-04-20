@@ -238,6 +238,9 @@ export interface PropyteUnidadWrite {
   // imagenes (llenado por Robot 2)
   fotos_unidad?: string[] | null;
   foto_portada_unidad?: string | null;
+  // status de Felipe/mpgenesis (draft/review/possible_duplicate/published).
+  // El trigger real_estate_hub.fn_recompute_dev_genesis_status lo propaga al padre.
+  genesis_status?: string | null;
 }
 
 // ============================================================

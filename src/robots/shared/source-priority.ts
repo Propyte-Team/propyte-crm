@@ -33,6 +33,7 @@ export const SOURCE_PRIORITY: readonly string[] = [
   "goodlers.com",
   "propiedadescancun.mx",
   "listing.caribeluxuryhomes.com",
+  "mayaocean.com",
   "plalla.com",
   "luumorealestate.com",
   "novalproperties.com",

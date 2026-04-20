@@ -10,9 +10,10 @@
  * NO ejecuta los UPSERTs — retorna payloads listos para el writer en run.ts.
  */
 
-import { resolveDeveloper } from "./dedup-developers";
+import { resolveDeveloper, getDevStats } from "./dedup-developers";
 import { aggregatePrices, aggregateAmenities, pickByTieBreaker } from "./aggregators";
 import { normalizePriceToMxn } from "../shared/fx";
+import { sanitizeFaqs } from "../shared/developer-blacklist";
 
 /**
  * Extrae un campo string de primer nivel del JSONB content.
@@ -90,9 +91,18 @@ async function extractUnidad(
 
   const isPublished = p.status === "published";
 
-  // Extraer campos individuales del JSONB content → columnas TEXT separadas
-  const contentEs = isPublished ? p.content_es : null;
-  const contentEn = isPublished ? p.content_en : null;
+  // Descripciones/SEO: SENSITIVE (solo published)
+  const sensitiveContentEs = isPublished ? p.content_es : null;
+  const sensitiveContentEn = isPublished ? p.content_en : null;
+
+  // FAQs: NEUTRAL (cualquier status — generadas por AI, no contienen branding rival)
+  const faqsFromContent = p.content_es
+    ? sanitizeFaqs((p.content_es as Record<string, unknown>).faq as any)
+    : null;
+  // Merge: contenido sensitive + FAQs neutrales
+  const contentEs = buildMergedContent(sensitiveContentEs, faqsFromContent);
+  const contentEn = sensitiveContentEn;
+
   const heroIntroEs = extractNested(contentEs, "hero", "intro");
   const heroIntroEn = extractNested(contentEn, "hero", "intro");
   const metaTitleEs = extractField(contentEs, "metaTitle");
@@ -111,7 +121,7 @@ async function extractUnidad(
     // slug_unidad: NO setear desde scraper (slug_adjective de Felipe trae
     //   adjetivos repetidos como "privado", "de-lujo" que chocan con UNIQUE).
     //   Un humano debe asignar slug URL-safe al publicar.
-    ext_content_es: contentEs, // JSONB raw como respaldo
+    ext_content_es: contentEs, // JSONB con FAQs neutrales mergeadas
     ext_content_en: contentEn,
     ext_content_fr: isPublished ? p.content_fr : null,
     ext_content_hash: p.content_hash,
@@ -130,6 +140,10 @@ async function extractUnidad(
     estacionamientos: p.parking_spaces,
     estado_unidad: mapListingTypeToStatus(p.listing_type),
     // ext_numero_unidad: NO setear desde slug_adjective (mismo problema)
+    // genesis_status: el status de Felipe/mpgenesis (draft/review/possible_duplicate/published).
+    // El trigger real_estate_hub.fn_recompute_dev_genesis_status propaga el "más avanzado"
+    // de los genesis_status de las unidades hijas al Propyte_desarrollos padre.
+    genesis_status: p.status,
   };
 }
 
@@ -146,6 +160,93 @@ function mapListingTypeToStatus(t: PublicProperty["listing_type"]): string {
   }
 }
 
+// ─── NORMALIZACIÓN DE CIUDADES ────────────────────────────────
+// Mapa de variantes conocidas → forma canónica.
+// Resuelve: "Cancun"→"Cancún", "Playa Del Carmen"→"Playa del Carmen", etc.
+const CITY_NORMALIZATION: Record<string, string> = {
+  "cancun": "Cancún",
+  "merida": "Mérida",
+  "playa del carmen": "Playa del Carmen",
+  "valladolid": "Valladolid",
+  "tulum": "Tulum",
+  "puerto morelos": "Puerto Morelos",
+  "bacalar": "Bacalar",
+  "cozumel": "Cozumel",
+  "isla mujeres": "Isla Mujeres",
+  "puerto aventuras": "Puerto Aventuras",
+  "akumal": "Akumal",
+  "mahahual": "Mahahual",
+  "punta cana": "Punta Cana",
+  "las terrenas": "Las Terrenas",
+};
+
+const STATE_NORMALIZATION: Record<string, string> = {
+  "quintana roo": "Quintana Roo",
+  "yucatan": "Yucatán",
+  "la altagracia": "La Altagracia",
+  "punta cana": "Punta Cana",
+};
+
+function normalizeCity(city: string | null): string | null {
+  if (!city) return null;
+  const key = city.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return CITY_NORMALIZATION[key] ?? city.trim();
+}
+
+function normalizeState(state: string | null): string | null {
+  if (!state) return null;
+  const key = state.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return STATE_NORMALIZATION[key] ?? state.trim();
+}
+
+/**
+ * Extrae FAQs como campo NEUTRAL: se toman de cualquier status (review o published)
+ * porque son generadas por AI (MPgenesis), no contienen branding rival.
+ * Se sanitizan para remover menciones de brokers/agencias.
+ */
+function extractFaqsNeutral(
+  properties: EnrichedProperty[]
+): Array<{ question: string; answer: string }> | null {
+  // Buscar la mejor propiedad que tenga FAQs (cualquier status)
+  for (const p of properties) {
+    const content = p.content_es;
+    if (!content) continue;
+    const faq = (content as Record<string, unknown>).faq;
+    if (Array.isArray(faq) && faq.length > 0) {
+      return sanitizeFaqs(faq as Array<{ question: string; answer: string }>);
+    }
+  }
+  return null;
+}
+
+/**
+ * Construye un content JSONB completo mezclando:
+ *  - Descripciones/SEO del contenido SENSITIVE (solo published)
+ *  - FAQs del contenido NEUTRAL (cualquier status, sanitizadas)
+ */
+function buildMergedContent(
+  sensitiveContent: ContentJsonb | null,
+  neutralFaqs: Array<{ question: string; answer: string }> | null
+): ContentJsonb | null {
+  if (!sensitiveContent && !neutralFaqs) return null;
+
+  // Si hay contenido sensitive, mezclamos las FAQs neutrales
+  if (sensitiveContent) {
+    const merged = { ...sensitiveContent };
+    if (neutralFaqs && neutralFaqs.length > 0) {
+      (merged as Record<string, unknown>).faq = neutralFaqs;
+    }
+    return merged;
+  }
+
+  // Si solo hay FAQs neutrales sin contenido sensitive, creamos un JSONB mínimo
+  if (neutralFaqs && neutralFaqs.length > 0) {
+    return { faq: neutralFaqs } as unknown as ContentJsonb;
+  }
+
+  return null;
+}
+
 /**
  * Extrae datos a nivel desarrollo: agrega + tie-breaker sobre las properties del grupo.
  */
@@ -160,12 +261,12 @@ async function extractDesarrollo(
   const amenities = aggregateAmenities(properties);
 
   // Content jsonb (SENSITIVE — tie-breaker ya filtra por published)
-  const contentEs = pickByTieBreaker<ContentJsonb | null>(
+  const contentEsSensitive = pickByTieBreaker<ContentJsonb | null>(
     properties,
     (p) => p.content_es,
     "content_es"
   );
-  const contentEn = pickByTieBreaker<ContentJsonb | null>(
+  const contentEnSensitive = pickByTieBreaker<ContentJsonb | null>(
     properties,
     (p) => p.content_en,
     "content_en"
@@ -176,7 +277,13 @@ async function extractDesarrollo(
     "content_fr"
   );
 
-  // Geo (NEUTRAL)
+  // FAQs (NEUTRAL — se toman de cualquier status, sanitizadas)
+  const faqsEs = extractFaqsNeutral(properties);
+  // Merge: contenido sensitive + FAQs neutrales
+  const contentEs = buildMergedContent(contentEsSensitive, faqsEs);
+  const contentEn = contentEnSensitive; // EN FAQs se toman del mismo content si existe
+
+  // Geo (NEUTRAL) — con normalización de ciudades
   const latitud = pickByTieBreaker<number | null>(
     properties,
     (p) => p.latitude,
@@ -187,12 +294,12 @@ async function extractDesarrollo(
     (p) => p.longitude,
     "longitude"
   );
-  const estado = pickByTieBreaker<string | null>(
+  const estadoRaw = pickByTieBreaker<string | null>(
     properties,
     (p) => p.state ?? null,
     "state"
   );
-  const municipio = pickByTieBreaker<string | null>(
+  const municipioRaw = pickByTieBreaker<string | null>(
     properties,
     (p) => p.city ?? null,
     "city"
@@ -202,6 +309,10 @@ async function extractDesarrollo(
     (p) => p.neighborhood,
     "neighborhood"
   );
+
+  // Normalizar ciudades y estados
+  const estado = normalizeState(estadoRaw);
+  const municipio = normalizeCity(municipioRaw);
 
   // Source URL del desarrollo (SENSITIVE — solo de published)
   const sourceUrl = pickByTieBreaker<string | null>(
@@ -252,7 +363,7 @@ async function extractDesarrollo(
     ext_descripcion_corta_en: heroIntroEn ? heroIntroEn.slice(0, 250) : null,
     ext_meta_title_desarrollo: metaTitleEs,
     ext_meta_description_desarrollo: metaDescEs,
-    // JSONB raw como respaldo
+    // JSONB raw con FAQs neutrales mergeadas
     ext_content_es: contentEs,
     ext_content_en: contentEn,
     ext_content_fr: contentFr,
