@@ -1,9 +1,10 @@
 name: Robot 02 - Image Sync
 
 on:
-  schedule:
-    # 30 min despues del classifier para tener unidades creadas
-    - cron: '30 */6 * * *'
+  # Schedule disabled 2026-05-05: superseded by Propyte_hub image processor
+  # (src/lib/images/processor.ts + sync-to-hub.ts). Manual fallback only.
+  # schedule:
+  #   - cron: '30 */6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
