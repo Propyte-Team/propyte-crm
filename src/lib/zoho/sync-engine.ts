@@ -516,13 +516,15 @@ async function syncModuleFromZoho(
       });
     }
 
-    // Batch upsert to ID map
+    // Batch upsert to ID map (incluye last_seen_sync_at para detección de deletes)
     const idMapRows = records.map((record) => ({
       entity_type: config.entityType,
       supabase_id: record.id as string,
       zoho_module: config.zohoModule,
       zoho_record_id: record.id as string,
       zoho_modified_time: record.Modified_Time as string,
+      last_seen_sync_at: now,
+      consecutive_misses: 0,
     }));
 
     await batchUpsertToSupabase(
@@ -695,15 +697,20 @@ async function syncStatusBidirectional(
         ? new Date(dev.zoho_last_synced_at as string).getTime()
         : 0;
 
-      if (zohoModified > lastSynced) {
-        // Update ID map with latest Zoho modified time
-        await supabase
-          .schema("real_estate_hub")
-          .from("Propyte_zoho_id_map")
-          .update({ zoho_modified_time: zohoRecord.Modified_Time as string })
-          .eq("entity_type", "development")
-          .eq("supabase_id", dev.id as string);
+      // El registro existe en Zoho — refrescar last_seen para detección de deletes
+      const nowIso = new Date().toISOString();
+      await supabase
+        .schema("real_estate_hub")
+        .from("Propyte_zoho_id_map")
+        .update({
+          zoho_modified_time: zohoRecord.Modified_Time as string,
+          last_seen_sync_at: nowIso,
+          consecutive_misses: 0,
+        })
+        .eq("entity_type", "development")
+        .eq("supabase_id", dev.id as string);
 
+      if (zohoModified > lastSynced) {
         logs.push({
           sync_run_id: syncRunId,
           direction: "from_zoho",
