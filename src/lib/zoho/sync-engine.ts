@@ -98,32 +98,36 @@ async function syncDevelopmentsToZoho(
   result: SyncRunResult,
   logs: SyncLogEntry[]
 ): Promise<void> {
-  // Hub → Zoho: solo entidades donde el SOT es Hub
-  // (pipeline_status ∈ {Publicado, Rechazado, Terminado}). Borrador/Revision
-  // viven en Zoho y se descargan vía webhook + Fase 7 sync inicial.
-  const { data: allApproved, error } = await supabase
+  // Hub → Zoho: TODOS los estados se siembran en Zoho (decisión Luis 2026-05-22)
+  // para que asesores hagan revisión en Zoho UI desde Borrador.
+  // Pero los UPDATES respetan el SOT por estado:
+  //  - Borrador / Revision → SOT=Zoho. Hub solo CREATE inicial, NO updates.
+  //  - Publicado / Rechazado / Terminado → SOT=Hub. CREATE + UPDATE.
+  const { data: allDevs, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_desarrollos")
     .select("*")
-    .in("pipeline_status", ["Publicado", "Rechazado", "Terminado"]);
+    .in("pipeline_status", ["Borrador", "Revision", "Publicado", "Rechazado", "Terminado"]);
 
-  if (error || !allApproved?.length) {
+  if (error || !allDevs?.length) {
     if (error) console.error("[SYNC] Error fetching developments:", error.message);
     return;
   }
 
-  // Filter: needs sync if no zoho_record_id OR updated after last sync
-  const developments = allApproved.filter((d: Record<string, unknown>) => {
-    if (!d.zoho_record_id) return true;
+  // SOT=Hub para updates → Publicado/Rechazado/Terminado
+  const HUB_SOT_STATES = new Set(["Publicado", "Rechazado", "Terminado"]);
+
+  // toCreate: cualquier estado sin zoho_record_id (seed inicial)
+  // toUpdate: con zoho_record_id Y SOT=Hub Y mod desde último sync
+  const toCreate = allDevs.filter((d: Record<string, unknown>) => !d.zoho_record_id);
+  const toUpdate = allDevs.filter((d: Record<string, unknown>) => {
+    if (!d.zoho_record_id) return false;
+    if (!HUB_SOT_STATES.has(d.pipeline_status as string)) return false; // SOT=Zoho, skip
     if (!d.zoho_last_synced_at) return true;
     return new Date(d.updated_at as string) > new Date(d.zoho_last_synced_at as string);
   });
 
-  if (!developments.length) return;
-
-  // Split into creates (no zoho_record_id) and updates
-  const toCreate = developments.filter((d: Record<string, unknown>) => !d.zoho_record_id);
-  const toUpdate = developments.filter((d: Record<string, unknown>) => d.zoho_record_id);
+  if (!toCreate.length && !toUpdate.length) return;
 
   // Batch create new developments in Zoho
   if (toCreate.length > 0) {
@@ -259,40 +263,44 @@ async function syncUnitsToZoho(
   result: SyncRunResult,
   logs: SyncLogEntry[]
 ): Promise<void> {
-  // Get IDs of approved developments that have Zoho IDs
-  const { data: approvedDevs } = await supabase
+  // Get developments con zoho_record_id (cualquier pipeline_status, porque ahora todos van a Zoho)
+  const { data: parentDevs } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_desarrollos")
-    .select("id, zoho_record_id")
-    .in("pipeline_status", ["Publicado", "Rechazado", "Terminado"])
+    .select("id, zoho_record_id, pipeline_status")
     .not("zoho_record_id", "is", null);
 
-  if (!approvedDevs?.length) return;
+  if (!parentDevs?.length) return;
 
-  const devIds = approvedDevs.map((d: Record<string, unknown>) => d.id);
   const devZohoMap = new Map(
-    approvedDevs.map((d: Record<string, unknown>) => [d.id as string, d.zoho_record_id as string])
+    parentDevs.map((d: Record<string, unknown>) => [d.id as string, d.zoho_record_id as string])
   );
 
-  // Get units cuyo pipeline_status indica que Hub gana + dev padre publicado
+  // Units: TODOS los estados elegibles (seed inicial). Updates con SOT=Hub.
   const { data: allUnits, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_unidades")
     .select("*")
-    .in("id_desarrollo", devIds)
-    .in("pipeline_status", ["Publicado", "Rechazado", "Terminado"]);
+    .in("id_desarrollo", Array.from(devZohoMap.keys()))
+    .in("pipeline_status", ["Borrador", "Revision", "Publicado", "Rechazado", "Terminado"]);
 
   if (error || !allUnits?.length) return;
 
+  const HUB_SOT_STATES = new Set(["Publicado", "Rechazado", "Terminado"]);
+
+  // Filter sync-needed:
+  //  - sin zoho_record_id → siempre push (create)
+  //  - con zoho_record_id Y SOT=Hub Y modificado tras último sync → update
   const units = allUnits.filter((u: Record<string, unknown>) => {
-    if (!u.zoho_record_id) return true;
+    if (!u.zoho_record_id) return true; // create cualquier estado
+    if (!HUB_SOT_STATES.has(u.pipeline_status as string)) return false; // SOT=Zoho skip update
     if (!u.zoho_last_synced_at) return true;
     return new Date(u.updated_at as string) > new Date(u.zoho_last_synced_at as string);
   });
 
   if (!units.length) return;
 
-  // Filtrar unidades cuyo desarrollo padre tiene Zoho ID
+  // Filtrar unidades cuyo desarrollo padre tiene Zoho ID + cap a 100/batch
   const unitsWithParent = units
     .filter((u: Record<string, unknown>) => devZohoMap.has(u.id_desarrollo as string))
     .slice(0, 100);

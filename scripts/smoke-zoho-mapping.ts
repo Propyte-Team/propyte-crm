@@ -136,7 +136,7 @@ assert(
 );
 assert(zu.Rec_maras === "3", "Recamaras as TEXT");
 assert(zu.Ba_os === "2", "Banos as TEXT");
-assert(zu.Alberca === "Sí", "Alberca picklist Sí");
+assert(zu.Alberca === "Si", "Alberca picklist Si (sin tilde — Zoho prod)");
 assert(zu.Desarrollo && (zu.Desarrollo as any).id === "z-1", "Desarrollo lookup");
 assert(zu.Proyecto_inmobiliario && (zu.Proyecto_inmobiliario as any).id === "z-1", "Legacy lookup preserved");
 

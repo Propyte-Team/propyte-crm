@@ -323,9 +323,9 @@ export function unitToZoho(
     record.Keywords_SEO = (unit.keywords_unidad as string[]).join(", ");
   }
 
-  // Alberca legacy: bool → picklist Sí/No
+  // Alberca legacy: bool → picklist Si/No (Zoho usa "Si" SIN tilde)
   if (unit.ext_tiene_alberca === true) {
-    record.Alberca = "Sí";
+    record.Alberca = "Si";
   } else if (unit.ext_tiene_alberca === false) {
     record.Alberca = "No";
   }
