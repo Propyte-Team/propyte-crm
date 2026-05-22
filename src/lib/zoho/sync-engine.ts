@@ -98,13 +98,14 @@ async function syncDevelopmentsToZoho(
   result: SyncRunResult,
   logs: SyncLogEntry[]
 ): Promise<void> {
-  // Get approved developments — filter sync-needed in JS
-  // (PostgREST can't compare column vs column in .or())
+  // Hub → Zoho: solo entidades donde el SOT es Hub
+  // (pipeline_status ∈ {Publicado, Rechazado, Terminado}). Borrador/Revision
+  // viven en Zoho y se descargan vía webhook + Fase 7 sync inicial.
   const { data: allApproved, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_desarrollos")
     .select("*")
-    .in("zoho_pipeline_status", ["aprobado", "listo"]);
+    .in("pipeline_status", ["Publicado", "Rechazado", "Terminado"]);
 
   if (error || !allApproved?.length) {
     if (error) console.error("[SYNC] Error fetching developments:", error.message);
@@ -263,7 +264,7 @@ async function syncUnitsToZoho(
     .schema("real_estate_hub")
     .from("Propyte_desarrollos")
     .select("id, zoho_record_id")
-    .in("zoho_pipeline_status", ["aprobado", "listo"])
+    .in("pipeline_status", ["Publicado", "Rechazado", "Terminado"])
     .not("zoho_record_id", "is", null);
 
   if (!approvedDevs?.length) return;
@@ -273,12 +274,13 @@ async function syncUnitsToZoho(
     approvedDevs.map((d: Record<string, unknown>) => [d.id as string, d.zoho_record_id as string])
   );
 
-  // Get units from approved developments — filter sync-needed in JS
+  // Get units cuyo pipeline_status indica que Hub gana + dev padre publicado
   const { data: allUnits, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_unidades")
     .select("*")
-    .in("id_desarrollo", devIds);
+    .in("id_desarrollo", devIds)
+    .in("pipeline_status", ["Publicado", "Rechazado", "Terminado"]);
 
   if (error || !allUnits?.length) return;
 
@@ -673,7 +675,7 @@ async function syncStatusBidirectional(
   const { data: syncedDevs } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_desarrollos")
-    .select("id, zoho_record_id, zoho_pipeline_status, updated_at, zoho_last_synced_at")
+    .select("id, zoho_record_id, pipeline_status, updated_at, zoho_last_synced_at")
     .not("zoho_record_id", "is", null);
 
   if (!syncedDevs?.length) return;
