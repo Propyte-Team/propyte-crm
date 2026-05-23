@@ -132,6 +132,7 @@ export interface ZohoProyectoInmobiliario extends ZohoRecord {
   Pipeline_Status?: PipelineStatus;
   Slug_URL?: string;
   T_tulo_publicaci_n?: string;
+  Direcci_n_Flat_House_No_Building_Apartment_Name?: string;
   Descripci_n_corta_ES?: string;
   Descripci_n_ES?: string;
   Contenido_caracter_ES?: string;

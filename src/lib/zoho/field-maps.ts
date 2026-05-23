@@ -102,6 +102,7 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   // Identidad / SEO
   { supabase: "nombre_desarrollo", zoho: "Name" },
   { supabase: "ext_slug_desarrollo", zoho: "Slug_URL" },
+  { supabase: "titulo_publicacion", zoho: "T_tulo_publicaci_n" },
   { supabase: "ext_meta_title_desarrollo", zoho: "Meta_t_tulo" },
   { supabase: "ext_meta_description_desarrollo", zoho: "Meta_descripci_n" },
 
@@ -121,6 +122,7 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   { supabase: "avance_obra_porcentaje", zoho: "Avance_obra", transform: "to_number" },
   { supabase: "fecha_entrega", zoho: "Fecha_entrega", transform: "to_date" },
   { supabase: "unidades_totales", zoho: "Unidades_totales", transform: "to_integer" },
+  { supabase: "unidades_disponibles", zoho: "Unidades_disponibles", transform: "to_integer" },
   { supabase: "ext_reserved_units", zoho: "Unidades_reservadas", transform: "to_integer" },
   { supabase: "ext_sold_units", zoho: "Unidades_vendidas", transform: "to_integer" },
   { supabase: "fases_totales", zoho: "Fases_totales", transform: "to_integer" },
@@ -159,6 +161,7 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   // Colonia, Estado, Municipio, Pa_s, C_digo_Postal NO EXISTEN en Zoho prod
   // 2026-05-23, se ignoraban silenciosamente).
   { supabase: "calle", zoho: "Direcci_n_Street_Address" },
+  { supabase: "ext_numero_exterior", zoho: "Direcci_n_Flat_House_No_Building_Apartment_Name" },
   { supabase: "municipio", zoho: "Direcci_n_City" },
   { supabase: "estado", zoho: "Direcci_n_State_Province" },
   { supabase: "pais", zoho: "Direcci_n_Country_Region" },
@@ -167,6 +170,7 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   { supabase: "longitud", zoho: "Direcci_n_Coordinates_Longitude", transform: "to_number" },
   { supabase: "zona", zoho: "Zona" },
   { supabase: "ext_google_maps_url", zoho: "Maps_URL" },
+  // link_maps se aplica como fallback en developmentToZoho() si ext_google_maps_url está vacío
   { supabase: "playa_distancia", zoho: "Playa_distancia" },
   { supabase: "aeropuerto_nombre", zoho: "Aeropuerto_nombre" },
   { supabase: "aeropuerto_distancia", zoho: "Aeropuerto_distancia" },
@@ -236,6 +240,11 @@ export function developmentToZoho(
   // Foto portada — fallback al primer item del array
   if (!record.Cover_image_URL && Array.isArray(dev.fotos_desarrollo) && dev.fotos_desarrollo.length > 0) {
     record.Cover_image_URL = String(dev.fotos_desarrollo[0]);
+  }
+
+  // Maps_URL — fallback a link_maps si ext_google_maps_url está vacío
+  if (!record.Maps_URL && typeof dev.link_maps === "string" && dev.link_maps) {
+    record.Maps_URL = dev.link_maps;
   }
 
   return record;
@@ -459,8 +468,11 @@ export function zohoProyectoToSupabase(
     avance_obra_porcentaje: numOrNull(record.Avance_obra),
     fecha_entrega: pick<string>(record, "Fecha_entrega"),
     unidades_totales: numOrNull(record.Unidades_totales),
+    unidades_disponibles: numOrNull(record.Unidades_disponibles),
     ext_reserved_units: numOrNull(record.Unidades_reservadas),
     ext_sold_units: numOrNull(record.Unidades_vendidas),
+    titulo_publicacion: pick<string>(record, "T_tulo_publicaci_n"),
+    ext_numero_exterior: pick<string>(record, "Direcci_n_Flat_House_No_Building_Apartment_Name"),
     fases_totales: numOrNull(record.Fases_totales),
     fase_actual: numOrNull(record.Fase_actual),
     arquitecto: pick<string>(record, "Arquitecto"),
