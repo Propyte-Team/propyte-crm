@@ -277,14 +277,20 @@ async function syncUnitsToZoho(
   );
 
   // Units: TODOS los estados elegibles (seed inicial). Updates con SOT=Hub.
+  // NOTA: NO usar `.in("id_desarrollo", Array.from(devZohoMap.keys()))` porque
+  // con >100 UUIDs en el filter PostgREST rompe la URL y devuelve [] silente.
+  // Filtramos por dev padre en JS más abajo.
   const { data: allUnits, error } = await supabase
     .schema("real_estate_hub")
     .from("Propyte_unidades")
     .select("*")
-    .in("id_desarrollo", Array.from(devZohoMap.keys()))
-    .in("pipeline_status", ["Borrador", "Revision", "Publicado", "Rechazado", "Terminado"]);
+    .in("pipeline_status", ["Borrador", "Revision", "Publicado", "Rechazado", "Terminado"])
+    .limit(5000);
 
-  if (error || !allUnits?.length) return;
+  if (error || !allUnits?.length) {
+    if (error) console.error("[SYNC] Error fetching units:", error.message);
+    return;
+  }
 
   const HUB_SOT_STATES = new Set(["Publicado", "Rechazado", "Terminado"]);
 
