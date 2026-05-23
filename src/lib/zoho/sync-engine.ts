@@ -306,15 +306,17 @@ async function syncUnitsToZoho(
 
   if (!units.length) return;
 
-  // Filtrar unidades cuyo desarrollo padre tiene Zoho ID + cap a 100/batch
-  const unitsWithParent = units
-    .filter((u: Record<string, unknown>) => devZohoMap.has(u.id_desarrollo as string))
-    .slice(0, 100);
+  // Cap a 100/batch. NO filtrar por dev padre — 458 units en Supabase tienen
+  // id_desarrollo=NULL (scraped huérfanas no clusterizadas por robot-01).
+  // Decisión Luis 2026-05-22: TODOS los Borradores deben verse en Zoho para
+  // que asesores hagan revisión. unitToZoho acepta parentZohoId=null y omite
+  // el lookup Desarrollo en ese caso.
+  const unitsWithParent = units.slice(0, 100);
 
   if (unitsWithParent.length === 0) return;
 
   const batch = unitsWithParent.map((u: Record<string, unknown>) => {
-    const parentId = devZohoMap.get(u.id_desarrollo as string) as string;
+    const parentId = (devZohoMap.get(u.id_desarrollo as string) as string | undefined) ?? null;
     return unitToZoho(u, parentId);
   });
 
