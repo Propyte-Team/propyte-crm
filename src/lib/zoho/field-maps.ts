@@ -145,7 +145,11 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   { supabase: "foto_portada", zoho: "Cover_image_URL" },
   { supabase: "url_drive_general", zoho: "Drive_URL" },
   { supabase: "lista_precios", zoho: "Lista_precios_URL" },
-  { supabase: "brochure_pdf", zoho: "Brochure_URL" },
+  { supabase: "brochure_pdf", zoho: "Brochure_URL" },               // ES
+  { supabase: "brochure_pdf_en", zoho: "Brochure_URL_EN" },         // EN (nuevo 2026-05-23)
+  { supabase: "carpeta_imagenes_url", zoho: "Carpeta_de_Im_genes_1" },   // nuevo
+  { supabase: "carpeta_imagenes_2_url", zoho: "Carpeta_de_Im_genes_2" }, // nuevo
+  { supabase: "plano_url", zoho: "Plano_URL" },                      // nuevo (separado de Masterplan_URL)
   { supabase: "tour_virtual_desarrollo", zoho: "Virtual_tour_URL" },
   { supabase: "masterplan", zoho: "Masterplan_URL" },
   { supabase: "video_desarrollo", zoho: "Video_URL" },
@@ -477,6 +481,10 @@ export function zohoProyectoToSupabase(
     url_drive_general: pick<string>(record, "Drive_URL"),
     lista_precios: pick<string>(record, "Lista_precios_URL"),
     brochure_pdf: pick<string>(record, "Brochure_URL"),
+    brochure_pdf_en: pick<string>(record, "Brochure_URL_EN"),
+    carpeta_imagenes_url: pick<string>(record, "Carpeta_de_Im_genes_1"),
+    carpeta_imagenes_2_url: pick<string>(record, "Carpeta_de_Im_genes_2"),
+    plano_url: pick<string>(record, "Plano_URL"),
     tour_virtual_desarrollo: pick<string>(record, "Virtual_tour_URL"),
     masterplan: pick<string>(record, "Masterplan_URL"),
     video_desarrollo: pick<string>(record, "Video_URL"),

@@ -160,6 +160,10 @@ export interface ZohoProyectoInmobiliario extends ZohoRecord {
   Drive_URL?: string;
   Lista_precios_URL?: string;
   Brochure_URL?: string;
+  Brochure_URL_EN?: string;
+  Carpeta_de_Im_genes_1?: string;
+  Carpeta_de_Im_genes_2?: string;
+  Plano_URL?: string;
   Virtual_tour_URL?: string;
   Masterplan_URL?: string;
   Video_URL?: string;
