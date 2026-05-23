@@ -49,6 +49,14 @@ const devFixture = {
   ext_keywords: ["tulum", "preventa", "lujo"],
   ext_property_types: ["Departamento", "Penthouse"],
   ext_commission_rate: 0.06,
+  calle: "Av. Cobá 100",
+  municipio: "Tulum",
+  codigo_postal: "77760",
+  amenidad_alberca_comunitaria: true,
+  amenidad_gym: true,
+  amenidad_yoga: true,
+  amenidad_pet_zone: true,
+  amenidad_cancha: true,
 };
 
 const zd = developmentToZoho(devFixture);
@@ -118,8 +126,21 @@ assert(
   "Tipos_propiedad multiselect array"
 );
 assert(zd.Cover_image_URL === "https://cdn.propyte.com/dev/cover.jpg", "Cover from foto_portada");
-assert(zd.Pa_s === "Mexico", "País default");
 assert(zd.Avance_obra === 35, "Avance obra number");
+assert(zd.Direcci_n_Street_Address === "Av. Cobá 100", "Address Direcci_n_Street_Address");
+assert(zd.Direcci_n_City === "Tulum", "Address Direcci_n_City");
+assert(zd.Direcci_n_State_Province === "Quintana Roo", "Address Direcci_n_State_Province");
+assert(zd.Direcci_n_Country_Region === "Mexico", "Address Direcci_n_Country_Region");
+assert(zd.Direcci_n_Zip_Postal_Code === "77760", "Address Direcci_n_Zip_Postal_Code");
+assert((zd as any).Pa_s === undefined, "Legacy Pa_s NO debe estar");
+assert((zd as any).Domicilio === undefined, "Legacy Domicilio NO debe estar");
+assert((zd as any).Colonia === undefined, "Legacy Colonia NO debe estar");
+assert((zd as any).Descripcion === undefined, "Legacy Descripcion duplicado NO debe estar");
+assert(Array.isArray(zd.Amenidades) && (zd.Amenidades as string[]).includes("Gimnasio"), "Amenidades incluye Gimnasio (mapping gym→Gimnasio)");
+assert((zd.Amenidades as string[]).includes("Yoga / Meditación"), "Amenidades incluye 'Yoga / Meditación'");
+assert((zd.Amenidades as string[]).includes("Área mascotas"), "Amenidades incluye 'Área mascotas' (pet_zone)");
+assert((zd.Amenidades as string[]).includes("Cancha pádel/tenis"), "Amenidades incluye 'Cancha pádel/tenis' (cancha)");
+assert((zd.Amenidades as string[]).length === 5, "Amenidades count = 5");
 
 assert(back.pipeline_status === "Publicado", "Round-trip pipeline_status");
 assert(back.ext_descripcion_es === devFixture.ext_descripcion_es, "Round-trip descripcion");

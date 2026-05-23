@@ -107,15 +107,13 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
 
   // Pipeline (set explícitamente abajo)
 
-  // Editoriales — REGLA DURA: columnas FLAT, NO ext_content_es JSONB
+  // Editoriales ES — REGLA DURA: columnas FLAT, NO ext_content_es JSONB.
+  // Solo ES (decisión Luis 2026-05-23). Zoho no tiene fields _EN ni _FR.
   { supabase: "ext_descripcion_es", zoho: "Descripci_n_ES" },
   { supabase: "ext_descripcion_corta_es", zoho: "Descripci_n_corta_ES" },
   { supabase: "content_features_es", zoho: "Contenido_caracter_ES" },
   { supabase: "content_location_es", zoho: "Contenido_ubicaci_n_ES" },
   { supabase: "content_lifestyle_es", zoho: "Contenido_lifestyle_ES" },
-
-  // Mantener legacy (Descripcion sin _ES, antiguo)
-  { supabase: "ext_descripcion_es", zoho: "Descripcion" },
 
   // Construcción / fases
   { supabase: "tipo_desarrollo", zoho: "Tipo_desarrollo" },
@@ -153,12 +151,14 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   { supabase: "video_desarrollo", zoho: "Video_URL" },
   { supabase: "ext_source_url", zoho: "Source_URL" },
 
-  // Ubicación
-  { supabase: "calle", zoho: "Domicilio" },
-  { supabase: "colonia", zoho: "Colonia" },
-  { supabase: "estado", zoho: "Estado" },
-  { supabase: "municipio", zoho: "Municipio" },
-  { supabase: "codigo_postal", zoho: "C_digo_Postal", transform: "to_integer" },
+  // Ubicación — Zoho usa struct Direcci_n_* (los campos planos Domicilio,
+  // Colonia, Estado, Municipio, Pa_s, C_digo_Postal NO EXISTEN en Zoho prod
+  // 2026-05-23, se ignoraban silenciosamente).
+  { supabase: "calle", zoho: "Direcci_n_Street_Address" },
+  { supabase: "municipio", zoho: "Direcci_n_City" },
+  { supabase: "estado", zoho: "Direcci_n_State_Province" },
+  { supabase: "pais", zoho: "Direcci_n_Country_Region" },
+  { supabase: "codigo_postal", zoho: "Direcci_n_Zip_Postal_Code" },
   { supabase: "latitud", zoho: "Direcci_n_Coordinates_Latitude", transform: "to_number" },
   { supabase: "longitud", zoho: "Direcci_n_Coordinates_Longitude", transform: "to_number" },
   { supabase: "zona", zoho: "Zona" },
@@ -173,13 +173,40 @@ const DEVELOPMENT_FIELDS: FieldMapping[] = [
   { supabase: "ext_badge", zoho: "Badge" },
 ];
 
+// Mapping amenidades booleanas Supabase → Zoho multiselect Amenidades.
+// Labels canónicos = Hub UI (fields-config.ts) con aliases hacia los display
+// values reales de Zoho prod 2026-05-23 (Gimnasio/Yoga / Meditación/etc).
+const DEVELOPMENT_AMENIDADES_MAP: Array<[string, string]> = [
+  ["amenidad_alberca_privada", "Alberca privada"],
+  ["amenidad_alberca_comunitaria", "Alberca comunitaria"],
+  ["amenidad_gym", "Gimnasio"],
+  ["amenidad_spa", "Spa"],
+  ["amenidad_rooftop", "Rooftop"],
+  ["amenidad_salon_eventos", "Salón de eventos"],
+  ["amenidad_coworking", "Coworking"],
+  ["amenidad_yoga", "Yoga / Meditación"],
+  ["amenidad_fire_pit", "Fire pit"],
+  ["amenidad_jardin_privado", "Jardín privado"],
+  ["amenidad_jardin_comunitario", "Jardín comunitario"],
+  ["amenidad_restaurante", "Restaurante"],
+  ["amenidad_concierge", "Concierge"],
+  ["amenidad_seguridad_24h", "Seguridad 24h"],
+  ["amenidad_cctv", "CCTV"],
+  ["amenidad_acceso_controlado", "Acceso controlado"],
+  ["amenidad_lobby", "Lobby"],
+  ["amenidad_elevador", "Elevador"],
+  ["amenidad_bodega", "Bodega"],
+  ["amenidad_pet_zone", "Área mascotas"],
+  ["amenidad_cancha", "Cancha pádel/tenis"],
+  ["amenidad_area_ninos", "Área niños"],
+  ["ext_amenidad_juice_bar", "Juice/Snack bar"],
+  ["ext_amenidad_service_room", "Cuarto servicio"],
+];
+
 export function developmentToZoho(
   dev: Record<string, unknown>
 ): ZohoProyectoInmobiliario {
   const record = mapRecord<ZohoProyectoInmobiliario>(dev, DEVELOPMENT_FIELDS);
-
-  // Defaults / agregados
-  record.Pa_s = (dev.pais as string) || "Mexico";
 
   // Pipeline status — siempre incluir si está seteado
   const status = normalizePipelineStatus(dev.pipeline_status);
@@ -194,6 +221,13 @@ export function developmentToZoho(
   if (Array.isArray(dev.ext_property_types) && dev.ext_property_types.length > 0) {
     record.Tipos_propiedad = dev.ext_property_types as string[];
   }
+
+  // Amenidades booleanas → Zoho multiselect
+  const amenidades: string[] = [];
+  for (const [col, zohoLabel] of DEVELOPMENT_AMENIDADES_MAP) {
+    if (dev[col] === true) amenidades.push(zohoLabel);
+  }
+  if (amenidades.length > 0) record.Amenidades = amenidades;
 
   // Foto portada — fallback al primer item del array
   if (!record.Cover_image_URL && Array.isArray(dev.fotos_desarrollo) && dev.fotos_desarrollo.length > 0) {
@@ -224,8 +258,9 @@ const UNIT_FIELDS: FieldMapping[] = [
   { supabase: "content_location_es", zoho: "Contenido_ubicaci_n_ES" },
   { supabase: "content_lifestyle_es", zoho: "Contenido_lifestyle_ES" },
 
-  // Dimensiones — Rec_maras y Ba_os son TEXT por decisión Luis
-  { supabase: "superficie_total_m2", zoho: "Metros_Cuadrados_Totales", transform: "to_number" },
+  // Dimensiones — Rec_maras y Ba_os son TEXT por decisión Luis.
+  // Metros_Cuadrados_Totales es FÓRMULA en Zoho (readonly). Se calcula
+  // automáticamente de Interior+Exterior. NO mapear.
   { supabase: "superficie_construida_m2", zoho: "Metros_cuadrados_Interior", transform: "to_number" },
   { supabase: "superficie_terreno_m2", zoho: "Metros_cuadrados_Exterior", transform: "to_number" },
   { supabase: "banos_completos", zoho: "Ba_os", transform: "to_string" },
@@ -447,11 +482,10 @@ export function zohoProyectoToSupabase(
     video_desarrollo: pick<string>(record, "Video_URL"),
     ext_source_url: pick<string>(record, "Source_URL"),
 
-    calle: pick<string>(record, "Domicilio"),
-    colonia: pick<string>(record, "Colonia"),
-    estado: pick<string>(record, "Estado"),
-    municipio: pick<string>(record, "Municipio"),
-    codigo_postal: pick<string>(record, "C_digo_Postal"),
+    calle: pick<string>(record, "Direcci_n_Street_Address"),
+    municipio: pick<string>(record, "Direcci_n_City"),
+    estado: pick<string>(record, "Direcci_n_State_Province"),
+    codigo_postal: pick<string>(record, "Direcci_n_Zip_Postal_Code"),
     latitud: numOrNull(record.Direcci_n_Coordinates_Latitude),
     longitud: numOrNull(record.Direcci_n_Coordinates_Longitude),
     zona: pick<string>(record, "Zona"),
@@ -459,7 +493,7 @@ export function zohoProyectoToSupabase(
     playa_distancia: pick<string>(record, "Playa_distancia"),
     aeropuerto_nombre: pick<string>(record, "Aeropuerto_nombre"),
     aeropuerto_distancia: pick<string>(record, "Aeropuerto_distancia"),
-    pais: pick<string>(record, "Pa_s") || "Mexico",
+    pais: pick<string>(record, "Direcci_n_Country_Region") || "México",
 
     ext_commission_rate: numOrNull(record.Comisi_n),
     ext_plaza: pick<string>(record, "Plaza"),
@@ -468,10 +502,31 @@ export function zohoProyectoToSupabase(
       ? record.Tipos_propiedad
       : null,
 
+    // Amenidades multiselect Zoho → 22 columnas booleanas Supabase
+    ...zohoAmenidadesToSupabaseBools(record.Amenidades),
+
     zoho_modified_time: pick<string>(record, "Modified_Time"),
     zoho_last_synced_at: new Date().toISOString(),
     zoho_sync_error: null,
   };
+}
+
+/** Convierte el multiselect Amenidades de Zoho a las 22+ columnas
+ *  booleanas que viven en Propyte_desarrollos. Útil cuando un asesor
+ *  edita amenidades desde Zoho y el webhook necesita reflejarlo. */
+function zohoAmenidadesToSupabaseBools(
+  amenidades: unknown
+): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  if (!Array.isArray(amenidades)) return out;
+  const reverseMap = new Map(
+    DEVELOPMENT_AMENIDADES_MAP.map(([col, label]) => [label, col])
+  );
+  for (const label of amenidades as string[]) {
+    const col = reverseMap.get(label);
+    if (col) out[col] = true;
+  }
+  return out;
 }
 
 export function zohoProductToSupabase(
