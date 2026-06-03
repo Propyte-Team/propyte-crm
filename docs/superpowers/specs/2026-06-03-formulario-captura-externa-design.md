@@ -25,6 +25,9 @@ paso de aprobación de por medio.
 | Alcance del formulario | **Desarrollo + tipologías + imágenes** |
 | Placement de la subpestaña | Dentro de **"Desarrollos"** (`/developments`), tab "Captura" |
 | Idiomas v1 | **Solo español**; inglés se genera después (campos `_en` = null) |
+| Caducidad de links | **15 días por defecto** (editable al generar) |
+| Tope de fotos por envío | **Sin tope** (solo mime + tamaño 10MB + rate-limit) |
+| Quién genera links | **Solo DIRECTOR/GERENTE** (no LÍDER) |
 
 ## No-objetivos (v1)
 
@@ -83,7 +86,7 @@ Las tablas nuevas viven en `propyte_crm` (Prisma). El catálogo no se toca hasta
 | token | String @unique | nanoid (~16 chars), va en la URL |
 | label | String | etiqueta legible, ej. "Gobernador 28 – Grupo 28" |
 | targetDevId | String? | UUID de `Propyte_desarrollos` si es para **actualizar**; null = **nuevo** |
-| expiresAt | DateTime? | null = sin caducidad |
+| expiresAt | DateTime? | default 15 días desde la creación (editable); null = sin caducidad |
 | createdBy | String | userId del Hub que generó el link |
 | revokedAt | DateTime? | revocación manual |
 | createdAt / updatedAt | DateTime | convención casa |
@@ -139,8 +142,8 @@ Las tablas nuevas viven en `propyte_crm` (Prisma). El catálogo no se toca hasta
 - `POST /api/captura/[token]/submit` → valida token + payload (zod), crea `IntakeSubmission`
   PENDING con `imageUrls` ya subidas. Tope de envíos por link (config) + honeypot.
 - `POST /api/captura/[token]/upload` → valida token; reutiliza lógica de `upload-image` (sharp→WebP,
-  10MB, mime whitelist) a bucket **`intake-quarantine`**, path `{token}/{uuid}.webp`. Límite N
-  imágenes por submission y rate-limit por token. Devuelve la ruta.
+  10MB, mime whitelist) a bucket **`intake-quarantine`**, path `{token}/{uuid}.webp`. **Sin tope
+  de número de fotos**; rate-limit por token. Devuelve la ruta.
 
 ### 3. Subpestaña "Captura" — dentro de `/developments`
 - Convertir `src/app/(dashboard)/developments/` a layout con tabs (patrón `meta-ads/layout.tsx`):
@@ -174,7 +177,9 @@ Las tablas nuevas viven en `propyte_crm` (Prisma). El catálogo no se toca hasta
 - Públicas: `/captura/*`, `/api/captura/[token]/*` (gated por token válido/no-expirado/no-revocado).
 - Protegidas (sesión + rol DIRECTOR/GERENTE): `/developments/captura`, `/api/captura/submissions/*`,
   `/api/captura/links*`. Agregar estos prefijos protegidos al `matcher`; **no** agregar los públicos.
-- Subida pública restringida: token requerido, mime whitelist, 10MB, tope de N imágenes, rate-limit.
+- Subida pública restringida: token requerido, mime whitelist, 10MB por archivo, rate-limit por token
+  (sin tope de número de fotos).
+- Generación/revocación de links: **solo DIRECTOR/GERENTE**.
 - Bucket `intake-quarantine` separado del de producción `property-images`.
 
 ## Casos borde
@@ -192,7 +197,7 @@ Las tablas nuevas viven en `propyte_crm` (Prisma). El catálogo no se toca hasta
 
 - Token: válido / expirado / revocado → comportamiento correcto.
 - `submit` crea `IntakeSubmission` PENDING con payload e `imageUrls`.
-- `upload` respeta mime/tamaño/tope y guarda en cuarentena.
+- `upload` respeta mime/tamaño y rate-limit (sin tope de cantidad) y guarda en cuarentena.
 - `approve`: crea dev + unidades en borrador, mueve fotos, marca APPROVED + `resultDevId`;
   re-approve no duplica.
 - `approve` con `targetDevId`: hace merge sin pisar campos llenos.
