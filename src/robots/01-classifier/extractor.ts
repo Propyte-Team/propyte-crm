@@ -148,15 +148,19 @@ async function extractUnidad(
 }
 
 function mapListingTypeToStatus(t: PublicProperty["listing_type"]): string {
+  // Valores Capitalizados: deben matchear el CHECK chk_estado_unidad en
+  // real_estate_hub.Propyte_unidades (Disponible/Preventa/Reservada/Vendida/
+  // Entrega inmediata/Renta/Apartada/Bloqueada/No Disponible). En minúsculas
+  // la fila se rechaza con error 23514.
   switch (t) {
     case "sale":
-      return "disponible";
+      return "Disponible";
     case "presale":
-      return "preventa";
+      return "Preventa";
     case "rent":
-      return "renta";
+      return "Renta";
     default:
-      return "disponible";
+      return "Disponible";
   }
 }
 
