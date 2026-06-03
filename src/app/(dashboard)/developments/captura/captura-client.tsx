@@ -88,5 +88,55 @@ export default function CapturaClient() {
 }
 
 function Bandeja() {
-  return <div className="text-sm text-muted-foreground">Bandeja — se implementa en Task 12.</div>;
+  const [subs, setSubs] = useState<any[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    const r = await fetch("/api/captura/submissions?status=PENDING");
+    const j = await r.json();
+    setSubs(j.data ?? []);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function approve(id: string) {
+    setBusy(id);
+    const r = await fetch(`/api/captura/submissions/${id}/approve`, { method: "POST" });
+    setBusy(null);
+    if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error ?? "Error al aprobar"); return; }
+    load();
+  }
+  async function reject(id: string) {
+    const note = prompt("Motivo del rechazo (opcional):") ?? "";
+    setBusy(id);
+    await fetch(`/api/captura/submissions/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reject", reviewNotes: note }),
+    });
+    setBusy(null); load();
+  }
+
+  if (!subs.length) return <div className="text-sm text-muted-foreground">No hay envíos pendientes.</div>;
+
+  return (
+    <div className="space-y-4">
+      {subs.map((s) => (
+        <div key={s.id} className="rounded-lg border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold">{s.payload?.generales?.nombre ?? "(sin nombre)"}</p>
+              <p className="text-xs text-muted-foreground">
+                {s.link?.label} · {s.payload?.tipologias?.length ?? 0} tipologías · {s.imageUrls?.length ?? 0} imágenes
+                {s.link?.targetDevId ? " · actualización" : " · nuevo"}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={busy === s.id} onClick={() => approve(s.id)}>Aprobar</Button>
+              <Button size="sm" variant="outline" disabled={busy === s.id} onClick={() => reject(s.id)}>Rechazar</Button>
+            </div>
+          </div>
+          <pre className="mt-3 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(s.payload, null, 2)}</pre>
+        </div>
+      ))}
+    </div>
+  );
 }
