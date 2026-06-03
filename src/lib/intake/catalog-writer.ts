@@ -26,6 +26,9 @@ export async function upsertDevelopment(
     if (selErr) throw new Error(`No se encontró el desarrollo destino: ${selErr.message}`);
 
     const merged = mergeFillGaps(existing, incoming);
+    // En actualización no tocar el estado de publicación: el catálogo es autoritativo.
+    delete merged.ext_publicado;
+    delete merged.web_status;
     const { error } = await supabase
       .schema(HUB)
       .from("Propyte_desarrollos")

@@ -10,6 +10,10 @@ export async function GET(request: NextRequest) {
   if (!ADMIN.includes(session.user.role)) return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
 
   const status = new URL(request.url).searchParams.get("status") ?? "PENDING";
+  const VALID = ["PENDING", "APPROVED", "REJECTED"] as const;
+  if (!VALID.includes(status as (typeof VALID)[number])) {
+    return NextResponse.json({ error: "status inválido" }, { status: 400 });
+  }
   const subs = await prisma.intakeSubmission.findMany({
     where: { status: status as "PENDING" | "APPROVED" | "REJECTED" },
     include: { link: { select: { label: true, targetDevId: true } } },
