@@ -22,7 +22,8 @@
     "robot:migrate": "tsx scripts/apply-robot-migrations.ts",
     "robot:verify": "tsx scripts/verify-robot-run.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "intake:cleanup": "tsx scripts/intake-cleanup-quarantine.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
