@@ -1066,7 +1066,7 @@ model IntakeLink {
 model IntakeSubmission {
   id          String       @id @default(uuid())
   linkId      String
-  link        IntakeLink   @relation(fields: [linkId], references: [id])
+  link        IntakeLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
   payload     Json
   imageUrls   String[]
   status      IntakeStatus @default(PENDING)
