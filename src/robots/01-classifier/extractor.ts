@@ -81,7 +81,8 @@ type EnrichedProperty = PublicProperty & { source_domain: string };
 async function extractUnidad(
   p: EnrichedProperty,
   idDesarrollo: string | null,
-  idDesarrollador: string | null
+  idDesarrollador: string | null,
+  groupDisplayName: string | null
 ): Promise<PropyteUnidadWrite> {
   const precioMxn = await normalizePriceToMxn(p.price_cents, p.currency);
   const precioUsd =
@@ -108,11 +109,22 @@ async function extractUnidad(
   const metaTitleEs = extractField(contentEs, "metaTitle");
   const metaDescEs = extractField(contentEs, "metaDescription");
 
+  // Fallback de título para unidades sin contenido curado (no-published):
+  // el trigger fn_propyte_unidades_slug_sync → compute_unique_slug lanza P0001
+  // si el título slugifica a vacío. Para esos borradores usamos el nombre del
+  // desarrollo (ya está en el grupo, no es contenido del rival) y, si falta,
+  // tipo+ciudad; último recurso "Unidad". compute_unique_slug deduplica con
+  // sufijo numérico. El metaTitle/título published siguen teniendo prioridad,
+  // así que esto NO afecta el contenido de las unidades published.
+  const tipoCiudadFallback = [p.property_type, p.city].filter(Boolean).join(" ").trim();
+  const fallbackTitulo = groupDisplayName ?? (tipoCiudadFallback || "Unidad");
+
   return {
     id_desarrollo: idDesarrollo,
     id_desarrollador: idDesarrollador,
-    // titulo: metaTitle del content (NO nombre del desarrollo para evitar deteccion)
-    titulo_unidad: metaTitleEs ?? (isPublished ? p.title : null),
+    // titulo: metaTitle del content (NO nombre del desarrollo para evitar deteccion
+    // en published); para borradores cae al fallback no-sensible (ver arriba).
+    titulo_unidad: metaTitleEs ?? (isPublished ? p.title : null) ?? fallbackTitulo,
     descripcion_larga_unidad: heroIntroEs,
     descripcion_corta_unidad: heroIntroEs ? heroIntroEs.slice(0, 250) : null,
     ext_descripcion_en: heroIntroEn,
@@ -440,9 +452,15 @@ export async function extractGroup(
   }
 
   // Extraer unidades (una por property)
+  // Para grupos sin desarrollo (__NO_DEV__) el displayName es el placeholder
+  // NO_DEV_KEY, que no sirve como título → pasamos null para que caiga a
+  // tipo+ciudad en el fallback de slug.
+  const groupDisplayName = group.key === "__NO_DEV__" ? null : group.displayName;
   const unidades: PropyteUnidadWrite[] = [];
   for (const p of propertiesEnriched) {
-    unidades.push(await extractUnidad(p, idDesarrollo, idDesarrollador));
+    unidades.push(
+      await extractUnidad(p, idDesarrollo, idDesarrollador, groupDisplayName)
+    );
   }
 
   // Popular amenities stats desde aggregateAmenities (re-run barato)
