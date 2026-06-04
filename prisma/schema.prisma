@@ -381,18 +381,18 @@ enum LeadAssignmentMode {
 
 // Usuarios del CRM
 model User {
-  id            String       @id @default(uuid())
-  email         String       @unique
+  id            String      @id @default(uuid())
+  email         String      @unique
   name          String
   role          UserRole
-  careerLevel   CareerLevel  @default(JR)
+  careerLevel   CareerLevel @default(JR)
   plaza         Plaza
   teamLeaderId  String?
-  teamLeader    User?        @relation("TeamMembers", fields: [teamLeaderId], references: [id])
-  teamMembers   User[]       @relation("TeamMembers")
+  teamLeader    User?       @relation("TeamMembers", fields: [teamLeaderId], references: [id])
+  teamMembers   User[]      @relation("TeamMembers")
   sedetusNumber String?
   sedetusExpiry DateTime?
-  isActive      Boolean      @default(true)
+  isActive      Boolean     @default(true)
   avatarUrl     String?
   phone         String?
   passwordHash  String
@@ -400,15 +400,15 @@ model User {
   otpExpiresAt  DateTime?
 
   // Relaciones
-  assignedContacts  Contact[]    @relation("AssignedContacts")
-  deals             Deal[]       @relation("AssignedDeals")
-  activities        Activity[]
-  walkInsAsHostess  WalkIn[]     @relation("HostessWalkIns")
-  walkInsAsAdvisor  WalkIn[]     @relation("AdvisorWalkIns")
-  reservedUnits     Unit[]       @relation("ReservedByUser")
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  messages          Message[]
+  assignedContacts Contact[]      @relation("AssignedContacts")
+  deals            Deal[]         @relation("AssignedDeals")
+  activities       Activity[]
+  walkInsAsHostess WalkIn[]       @relation("HostessWalkIns")
+  walkInsAsAdvisor WalkIn[]       @relation("AdvisorWalkIns")
+  reservedUnits    Unit[]         @relation("ReservedByUser")
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  messages         Message[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -420,26 +420,26 @@ model User {
 
 // Contactos / Leads
 model Contact {
-  id               String            @id @default(uuid())
-  firstName        String
-  lastName         String
-  email            String?
-  phone            String
-  secondaryPhone   String?
-  contactType      ContactType       @default(LEAD)
-  leadSource       LeadSource
-  leadSourceDetail String?
-  residenceCity    String?
-  residenceCountry String?
-  nationality      String?
+  id                String            @id @default(uuid())
+  firstName         String
+  lastName          String
+  email             String?
+  phone             String
+  secondaryPhone    String?
+  contactType       ContactType       @default(LEAD)
+  leadSource        LeadSource
+  leadSourceDetail  String?
+  residenceCity     String?
+  residenceCountry  String?
+  nationality       String?
   preferredLanguage PreferredLanguage @default(ES)
 
   // Perfil de inversión (del discovery call)
   investmentProfile InvestmentProfile?
   propertyType      PropertyType?
   purchaseTimeline  PurchaseTimeline?
-  budgetMin         Decimal?          @db.Decimal(14, 2)
-  budgetMax         Decimal?          @db.Decimal(14, 2)
+  budgetMin         Decimal?           @db.Decimal(14, 2)
+  budgetMax         Decimal?           @db.Decimal(14, 2)
   paymentMethod     PaymentMethod?
   preferredZone     String?
   purchaseModality  PurchaseModality?
@@ -447,9 +447,9 @@ model Contact {
 
   // Asignación y scoring
   assignedToId String?
-  assignedTo   User?            @relation("AssignedContacts", fields: [assignedToId], references: [id])
-  temperature  LeadTemperature  @default(COLD)
-  score        Int              @default(0)
+  assignedTo   User?           @relation("AssignedContacts", fields: [assignedToId], references: [id])
+  temperature  LeadTemperature @default(COLD)
+  score        Int             @default(0)
   tags         String[]
 
   // Relaciones
@@ -469,35 +469,35 @@ model Contact {
 
 // Desarrollos inmobiliarios
 model Development {
-  id                   String            @id @default(uuid())
-  name                 String
-  developerName        String
-  developmentType      DevelopmentType
-  location             String
-  plaza                Plaza
-  totalUnits           Int
-  availableUnits       Int
-  soldUnits            Int               @default(0)
-  reservedUnits        Int               @default(0)
-  priceMin             Decimal           @db.Decimal(14, 2)
-  priceMax             Decimal           @db.Decimal(14, 2)
-  currency             Currency          @default(MXN)
-  totalDevelopmentValue Decimal?         @db.Decimal(16, 2)
-  commissionRate       Decimal           @db.Decimal(5, 2)
-  status               DevelopmentStatus @default(PREVENTA)
-  constructionProgress Int               @default(0)
-  deliveryDate         DateTime?
-  contractStartDate    DateTime?
-  contractEndDate      DateTime?
-  brochureUrl          String?
-  virtualTourUrl       String?
-  amenities            String[]
-  description          String            @db.Text
-  isActive             Boolean           @default(true)
+  id                    String            @id @default(uuid())
+  name                  String
+  developerName         String
+  developmentType       DevelopmentType
+  location              String
+  plaza                 Plaza
+  totalUnits            Int
+  availableUnits        Int
+  soldUnits             Int               @default(0)
+  reservedUnits         Int               @default(0)
+  priceMin              Decimal           @db.Decimal(14, 2)
+  priceMax              Decimal           @db.Decimal(14, 2)
+  currency              Currency          @default(MXN)
+  totalDevelopmentValue Decimal?          @db.Decimal(16, 2)
+  commissionRate        Decimal           @db.Decimal(5, 2)
+  status                DevelopmentStatus @default(PREVENTA)
+  constructionProgress  Int               @default(0)
+  deliveryDate          DateTime?
+  contractStartDate     DateTime?
+  contractEndDate       DateTime?
+  brochureUrl           String?
+  virtualTourUrl        String?
+  amenities             String[]
+  description           String            @db.Text
+  isActive              Boolean           @default(true)
 
   // Relaciones
-  units Unit[]
-  deals Deal[]
+  units            Unit[]
+  deals            Deal[]
   monitoredFolders MonitoredFolder[]
 
   createdAt DateTime  @default(now())
@@ -510,16 +510,16 @@ model Development {
 
 // Unidades individuales de un desarrollo
 model Unit {
-  id            String     @id @default(uuid())
+  id            String      @id @default(uuid())
   developmentId String
   development   Development @relation(fields: [developmentId], references: [id])
   unitNumber    String
   unitType      UnitType
-  area_m2       Decimal    @db.Decimal(10, 2)
-  price         Decimal    @db.Decimal(14, 2)
-  currency      Currency   @default(MXN)
+  area_m2       Decimal     @db.Decimal(10, 2)
+  price         Decimal     @db.Decimal(14, 2)
+  currency      Currency    @default(MXN)
   floor         Int?
-  status        UnitStatus @default(DISPONIBLE)
+  status        UnitStatus  @default(DISPONIBLE)
 
   // Reservación
   reservedByContactId String?
@@ -543,37 +543,37 @@ model Unit {
 
 // Operaciones / Pipeline de ventas
 model Deal {
-  id              String    @id @default(uuid())
-  contactId       String
-  contact         Contact   @relation(fields: [contactId], references: [id])
-  assignedToId    String
-  assignedTo      User      @relation("AssignedDeals", fields: [assignedToId], references: [id])
-  developmentId   String?
-  development     Development? @relation(fields: [developmentId], references: [id])
-  unitId          String?
-  unit            Unit?     @relation(fields: [unitId], references: [id])
+  id            String       @id @default(uuid())
+  contactId     String
+  contact       Contact      @relation(fields: [contactId], references: [id])
+  assignedToId  String
+  assignedTo    User         @relation("AssignedDeals", fields: [assignedToId], references: [id])
+  developmentId String?
+  development   Development? @relation(fields: [developmentId], references: [id])
+  unitId        String?
+  unit          Unit?        @relation(fields: [unitId], references: [id])
 
   // Pipeline
-  stage           DealStage @default(NEW_LEAD)
-  dealType        DealType
-  estimatedValue  Decimal   @db.Decimal(14, 2)
-  currency        Currency  @default(MXN)
-  probability     Int       @default(5)
+  stage             DealStage @default(NEW_LEAD)
+  dealType          DealType
+  estimatedValue    Decimal   @db.Decimal(14, 2)
+  currency          Currency  @default(MXN)
+  probability       Int       @default(5)
   expectedCloseDate DateTime
-  actualCloseDate DateTime?
+  actualCloseDate   DateTime?
 
   // Pérdida
   lostReason       LostReason?
   lostReasonDetail String?
 
   // Comisiones calculadas
-  commissionTotal    Decimal? @db.Decimal(14, 2)
-  commissionAdvisor  Decimal? @db.Decimal(14, 2)
-  commissionTL       Decimal? @db.Decimal(14, 2)
-  commissionGerente  Decimal? @db.Decimal(14, 2)
-  commissionDirector Decimal? @db.Decimal(14, 2)
-  commissionBrokerExt Decimal? @db.Decimal(14, 2)
-  commissionStatus   CommissionStatus @default(PENDIENTE)
+  commissionTotal     Decimal?         @db.Decimal(14, 2)
+  commissionAdvisor   Decimal?         @db.Decimal(14, 2)
+  commissionTL        Decimal?         @db.Decimal(14, 2)
+  commissionGerente   Decimal?         @db.Decimal(14, 2)
+  commissionDirector  Decimal?         @db.Decimal(14, 2)
+  commissionBrokerExt Decimal?         @db.Decimal(14, 2)
+  commissionStatus    CommissionStatus @default(PENDIENTE)
 
   // Atribución
   leadSourceAtDeal String
@@ -591,20 +591,20 @@ model Deal {
 
 // Actividades e interacciones
 model Activity {
-  id              String         @id @default(uuid())
-  contactId       String
-  contact         Contact        @relation(fields: [contactId], references: [id])
-  dealId          String?
-  deal            Deal?          @relation(fields: [dealId], references: [id])
-  userId          String
-  user            User           @relation(fields: [userId], references: [id])
-  activityType    ActivityType
-  subject         String
-  description     String?        @db.Text
-  dueDate         DateTime?
-  completedAt     DateTime?
-  status          ActivityStatus @default(PENDIENTE)
-  outcome         String?
+  id               String         @id @default(uuid())
+  contactId        String
+  contact          Contact        @relation(fields: [contactId], references: [id])
+  dealId           String?
+  deal             Deal?          @relation(fields: [dealId], references: [id])
+  userId           String
+  user             User           @relation(fields: [userId], references: [id])
+  activityType     ActivityType
+  subject          String
+  description      String?        @db.Text
+  dueDate          DateTime?
+  completedAt      DateTime?
+  status           ActivityStatus @default(PENDIENTE)
+  outcome          String?
   duration_minutes Int?
 
   createdAt DateTime  @default(now())
@@ -673,14 +673,14 @@ model AuditLog {
 
 // Notificaciones in-app
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  title     String
-  message   String
-  type      String   // "lead_assigned", "task_overdue", "deal_stagnant", etc.
-  isRead    Boolean  @default(false)
-  link      String?  // URL de la entidad relacionada
+  id      String  @id @default(uuid())
+  userId  String
+  user    User    @relation(fields: [userId], references: [id])
+  title   String
+  message String
+  type    String // "lead_assigned", "task_overdue", "deal_stagnant", etc.
+  isRead  Boolean @default(false)
+  link    String? // URL de la entidad relacionada
 
   createdAt DateTime @default(now())
 
@@ -726,10 +726,10 @@ model Message {
 // Configuración de webhooks salientes (CRM → Zapier)
 model WebhookConfig {
   id       String  @id @default(uuid())
-  event    String  // "contact.created", "deal.won", etc.
+  event    String // "contact.created", "deal.won", etc.
   url      String
   isActive Boolean @default(true)
-  secret   String  // HMAC signing secret
+  secret   String // HMAC signing secret
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -764,26 +764,26 @@ enum SyncJobStatus {
 
 // Carpetas monitoreadas (1 carpeta = 1 desarrollo)
 model MonitoredFolder {
-  id               String           @id @default(uuid())
+  id               String          @id @default(uuid())
   provider         StorageProvider
-  externalFolderId String           // ID de la carpeta en Drive/Dropbox
+  externalFolderId String // ID de la carpeta en Drive/Dropbox
   folderName       String
-  folderUrl        String?          // URL compartida para acceso rápido
-  developmentId    String?          // Desarrollo al que está vinculada (si ya existe)
-  development      Development?     @relation(fields: [developmentId], references: [id])
-  plaza            Plaza            @default(PDC)
-  developmentType  DevelopmentType  @default(PROPIO)
-  isActive         Boolean          @default(true)
-  syncInterval     Int              @default(15) // minutos
+  folderUrl        String? // URL compartida para acceso rápido
+  developmentId    String? // Desarrollo al que está vinculada (si ya existe)
+  development      Development?    @relation(fields: [developmentId], references: [id])
+  plaza            Plaza           @default(PDC)
+  developmentType  DevelopmentType @default(PROPIO)
+  isActive         Boolean         @default(true)
+  syncInterval     Int             @default(15) // minutos
   lastSyncAt       DateTime?
   lastSyncStatus   SyncJobStatus?
 
   // Relaciones
-  syncJobs   SyncJob[]
-  syncFiles  SyncFile[]
+  syncJobs  SyncJob[]
+  syncFiles SyncFile[]
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([provider, externalFolderId])
   @@map("monitored_folders")
@@ -792,21 +792,21 @@ model MonitoredFolder {
 
 // Archivo individual rastreado dentro de una carpeta
 model SyncFile {
-  id                String          @id @default(uuid())
-  monitoredFolderId String
-  monitoredFolder   MonitoredFolder @relation(fields: [monitoredFolderId], references: [id])
-  externalFileId    String          // ID del archivo en Drive/Dropbox
-  fileName          String
-  mimeType          String
-  fileSize          Int             // bytes
-  category          String          // PRICE_LIST, BROCHURE, RENDER, etc.
-  externalModifiedAt DateTime       // Última modificación en Drive/Dropbox
-  lastProcessedAt    DateTime?      // Última vez que se procesó
-  checksum           String?        // Para detectar cambios reales
-  processedData      Json?          // Datos extraídos del archivo (cache)
+  id                 String          @id @default(uuid())
+  monitoredFolderId  String
+  monitoredFolder    MonitoredFolder @relation(fields: [monitoredFolderId], references: [id])
+  externalFileId     String // ID del archivo en Drive/Dropbox
+  fileName           String
+  mimeType           String
+  fileSize           Int // bytes
+  category           String // PRICE_LIST, BROCHURE, RENDER, etc.
+  externalModifiedAt DateTime // Última modificación en Drive/Dropbox
+  lastProcessedAt    DateTime? // Última vez que se procesó
+  checksum           String? // Para detectar cambios reales
+  processedData      Json? // Datos extraídos del archivo (cache)
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([monitoredFolderId, externalFileId])
   @@map("sync_files")
@@ -819,22 +819,22 @@ model SyncJob {
   monitoredFolderId String
   monitoredFolder   MonitoredFolder @relation(fields: [monitoredFolderId], references: [id])
   status            SyncJobStatus   @default(PENDING)
-  triggeredBy       String          // "CRON", "WEBHOOK", "MANUAL"
-  developmentId     String?         // Desarrollo creado/actualizado
+  triggeredBy       String // "CRON", "WEBHOOK", "MANUAL"
+  developmentId     String? // Desarrollo creado/actualizado
 
   // Métricas del job
-  filesDiscovered   Int             @default(0)
-  filesNew          Int             @default(0)
-  filesModified     Int             @default(0)
-  unitsCreated      Int             @default(0)
-  unitsUpdated      Int             @default(0)
-  imagesProcessed   Int             @default(0)
+  filesDiscovered Int @default(0)
+  filesNew        Int @default(0)
+  filesModified   Int @default(0)
+  unitsCreated    Int @default(0)
+  unitsUpdated    Int @default(0)
+  imagesProcessed Int @default(0)
 
   // Estado detallado
-  crawlData   Json?                // CrawlResult serializado
-  parseData   Json?                // ParseResult serializado
-  mapData     Json?                // MapResult serializado
-  uploadData  Json?                // UploadResult serializado
+  crawlData  Json? // CrawlResult serializado
+  parseData  Json? // ParseResult serializado
+  mapData    Json? // MapResult serializado
+  uploadData Json? // UploadResult serializado
 
   error       String?   @db.Text
   startedAt   DateTime  @default(now())
@@ -852,13 +852,13 @@ model SyncJob {
 
 // Logs detallados de cada paso del pipeline
 model SyncLog {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   syncJobId String
-  syncJob   SyncJob  @relation(fields: [syncJobId], references: [id])
-  step      String   // "CRAWL", "PARSE", "MAP", "UPLOAD"
-  level     String   // "INFO", "WARN", "ERROR"
-  message   String   @db.Text
-  data      Json?    // Datos adicionales
+  syncJob   SyncJob @relation(fields: [syncJobId], references: [id])
+  step      String // "CRAWL", "PARSE", "MAP", "UPLOAD"
+  level     String // "INFO", "WARN", "ERROR"
+  message   String  @db.Text
+  data      Json? // Datos adicionales
 
   createdAt DateTime @default(now())
 
@@ -873,12 +873,12 @@ model SyncLog {
 
 // Cuenta publicitaria de Meta monitoreada
 model MetaAdAccount {
-  id            String   @id @default(uuid())
-  accountId     String   @unique // "act_803453467902414"
-  name          String
-  currency      String   @default("MXN")
-  isActive      Boolean  @default(true)
-  lastSyncAt    DateTime?
+  id         String    @id @default(uuid())
+  accountId  String    @unique // "act_803453467902414"
+  name       String
+  currency   String    @default("MXN")
+  isActive   Boolean   @default(true)
+  lastSyncAt DateTime?
 
   campaigns     MetaCampaignCache[]
   dailyInsights MetaDailyInsight[]
@@ -892,30 +892,30 @@ model MetaAdAccount {
 
 // Cache de campañas con métricas snapshot
 model MetaCampaignCache {
-  id             String   @id @default(uuid())
+  id             String        @id @default(uuid())
   accountId      String
   account        MetaAdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   metaCampaignId String
   name           String
-  status         String   // ACTIVE, PAUSED, DELETED, etc.
+  status         String // ACTIVE, PAUSED, DELETED, etc.
   objective      String
-  dailyBudget    Decimal? @db.Decimal(14, 2)
-  lifetimeBudget Decimal? @db.Decimal(14, 2)
+  dailyBudget    Decimal?      @db.Decimal(14, 2)
+  lifetimeBudget Decimal?      @db.Decimal(14, 2)
   startTime      DateTime?
   stopTime       DateTime?
 
   // Snapshot insights (período actual de sync)
-  impressions    Int      @default(0)
-  clicks         Int      @default(0)
-  spend          Decimal  @default(0) @db.Decimal(14, 2)
-  reach          Int      @default(0)
-  cpc            Decimal? @db.Decimal(10, 4)
-  ctr            Decimal? @db.Decimal(10, 4)
-  cpm            Decimal? @db.Decimal(10, 4)
-  leads          Int      @default(0)
-  costPerLead    Decimal? @db.Decimal(14, 2)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  spend       Decimal  @default(0) @db.Decimal(14, 2)
+  reach       Int      @default(0)
+  cpc         Decimal? @db.Decimal(10, 4)
+  ctr         Decimal? @db.Decimal(10, 4)
+  cpm         Decimal? @db.Decimal(10, 4)
+  leads       Int      @default(0)
+  costPerLead Decimal? @db.Decimal(14, 2)
 
-  insightsPeriod String   @default("last_7d")
+  insightsPeriod String @default("last_7d")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -927,26 +927,26 @@ model MetaCampaignCache {
 
 // Insights diarios por cuenta/campaña (histórico para charts)
 model MetaDailyInsight {
-  id             String   @id @default(uuid())
+  id             String        @id @default(uuid())
   accountId      String
   account        MetaAdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  date           DateTime @db.Date
-  level          String   // "account" o "campaign"
-  metaObjectId   String   // account ID o campaign ID
+  date           DateTime      @db.Date
+  level          String // "account" o "campaign"
+  metaObjectId   String // account ID o campaign ID
   metaObjectName String?
 
-  impressions    Int      @default(0)
-  clicks         Int      @default(0)
-  spend          Decimal  @default(0) @db.Decimal(14, 2)
-  reach          Int      @default(0)
-  cpc            Decimal? @db.Decimal(10, 4)
-  ctr            Decimal? @db.Decimal(10, 4)
-  cpm            Decimal? @db.Decimal(10, 4)
-  frequency      Decimal? @db.Decimal(10, 4)
-  leads          Int      @default(0)
-  costPerLead    Decimal? @db.Decimal(14, 2)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  spend       Decimal  @default(0) @db.Decimal(14, 2)
+  reach       Int      @default(0)
+  cpc         Decimal? @db.Decimal(10, 4)
+  ctr         Decimal? @db.Decimal(10, 4)
+  cpm         Decimal? @db.Decimal(10, 4)
+  frequency   Decimal? @db.Decimal(10, 4)
+  leads       Int      @default(0)
+  costPerLead Decimal? @db.Decimal(14, 2)
 
-  actionsJson    Json?
+  actionsJson Json?
 
   createdAt DateTime @default(now())
 
@@ -961,54 +961,54 @@ model MetaDailyInsight {
 // =====================================================================
 
 enum MetaLeadStatus {
-  PENDING           // Recién descargado, aún no comparado
-  MATCHED           // Encontrado en CRM (Contact)
-  MISSING_IN_CRM    // NO encontrado en CRM — discrepancia
-  DUPLICATE         // Duplicado dentro de Meta
+  PENDING // Recién descargado, aún no comparado
+  MATCHED // Encontrado en CRM (Contact)
+  MISSING_IN_CRM // NO encontrado en CRM — discrepancia
+  DUPLICATE // Duplicado dentro de Meta
 
   @@schema("propyte_crm")
 }
 
 model MetaLead {
-  id               String          @id @default(uuid())
-  metaLeadId       String          @unique  // ID del lead en Meta (ej. "1234567890")
-  createdOnMeta    DateTime                 // Fecha/hora en que se creó en Meta
+  id            String   @id @default(uuid())
+  metaLeadId    String   @unique // ID del lead en Meta (ej. "1234567890")
+  createdOnMeta DateTime // Fecha/hora en que se creó en Meta
 
   // Datos del formulario
-  firstName        String?
-  lastName         String?
-  email            String?
-  phone            String?
-  country          String?
-  language         String?          // "Espanol" | "Ingles"
+  firstName String?
+  lastName  String?
+  email     String?
+  phone     String?
+  country   String?
+  language  String? // "Espanol" | "Ingles"
 
   // Campos custom del formulario (urgencia, presupuesto, etc.)
-  urgency          String?          // ¿Con qué urgencia quieres comprar?
-  acquisition      String?          // ¿Cómo planeas adquirir tu propiedad?
-  budget           String?          // Rango de presupuesto estimado
-  description      String?          // Interés en inmueble
-  extraFields      Json?            // Campos adicionales no mapeados
+  urgency     String? // ¿Con qué urgencia quieres comprar?
+  acquisition String? // ¿Cómo planeas adquirir tu propiedad?
+  budget      String? // Rango de presupuesto estimado
+  description String? // Interés en inmueble
+  extraFields Json? // Campos adicionales no mapeados
 
   // Atribución Meta
-  campaignId       String?
-  campaignName     String?
-  adsetId          String?
-  adsetName        String?
-  adId             String?
-  adName           String?
-  formId           String?
-  formName         String?
-  platform         String?          // facebook, instagram, etc.
-  pageName         String?
+  campaignId   String?
+  campaignName String?
+  adsetId      String?
+  adsetName    String?
+  adId         String?
+  adName       String?
+  formId       String?
+  formName     String?
+  platform     String? // facebook, instagram, etc.
+  pageName     String?
 
   // Matching con CRM
-  status           MetaLeadStatus   @default(PENDING)
-  matchedContactId String?          // UUID del Contact si se encontró match
+  status           MetaLeadStatus @default(PENDING)
+  matchedContactId String? // UUID del Contact si se encontró match
   matchedAt        DateTime?
-  matchMethod      String?          // "email", "phone", "both"
+  matchMethod      String? // "email", "phone", "both"
 
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([email])
@@ -1021,15 +1021,63 @@ model MetaLead {
 
 // API Keys para integraciones entrantes (Zapier → CRM)
 model ApiKey {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   name       String
-  hashedKey  String   @unique
-  prefix     String   // "pk_live_..." primeros 8 chars para identificación
+  hashedKey  String    @unique
+  prefix     String // "pk_live_..." primeros 8 chars para identificación
   lastUsedAt DateTime?
-  isActive   Boolean  @default(true)
+  isActive   Boolean   @default(true)
 
   createdAt DateTime @default(now())
 
   @@map("api_keys")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// INTAKE FORM — External capture links + submissions
+// =====================================================================
+
+enum IntakeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@schema("propyte_crm")
+}
+
+model IntakeLink {
+  id          String             @id @default(uuid())
+  token       String             @unique
+  label       String
+  targetDevId String?
+  expiresAt   DateTime?
+  createdBy   String
+  revokedAt   DateTime?
+  submissions IntakeSubmission[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+
+  @@map("intake_links")
+  @@schema("propyte_crm")
+}
+
+model IntakeSubmission {
+  id          String       @id @default(uuid())
+  linkId      String
+  link        IntakeLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  payload     Json
+  imageUrls   String[]
+  status      IntakeStatus @default(PENDING)
+  reviewNotes String?
+  resultDevId String?
+  reviewedBy  String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status])
+  @@index([linkId])
+  @@map("intake_submissions")
   @@schema("propyte_crm")
 }

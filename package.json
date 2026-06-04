@@ -20,7 +20,10 @@
     "robot:05": "tsx src/robots/05-ai-content/run.ts",
     "robot:smoke": "tsx src/robots/shared/__smoke__.ts",
     "robot:migrate": "tsx scripts/apply-robot-migrations.ts",
-    "robot:verify": "tsx scripts/verify-robot-run.ts"
+    "robot:verify": "tsx scripts/verify-robot-run.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "intake:cleanup": "tsx scripts/intake-cleanup-quarantine.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -80,6 +83,7 @@
     "prisma": "^6.2.1",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.9"
   }
 }
