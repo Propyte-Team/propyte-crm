@@ -140,6 +140,10 @@ export interface PropyteDesarrolloWrite {
   id?: string;
   legacy_id?: number | null;
   nombre_desarrollo: string;
+  // Clave de dedup estable = key de grouping normalizado (lower + sin acentos +
+  // sin puntuación). Es la identidad del desarrollo para el upsert idempotente
+  // (ON CONFLICT). NO depende de id_desarrollador ni del acento del nombre.
+  ext_dedup_key: string;
   ext_slug_desarrollo?: string | null;
   tipo_desarrollo?: string | null;
   ext_precio_min_mxn?: number | null;

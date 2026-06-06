@@ -270,7 +270,7 @@ async function extractDesarrollo(
   group: DevelopmentGroup & { properties: EnrichedProperty[] },
   idDesarrollador: string | null
 ): Promise<PropyteDesarrolloWrite> {
-  const { properties, displayName } = group;
+  const { properties, displayName, key } = group;
 
   // Agregaciones
   const prices = await aggregatePrices(properties);
@@ -367,6 +367,9 @@ async function extractDesarrollo(
 
   return {
     nombre_desarrollo: displayName,
+    // Identidad estable del desarrollo (= key de grouping normalizado).
+    // Insensible a acento/mayúsculas/puntuación; independiente del developer.
+    ext_dedup_key: key,
     id_desarrollador: idDesarrollador,
     tipo_desarrollo: properties[0].listing_type === "presale" ? "preventa" : "vertical",
     ext_precio_min_mxn: prices.minMxn,

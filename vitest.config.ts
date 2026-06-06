@@ -3,7 +3,7 @@ import path from "path";
 
 export default defineConfig({
   test: {
-    include: ["src/lib/intake/**/*.test.ts"],
+    include: ["src/lib/intake/**/*.test.ts", "src/robots/**/*.test.ts"],
     environment: "node",
   },
   resolve: {
