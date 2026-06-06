@@ -162,9 +162,11 @@ async function upsertDesarrollo(
   const { sql, values } = buildUpsert(
     `real_estate_hub."Propyte_desarrollos"`,
     payload as unknown as Record<string, unknown>,
-    // Target debe coincidir EXACTAMENTE con idx_desarrollos_nombre_desarrollador
-    // (ver scripts/sql/robot_infra_0002.sql)
-    `ON CONFLICT (lower(nombre_desarrollo), COALESCE(id_desarrollador::text, 'NULL')) WHERE deleted_at IS NULL`,
+    // Target debe coincidir EXACTAMENTE con idx_desarrollos_dedup_key
+    // (ver scripts/sql/robot_infra_0004.sql). La clave es ext_dedup_key
+    // (grouping normalizado): estable entre corridas, insensible a acento y
+    // sin depender de id_desarrollador (antes duplicaba — bug #4).
+    `ON CONFLICT (ext_dedup_key) WHERE deleted_at IS NULL`,
     `id::text`
   );
 
@@ -173,7 +175,7 @@ async function upsertDesarrollo(
     `upsert desarrollo "${payload.nombre_desarrollo}"`,
     sql,
     values,
-    `desarrollo:${payload.nombre_desarrollo.toLowerCase()}:${payload.id_desarrollador ?? "no-dev"}`
+    `desarrollo:${payload.ext_dedup_key}`
   );
 }
 
