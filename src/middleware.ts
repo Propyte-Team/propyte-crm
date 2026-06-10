@@ -78,9 +78,6 @@ export const config = {
     "/api/meta-ads/campaigns/:path*",
     "/api/meta-ads/ads/:path*",
     "/api/meta-ads/audiences/:path*",
-    // Intake captura — rutas admin (las rutas públicas /api/captura/[token]/* NO están listadas aquí)
-    "/api/captura/links/:path*",
-    "/api/captura/submissions/:path*",
     // Nota: /api/webhooks/** y /api/meta-ads/sync NO están protegidos — usan CRON_SECRET o firma
   ],
 };

@@ -1034,50 +1034,6 @@ model ApiKey {
   @@schema("propyte_crm")
 }
 
-// =====================================================================
-// INTAKE FORM — External capture links + submissions
-// =====================================================================
-
-enum IntakeStatus {
-  PENDING
-  APPROVED
-  REJECTED
-
-  @@schema("propyte_crm")
-}
-
-model IntakeLink {
-  id          String             @id @default(uuid())
-  token       String             @unique
-  label       String
-  targetDevId String?
-  expiresAt   DateTime?
-  createdBy   String
-  revokedAt   DateTime?
-  submissions IntakeSubmission[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  deletedAt   DateTime?
-
-  @@map("intake_links")
-  @@schema("propyte_crm")
-}
-
-model IntakeSubmission {
-  id          String       @id @default(uuid())
-  linkId      String
-  link        IntakeLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  payload     Json
-  imageUrls   String[]
-  status      IntakeStatus @default(PENDING)
-  reviewNotes String?
-  resultDevId String?
-  reviewedBy  String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  @@index([status])
-  @@index([linkId])
-  @@map("intake_submissions")
-  @@schema("propyte_crm")
-}
+// NOTA (2026-06-10, spec crm-hub-migration-cleanup T2.3): los modelos IntakeLink/
+// IntakeSubmission se retiraron — el intake público vive en el Hub (hub.propyte.com/captura).
+// Las tablas propyte_crm.intake_links / intake_submissions NO se droppearon (datos históricos).

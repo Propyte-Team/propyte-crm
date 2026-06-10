@@ -1,18 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
 
+// La pestaña "Captura" se retiró: el intake público vive en el Hub (hub.propyte.com/captura)
 const baseTabs = [{ label: "Desarrollos", href: "/developments" }];
-const adminTabs = [{ label: "Captura", href: "/developments/captura" }];
 
 export default function DevelopmentsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const role = (session?.user as { role?: string })?.role;
-  const tabs = ["DIRECTOR", "GERENTE", "ADMIN"].includes(role ?? "")
-    ? [...baseTabs, ...adminTabs]
-    : baseTabs;
+  const tabs = baseTabs;
 
   const isActive = (href: string) =>
     href === "/developments" ? pathname === "/developments" : pathname?.startsWith(href);
