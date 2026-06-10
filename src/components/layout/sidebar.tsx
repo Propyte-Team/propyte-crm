@@ -16,7 +16,6 @@ import {
   Settings,
   FolderSync,
   Megaphone,
-  DatabaseZap,
   ChevronLeft,
   ChevronRight,
   Moon,
@@ -36,7 +35,7 @@ const navItems = [
   { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
   { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "LIDER"] },
   { label: "Meta Ads", href: "/meta-ads", icon: Megaphone, roles: ["DIRECTOR", "GERENTE", "LIDER", "MARKETING"] },
-  { label: "Meta Leads", href: "/meta-leads", icon: DatabaseZap, roles: ["DIRECTOR", "GERENTE", "MARKETING"] },
+  // Meta Leads migró al Hub: hub.propyte.com/meta-leads (spec crm-hub-migration-cleanup T3.4a)
   { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["HOSTESS"] },
   { label: "Sync Drive", href: "/sync", icon: FolderSync, roles: ["DIRECTOR", "GERENTE", "MANTENIMIENTO"] },
   { label: "Zoho Aprobaciones", href: "/zoho-approvals", icon: ShieldCheck, roles: ["DIRECTOR", "GERENTE"] },
