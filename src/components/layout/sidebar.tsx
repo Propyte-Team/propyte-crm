@@ -14,15 +14,11 @@ import {
   BarChart3,
   UserCheck,
   Settings,
-  FolderSync,
-  Megaphone,
   ChevronLeft,
   ChevronRight,
   Moon,
   Sun,
   LogOut,
-  ShieldCheck,
-  RefreshCcw,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
@@ -34,12 +30,8 @@ const navItems = [
   { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
   { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
   { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "LIDER"] },
-  { label: "Meta Ads", href: "/meta-ads", icon: Megaphone, roles: ["DIRECTOR", "GERENTE", "LIDER", "MARKETING"] },
-  // Meta Leads migró al Hub: hub.propyte.com/meta-leads (spec crm-hub-migration-cleanup T3.4a)
+  // Meta Ads/Leads, Sync Drive y Zoho migraron al Hub (spec crm-hub-migration-cleanup T2.2/T3.4/T4)
   { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["HOSTESS"] },
-  { label: "Sync Drive", href: "/sync", icon: FolderSync, roles: ["DIRECTOR", "GERENTE", "MANTENIMIENTO"] },
-  { label: "Zoho Aprobaciones", href: "/zoho-approvals", icon: ShieldCheck, roles: ["DIRECTOR", "GERENTE"] },
-  { label: "Zoho Sync", href: "/zoho-sync", icon: RefreshCcw, roles: ["DIRECTOR", "GERENTE"] },
   { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
 ]
 

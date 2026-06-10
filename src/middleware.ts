@@ -28,14 +28,6 @@ export default withAuth(
       }
     }
 
-    // Verificar acceso a Meta Ads
-    if (pathname.startsWith("/meta-ads")) {
-      const metaRoles = ["ADMIN", "DIRECTOR", "GERENTE", "LIDER", "MARKETING"];
-      if (!metaRoles.includes(token.role as string)) {
-        return NextResponse.redirect(new URL("/dashboard", req.url));
-      }
-    }
-
     // Verificar acceso a configuración de plazas
     if (pathname.startsWith("/dashboard/plazas")) {
       const plazaRoles = ["ADMIN", "GERENTE", "DIRECTOR"];
@@ -74,10 +66,6 @@ export const config = {
     "/api/twilio/:path*",
     "/api/messages/:path*",
     // Meta Ads
-    "/meta-ads/:path*",
-    "/api/meta-ads/campaigns/:path*",
-    "/api/meta-ads/ads/:path*",
-    "/api/meta-ads/audiences/:path*",
-    // Nota: /api/webhooks/** y /api/meta-ads/sync NO están protegidos — usan CRON_SECRET o firma
+    // Nota: /api/webhooks/** NO está protegido — usa API key / firma
   ],
 };
