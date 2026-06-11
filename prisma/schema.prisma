@@ -601,6 +601,13 @@ model User {
   notifications    Notification[]
   messages         Message[]
 
+  // Relaciones personalizacion & equipos
+  ledTeams             Team[]            @relation("TeamLeader")
+  forecastTeams        Team[]            @relation("TeamForecast")
+  teamMemberships      TeamMember[]
+  territoryMemberships TerritoryMember[]
+  forecastTerritories  Territory[]       @relation("TerritoryForecast")
+
   // Relaciones rebuild F1/F6
   quotesCreated           Quote[]        @relation("QuotesCreated")
   dealDocsUploaded        DealDocument[] @relation("DealDocsUploaded")
@@ -650,6 +657,9 @@ model Contact {
   temperature  LeadTemperature @default(COLD)
   score        Int             @default(0)
   tags         String[]
+
+  // Campos custom metadata-driven (speckit Personalizacion 3.4)
+  custom Json @default("{}")
 
   // Ciclo de contacto y cumplimiento (Anexo Técnico §B.2)
   contactStatus     ContactStatus @default(NUEVO)
@@ -811,6 +821,9 @@ model Deal {
   contractSignedAt DateTime?
   deedAt           DateTime?
   deliveredAt      DateTime?
+
+  // Campos custom metadata-driven (speckit Personalizacion 3.4)
+  custom Json @default("{}")
 
   // Broker externo asociado (F6, §2.3.7)
   externalBrokerId String?
@@ -1610,5 +1623,432 @@ model ExternalBroker {
   deletedAt DateTime?
 
   @@map("external_brokers")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// PERSONALIZACIÓN & EQUIPOS — P1 Equipos/Territorios (speckit §2)
+// =====================================================================
+
+enum TeamRole {
+  LEADER
+  SENIOR
+  JUNIOR
+  HOSTESS
+
+  @@schema("propyte_crm")
+}
+
+enum TerritoryType {
+  GEO
+  SEGMENT
+
+  @@schema("propyte_crm")
+}
+
+enum TerritoryAccess {
+  VIEW
+  EDIT
+
+  @@schema("propyte_crm")
+}
+
+// Capa matricial ENCIMA de la jerarquía de roles RH (User.teamLeaderId NO se duplica)
+model Team {
+  id                String  @id @default(uuid())
+  name              String  @unique
+  plaza             Plaza
+  leaderId          String?
+  leader            User?   @relation("TeamLeader", fields: [leaderId], references: [id])
+  parentTeamId      String?
+  parentTeam        Team?   @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
+  childTeams        Team[]  @relation("TeamHierarchy")
+  forecastManagerId String?
+  forecastManager   User?   @relation("TeamForecast", fields: [forecastManagerId], references: [id])
+  isActive          Boolean @default(true)
+
+  members TeamMember[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("teams")
+  @@schema("propyte_crm")
+}
+
+// Membresía N:N con rol e historial (joinedAt/leftAt — nunca se borra)
+model TeamMember {
+  id         String    @id @default(uuid())
+  teamId     String
+  team       Team      @relation(fields: [teamId], references: [id])
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  roleInTeam TeamRole  @default(JUNIOR)
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+
+  @@index([teamId, leftAt])
+  @@index([userId, leftAt])
+  @@map("team_members")
+  @@schema("propyte_crm")
+}
+
+// Territorio = matriz de asignación/visibilidad (distinta a jerarquía RH). Zona dentro de plaza (OQ2).
+model Territory {
+  id                String        @id @default(uuid())
+  name              String        @unique
+  type              TerritoryType @default(GEO)
+  parentTerritoryId String?
+  parentTerritory   Territory?    @relation("TerritoryHierarchy", fields: [parentTerritoryId], references: [id])
+  childTerritories  Territory[]   @relation("TerritoryHierarchy")
+  plaza             Plaza?
+  zones             String[]      @default([])
+  forecastManagerId String?
+  forecastManager   User?         @relation("TerritoryForecast", fields: [forecastManagerId], references: [id])
+  isActive          Boolean       @default(true)
+
+  members TerritoryMember[]
+  rules   TerritoryRule[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("territories")
+  @@schema("propyte_crm")
+}
+
+model TerritoryMember {
+  id          String          @id @default(uuid())
+  territoryId String
+  territory   Territory       @relation(fields: [territoryId], references: [id])
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  accessLevel TerritoryAccess @default(VIEW)
+
+  createdAt DateTime @default(now())
+
+  @@unique([territoryId, userId])
+  @@map("territory_members")
+  @@schema("propyte_crm")
+}
+
+// Regla de asignación a territorio (conditions = DSL del Anexo D.4 sobre contact); hijo antes que padre
+model TerritoryRule {
+  id          String    @id @default(uuid())
+  territoryId String
+  territory   Territory @relation(fields: [territoryId], references: [id])
+  priority    Int       @default(100)
+  conditions  Json      @default("{}")
+  isActive    Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, priority])
+  @@map("territory_rules")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// PERSONALIZACIÓN — P2 Registro de metadata (speckit §3)
+// =====================================================================
+
+enum FieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  CURRENCY
+  PERCENT
+  DATE
+  DATETIME
+  BOOLEAN
+  EMAIL
+  PHONE
+  URL
+  PICKLIST
+  MULTI_PICKLIST
+  AUTO_NUMBER
+  FORMULA
+  FILE
+  USER
+  LOOKUP
+  MASTER_DETAIL
+  ROLLUP
+  GEO
+
+  @@schema("propyte_crm")
+}
+
+enum FieldAccess {
+  HIDDEN
+  READ
+  EDIT
+
+  @@schema("propyte_crm")
+}
+
+// Objetos del CRM (núcleo isSystem; Hub isExternal=read-only — decisión OQ5)
+model CustomObjectDef {
+  id              String  @id @default(uuid())
+  apiName         String  @unique // INMUTABLE (lección HubSpot)
+  label           String
+  pluralLabel     String
+  icon            String?
+  isSystem        Boolean @default(false)
+  isExternal      Boolean @default(false)
+  recordNameField String  @default("name")
+  isActive        Boolean @default(true)
+
+  fields  CustomFieldDef[]
+  layouts Layout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("custom_objects")
+  @@schema("propyte_crm")
+}
+
+// Definición de campo. isSystem=true documenta columnas tipadas reales; custom vive en JSONB.
+model CustomFieldDef {
+  id            String          @id @default(uuid())
+  objectApiName String
+  object        CustomObjectDef @relation(fields: [objectApiName], references: [apiName])
+  apiName       String // INMUTABLE tras crear; convención obj_snake
+  label         String
+  fieldType     FieldType // INMUTABLE tras crear
+  isRequired    Boolean         @default(false)
+  isUnique      Boolean         @default(false)
+  isSearchable  Boolean         @default(false)
+  defaultValue  Json?
+  helpText      String?
+  validation    Json            @default("{}")
+  order         Int             @default(100)
+  isSystem      Boolean         @default(false)
+  isActive      Boolean         @default(true)
+  archivedAt    DateTime? // archivar conserva valores (PC6)
+
+  options     FieldOption[]
+  permissions FieldPermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([objectApiName, apiName])
+  @@map("custom_fields")
+  @@schema("propyte_crm")
+}
+
+model FieldOption {
+  id       String         @id @default(uuid())
+  fieldId  String
+  field    CustomFieldDef @relation(fields: [fieldId], references: [id])
+  value    String
+  label    String
+  color    String?
+  order    Int            @default(100)
+  isActive Boolean        @default(true) // nunca borrar opción en uso → desactivar
+
+  @@unique([fieldId, value])
+  @@map("field_options")
+  @@schema("propyte_crm")
+}
+
+model Layout {
+  id            String          @id @default(uuid())
+  objectApiName String
+  object        CustomObjectDef @relation(fields: [objectApiName], references: [apiName])
+  name          String          @default("Default")
+  isDefault     Boolean         @default(true)
+
+  sections LayoutSection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([objectApiName, name])
+  @@map("layouts")
+  @@schema("propyte_crm")
+}
+
+model LayoutSection {
+  id         String @id @default(uuid())
+  layoutId   String
+  layout     Layout @relation(fields: [layoutId], references: [id])
+  title      String
+  order      Int    @default(100)
+  columns    Int    @default(2)
+  conditions Json? // DSL Anexo D.4: mostrar/ocultar sección
+
+  fields LayoutField[]
+
+  @@map("layout_sections")
+  @@schema("propyte_crm")
+}
+
+model LayoutField {
+  id           String        @id @default(uuid())
+  sectionId    String
+  section      LayoutSection @relation(fields: [sectionId], references: [id])
+  fieldApiName String
+  order        Int           @default(100)
+  conditions   Json? // DSL: mostrar/ocultar/forzar-obligatorio (OQ6: v1)
+
+  @@map("layout_fields")
+  @@schema("propyte_crm")
+}
+
+// Field-level security por rol (PC5: restrictivo por defecto)
+model FieldPermission {
+  id      String         @id @default(uuid())
+  fieldId String
+  field   CustomFieldDef @relation(fields: [fieldId], references: [id])
+  role    UserRole
+  access  FieldAccess    @default(READ)
+
+  @@unique([fieldId, role])
+  @@map("field_permissions")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// PERSONALIZACIÓN — P3 Relaciones entre módulos (speckit §4)
+// =====================================================================
+
+enum RelationshipKind {
+  LOOKUP
+  MASTER_DETAIL
+  MANY_TO_MANY
+
+  @@schema("propyte_crm")
+}
+
+enum OnDeleteBehavior {
+  SET_NULL
+  CASCADE
+  RESTRICT
+
+  @@schema("propyte_crm")
+}
+
+enum RollupAggregate {
+  COUNT
+  SUM
+  MIN
+  MAX
+  AVG
+
+  @@schema("propyte_crm")
+}
+
+model RelationshipDef {
+  id               String           @id @default(uuid())
+  name             String           @unique
+  fromObject       String
+  toObject         String
+  kind             RelationshipKind
+  onDelete         OnDeleteBehavior @default(SET_NULL)
+  relatedListLabel String
+  isRequired       Boolean          @default(false)
+  allowMultiple    Boolean          @default(true)
+  isActive         Boolean          @default(true)
+  isSystem         Boolean          @default(false) // describe relaciones físicas Prisma existentes (speckit 4.4)
+
+  labels      RelationshipLabel[]
+  projections LookupProjection[]
+  rollups     RollupFieldDef[]
+  links       RecordLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("relationships")
+  @@schema("propyte_crm")
+}
+
+// Rol del record en la relación (estilo HubSpot association labels)
+model RelationshipLabel {
+  id             String          @id @default(uuid())
+  relationshipId String
+  relationship   RelationshipDef @relation(fields: [relationshipId], references: [id])
+  label          String
+  fromRole       String?
+  toRole         String?
+
+  links RecordLink[]
+
+  @@unique([relationshipId, label])
+  @@map("relationship_labels")
+  @@schema("propyte_crm")
+}
+
+// Field-of-lookup (estilo Zoho, máx 5 — se valida en API)
+model LookupProjection {
+  id                 String          @id @default(uuid())
+  relationshipId     String
+  relationship       RelationshipDef @relation(fields: [relationshipId], references: [id])
+  sourceFieldApiName String
+  displayLabel       String
+  order              Int             @default(100)
+
+  @@map("lookup_projections")
+  @@schema("propyte_crm")
+}
+
+// Rollup (estilo Salesforce) — solo MASTER_DETAIL/FK fuerte; lo calcula el motor/cron
+model RollupFieldDef {
+  id                  String          @id @default(uuid())
+  parentObject        String
+  childRelationshipId String
+  childRelationship   RelationshipDef @relation(fields: [childRelationshipId], references: [id])
+  aggregate           RollupAggregate
+  childFieldApiName   String?
+  filter              Json?
+
+  createdAt DateTime @default(now())
+
+  @@map("rollup_fields")
+  @@schema("propyte_crm")
+}
+
+// Puente N:N GENÉRICO con label/rol — evita DDL en runtime (PC1; desviación
+// documentada del speckit 4.2 "tabla por relación": un solo puente indexado)
+model RecordLink {
+  id             String             @id @default(uuid())
+  relationshipId String
+  relationship   RelationshipDef    @relation(fields: [relationshipId], references: [id])
+  fromObject     String
+  fromId         String
+  toObject       String
+  toId           String
+  labelId        String?
+  label          RelationshipLabel? @relation(fields: [labelId], references: [id])
+  createdById    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([relationshipId, fromId, toId])
+  @@index([fromObject, fromId])
+  @@index([toObject, toId])
+  @@map("record_links")
+  @@schema("propyte_crm")
+}
+
+// Records de objetos custom desde cero (P4 — tabla lista, editor después)
+model CustomRecord {
+  id            String  @id @default(uuid())
+  objectApiName String
+  recordName    String
+  data          Json    @default("{}")
+  createdById   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([objectApiName, deletedAt])
+  @@map("custom_records")
   @@schema("propyte_crm")
 }
