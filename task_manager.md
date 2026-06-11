@@ -1,6 +1,20 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-10 noche (audit Playwright + fixes + rediseño minimalista B/N en rama).
+> Última actualización: 2026-06-10 noche-2 (REBUILD F1 fundaciones en rama, migración SQL esperando OK).
+>
+> **🎯 Sesión 2026-06-10 noche-2 (rebuild F1)** — Luis entregó el **Anexo Técnico** (diccionario de
+> campos, funciones, motor de workflows, inventarios) + 3 requerimientos nuevos (conectores directos
+> Meta/TikTok, inbox WhatsApp con takeover, perfiles de usuario) y aprobó el speckit resultante.
+> Producido: `specs/SPECKIT-ANEXO-TECNICO.md` (verbatim) + `specs/SPECKIT-ANEXO-B-MULTICANAL-PERFILES.md`
+> (nuevo, cierra OQs G.1-G.7) + plan maestro 7 fases + plan F1 detallado (`docs/superpowers/plans/`).
+> **F1 EJECUTADA en rama `feat/crm-rebuild-fase1`** (5 commits, pusheada): 19 enums + 17 modelos nuevos
+> (motor workflows/conectores/inbox/perfiles/KYC/atribución), extensiones a Contact/Deal/Message/User,
+> `lib/phone` E.164 + `lib/crypto` AES-GCM + zod (30 tests verdes), seeds canónicos listos. tsc+build verdes.
+> **⛔ BLOQUEADO — acción de Luis:** aplicar `prisma/migrations-manual/2026-06-10-f1-fundaciones.sql`
+> (verificado 100% additivo: 19 CREATE TYPE, 17 CREATE TABLE, 0 DROPs) — decir "aplica la migración F1"
+> en sesión, o pegarlo en el SQL Editor de Supabase. Después: `npx tsx scripts/seed-rebuild-f1.ts`.
+> También requiere: `KYC_ENCRYPTION_KEY` en .env (generación documentada en .env.example).
+> **Siguiente fase:** F2 motor de workflows (runner/cola/SLA/ruteo) — ver plan maestro.
 >
 > **🎯 Sesión 2026-06-10 noche (autónoma)** — ARRANQUE DEL REBUILD sobre el SPECKIT consolidado
 > (`SPECKIT-PROPYTE-CRM-CONSOLIDADO.md` en Downloads; pendiente moverlo a `specs/`). Local reseteado a
