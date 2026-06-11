@@ -40,6 +40,7 @@ const navItems = [
   // Meta Ads/Leads, Sync Drive y Zoho migraron al Hub (spec crm-hub-migration-cleanup T2.2/T3.4/T4)
   { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS"] },
   { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+  { label: "Configuración", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
 ]
 
 export function Sidebar() {
