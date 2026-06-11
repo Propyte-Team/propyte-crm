@@ -16,9 +16,9 @@
 > - **P3 Relaciones**: RelationshipDef/Labels/Projections(max 5)/Rollups/RecordLink (puente genérico,
 >   PC1) + /api/admin/relationships + /api/links + /api/records/search (picker; Hub = externo read-only).
 > - 55 tests verdes · build verde · 4 commits pusheados.
-> **⛔ BLOQUEADO — Luis:** decir **"aplica la migración P123"**
-> (`prisma/migrations-manual/2026-06-11-p123-personalizacion.sql`, 26 CREATE + 2 ADD COLUMN, additiva
-> verificada) → luego `npx tsx scripts/seed-personalizacion.ts`.
+> **✅ MIGRACIÓN P123 APLICADA** (Luis autorizó 2026-06-11) + seeds corridos y verificados:
+> 7 objetos registrados (5 núcleo + 2 externos Hub), 4 relaciones sistema, 3 labels, 3 proyecciones.
+> Sistema de personalización 100% operativo en BD.
 > **Pendiente próxima sesión:** UI visual admin (tab Equipos + tab Campos + listas relacionadas en
 > deal), rollups runner, P4 (objetos custom desde cero, fórmulas, búsqueda global).
 
