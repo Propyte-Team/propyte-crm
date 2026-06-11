@@ -318,6 +318,19 @@ export async function createContact(data: z.infer<typeof contactSchema>) {
   // Disparar webhook de contacto creado (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("contact.created", { contact });
 
+  // Motor de workflows: eventos + SLA de primer toque para el asesor asignado
+  const { emitEvent } = await import("@/lib/workflows/events");
+  const { createSlaTimer } = await import("@/lib/workflows/sla");
+  await emitEvent("contact.created", "contact", contact.id, { leadSource: contact.leadSource });
+  await emitEvent("lead.captured", "contact", contact.id, {
+    leadSource: contact.leadSource,
+    channel: "manual",
+  });
+  if (assignedToId) {
+    await createSlaTimer(contact.id, "FIRST_TOUCH");
+    await emitEvent("lead.assigned", "contact", contact.id, { assigneeId: assignedToId });
+  }
+
   return { contact };
 }
 

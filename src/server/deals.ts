@@ -534,6 +534,12 @@ export async function transitionDealStage(
     updateData.lostReasonDetail = validated.lostReasonDetail || null;
   }
 
+  // Fechas hito (paridad Zoho, consolidado §2.3.8)
+  if (toStage === "RESERVED") updateData.reservedAt = new Date();
+  if (toStage === "CONTRACT_SIGNED") updateData.contractSignedAt = new Date();
+  if (toStage === "CLOSING") updateData.deedAt = new Date();
+  if (toStage === "WON") updateData.deliveredAt = new Date();
+
   // Actualizar el deal
   const updatedDeal = await prisma.deal.update({
     where: { id: dealId },
@@ -640,6 +646,20 @@ export async function transitionDealStage(
   if (toStage === "LOST") {
     dispatchWebhook("deal.lost", { deal: updatedDeal });
   }
+
+  // Motor de workflows (Anexo §D): eventos de dominio + actividad del contacto
+  const { emitEvent } = await import("@/lib/workflows/events");
+  await prisma.contact.update({
+    where: { id: deal.contactId },
+    data: { lastActivityAt: new Date() },
+  }).catch(() => {});
+  await emitEvent("deal.stage_changed", "deal", deal.id, {
+    previousStage: fromStage,
+    toStage,
+    contactId: deal.contactId,
+  });
+  if (toStage === "WON") await emitEvent("deal.won", "deal", deal.id, { contactId: deal.contactId });
+  if (toStage === "LOST") await emitEvent("deal.lost", "deal", deal.id, { contactId: deal.contactId, lostReason: extras.lostReason });
 
   return updatedDeal;
 }
