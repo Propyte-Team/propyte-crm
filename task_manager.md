@@ -138,4 +138,4 @@ GROUP BY pipeline_status ORDER BY pending DESC;
 
 ### Limpieza de ramas (2026-06-10 noche)
 - [x] **9 ramas eliminadas** (5 remotas + 4 locales): Funciones_avanzadas, chore/disable-robot-02-images-schedule, fix/classifier-dedup-key (su único commit no-mergeado era el WIP push-record de Zoho — código ya demolido), fix/classifier-estado-unidad-capitalizado, fix/classifier-slug-fallback-titulo, feat/intake-form-captura-externa
-- [ ] **`import-crm-base-fork` CONSERVADA pendiente de decisión Luis** — 1,436 commits: es el import completo del proyecto externo "crm-base" (aislado en la auditoría 2026-06-08). Posible material de referencia para el rebuild. Recomendación: conservar
+- [x] **`import-crm-base-fork` CONSERVADA (decisión Luis 2026-06-10)** — 1,436 commits del import del proyecto externo "crm-base"; queda como material de referencia para el rebuild
