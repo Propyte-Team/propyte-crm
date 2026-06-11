@@ -84,33 +84,31 @@ export function DashboardContent({
 
   return (
     <div className="space-y-5">
-      {/* KPIs */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          title="Deals Activos"
-          value={activeDeals.toLocaleString("es-MX")}
-          subtitle={`Valor ponderado: ${formatMXN(activeDealsValue)}`}
-          trend={activeDealsTrend}
-          icon={BarChart3}
-        />
-        <KpiCard
-          title="Leads del Mes"
-          value={newLeadsMonth.toLocaleString("es-MX")}
-          trend={newLeadsTrend}
-          icon={Users}
-        />
-        <KpiCard
-          title="Comisiones Pendientes"
-          value={formatMXN(pendingCommissions)}
-          trend={pendingCommissionsTrend}
-          icon={DollarSign}
-        />
-        <KpiCard
-          title="Tasa de Conversión"
-          value={`${conversionRate}%`}
-          trend={conversionRateTrend}
-          icon={TrendingUp}
-        />
+      {/* Stat strip: una sola superficie dividida por hairlines, cifras grandes en mono.
+          Sin iconos decorativos: el dato ES el protagonista (speckit de diseño). */}
+      <div className="stat-strip grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: "Deals activos", value: activeDeals.toLocaleString("es-MX"), sub: `${formatMXN(activeDealsValue)} ponderado`, trend: activeDealsTrend },
+          { label: "Leads del mes", value: newLeadsMonth.toLocaleString("es-MX"), sub: "captados este mes", trend: newLeadsTrend },
+          { label: "Comisiones pendientes", value: formatMXN(pendingCommissions), sub: "por facturar", trend: pendingCommissionsTrend },
+          { label: "Conversión", value: `${conversionRate}%`, sub: "lead a ganado", trend: conversionRateTrend },
+        ].map((kpi) => (
+          <div key={kpi.label} className="stat-cell">
+            <div className="flex items-center justify-between gap-2">
+              <span className="stat-label">{kpi.label}</span>
+              {typeof kpi.trend === "number" && kpi.trend !== 0 && (
+                <span
+                  className="num text-[11px] font-semibold"
+                  style={{ color: kpi.trend > 0 ? "var(--color-success)" : "var(--color-error)" }}
+                >
+                  {kpi.trend > 0 ? "+" : ""}{kpi.trend}%
+                </span>
+              )}
+            </div>
+            <p className="stat-value">{kpi.value}</p>
+            <p className="stat-sub">{kpi.sub}</p>
+          </div>
+        ))}
       </div>
 
       {/* Pipeline + side widgets */}

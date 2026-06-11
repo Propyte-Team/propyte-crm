@@ -2,6 +2,7 @@
 "use client"
 
 import * as React from "react"
+import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
 import { Search, Bell, User, TrendingUp, LogOut } from "lucide-react"
 import {
@@ -13,8 +14,26 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+const MODULE_LABELS: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/contacts": "Contactos",
+  "/inbox": "Inbox",
+  "/pipeline": "Pipeline",
+  "/developments": "Desarrollos",
+  "/commissions": "Comisiones",
+  "/reports": "Reportes",
+  "/career": "Mi Carrera",
+  "/settings": "Mi Config",
+  "/walk-ins": "Walk-ins",
+  "/admin": "Admin",
+  "/configuracion": "Configuración",
+}
+
 export function Topbar() {
+  const pathname = usePathname()
   const { data: session } = useSession()
+  const moduleLabel =
+    Object.entries(MODULE_LABELS).find(([href]) => pathname?.startsWith(href))?.[1] ?? ""
   const [unreadCount, setUnreadCount] = React.useState(0)
 
   // Conteo real de notificaciones no leídas
@@ -44,15 +63,21 @@ export function Topbar() {
       className="flex h-12 items-center justify-between px-4"
       style={{ background: "var(--bg-sidebar)", borderBottom: "1px solid var(--border-subtle)" }}
     >
-      {/* Search */}
-      <div className="relative w-full max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
-        <input
-          type="text"
-          placeholder="Buscar contactos, deals..."
-          className="form-input pl-8 py-1.5 text-[13px]"
-          style={{ background: "var(--bg-input)", height: "32px" }}
-        />
+      {/* Módulo activo + búsqueda con hint de teclado */}
+      <div className="flex items-center gap-4">
+        <span className="text-[13px] font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>
+          {moduleLabel}
+        </span>
+        <div className="relative hidden w-72 sm:block">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
+          <input
+            type="text"
+            placeholder="Buscar contactos, deals..."
+            className="form-input py-1.5 pl-8 pr-12 text-[13px]"
+            style={{ background: "var(--bg-input)", height: "32px" }}
+          />
+          <span className="kbd absolute right-2 top-1/2 -translate-y-1/2">⌘K</span>
+        </div>
       </div>
 
       {/* Right actions */}

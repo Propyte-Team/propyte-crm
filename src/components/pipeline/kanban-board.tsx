@@ -49,23 +49,28 @@ function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex min-w-[280px] max-w-[300px] flex-shrink-0 flex-col rounded-lg border bg-muted/30 transition-all ${
-        isOver ? "ring-2 ring-primary/50 bg-primary/5" : ""
+      className={`flex min-w-[272px] max-w-[292px] flex-shrink-0 flex-col rounded-lg transition-all ${
+        isOver ? "ring-2 ring-primary/40" : ""
       }`}
+      style={{
+        background: "var(--bg-surface)",
+        borderTop: `2px solid ${stageColor}`,
+      }}
     >
-      {/* Encabezado de la columna */}
-      <div className="border-b p-3">
-        <div className="flex items-center gap-2">
-          <div
-            className="h-3 w-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: stageColor }}
-          />
-          <span className="text-sm font-semibold truncate">{stageLabel}</span>
-          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium flex-shrink-0">
+      {/* Encabezado: etiqueta uppercase + métricas en mono (instrumento, no tarjeta) */}
+      <div className="px-3 pb-2 pt-2.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span
+            className="truncate text-[11px] font-semibold uppercase tracking-[0.08em]"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {stageLabel}
+          </span>
+          <span className="num text-[11px] font-medium" style={{ color: "var(--text-tertiary)" }}>
             {deals.length}
           </span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="num mt-0.5 text-[12px]" style={{ color: "var(--text-secondary)" }}>
           {formatCurrency(totalValue)}
         </p>
       </div>
@@ -81,10 +86,10 @@ function KanbanColumn({
           ))}
         </SortableContext>
 
-        {/* Placeholder cuando la columna está vacía */}
+        {/* Vacío con dirección, no decoración (voz Sage) */}
         {deals.length === 0 && (
-          <div className="flex h-20 items-center justify-center rounded-md border-2 border-dashed text-xs text-muted-foreground">
-            Sin deals
+          <div className="flex h-16 items-center justify-center text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+            Arrastra un deal aquí
           </div>
         )}
       </div>
