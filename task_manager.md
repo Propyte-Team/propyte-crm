@@ -1,6 +1,27 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-11 (REBUILD F1-F6 ejecutadas en rama `feat/crm-rebuild-fase1`).
+> Última actualización: 2026-06-11 tarde (Speckit #3 Personalización & Equipos P1-P3 ejecutado).
+>
+> **🎯 Sesión 2026-06-11 tarde (Speckit #3)** — F6 APLICADA en BD (Luis autorizó) ✅. Speckit
+> Personalización & Equipos versionado (`specs/SPECKIT-PERSONALIZACION-Y-EQUIPOS.md`) + decisiones
+> OQ1-7 en `docs/superpowers/plans/2026-06-11-personalizacion-equipos.md`. Implementado:
+> - **P1 Equipos/Territorios**: Team/TeamMember(historial)/Territory(jerarquía+zonas)/TerritoryMember/
+>   TerritoryRule. Ruteo integrado: PRIMERO territorio (DSL, hijo-antes-que-padre), LUEGO estrategia
+>   dentro del territorio. APIs /api/admin/teams + /api/admin/territories.
+> - **P2 Editor de campos**: registro metadata (objetos/campos/opciones/layouts/permisos por rol),
+>   gobernanza anti-sprawl (convención apiName + detector de duplicados con force, solo ADMIN,
+>   AuditLog), validador zod generado del registro + cache TTL 60s, contacts.custom/deals.custom
+>   JSONB, /api/admin/metadata/fields + /api/records/[object]/[id]/custom, render dinámico
+>   CustomFieldsSection montado en detalle de Contacto.
+> - **P3 Relaciones**: RelationshipDef/Labels/Projections(max 5)/Rollups/RecordLink (puente genérico,
+>   PC1) + /api/admin/relationships + /api/links + /api/records/search (picker; Hub = externo read-only).
+> - 55 tests verdes · build verde · 4 commits pusheados.
+> **⛔ BLOQUEADO — Luis:** decir **"aplica la migración P123"**
+> (`prisma/migrations-manual/2026-06-11-p123-personalizacion.sql`, 26 CREATE + 2 ADD COLUMN, additiva
+> verificada) → luego `npx tsx scripts/seed-personalizacion.ts`.
+> **Pendiente próxima sesión:** UI visual admin (tab Equipos + tab Campos + listas relacionadas en
+> deal), rollups runner, P4 (objetos custom desde cero, fórmulas, búsqueda global).
+
 >
 > **🎯 Sesión 2026-06-11 (rebuild F2-F6, autónoma con aprobación de Luis)** — Continuación sin pausa:
 > - **F1 ✅ APLICADA EN BD** (Luis autorizó): 17 tablas + seeds verificados (8 reglas, SLA, ruteo, plantillas).
