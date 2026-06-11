@@ -78,12 +78,15 @@ export async function captureLead(
   });
 
   // Atribución publicitaria si viene en el payload (Anexo §B.4)
-  if (lead.utm || lead.gclid || lead.fbclid || lead.landingPage) {
+  if (lead.utm || lead.gclid || lead.fbclid || lead.ttclid || lead.liFatId || lead.portalLeadId || lead.landingPage) {
     await prisma.adAttribution.create({
       data: {
         contactId: contact.id,
         gclid: lead.gclid ?? null,
         fbclid: lead.fbclid ?? null,
+        ttclid: lead.ttclid ?? null,
+        liFatId: lead.liFatId ?? null,
+        portalLeadId: lead.portalLeadId ?? null,
         utmSource: lead.utm?.source ?? null,
         utmMedium: lead.utm?.medium ?? null,
         utmCampaign: lead.utm?.campaign ?? null,
@@ -104,6 +107,12 @@ export async function captureLead(
     connectorId: opts.connectorId,
     hubDevelopmentId: lead.hubDevelopmentId,
   });
+
+  // CAPI: evento Lead hacia plataformas (speckit #4 §5.2) — best effort
+  try {
+    const { recordConversionEvent } = await import("@/lib/capi/events");
+    await recordConversionEvent("LEAD", contact);
+  } catch { /* tablas C123 sin migrar */ }
 
   // Ruteo + SLA (P2: owner en <60s)
   let assignedToId: string | null = null;

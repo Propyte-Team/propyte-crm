@@ -8,6 +8,16 @@ import { runQueue } from "@/lib/workflows/queue";
 import { checkSlaBreaches } from "@/lib/workflows/sla";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 
+// CAPI dispatcher con guarda (tablas C123 pueden no estar migradas aún)
+async function processPendingConversionsSafe() {
+  try {
+    const { processPendingConversions } = await import("@/lib/capi/dispatch");
+    return await processPendingConversions(20);
+  } catch {
+    return { sent: 0, partial: 0, failed: 0 };
+  }
+}
+
 // Parcialidades vencidas → VENCIDA + payment.overdue (WF6). Defensivo: si la tabla
 // F6 aún no está migrada, regresa 0 sin romper el tick.
 async function checkOverduePayments(): Promise<number> {
@@ -61,6 +71,7 @@ export async function GET(req: NextRequest) {
     result.enrollments = await runEnrollments(50);
     result.inactivity = await runInactivityRules(200);
     result.overduePayments = await checkOverduePayments();
+    result.conversions = await processPendingConversionsSafe();
     result.ms = Date.now() - startedAt;
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {

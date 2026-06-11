@@ -149,6 +149,9 @@ export const incomingLeadSchema = z
       .optional(),
     gclid: z.string().optional(),
     fbclid: z.string().optional(),
+    ttclid: z.string().optional(),
+    liFatId: z.string().optional(),
+    portalLeadId: z.string().optional(),
     landingPage: z.string().optional(),
     referrer: z.string().optional(),
   })

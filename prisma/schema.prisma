@@ -511,6 +511,14 @@ enum ConnectorProvider {
   WEBSITE
   ZAPIER
   MANUAL
+  GOOGLE
+  LINKEDIN
+  INMUEBLES24
+  LAMUDI_PROPPIT
+  PROPIEDADES
+  VIVANUNCIOS
+  EASYBROKER
+  CUSTOM
 
   @@schema("propyte_crm")
 }
@@ -601,6 +609,8 @@ model User {
   notifications    Notification[]
   messages         Message[]
 
+  agentIdentities AgentDef[] @relation("AgentIdentity")
+
   // Relaciones personalizacion & equipos
   ledTeams             Team[]            @relation("TeamLeader")
   forecastTeams        Team[]            @relation("TeamForecast")
@@ -685,12 +695,13 @@ model Contact {
   messages   Message[]
 
   // Relaciones rebuild F1
-  dossier        ContactDossier?
-  adAttribution  AdAttribution?
-  webBehavior    WebBehavior?
-  conversations  Conversation[]
-  slaTimers      SlaTimer[]
-  connectorLeads ConnectorLeadLog[]
+  dossier          ContactDossier?
+  conversionEvents ConversionEvent[]
+  adAttribution    AdAttribution?
+  webBehavior      WebBehavior?
+  conversations    Conversation[]
+  slaTimers        SlaTimer[]
+  connectorLeads   ConnectorLeadLog[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -830,10 +841,11 @@ model Deal {
   externalBroker   ExternalBroker? @relation(fields: [externalBrokerId], references: [id])
 
   // Relaciones
-  activities Activity[]
-  slaTimers  SlaTimer[]
-  quotes     Quote[]
-  documents  DealDocument[]
+  activities       Activity[]
+  slaTimers        SlaTimer[]
+  quotes           Quote[]
+  documents        DealDocument[]
+  conversionEvents ConversionEvent[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1076,6 +1088,9 @@ model AdAttribution {
 
   gclid        String?
   fbclid       String?
+  ttclid       String? // TikTok click id
+  liFatId      String? // LinkedIn first-party ad tracking id
+  portalLeadId String? // id del lead en el portal inmobiliario
   socialLeadId String? // Meta leadgen_id / TikTok lead id
 
   utmSource   String?
@@ -1329,17 +1344,18 @@ model SlaTimer {
 
 // Conector de intake (Meta Lead Ads / TikTok Lead Gen / Web). credentials va CIFRADO (lib/crypto).
 model LeadConnector {
-  id          String            @id @default(uuid())
+  id          String             @id @default(uuid())
   name        String
   provider    ConnectorProvider
-  status      ConnectorStatus   @default(PAUSED)
-  credentials String?           @db.Text // JSON cifrado AES-256-GCM — nunca en claro
-  config      Json              @default("{}")
-  fieldMap    Json              @default("{}")
+  direction   ConnectorDirection @default(INBOUND)
+  status      ConnectorStatus    @default(PAUSED)
+  credentials String?            @db.Text // JSON cifrado AES-256-GCM — nunca en claro
+  config      Json               @default("{}")
+  fieldMap    Json               @default("{}")
   lastLeadAt  DateTime?
   lastSyncAt  DateTime?
-  errorCount  Int               @default(0)
-  lastError   String?           @db.Text
+  errorCount  Int                @default(0)
+  lastError   String?            @db.Text
 
   leadLogs ConnectorLeadLog[]
 
@@ -2050,5 +2066,133 @@ model CustomRecord {
 
   @@index([objectApiName, deletedAt])
   @@map("custom_records")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// CONECTIVIDAD & CAPI — Speckit #4 (C1/C2)
+// =====================================================================
+
+enum ConnectorDirection {
+  INBOUND
+  OUTBOUND
+  BOTH
+
+  @@schema("propyte_crm")
+}
+
+enum ConversionEventName {
+  LEAD
+  QUALIFIED
+  MEETING_SCHEDULED
+  RESERVED
+  WON
+
+  @@schema("propyte_crm")
+}
+
+enum ConversionStatus {
+  PENDING
+  SENT
+  PARTIAL
+  FAILED
+  SKIPPED
+
+  @@schema("propyte_crm")
+}
+
+// Log outbound de conversiones (speckit #4 §5.1). eventId UNIQUE = idempotencia
+// (dedup interno y vs pixel). hashedPII se construye al despachar, nunca PII en claro.
+model ConversionEvent {
+  id              String              @id @default(uuid())
+  contactId       String
+  contact         Contact             @relation(fields: [contactId], references: [id])
+  dealId          String?
+  deal            Deal?               @relation(fields: [dealId], references: [id])
+  eventName       ConversionEventName
+  eventId         String              @unique
+  occurredAt      DateTime            @default(now())
+  value           Decimal?            @db.Decimal(14, 2)
+  currency        Currency            @default(MXN)
+  leadQualityTier String?
+  clickIds        Json                @default("{}")
+  platforms       String[]            @default([])
+  status          ConversionStatus    @default(PENDING)
+  attempts        Int                 @default(0)
+  results         Json                @default("{}") // por plataforma: ok/emq/error
+  lastError       String?             @db.Text
+  sentAt          DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([contactId])
+  @@map("conversion_events")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// AGENTES DE IA — Speckit #4 (C3): agente = empleado digital gobernado (PA1)
+// =====================================================================
+
+enum AgentType {
+  PREBUILT
+  CUSTOM
+
+  @@schema("propyte_crm")
+}
+
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  ESCALATED
+  FAILED
+
+  @@schema("propyte_crm")
+}
+
+// Identidad del agente = systemUserId (User con rol RBAC). allowedTools acota
+// el registry de lib/agents/tools.ts. limits: horario, tope de pasos, etc.
+model AgentDef {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  type          AgentType     @default(PREBUILT)
+  systemUserId  String
+  systemUser    User          @relation("AgentIdentity", fields: [systemUserId], references: [id])
+  goal          String        @db.Text
+  autonomyLevel AutonomyLevel @default(L2)
+  allowedTools  String[]      @default([])
+  trigger       Json          @default("{}")
+  schedule      String?
+  limits        Json          @default("{}")
+  isActive      Boolean       @default(false)
+
+  runs AgentRun[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("agents")
+  @@schema("propyte_crm")
+}
+
+// Cada corrida: razonamiento + tool calls auditables (PA1: trazable como un humano)
+model AgentRun {
+  id                String         @id @default(uuid())
+  agentId           String
+  agent             AgentDef       @relation(fields: [agentId], references: [id])
+  trigger           String
+  input             Json           @default("{}")
+  steps             Json           @default("[]")
+  output            String?        @db.Text
+  status            AgentRunStatus @default(RUNNING)
+  escalatedToUserId String?
+  error             String?        @db.Text
+  startedAt         DateTime       @default(now())
+  endedAt           DateTime?
+
+  @@index([agentId, startedAt])
+  @@map("agent_runs")
   @@schema("propyte_crm")
 }

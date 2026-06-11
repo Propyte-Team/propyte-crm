@@ -659,6 +659,15 @@ export async function transitionDealStage(
     contactId: deal.contactId,
   });
   if (toStage === "WON") await emitEvent("deal.won", "deal", deal.id, { contactId: deal.contactId });
+
+  // CAPI: devolver el evento del pipeline a las plataformas (speckit #4 §5.2)
+  try {
+    const { recordStageConversion } = await import("@/lib/capi/events");
+    const fullContact = await prisma.contact.findUnique({ where: { id: deal.contactId } });
+    if (fullContact) await recordStageConversion(updatedDeal, fullContact, toStage);
+  } catch (err) {
+    console.error("[capi] recordStageConversion:", err); // tablas C123 sin migrar → no-op
+  }
   if (toStage === "LOST") await emitEvent("deal.lost", "deal", deal.id, { contactId: deal.contactId, lostReason: extras.lostReason });
 
   return updatedDeal;
