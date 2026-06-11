@@ -15,9 +15,10 @@
 >   8 tools tipadas (RBAC+opt-out+brand linter), runner Claude tool-use con escalado,
 >   /api/admin/agents + /api/agents/[id]/run, seeds SDR + Calificador (L2, inactivos).
 > - 61 tests verdes · build verde · pusheado.
-> **⛔ BLOQUEADO — Luis: "aplica la migración C123"**
-> (`prisma/migrations-manual/2026-06-11-c123-conectividad-agentes-capi.sql`, additiva verificada)
-> → luego `npx tsx scripts/seed-agentes.ts`. CHECKLIST DE ACTIVACIÓN COMPLETO entregado en sesión.
+> **✅ MIGRACIÓN C123 APLICADA** (Luis autorizó 2026-06-11) + seeds: user sistema
+> `agentes@propyte.local` + agentes SDR Speed-to-lead y Calificador (L2, INACTIVOS hasta
+> ANTHROPIC_API_KEY). `.env.example` reescrito con TODAS las vars requeridas + notas de dónde
+> va cada una. CHECKLIST DE ACTIVACIÓN entregado en sesión (pasos 2-7 son de Luis).
 > **Pendiente próxima sesión:** Agent Studio UI, adapter Google OAuth, LinkedIn, A2A, MCP server expuesto.
 
 >
