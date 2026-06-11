@@ -12,7 +12,7 @@ const upsertSchema = z.object({
   name: z.string().min(2).max(80),
   goal: z.string().min(10).max(2000),
   systemUserId: z.string().uuid(),
-  autonomyLevel: z.enum(["L0", "L1", "L2", "L3"]).default("L2"),
+  autonomyLevel: z.enum(["L0", "L1", "L2"]).default("L2"),
   allowedTools: z.array(z.string()).min(1),
   trigger: z.record(z.unknown()).default({}),
   limits: z.record(z.unknown()).default({}),

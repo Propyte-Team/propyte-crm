@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
   const schema = z.object({
     isActive: z.boolean().optional(),
-    autonomyLevel: z.enum(["L0", "L1", "L2", "L3"]).optional(),
+    autonomyLevel: z.enum(["L0", "L1", "L2"]).optional(),
     goal: z.string().min(10).max(2000).optional(),
   });
   const parsed = schema.safeParse(await req.json().catch(() => null));
