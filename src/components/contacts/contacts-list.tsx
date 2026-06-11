@@ -251,6 +251,14 @@ export function ContactsList({
 
   return (
     <div className="space-y-4">
+      {/* Encabezado con conteo en vivo (se actualiza al crear/eliminar/importar) */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Contactos</h1>
+        <p className="text-muted-foreground">
+          {total} contacto{total !== 1 ? "s" : ""} en total
+        </p>
+      </div>
+
       {/* Barra de acciones superior */}
       <div className="flex items-center justify-between gap-4">
         {/* Dialogo para nuevo contacto */}

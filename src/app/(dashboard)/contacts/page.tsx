@@ -21,16 +21,7 @@ export default async function ContactsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Encabezado con título y conteo total */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Contactos</h1>
-          <p className="text-muted-foreground">
-            {initialData.total} contacto{initialData.total !== 1 ? "s" : ""} en total
-          </p>
-        </div>
-      </div>
-
+      {/* El encabezado vive en ContactsList para que el conteo se actualice en vivo */}
       {/* Componente cliente con tabla, filtros, paginación y formulario */}
       <ContactsList
         initialContacts={JSON.parse(JSON.stringify(initialData.contacts))}

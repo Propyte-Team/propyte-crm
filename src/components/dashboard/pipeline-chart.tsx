@@ -4,13 +4,14 @@
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from "recharts"
-import { formatMXN } from "@/lib/constants"
+import { formatMXN, STAGE_COLORS } from "@/lib/constants"
 
 interface PipelineStageData {
   stage: string
@@ -88,13 +89,16 @@ export function PipelineChart({ stageData }: PipelineChartProps) {
                 axisLine={false}
                 tickLine={false}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0, 180, 200, 0.06)" }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: "var(--bg-hover)" }} />
               <Bar
                 dataKey="cantidad"
-                fill="#00B4C8"
                 radius={[4, 4, 0, 0]}
                 maxBarSize={36}
-              />
+              >
+                {chartData.map((entry) => (
+                  <Cell key={entry.stage} fill={STAGE_COLORS[entry.stage] || "var(--text-tertiary)"} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>

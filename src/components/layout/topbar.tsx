@@ -15,7 +15,18 @@ import {
 
 export function Topbar() {
   const { data: session } = useSession()
-  const [unreadCount] = React.useState(3)
+  const [unreadCount, setUnreadCount] = React.useState(0)
+
+  // Conteo real de notificaciones no leídas
+  React.useEffect(() => {
+    if (!session?.user) return
+    fetch("/api/notifications?unreadOnly=true&pageSize=1")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (typeof data?.unreadCount === "number") setUnreadCount(data.unreadCount)
+      })
+      .catch(() => {})
+  }, [session?.user])
 
   const userName = session?.user?.name || "Usuario"
   const userEmail = session?.user?.email || ""
@@ -58,7 +69,7 @@ export function Topbar() {
         <button
           className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors"
           style={{ color: "var(--text-secondary)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)" }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent" }}
         >
           <Bell className="h-4 w-4" />
@@ -75,7 +86,7 @@ export function Topbar() {
         {/* User dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ background: "var(--color-teal)" }}>
+            <button className="flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-semibold" style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}>
               {initials}
             </button>
           </DropdownMenuTrigger>

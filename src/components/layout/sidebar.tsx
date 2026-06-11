@@ -12,6 +12,7 @@ import {
   Building2,
   DollarSign,
   BarChart3,
+  TrendingUp,
   UserCheck,
   Settings,
   ChevronLeft,
@@ -23,15 +24,18 @@ import {
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
 
+// Roles alineados al enum UserRole de Prisma (ADMIN ve todo sin filtro)
+const ASESORES = ["ASESOR", "ASESOR_SR", "ASESOR_JR"]
 const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER", "HOSTESS"] },
-  { label: "Contactos", href: "/contacts", icon: Users, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER", "HOSTESS"] },
-  { label: "Pipeline", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
-  { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
-  { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
-  { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "LIDER"] },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING"] },
+  { label: "Contactos", href: "/contacts", icon: Users, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING"] },
+  { label: "Pipeline", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
+  { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING"] },
+  { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
+  { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "MARKETING"] },
+  { label: "Mi Carrera", href: "/career", icon: TrendingUp, roles: ["TEAM_LEADER", ...ASESORES] },
   // Meta Ads/Leads, Sync Drive y Zoho migraron al Hub (spec crm-hub-migration-cleanup T2.2/T3.4/T4)
-  { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["HOSTESS"] },
+  { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS"] },
   { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
 ]
 
@@ -72,12 +76,12 @@ export function Sidebar() {
       <div className="flex h-12 items-center px-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
         {collapsed ? (
           <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-md" style={{ background: "var(--color-teal)" }}>
-            <span className="text-xs font-bold text-white">P</span>
+            <span className="text-xs font-bold" style={{ color: "var(--text-inverse)" }}>P</span>
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ background: "var(--color-teal)" }}>
-              <span className="text-xs font-bold text-white">P</span>
+              <span className="text-xs font-bold" style={{ color: "var(--text-inverse)" }}>P</span>
             </div>
             <span className="text-sm font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>Propyte</span>
             <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--color-teal-light)", color: "var(--color-teal)" }}>CRM</span>
@@ -107,7 +111,7 @@ export function Sidebar() {
                 }}
                 onMouseEnter={(e) => {
                   if (!isActive) {
-                    e.currentTarget.style.background = "rgba(255,255,255,0.04)"
+                    e.currentTarget.style.background = "var(--bg-hover)"
                     e.currentTarget.style.color = "var(--text-primary)"
                   }
                 }}
@@ -141,7 +145,7 @@ export function Sidebar() {
               onClick={() => setTheme(isDark ? "light" : "dark")}
               className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--text-tertiary)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "var(--bg-hover)" }}
               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent" }}
               title={isDark ? "Modo claro" : "Modo oscuro"}
             >
@@ -152,7 +156,7 @@ export function Sidebar() {
             onClick={() => setCollapsed(!collapsed)}
             className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
             style={{ color: "var(--text-tertiary)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "var(--bg-hover)" }}
             onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent" }}
             title={collapsed ? "Expandir" : "Colapsar"}
           >
@@ -163,8 +167,8 @@ export function Sidebar() {
         {/* User */}
         <div className={cn("flex items-center gap-2 rounded-md p-2 cursor-default", collapsed && "justify-center p-1")}>
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-            style={{ background: "var(--color-teal)" }}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+            style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}
           >
             {initials}
           </div>

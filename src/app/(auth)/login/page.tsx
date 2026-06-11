@@ -201,11 +201,11 @@ export default function LoginPage() {
   }
 
   const inputClass = "w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[var(--color-teal)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal)]/20 disabled:opacity-50 dark:border-[var(--border-default)] dark:bg-[var(--bg-input)] dark:text-[var(--text-primary)] dark:placeholder:text-[var(--text-tertiary)] dark:focus:border-[var(--color-teal)] dark:focus:ring-[var(--color-teal)]/20"
-  const btnClass = "w-full rounded-lg bg-[var(--color-teal)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-teal-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal)]/20 focus:ring-offset-2 disabled:opacity-50"
+  const btnClass = "w-full rounded-lg bg-[var(--color-teal)] px-4 py-2.5 text-sm font-semibold text-[var(--text-inverse)] transition-colors hover:bg-[var(--color-teal-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--color-teal)]/20 focus:ring-offset-2 disabled:opacity-50"
   const linkClass = "text-[13px] text-[var(--color-teal)] hover:underline"
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f5f8fa] dark:bg-[var(--bg-base)]">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-base)]">
       <div className="w-full max-w-[400px] px-6">
         {/* Logo + Lang Toggle */}
         <div className="mb-8 text-center">
@@ -222,7 +222,7 @@ export default function LoginPage() {
           </div>
           <div className="inline-flex items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: "var(--color-teal)" }}>
-              <span className="text-lg font-bold text-white">P</span>
+              <span className="text-lg font-bold" style={{ color: "var(--text-inverse)" }}>P</span>
             </div>
             <span className="text-2xl font-bold text-[#1a1d21] dark:text-[var(--text-primary)]">Propyte</span>
           </div>

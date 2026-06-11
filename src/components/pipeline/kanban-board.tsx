@@ -1,7 +1,7 @@
 // Tablero Kanban con columnas por etapa y drag & drop usando @dnd-kit
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -232,9 +232,9 @@ export function KanbanBoard({
   }, [onDealUpdate]);
 
   // Sincronizar cuando cambian los datos externos
-  useState(() => {
+  useEffect(() => {
     setLocalDealsByStage(dealsByStage);
-  });
+  }, [dealsByStage]);
 
   return (
     <div className="space-y-4">

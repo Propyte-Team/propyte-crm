@@ -67,13 +67,25 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
   const currentStageIdx = progressStages.findIndex((s) => s.code === deal.stage);
   const isTerminal = ["WON", "LOST", "FROZEN"].includes(deal.stage);
 
-  // Formatear fecha
+  // Formatear fecha-timestamp (createdAt, etc.) en hora local
   function formatDate(dateStr: string | null | undefined): string {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleDateString("es-MX", {
       year: "numeric",
       month: "short",
       day: "numeric",
+    });
+  }
+
+  // Formatear fecha-calendario (cierre esperado/real): se capturó como día puro,
+  // se guarda como medianoche UTC — mostrarla en UTC evita el corrimiento de un día
+  function formatCalendarDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return "-";
+    return new Date(dateStr).toLocaleDateString("es-MX", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
     });
   }
 
@@ -232,11 +244,11 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
               {formatCurrency(Number(deal.estimatedValue || 0), deal.currency)}
             </InfoRow>
             <InfoRow icon={<Calendar className="h-4 w-4" />} label="Cierre esperado">
-              {formatDate(deal.expectedCloseDate)}
+              {formatCalendarDate(deal.expectedCloseDate)}
             </InfoRow>
             {deal.actualCloseDate && (
               <InfoRow icon={<Calendar className="h-4 w-4" />} label="Cierre real">
-                {formatDate(deal.actualCloseDate)}
+                {formatCalendarDate(deal.actualCloseDate)}
               </InfoRow>
             )}
             <InfoRow icon={<Clock className="h-4 w-4" />} label="Creado">

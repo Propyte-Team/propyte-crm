@@ -92,32 +92,24 @@ export function DashboardContent({
           subtitle={`Valor ponderado: ${formatMXN(activeDealsValue)}`}
           trend={activeDealsTrend}
           icon={BarChart3}
-          color="#60A5FA"
-          accentBg="rgba(96, 165, 250, 0.12)"
         />
         <KpiCard
           title="Leads del Mes"
           value={newLeadsMonth.toLocaleString("es-MX")}
           trend={newLeadsTrend}
           icon={Users}
-          color="#818CF8"
-          accentBg="rgba(129, 140, 248, 0.12)"
         />
         <KpiCard
           title="Comisiones Pendientes"
           value={formatMXN(pendingCommissions)}
           trend={pendingCommissionsTrend}
           icon={DollarSign}
-          color="#22C55E"
-          accentBg="rgba(34, 197, 94, 0.12)"
         />
         <KpiCard
           title="Tasa de Conversión"
           value={`${conversionRate}%`}
           trend={conversionRateTrend}
           icon={TrendingUp}
-          color="#F5A623"
-          accentBg="rgba(245, 166, 35, 0.12)"
         />
       </div>
 
