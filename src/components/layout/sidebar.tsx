@@ -36,6 +36,7 @@ const navItems = [
   { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
   { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "MARKETING"] },
   { label: "Mi Carrera", href: "/career", icon: TrendingUp, roles: ["TEAM_LEADER", ...ASESORES] },
+  { label: "Mi Config", href: "/settings", icon: Settings, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING"] },
   // Meta Ads/Leads, Sync Drive y Zoho migraron al Hub (spec crm-hub-migration-cleanup T2.2/T3.4/T4)
   { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS"] },
   { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },

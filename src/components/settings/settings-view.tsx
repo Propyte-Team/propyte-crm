@@ -1,0 +1,278 @@
+// Configuración personal — tabs Perfil / Correo / Tarjeta / Plantillas (Anexo B §J.5).
+// Minimalista B/N; guarda vía PATCH /api/profile y CRUD /api/profile/templates.
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { QrCode, Save, Trash2, Plus, ExternalLink } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const TABS = [
+  { key: "perfil", label: "Perfil" },
+  { key: "correo", label: "Correo" },
+  { key: "tarjeta", label: "Tarjeta" },
+  { key: "plantillas", label: "Plantillas" },
+] as const;
+
+interface ProfileData {
+  jobTitle?: string;
+  bioEs?: string;
+  bioEn?: string;
+  phoneDirect?: string;
+  whatsappNumber?: string;
+  emailFromAlias?: string;
+  emailSignatureHtml?: string;
+  cardSlug?: string;
+  calendarUrl?: string;
+  socialLinks?: Record<string, string>;
+  user?: { name: string; email: string };
+}
+
+interface Template {
+  id: string;
+  channel: string;
+  name: string;
+  shortcut: string | null;
+  subject: string | null;
+  body: string;
+  language: string;
+  isGlobal: boolean;
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="form-label !mb-0">{label}</label>
+      {children}
+      {hint && <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{hint}</p>}
+    </div>
+  );
+}
+
+export function SettingsView() {
+  const [tab, setTab] = useState<string>("perfil");
+  const [profile, setProfile] = useState<ProfileData>({});
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [newTpl, setNewTpl] = useState({ channel: "WHATSAPP", name: "", shortcut: "", body: "", language: "ES" });
+
+  const load = useCallback(async () => {
+    const [p, t] = await Promise.all([fetch("/api/profile"), fetch("/api/profile/templates")]);
+    if (p.ok) setProfile((await p.json()).data ?? {});
+    if (t.ok) setTemplates((await t.json()).data ?? []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  function set<K extends keyof ProfileData>(key: K, value: ProfileData[K]) {
+    setProfile((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function save(fields: (keyof ProfileData)[]) {
+    setSaving(true);
+    setMsg("");
+    const payload: Record<string, unknown> = {};
+    for (const f of fields) {
+      const v = profile[f];
+      if (v !== undefined && v !== "" && f !== "user") payload[f] = v;
+    }
+    const res = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) setMsg("Guardado ✓");
+    else {
+      const data = await res.json().catch(() => ({}));
+      setMsg(typeof data.error === "string" ? data.error : "Revisa los campos (formato inválido)");
+    }
+    setSaving(false);
+  }
+
+  async function createTemplate() {
+    if (!newTpl.name || !newTpl.body) return;
+    const res = await fetch("/api/profile/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...newTpl, shortcut: newTpl.shortcut || undefined }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setNewTpl({ channel: "WHATSAPP", name: "", shortcut: "", body: "", language: "ES" });
+      if (data.brandWarnings?.length) {
+        setMsg(`Guardada, pero ojo con la voz de marca: ${data.brandWarnings.join(", ")}`);
+      } else setMsg("Plantilla creada ✓");
+      load();
+    } else {
+      setMsg(typeof data.error === "string" ? data.error : "Error al crear (¿atajo /algo en minúsculas?)");
+    }
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!confirm("¿Eliminar plantilla?")) return;
+    await fetch(`/api/profile/templates?id=${id}`, { method: "DELETE" });
+    load();
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Tabs */}
+      <div className="flex gap-1 border-b" style={{ borderColor: "var(--border-subtle)" }}>
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => { setTab(t.key); setMsg(""); }}
+            className={cn("px-4 py-2 text-[13px] font-medium transition-colors -mb-px border-b-2")}
+            style={{
+              borderColor: tab === t.key ? "var(--color-teal)" : "transparent",
+              color: tab === t.key ? "var(--text-primary)" : "var(--text-secondary)",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {msg && (
+        <div className="rounded-lg px-3.5 py-2.5 text-[13px]" style={{ background: "var(--color-teal-light)", color: "var(--text-primary)" }}>
+          {msg}
+        </div>
+      )}
+
+      {/* ── Perfil ── */}
+      {tab === "perfil" && (
+        <div className="crm-card max-w-2xl space-y-4">
+          <Field label="Puesto">
+            <input className="form-input" value={profile.jobTitle ?? ""} onChange={(e) => set("jobTitle", e.target.value)} placeholder="Asesor Senior" />
+          </Field>
+          <Field label="Bio (español)" hint="Aparece en tu tarjeta digital">
+            <textarea className="form-input" rows={3} value={profile.bioEs ?? ""} onChange={(e) => set("bioEs", e.target.value)} />
+          </Field>
+          <Field label="Bio (inglés)">
+            <textarea className="form-input" rows={3} value={profile.bioEn ?? ""} onChange={(e) => set("bioEn", e.target.value)} />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Teléfono directo">
+              <input className="form-input" value={profile.phoneDirect ?? ""} onChange={(e) => set("phoneDirect", e.target.value)} placeholder="+52 984 ..." />
+            </Field>
+            <Field label="WhatsApp">
+              <input className="form-input" value={profile.whatsappNumber ?? ""} onChange={(e) => set("whatsappNumber", e.target.value)} placeholder="+52 984 ..." />
+            </Field>
+          </div>
+          <Field label="Link de agenda" hint="Google Appointment Schedules / Calendly">
+            <input className="form-input" value={profile.calendarUrl ?? ""} onChange={(e) => set("calendarUrl", e.target.value)} placeholder="https://calendar.app.google/..." />
+          </Field>
+          <button className="btn-primary" disabled={saving} onClick={() => save(["jobTitle", "bioEs", "bioEn", "phoneDirect", "whatsappNumber", "calendarUrl"])}>
+            <Save className="h-4 w-4" /> Guardar perfil
+          </button>
+        </div>
+      )}
+
+      {/* ── Correo ── */}
+      {tab === "correo" && (
+        <div className="crm-card max-w-2xl space-y-4">
+          <Field label="Alias de envío" hint="Debe ser @propyte.com — el envío sale del SMTP central con tu nombre">
+            <input className="form-input" value={profile.emailFromAlias ?? ""} onChange={(e) => set("emailFromAlias", e.target.value)} placeholder="tunombre@propyte.com" />
+          </Field>
+          <Field label="Firma (HTML)" hint="Se agrega al final de tus correos y cadencias">
+            <textarea className="form-input font-mono text-[12px]" rows={8} value={profile.emailSignatureHtml ?? ""} onChange={(e) => set("emailSignatureHtml", e.target.value)} placeholder="<p>Nombre — Propyte</p>" />
+          </Field>
+          {profile.emailSignatureHtml && (
+            <div>
+              <p className="form-label">Vista previa</p>
+              <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border-default)" }} dangerouslySetInnerHTML={{ __html: profile.emailSignatureHtml }} />
+            </div>
+          )}
+          <button className="btn-primary" disabled={saving} onClick={() => save(["emailFromAlias", "emailSignatureHtml"])}>
+            <Save className="h-4 w-4" /> Guardar correo
+          </button>
+        </div>
+      )}
+
+      {/* ── Tarjeta ── */}
+      {tab === "tarjeta" && (
+        <div className="crm-card max-w-2xl space-y-4">
+          <Field label="Slug de tu tarjeta" hint="kebab-case; INMUTABLE una vez publicado (se imprime en QR)">
+            <input className="form-input" value={profile.cardSlug ?? ""} onChange={(e) => set("cardSlug", e.target.value)} placeholder="felipe-luksic" />
+          </Field>
+          <button className="btn-primary" disabled={saving} onClick={() => save(["cardSlug"])}>
+            <Save className="h-4 w-4" /> Guardar tarjeta
+          </button>
+          {profile.cardSlug && (
+            <div className="space-y-3 border-t pt-4" style={{ borderColor: "var(--border-subtle)" }}>
+              <div className="flex flex-wrap items-center gap-3">
+                <a href={`/t/${profile.cardSlug}`} target="_blank" className="btn-secondary text-[13px]">
+                  <ExternalLink className="h-3.5 w-3.5" /> Ver tarjeta pública
+                </a>
+                <a href={`/t/${profile.cardSlug}/qr`} target="_blank" className="btn-secondary text-[13px]">
+                  <QrCode className="h-3.5 w-3.5" /> QR para imprimir (SVG)
+                </a>
+                <a href={`/t/${profile.cardSlug}/vcard`} className="btn-secondary text-[13px]">
+                  vCard (.vcf)
+                </a>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/t/${profile.cardSlug}/qr`} alt="QR" className="h-36 w-36 rounded-lg border" style={{ borderColor: "var(--border-default)" }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Plantillas ── */}
+      {tab === "plantillas" && (
+        <div className="max-w-3xl space-y-4">
+          <div className="crm-card space-y-3">
+            <p className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>Nueva plantilla</p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <select className="form-input" value={newTpl.channel} onChange={(e) => setNewTpl({ ...newTpl, channel: e.target.value })}>
+                <option value="WHATSAPP">WhatsApp</option>
+                <option value="EMAIL">Email</option>
+                <option value="SMS">SMS</option>
+              </select>
+              <select className="form-input" value={newTpl.language} onChange={(e) => setNewTpl({ ...newTpl, language: e.target.value })}>
+                <option value="ES">Español</option>
+                <option value="EN">English</option>
+              </select>
+              <input className="form-input" placeholder="Nombre" value={newTpl.name} onChange={(e) => setNewTpl({ ...newTpl, name: e.target.value })} />
+              <input className="form-input" placeholder="/atajo" value={newTpl.shortcut} onChange={(e) => setNewTpl({ ...newTpl, shortcut: e.target.value })} />
+            </div>
+            <textarea
+              className="form-input"
+              rows={3}
+              placeholder="Hola {{contact.firstName}}, soy {{user.name}} de Propyte..."
+              value={newTpl.body}
+              onChange={(e) => setNewTpl({ ...newTpl, body: e.target.value })}
+            />
+            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+              Variables: {"{{contact.firstName}} {{contact.lastName}} {{user.name}} {{card.url}}"}
+            </p>
+            <button className="btn-primary" onClick={createTemplate}>
+              <Plus className="h-4 w-4" /> Crear plantilla
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {templates.map((t) => (
+              <div key={t.id} className="crm-card !p-4 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>{t.name}</span>
+                    <span className="badge badge-neutral">{t.channel}</span>
+                    <span className="badge badge-neutral">{t.language}</span>
+                    {t.shortcut && <span className="badge badge-teal">{t.shortcut}</span>}
+                    {t.isGlobal && <span className="badge badge-neutral">Marca</span>}
+                  </div>
+                  <p className="mt-1 truncate text-[12px]" style={{ color: "var(--text-secondary)" }}>{t.body}</p>
+                </div>
+                {!t.isGlobal && (
+                  <button className="shrink-0" title="Eliminar" onClick={() => deleteTemplate(t.id)}>
+                    <Trash2 className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
