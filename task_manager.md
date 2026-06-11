@@ -1,6 +1,22 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-11 noche (Speckit #4 Conectividad/Agentes/CAPI C1-C3 ejecutado).
+> Última actualización: 2026-06-11 noche-2 (Speckit #6 Diseño + WhatsApp Cloud API E2E).
+>
+> **🎯 Sesión 2026-06-11 noche-2** —
+> **WhatsApp Cloud API FUNCIONANDO E2E** (sin Twilio): provider intercambiable
+> (`lib/whatsapp/transport.ts`), webhook `/api/webhooks/whatsapp/meta`, template hello_world
+> ENTREGADO al cel de Luis desde el stack del CRM (número test Propyte_App 1091031974089949;
+> texto libre requiere ventana 24h — comportamiento esperado). App suscrita a WABA
+> Propyte/Manychat SIN tocar ManyChat. Pendientes WhatsApp: webhook inbound (túnel o merge),
+> número producción (re-verificar 984 323 5354 sacándolo de ManyChat).
+> **Speckit #6 Diseño minimalista APLICADO** (`specs/SPECKIT-DISENO-WEB-MINIMALISTA.md`):
+> Space Grotesk + JetBrains Mono tabular, tokens exactos (tinta #0A0A0A, hairlines, plano),
+> espectro funnel por etapa como ELEMENTO FIRMA (dot columna + borde tarjeta + chip tinte/tono
+> + stepper), FigureStat cifra-con-procedencia, .num en KPIs. Verificado visual con Playwright.
+> ⚠ Build de producción NO corrido esta vez (dev de Luis activo comparte .next) — se valida al merge.
+> **EN LA FILA:** speckit Google Workspace (correo/calendario/contactos — pedido de Luis) ·
+> activación producción (merge→envs→crons→workflows→agentes).
+
 >
 > **🎯 Sesión 2026-06-11 noche (Speckit #4)** — P123 APLICADA + seeds ✅ (7 objetos, 4 relaciones).
 > Speckit #4 versionado (`specs/SPECKIT-CONECTIVIDAD-AGENTES-CAPI.md`) + decisiones OQ1-7
