@@ -151,7 +151,8 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
       {/* Header del deal */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">
+          <p className="eyebrow">Deal &middot; {DEAL_TYPE_LABELS[deal.dealType] || deal.dealType}</p>
+          <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">
             {deal.contact?.firstName} {deal.contact?.lastName}
           </h1>
           <div className="flex items-center gap-3 mt-1">
@@ -161,9 +162,6 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
               style={{ backgroundColor: `${stageColor}1f`, color: stageColor }}
             >
               {STAGE_LABELS[deal.stage] || deal.stage}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              {DEAL_TYPE_LABELS[deal.dealType] || deal.dealType}
             </span>
             <span className="num text-lg font-bold text-primary">
               {formatCurrency(Number(deal.estimatedValue || 0), deal.currency)}
