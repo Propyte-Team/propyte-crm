@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FigureStat } from "@/components/ui/figure-stat";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -154,16 +155,17 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
             {deal.contact?.firstName} {deal.contact?.lastName}
           </h1>
           <div className="flex items-center gap-3 mt-1">
+            {/* Chip de etapa: tinte de fondo + texto del mismo tono (speckit §4, nunca relleno saturado) */}
             <span
-              className="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold text-white"
-              style={{ backgroundColor: stageColor }}
+              className="inline-flex items-center rounded px-3 py-1 text-sm font-semibold"
+              style={{ backgroundColor: `${stageColor}1f`, color: stageColor }}
             >
               {STAGE_LABELS[deal.stage] || deal.stage}
             </span>
             <span className="text-sm text-muted-foreground">
               {DEAL_TYPE_LABELS[deal.dealType] || deal.dealType}
             </span>
-            <span className="text-lg font-bold text-primary">
+            <span className="num text-lg font-bold text-primary">
               {formatCurrency(Number(deal.estimatedValue || 0), deal.currency)}
             </span>
           </div>
@@ -241,7 +243,12 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
           </CardHeader>
           <CardContent className="space-y-3">
             <InfoRow icon={<DollarSign className="h-4 w-4" />} label="Valor estimado">
-              {formatCurrency(Number(deal.estimatedValue || 0), deal.currency)}
+              <FigureStat
+                value={formatCurrency(Number(deal.estimatedValue || 0), deal.currency)}
+                source="CRM"
+                asOf={new Date(deal.updatedAt).toISOString().slice(0, 10)}
+                size="sm"
+              />
             </InfoRow>
             <InfoRow icon={<Calendar className="h-4 w-4" />} label="Cierre esperado">
               {formatCalendarDate(deal.expectedCloseDate)}

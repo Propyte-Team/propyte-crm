@@ -9,9 +9,9 @@
   /* ─── LIGHT (default) ─── */
   :root {
     /* Fondos */
-    --bg-base:        #fafafa;
-    --bg-sidebar:     #ffffff;
-    --bg-surface:     #f5f5f5;
+    --bg-base:        #ffffff; /* canvas */
+    --bg-sidebar:     #fafafa; /* surface-2 */
+    --bg-surface:     #fafafa;
     --bg-card:        #ffffff;
     --bg-card-hover:  #fafafa;
     --bg-input:       #ffffff;
@@ -22,19 +22,19 @@
     --bg-hover:       rgba(0, 0, 0, 0.04);
 
     /* Bordes */
-    --border-subtle:  rgba(0, 0, 0, 0.06);
-    --border-default: rgba(0, 0, 0, 0.10);
-    --border-strong:  rgba(0, 0, 0, 0.18);
+    --border-subtle:  rgba(10, 10, 10, 0.10);
+    --border-default: rgba(10, 10, 10, 0.16);
+    --border-strong:  rgba(10, 10, 10, 0.28);
     --border-teal:    rgba(17, 17, 17, 0.40);
 
     /* Texto */
-    --text-primary:   #111111;
-    --text-secondary: #555555;
-    --text-tertiary:  #999999;
+    --text-primary:   #0a0a0a; /* --ink */
+    --text-secondary: #6b7280;
+    --text-tertiary:  #9ca3af;
     --text-inverse:   #ffffff;
 
     /* Acción principal (negro en light) — conserva el nombre histórico --color-teal */
-    --color-teal:       #111111;
+    --color-teal:       #0a0a0a;
     --color-teal-dark:  #000000;
     --color-teal-light: rgba(0, 0, 0, 0.05);
     --color-navy:       #111111;
@@ -68,8 +68,8 @@
     --radius: 0.5rem;
 
     /* Sombras (sutiles) */
-    --shadow-sm:  0 1px 2px rgba(0,0,0,0.05);
-    --shadow-md:  0 2px 8px rgba(0,0,0,0.06);
+    --shadow-sm:  none; /* plano: hairlines estructuran */
+    --shadow-md:  none;
     --shadow-lg:  0 8px 24px rgba(0,0,0,0.10);
     --shadow-teal:0 0 0 3px rgba(17, 17, 17, 0.10);
 
@@ -344,5 +344,29 @@
     font-size: 13px;
     max-width: 320px;
     line-height: 1.6;
+  }
+
+  /* ── Speckit diseño §2.2/§4: cifras en mono tabular ── */
+  .num {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Hairline real de 0.5px donde el borde de 1px pesa demasiado */
+  .hairline {
+    border-width: 0.5px;
+    border-style: solid;
+    border-color: var(--border-subtle);
+  }
+  .hairline-b {
+    border-bottom: 0.5px solid var(--border-subtle);
+  }
+
+  /* Cifra con procedencia (firma secundaria §4): el dato + de dónde viene */
+  .provenance {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 400;
   }
 }

@@ -30,97 +30,99 @@ export interface PipelineStage {
   color: string;
 }
 
+// Colores = espectro funnel del speckit de diseño §2.1 (frío→cálido→cierre).
+// Es el ELEMENTO FIRMA: único lugar protagonista del color (chip/kanban/barra).
 export const PIPELINE_STAGES: PipelineStage[] = [
   {
     label: "Nuevo Lead",
     code: "NEW_LEAD",
     probability: 5,
     stagnationDays: 3,
-    color: COLORS.neutral,
+    color: "#94A3B8",
   },
   {
     label: "Contactado",
     code: "CONTACTED",
     probability: 10,
     stagnationDays: 5,
-    color: COLORS.info,
+    color: "#64748B",
   },
   {
     label: "Discovery Hecho",
     code: "DISCOVERY_DONE",
     probability: 20,
     stagnationDays: 7,
-    color: COLORS.primaryLight,
+    color: "#3B82F6",
   },
   {
     label: "Reunión Agendada",
     code: "MEETING_SCHEDULED",
     probability: 35,
     stagnationDays: 5,
-    color: "#8B5CF6",
+    color: "#2563EB",
   },
   {
     label: "Reunión Realizada",
     code: "MEETING_COMPLETED",
     probability: 45,
     stagnationDays: 5,
-    color: COLORS.secondary,
+    color: "#1D4ED8",
   },
   {
     label: "Propuesta Enviada",
     code: "PROPOSAL_SENT",
     probability: 55,
     stagnationDays: 7,
-    color: COLORS.secondaryLight,
+    color: "#6366F1",
   },
   {
     label: "Negociación",
     code: "NEGOTIATION",
     probability: 70,
     stagnationDays: 10,
-    color: "#F97316",
+    color: "#D97706",
   },
   {
     label: "Reservado",
     code: "RESERVED",
     probability: 85,
     stagnationDays: 14,
-    color: "#10B981",
+    color: "#F59E0B",
   },
   {
     label: "Contrato Firmado",
     code: "CONTRACT_SIGNED",
     probability: 90,
     stagnationDays: 21,
-    color: "#16A34A",
+    color: "#0D9488",
   },
   {
     label: "Cierre",
     code: "CLOSING",
     probability: 95,
     stagnationDays: 30,
-    color: "#15803D",
+    color: "#0F766E",
   },
   {
     label: "Ganado",
     code: "WON",
     probability: 100,
     stagnationDays: 0,
-    color: "#047857",
+    color: "#16A34A",
   },
   {
     label: "Perdido",
     code: "LOST",
     probability: 0,
     stagnationDays: 0,
-    color: COLORS.danger,
+    color: "#DC2626",
   },
   {
     label: "Congelado",
     code: "FROZEN",
     probability: 0,
     stagnationDays: 0,
-    color: "#94A3B8",
+    color: "#9CA3AF",
   },
 ];
 

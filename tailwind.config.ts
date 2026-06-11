@@ -56,7 +56,9 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "Arial", "sans-serif"],
+        // Speckit diseño §2.2: Space Grotesk (UI) + JetBrains Mono tabular (cifras)
+        sans: ["var(--font-sans)", "Arial", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
     },
   },
