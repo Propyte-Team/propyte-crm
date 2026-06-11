@@ -12,18 +12,11 @@ export async function sendWhatsAppMessage(
   contactId: string,
   userId: string
 ) {
-  const client = getTwilioClient();
-  const from = process.env.TWILIO_WHATSAPP_NUMBER;
-
-  if (!from) throw new Error("TWILIO_WHATSAPP_NUMBER no configurado");
-
   const normalized = normalizePhone(to);
 
-  const twilioMsg = await client.messages.create({
-    body,
-    from: `whatsapp:${from}`,
-    to: `whatsapp:${normalized}`,
-  });
+  // Transporte intercambiable (Meta Cloud API default / Twilio alterno) — 2026-06-11
+  const { deliverWhatsApp } = await import("@/lib/whatsapp/transport");
+  const delivery = await deliverWhatsApp(normalized, body);
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
   const conversation = await prisma.conversation.upsert({
@@ -39,8 +32,8 @@ export async function sendWhatsAppMessage(
       channel: "WHATSAPP",
       direction: "OUTBOUND",
       body,
-      twilioSid: twilioMsg.sid,
-      status: "SENT",
+      twilioSid: delivery.externalId, // wamid (Meta) o SID (Twilio)
+      status: delivery.status,
       externalPhone: normalized,
       conversationId: conversation.id,
       sender: "ADVISOR",
@@ -74,21 +67,28 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   templateParams: string[],
   contactId: string,
-  userId: string
+  userId: string,
+  language: string = "es_MX"
 ) {
-  const client = getTwilioClient();
-  const from = process.env.TWILIO_WHATSAPP_NUMBER;
-
-  if (!from) throw new Error("TWILIO_WHATSAPP_NUMBER no configurado");
-
   const normalized = normalizePhone(to);
 
-  // Twilio Content API para templates
-  const twilioMsg = await client.messages.create({
-    from: `whatsapp:${from}`,
-    to: `whatsapp:${normalized}`,
-    body: templateParams.join(" | "), // Fallback si no se usa contentSid
-  });
+  // Plantilla aprobada — necesaria fuera de la ventana de 24h (business-initiated)
+  const { activeProvider, deliverMetaTemplate } = await import("@/lib/whatsapp/transport");
+  let externalId: string;
+  if (activeProvider() === "meta_cloud") {
+    const delivery = await deliverMetaTemplate(normalized, templateName, language, templateParams);
+    externalId = delivery.externalId;
+  } else {
+    const client = getTwilioClient();
+    const from = process.env.TWILIO_WHATSAPP_NUMBER;
+    if (!from) throw new Error("TWILIO_WHATSAPP_NUMBER no configurado");
+    const twilioMsg = await client.messages.create({
+      from: `whatsapp:${from}`,
+      to: `whatsapp:${normalized}`,
+      body: templateParams.join(" | "), // Fallback si no se usa contentSid
+    });
+    externalId = twilioMsg.sid;
+  }
 
   const message = await prisma.message.create({
     data: {
@@ -97,7 +97,7 @@ export async function sendWhatsAppTemplate(
       channel: "WHATSAPP",
       direction: "OUTBOUND",
       body: `[Template: ${templateName}] ${templateParams.join(", ")}`,
-      twilioSid: twilioMsg.sid,
+      twilioSid: externalId,
       templateName,
       status: "SENT",
       externalPhone: normalized,
@@ -168,21 +168,30 @@ export async function handleInboundWhatsApp(payload: {
     },
   });
 
-  const message = await prisma.message.create({
-    data: {
-      contactId: contact.id,
-      userId: contact.assignedToId,
-      channel: "WHATSAPP",
-      direction: "INBOUND",
-      body: payload.Body,
-      twilioSid: payload.MessageSid,
-      mediaUrl: payload.MediaUrl0 || null,
-      status: "DELIVERED",
-      externalPhone: normalizePhone(rawPhone),
-      conversationId: conversation.id,
-      sender: "CONTACT",
-    },
-  });
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: {
+        contactId: contact.id,
+        userId: contact.assignedToId,
+        channel: "WHATSAPP",
+        direction: "INBOUND",
+        body: payload.Body,
+        twilioSid: payload.MessageSid,
+        mediaUrl: payload.MediaUrl0 || null,
+        status: "DELIVERED",
+        externalPhone: normalizePhone(rawPhone),
+        conversationId: conversation.id,
+        sender: "CONTACT",
+      },
+    });
+  } catch (err: unknown) {
+    // Webhook re-entregado (Meta reintenta): el UNIQUE de twilioSid lo hace idempotente
+    if (typeof err === "object" && err && (err as { code?: string }).code === "P2002") {
+      return prisma.message.findUnique({ where: { twilioSid: payload.MessageSid } });
+    }
+    throw err;
+  }
 
   await prisma.activity.create({
     data: {
