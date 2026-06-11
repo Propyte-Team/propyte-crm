@@ -1,6 +1,20 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-10 (Fase 1 completa + captura fuera + Meta Leads construido, bloqueado en SQL).
+> Última actualización: 2026-06-10 noche (audit Playwright + fixes + rediseño minimalista B/N en rama).
+>
+> **🎯 Sesión 2026-06-10 noche (autónoma)** — ARRANQUE DEL REBUILD sobre el SPECKIT consolidado
+> (`SPECKIT-PROPYTE-CRM-CONSOLIDADO.md` en Downloads; pendiente moverlo a `specs/`). Local reseteado a
+> main `670f52d` (conflicto robot-02-images.yml: ganó el delete del remote). Audit Playwright completo
+> del núcleo con usuario temporal ADMIN → 9 bugs/hallazgos, TODOS corregidos y re-verificados: ver
+> `docs/audit-2026-06-10/AUDIT.md`. + **Rediseño minimalista B/N** (pedido de Luis: blanco/negro, color
+> solo en etiquetas de etapa): tokens de `globals.css` reescritos, light default, dark neutro opcional.
+> **Rama `feat/audit-fixes-minimal-ui` (commit `d1b15dc`, pusheada) — PENDIENTE: review de Luis + merge a main.**
+> Build verde + tsc limpio. Datos de prueba borrados de BD; usuario `audit-temp@propyte.local` DESACTIVADO.
+> **Veredicto fork `import-crm-base-fork` (NextCRM):** NO usar como base — superseded por el speckit
+> consolidado (base = propyte-crm limpio). Queda como referencia; no mergear.
+> **Próximos pasos:** (1) Luis revisa rama y mergea; (2) mover speckit a `specs/`; (3) Fase A del roadmap
+> (API catálogo read-only en el Hub, T5.1 — repo Propyte_hub); (4) `/developments` del CRM a read-only
+> contra el Hub (quitar "Nuevo Desarrollo", P1 del speckit).
 >
 > **🎯 Sesión 2026-06-10** — F1 COMPLETA (robots verdes en Hub, workflows fuera del CRM). T2.3 ✅ (captura fuera, `d85a0d4c`). Matriz paridad Zoho ✅ (`specs/zoho-parity-matrix.md`, veredicto: no apagar cron CRM hasta resolver inbound). Decisión Luis: **Opción B** + conservar UI visual de discrepancias. F3 código ✅ (rama `feat/meta-leads` Hub, `95c4c94`, build verde). **Bloqueado en: aplicar meta-leads.sql (sin acceso BD)**. Hallazgo: CAPI probablemente muerto (contacts=0). OQ2 abierta (dashboards Meta Ads).
 >
