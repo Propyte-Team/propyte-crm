@@ -1,6 +1,25 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-11 tarde (Speckit #3 Personalización & Equipos P1-P3 ejecutado).
+> Última actualización: 2026-06-11 noche (Speckit #4 Conectividad/Agentes/CAPI C1-C3 ejecutado).
+>
+> **🎯 Sesión 2026-06-11 noche (Speckit #4)** — P123 APLICADA + seeds ✅ (7 objetos, 4 relaciones).
+> Speckit #4 versionado (`specs/SPECKIT-CONECTIVIDAD-AGENTES-CAPI.md`) + decisiones OQ1-7
+> (`docs/superpowers/plans/2026-06-11-conectividad-agentes-capi.md`). Implementado:
+> - **C1 Ingesta omnicanal**: providers de portales + Google/LinkedIn en ConnectorProvider,
+>   direction INBOUND/OUTBOUND, click-ids ttclid/liFatId/portalLeadId en AdAttribution e intake,
+>   webhook genérico de portales `/api/connectors/portal/webhook?cid=` (mapeo configurable).
+> - **C2 Gateway CAPI**: ConversionEvent idempotente, PII SHA-256 normalizada (7 tests), adapters
+>   Meta CAPI + TikTok Events REALES (Google/LinkedIn stubs), dispatcher con backoff en el cron,
+>   eventos Lead/Qualified/MeetingScheduled/Reserved/Won(+value+quality tier) cableados al pipeline.
+> - **C3 Agentes IA**: AgentDef (identidad = User con RBAC, PA1) + AgentRun auditable, registry de
+>   8 tools tipadas (RBAC+opt-out+brand linter), runner Claude tool-use con escalado,
+>   /api/admin/agents + /api/agents/[id]/run, seeds SDR + Calificador (L2, inactivos).
+> - 61 tests verdes · build verde · pusheado.
+> **⛔ BLOQUEADO — Luis: "aplica la migración C123"**
+> (`prisma/migrations-manual/2026-06-11-c123-conectividad-agentes-capi.sql`, additiva verificada)
+> → luego `npx tsx scripts/seed-agentes.ts`. CHECKLIST DE ACTIVACIÓN COMPLETO entregado en sesión.
+> **Pendiente próxima sesión:** Agent Studio UI, adapter Google OAuth, LinkedIn, A2A, MCP server expuesto.
+
 >
 > **🎯 Sesión 2026-06-11 tarde (Speckit #3)** — F6 APLICADA en BD (Luis autorizó) ✅. Speckit
 > Personalización & Equipos versionado (`specs/SPECKIT-PERSONALIZACION-Y-EQUIPOS.md`) + decisiones
