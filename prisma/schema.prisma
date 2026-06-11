@@ -601,7 +601,9 @@ model User {
   notifications    Notification[]
   messages         Message[]
 
-  // Relaciones rebuild F1
+  // Relaciones rebuild F1/F6
+  quotesCreated           Quote[]        @relation("QuotesCreated")
+  dealDocsUploaded        DealDocument[] @relation("DealDocsUploaded")
   profile                 UserProfile?
   templates               UserTemplate[]
   ownedActionPlans        ActionPlan[]   @relation("OwnedActionPlans")
@@ -810,9 +812,15 @@ model Deal {
   deedAt           DateTime?
   deliveredAt      DateTime?
 
+  // Broker externo asociado (F6, §2.3.7)
+  externalBrokerId String?
+  externalBroker   ExternalBroker? @relation(fields: [externalBrokerId], references: [id])
+
   // Relaciones
   activities Activity[]
   slaTimers  SlaTimer[]
+  quotes     Quote[]
+  documents  DealDocument[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1437,5 +1445,170 @@ model UserTemplate {
 
   @@unique([userId, shortcut])
   @@map("user_templates")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// REBUILD F6 — Cotizador y cobranza (consolidado §2.3 items 4-8, Anexo §C.2)
+// =====================================================================
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  OPENED
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+
+  @@schema("propyte_crm")
+}
+
+enum PaymentScheme {
+  CONTADO
+  FINANCIAMIENTO_DIRECTO
+  CREDITO_BANCARIO
+  MIXTO
+
+  @@schema("propyte_crm")
+}
+
+enum InstallmentStatus {
+  PENDIENTE
+  PAGADA
+  VENCIDA
+  CONDONADA
+
+  @@schema("propyte_crm")
+}
+
+enum DealDocumentType {
+  KYC
+  CONTRATO_ENVIADO
+  CONTRATO_FIRMADO
+  COMPROBANTE_ENGANCHE
+  RECIBO
+  COMPROBANTE_DOMICILIO
+  OTRO
+
+  @@schema("propyte_crm")
+}
+
+// Cotización como entidad (paridad Zoho "Cotizaciones"). unitSnapshot congela
+// precio del Hub + FX al momento de cotizar (data-gate + multimoneda §2.4)
+model Quote {
+  id          String @id @default(uuid())
+  dealId      String
+  deal        Deal   @relation(fields: [dealId], references: [id])
+  createdById String
+  createdBy   User   @relation("QuotesCreated", fields: [createdById], references: [id])
+
+  hubUnitId    String?
+  unitSnapshot Json          @default("{}")
+  currency     Currency      @default(MXN)
+  listPrice    Decimal       @db.Decimal(14, 2)
+  discountPct  Decimal       @default(0) @db.Decimal(5, 2)
+  finalPrice   Decimal       @db.Decimal(14, 2)
+  fxRate       Decimal?      @db.Decimal(10, 4)
+  scheme       PaymentScheme
+  status       QuoteStatus   @default(DRAFT)
+  pdfUrl       String?
+  sentAt       DateTime?
+  openedAt     DateTime?
+  expiresAt    DateTime?
+  notes        String?       @db.Text
+
+  paymentPlan PaymentPlan?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([dealId])
+  @@map("quotes")
+  @@schema("propyte_crm")
+}
+
+model PaymentPlan {
+  id      String @id @default(uuid())
+  quoteId String @unique
+  quote   Quote  @relation(fields: [quoteId], references: [id])
+
+  downPaymentPct     Decimal @db.Decimal(5, 2)
+  downPaymentAmount  Decimal @db.Decimal(14, 2)
+  monthsCount        Int     @default(0)
+  monthlyAmount      Decimal @default(0) @db.Decimal(14, 2)
+  deliveryPaymentPct Decimal @default(0) @db.Decimal(5, 2)
+  deliveryAmount     Decimal @default(0) @db.Decimal(14, 2)
+
+  schedules PaymentSchedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_plans")
+  @@schema("propyte_crm")
+}
+
+model PaymentSchedule {
+  id     String      @id @default(uuid())
+  planId String
+  plan   PaymentPlan @relation(fields: [planId], references: [id])
+
+  number     Int
+  dueDate    DateTime
+  amount     Decimal           @db.Decimal(14, 2)
+  status     InstallmentStatus @default(PENDIENTE)
+  paidAt     DateTime?
+  paidAmount Decimal?          @db.Decimal(14, 2)
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([planId, number])
+  @@index([status, dueDate])
+  @@map("payment_schedules")
+  @@schema("propyte_crm")
+}
+
+// Documentación del negocio (KYC, contratos, comprobantes — Zoho §2.3.6)
+model DealDocument {
+  id           String           @id @default(uuid())
+  dealId       String
+  deal         Deal             @relation(fields: [dealId], references: [id])
+  type         DealDocumentType
+  name         String
+  url          String
+  uploadedById String
+  uploadedBy   User             @relation("DealDocsUploaded", fields: [uploadedById], references: [id])
+  verifiedAt   DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([dealId])
+  @@map("deal_documents")
+  @@schema("propyte_crm")
+}
+
+// Broker externo asociado + split (Zoho "Broker Asociado", §2.3.7)
+model ExternalBroker {
+  id       String  @id @default(uuid())
+  name     String
+  agency   String?
+  phone    String?
+  email    String?
+  splitPct Decimal @default(50) @db.Decimal(5, 2)
+  isActive Boolean @default(true)
+  notes    String? @db.Text
+
+  deals Deal[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("external_brokers")
   @@schema("propyte_crm")
 }
