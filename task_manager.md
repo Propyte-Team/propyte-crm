@@ -135,3 +135,7 @@ GROUP BY pipeline_status ORDER BY pending DESC;
 - `~/.claude/projects/c--Users-ptoral-Projects/memory/feedback_zoho_update_field_picklist_syntax.md`
 - `~/.claude/projects/c--Users-ptoral-Projects/memory/feedback_zoho_sync_backpoblacion_manual.md`
 - `~/.claude/projects/c--Users-ptoral-Projects/memory/feedback_zoho_desarrollador_lookup_pendiente.md`
+
+### Limpieza de ramas (2026-06-10 noche)
+- [x] **9 ramas eliminadas** (5 remotas + 4 locales): Funciones_avanzadas, chore/disable-robot-02-images-schedule, fix/classifier-dedup-key (su único commit no-mergeado era el WIP push-record de Zoho — código ya demolido), fix/classifier-estado-unidad-capitalizado, fix/classifier-slug-fallback-titulo, feat/intake-form-captura-externa
+- [ ] **`import-crm-base-fork` CONSERVADA pendiente de decisión Luis** — 1,436 commits: es el import completo del proyecto externo "crm-base" (aislado en la auditoría 2026-06-08). Posible material de referencia para el rebuild. Recomendación: conservar
