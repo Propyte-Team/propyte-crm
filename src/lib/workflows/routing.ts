@@ -27,6 +27,21 @@ export async function autoRouteLead(
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.deletedAt) return null;
 
+  // PRIMERO territorio (speckit Personalización §2.4): si una TerritoryRule matchea,
+  // los candidatos se restringen a los miembros del territorio ganador.
+  let territoryUserIds: string[] | null = null;
+  let territoryName: string | null = null;
+  try {
+    const { resolveTerritoryForContact } = await import("@/lib/teams/territory");
+    const territory = await resolveTerritoryForContact(contact);
+    if (territory && territory.memberUserIds.length > 0) {
+      territoryUserIds = territory.memberUserIds;
+      territoryName = territory.territoryName;
+    }
+  } catch {
+    // tablas P1 sin migrar todavía → ruteo clásico
+  }
+
   const rules = await prisma.routingRule.findMany({
     where: { isActive: true, deletedAt: null },
     orderBy: { priority: "asc" },
@@ -61,6 +76,12 @@ export async function autoRouteLead(
         orderBy: { createdAt: "asc" },
       });
       candidates = users.map((u) => u.id);
+    }
+
+    // Intersección con el territorio resuelto (estrategia DENTRO del territorio, §2.4)
+    if (territoryUserIds) {
+      const inTerritory = candidates.filter((id) => territoryUserIds!.includes(id));
+      if (inTerritory.length > 0) candidates = inTerritory;
     }
 
     if (candidates.length === 0) continue;
@@ -113,6 +134,7 @@ export async function autoRouteLead(
     assigneeId,
     previousAssigneeId: previous,
     reason: opts.reason,
+    territory: territoryName,
   });
 
   return assigneeId;
