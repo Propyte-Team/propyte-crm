@@ -1,6 +1,38 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-10 noche-2 (REBUILD F1 fundaciones en rama, migración SQL esperando OK).
+> Última actualización: 2026-06-11 (REBUILD F1-F6 ejecutadas en rama `feat/crm-rebuild-fase1`).
+>
+> **🎯 Sesión 2026-06-11 (rebuild F2-F6, autónoma con aprobación de Luis)** — Continuación sin pausa:
+> - **F1 ✅ APLICADA EN BD** (Luis autorizó): 17 tablas + seeds verificados (8 reglas, SLA, ruteo, plantillas).
+> - **F2 ✅ Motor de workflows**: RuleEngine data-driven (DSL §D.4 con evaluador puro testeado),
+>   ActionQueue pg-backed + runner con backoff, RoutingEngine, SlaEngine (FIRST_TOUCH 5min→RETRY→breach),
+>   ActionPlanScheduler (cadencias), reglas INACTIVITY. Bot core: Claude voz Sage + brand linter +
+>   HubCatalog (SQL read-only a real_estate_hub) + botRespond L2 con escalamiento. Wiring completo:
+>   deal.stage_changed/won/lost, contact.created/lead.captured, WhatsApp in/out (conversación, opt-out
+>   BAJA/STOP, SLA met). **Cron: `/api/cron/workflows` — Luis debe agendarlo en Hostinger CADA MINUTO
+>   con header `x-cron-secret: $CRON_SECRET`** (mismo secret de env).
+> - **F3 ✅ Conectores**: Meta Lead Ads webhook tiempo real (`/api/connectors/meta/webhook`, firma
+>   SHA-256 + Graph API), TikTok pull (`/api/cron/connectors/tiktok` — **agendar cada 5 min**),
+>   webhook web v2 (`/api/webhooks/leads`, X-Webhook-Secret), CRUD admin con credenciales cifradas
+>   + UI en Admin→Integraciones. Anti-doble-alta: UNIQUE(connectorId, externalLeadId) + dedup E.164.
+> - **F4 ✅ Inbox WhatsApp** (`/inbox`): 3 paneles estilo WhatsApp Web, takeover/release/notas internas/
+>   toggle bot, resumen IA post-takeover, polling 5s. Smoke verificado con Playwright.
+> - **F5 ✅ Perfiles** (`/settings`): perfil/correo(firma+alias)/tarjeta digital/plantillas con atajos.
+>   Tarjeta pública `/t/{slug}` + vCard + QR SVG verificados E2E (slug inmutable).
+> - **F6 ⏳ Cotizador**: schema completo (Quote/PaymentPlan/PaymentSchedule/DealDocument/ExternalBroker)
+>   + cron de pagos vencidos (guarda defensiva). **SQL listo en
+>   `prisma/migrations-manual/2026-06-11-f6-cotizador.sql` — decir "aplica la migración F6"**. UI cotizador
+>   pendiente (siguiente sesión).
+> - **F7 (inventario Hub)**: bloqueada por T5.1 en repo Propyte_hub (trabajo cross-repo).
+>
+> **ACCIONES DE LUIS para encender todo:**
+> 1. "Aplica la migración F6" (o pegar el SQL en Supabase)
+> 2. `KYC_ENCRYPTION_KEY` en .env local + Hostinger (generación en .env.example)
+> 3. `ANTHROPIC_API_KEY` en Hostinger (el bot la necesita; sin ella, acciones IA se saltan con nota)
+> 4. Crons Hostinger: `/api/cron/workflows` cada 1 min + `/api/cron/connectors/tiktok` cada 5 min
+>    (header `x-cron-secret`)
+> 5. Activar workflows: en BD `automation_rules.isActive=true` (los 8 están sembrados INACTIVOS a propósito)
+> 6. Review + merge de las ramas `feat/audit-fixes-minimal-ui` → `feat/crm-rebuild-fase1` → main (en orden)
 >
 > **🎯 Sesión 2026-06-10 noche-2 (rebuild F1)** — Luis entregó el **Anexo Técnico** (diccionario de
 > campos, funciones, motor de workflows, inventarios) + 3 requerimientos nuevos (conectores directos
