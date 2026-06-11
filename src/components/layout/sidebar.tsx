@@ -8,6 +8,7 @@ import { useSession, signOut } from "next-auth/react"
 import {
   LayoutDashboard,
   Users,
+  MessageSquare,
   Kanban,
   Building2,
   DollarSign,
@@ -29,6 +30,7 @@ const ASESORES = ["ASESOR", "ASESOR_SR", "ASESOR_JR"]
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING"] },
   { label: "Contactos", href: "/contacts", icon: Users, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING"] },
+  { label: "Inbox", href: "/inbox", icon: MessageSquare, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "MARKETING"] },
   { label: "Pipeline", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
   { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING"] },
   { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
