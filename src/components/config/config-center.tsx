@@ -7,14 +7,15 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   Workflow, Users, Database, Bot, Plug, MessageSquare, UserCircle,
-  FileText, ArrowUpRight, type LucideIcon,
+  FileText, Eye, ArrowUpRight, type LucideIcon,
 } from "lucide-react";
 import { AutomationSection } from "./automation-section";
 import { TeamsSection } from "./teams-section";
 import { FieldsSection } from "./fields-section";
 import { AgentsSection } from "./agents-section";
+import { CoreFieldsSection } from "./core-fields-section";
 
-type SectionKey = "index" | "automation" | "teams" | "fields" | "agents";
+type SectionKey = "index" | "automation" | "teams" | "fields" | "agents" | "corefields";
 
 interface CardDef {
   key?: SectionKey;
@@ -43,6 +44,7 @@ const GROUPS: Array<{ title: string; cards: CardDef[] }> = [
     title: "Personalización",
     cards: [
       { key: "fields", icon: Database, title: "Módulos & Campos", items: ["Catálogo anti-sprawl", "Campos custom (Contact/Deal)", "Picklists", "Permisos por rol"] },
+      { key: "corefields", icon: Eye, title: "Visibilidad de campos", items: ["Campos core por rol", "Ocultar / solo lectura / editar", "Contacto (más módulos pronto)", "Enforcement en API"] },
       { href: "/settings", icon: FileText, title: "Mi perfil & Plantillas", items: ["Firma de correo", "Tarjeta digital", "Plantillas con atajos"] },
     ],
   },
@@ -71,6 +73,7 @@ export function ConfigCenter({ userRole }: { userRole: string }) {
         {section === "automation" && <AutomationSection userRole={userRole} />}
         {section === "teams" && <TeamsSection userRole={userRole} />}
         {section === "fields" && <FieldsSection userRole={userRole} />}
+        {section === "corefields" && <CoreFieldsSection userRole={userRole} />}
         {section === "agents" && <AgentsSection userRole={userRole} />}
       </div>
     );

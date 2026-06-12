@@ -12,6 +12,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
+import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -332,6 +333,18 @@ export async function PUT(request: NextRequest) {
     }
 
     const data = validation.data;
+
+    // Field-level security: bloquear edición de campos core sin acceso EDIT para el rol.
+    // La UI no es la frontera de seguridad — se valida también aquí.
+    const access = await resolveCoreFieldAccess("contact", session.user.role);
+    const locked = nonEditableKeys("contact", access);
+    const attempted = Object.keys(data).filter((k) => locked.has(k));
+    if (attempted.length > 0) {
+      return NextResponse.json(
+        { error: "No tienes permiso para editar estos campos", fields: attempted },
+        { status: 403 }
+      );
+    }
 
     // Si se cambia el teléfono, verificar duplicado
     if (data.phone && data.phone !== existing.phone) {

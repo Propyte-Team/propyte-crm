@@ -155,12 +155,18 @@ function activityIcon(type: string) {
   return ActivityIcon;
 }
 
+type FieldAccess = "HIDDEN" | "READ" | "EDIT";
+
 interface ContactDetailProps {
   contact: any;
   userRole: string;
+  fieldAccess?: Record<string, FieldAccess>;
 }
 
-export function ContactDetail({ contact, userRole }: ContactDetailProps) {
+export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDetailProps) {
+  // Acceso por campo core (default EDIT). HIDDEN ya viene removido del server; aquí
+  // ocultamos en UI igual por robustez y degradamos READ a solo lectura.
+  const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [activeCall, setActiveCall] = useState(false);
@@ -231,6 +237,52 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
     setBusy(null);
   }
 
+  // Campo de texto con gating de acceso (HIDDEN → nada, READ → solo lectura, EDIT → inline).
+  function gText(
+    key: string,
+    label: string,
+    opts: { type?: string; display?: string; transform?: (v: string) => unknown } = {}
+  ) {
+    const a = acc(key);
+    if (a === "HIDDEN") return null;
+    const raw = contact[key];
+    const strVal = raw === null || raw === undefined ? "" : String(raw);
+    if (a === "READ") return <ReadRow label={label} value={opts.display ?? strVal} />;
+    return (
+      <InlineText
+        label={label}
+        value={strVal}
+        type={opts.type}
+        display={opts.display}
+        onSave={(v) => save({ [key]: opts.transform ? opts.transform(v) : v })}
+      />
+    );
+  }
+
+  // Select con gating de acceso.
+  function gSelect(
+    key: string,
+    label: string,
+    options: { value: string; label: string }[],
+    opts: { nullable?: boolean } = {}
+  ) {
+    const a = acc(key);
+    if (a === "HIDDEN") return null;
+    const value = contact[key] ?? "";
+    if (a === "READ") {
+      const lbl = options.find((o) => o.value === value)?.label ?? "—";
+      return <ReadRow label={label} value={lbl} />;
+    }
+    return (
+      <InlineSelectRow
+        label={label}
+        value={value}
+        options={options}
+        onSave={(v) => save({ [key]: opts.nullable ? v || null : v })}
+      />
+    );
+  }
+
   async function addNote() {
     const text = note.trim();
     if (!text) return;
@@ -284,36 +336,48 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
             </h1>
             {/* Chips editables inline */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <ChipSelect
-                value={contact.contactStatus ?? "NUEVO"}
-                options={CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }))}
-                dotColor={statusColor}
-                loading={busy === "contactStatus"}
-                onChange={(v) => changeField("contactStatus", v)}
-              />
-              <ChipSelect
-                value={contact.temperature ?? "COLD"}
-                options={Object.entries(LEAD_TEMPERATURE_LABELS).map(([value, label]) => ({ value, label }))}
-                dotColor={TEMP_COLORS[contact.temperature] ?? "#9CA3AF"}
-                loading={busy === "temperature"}
-                onChange={(v) => changeField("temperature", v)}
-              />
-              <ChipSelect
-                value={contact.contactType ?? "LEAD"}
-                options={Object.entries(CONTACT_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
-                loading={busy === "contactType"}
-                onChange={(v) => changeField("contactType", v)}
-              />
-              <ChipSelect
-                value={contact.urgency ?? ""}
-                options={[
-                  { value: "", label: "Urgencia —" },
-                  ...Object.entries(URGENCY_LABELS).map(([value, label]) => ({ value, label: `Urgencia ${label}` })),
-                ]}
-                dotColor={contact.urgency ? URGENCY_COLORS[contact.urgency] : undefined}
-                loading={busy === "urgency"}
-                onChange={(v) => changeField("urgency", v || null)}
-              />
+              {acc("contactStatus") !== "HIDDEN" && (
+                <ChipSelect
+                  value={contact.contactStatus ?? "NUEVO"}
+                  options={CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }))}
+                  dotColor={statusColor}
+                  loading={busy === "contactStatus"}
+                  readOnly={acc("contactStatus") !== "EDIT"}
+                  onChange={(v) => changeField("contactStatus", v)}
+                />
+              )}
+              {acc("temperature") !== "HIDDEN" && (
+                <ChipSelect
+                  value={contact.temperature ?? "COLD"}
+                  options={Object.entries(LEAD_TEMPERATURE_LABELS).map(([value, label]) => ({ value, label }))}
+                  dotColor={TEMP_COLORS[contact.temperature] ?? "#9CA3AF"}
+                  loading={busy === "temperature"}
+                  readOnly={acc("temperature") !== "EDIT"}
+                  onChange={(v) => changeField("temperature", v)}
+                />
+              )}
+              {acc("contactType") !== "HIDDEN" && (
+                <ChipSelect
+                  value={contact.contactType ?? "LEAD"}
+                  options={Object.entries(CONTACT_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                  loading={busy === "contactType"}
+                  readOnly={acc("contactType") !== "EDIT"}
+                  onChange={(v) => changeField("contactType", v)}
+                />
+              )}
+              {acc("urgency") !== "HIDDEN" && (
+                <ChipSelect
+                  value={contact.urgency ?? ""}
+                  options={[
+                    { value: "", label: "Urgencia —" },
+                    ...Object.entries(URGENCY_LABELS).map(([value, label]) => ({ value, label: `Urgencia ${label}` })),
+                  ]}
+                  dotColor={contact.urgency ? URGENCY_COLORS[contact.urgency] : undefined}
+                  loading={busy === "urgency"}
+                  readOnly={acc("urgency") !== "EDIT"}
+                  onChange={(v) => changeField("urgency", v || null)}
+                />
+              )}
               <span className="text-xs text-[color:var(--text-tertiary)]">
                 {SOURCE_LABEL[contact.leadSource] ?? contact.leadSource}
               </span>
@@ -351,7 +415,7 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
         <Metric label="Actividades" value={String(activities.length)} num />
         <Metric label="Próx. seguimiento" value={nextFollowUp ? formatShort(nextFollowUp) : "—"} highlight={!!nextFollowUp} />
         <Metric label="Deals" value={String(contact.deals?.length ?? 0)} num />
-        <Metric label="Score" value={String(contact.score ?? 0)} num />
+        {acc("score") !== "HIDDEN" && <Metric label="Score" value={String(contact.score ?? 0)} num />}
       </div>
 
       {/* ── Grid principal: datos (izq) + timeline (der) ── */}
@@ -359,66 +423,34 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
         {/* Columna izquierda — datos inline */}
         <div className="space-y-5 lg:col-span-5">
           <Section title="Datos">
-            <InlineText label="Nombre" value={contact.firstName} onSave={(v) => save({ firstName: v })} />
-            <InlineText label="Apellido" value={contact.lastName} onSave={(v) => save({ lastName: v })} />
-            <InlineText label="Teléfono" value={contact.phone} onSave={(v) => save({ phone: v })} />
-            <InlineText label="Teléfono 2" value={contact.secondaryPhone} onSave={(v) => save({ secondaryPhone: v })} />
-            <InlineText label="Email" value={contact.email} type="email" onSave={(v) => save({ email: v })} />
-            <InlineSelectRow
-              label="Idioma"
-              value={contact.preferredLanguage ?? "ES"}
-              options={[{ value: "ES", label: "Español" }, { value: "EN", label: "Inglés" }]}
-              onSave={(v) => save({ preferredLanguage: v })}
-            />
+            {gText("firstName", "Nombre")}
+            {gText("lastName", "Apellido")}
+            {gText("phone", "Teléfono")}
+            {gText("secondaryPhone", "Teléfono 2")}
+            {gText("email", "Email", { type: "email" })}
+            {gSelect("preferredLanguage", "Idioma", [
+              { value: "ES", label: "Español" },
+              { value: "EN", label: "Inglés" },
+            ])}
             <ReadRow label="Registro" value={formatDate(contact.createdAt)} />
           </Section>
 
           <Section title="Ubicación">
-            <InlineText label="Ciudad" value={contact.residenceCity} onSave={(v) => save({ residenceCity: v })} />
-            <InlineText label="País" value={contact.residenceCountry} onSave={(v) => save({ residenceCountry: v })} />
-            <InlineText label="Nacionalidad" value={contact.nationality} onSave={(v) => save({ nationality: v })} />
+            {gText("residenceCity", "Ciudad")}
+            {gText("residenceCountry", "País")}
+            {gText("nationality", "Nacionalidad")}
           </Section>
 
           <Section title="Perfil de inversión">
-            <InlineSelectRow
-              label="Perfil"
-              value={contact.investmentProfile ?? ""}
-              options={[{ value: "", label: "—" }, ...Object.entries(INVESTMENT_LABEL).map(([value, label]) => ({ value, label }))]}
-              onSave={(v) => save({ investmentProfile: v || null })}
-            />
-            <InlineSelectRow
-              label="Tipo de propiedad"
-              value={contact.propertyType ?? ""}
-              options={[{ value: "", label: "—" }, ...Object.entries(PROPERTY_LABEL).map(([value, label]) => ({ value, label }))]}
-              onSave={(v) => save({ propertyType: v || null })}
-            />
-            <InlineSelectRow
-              label="Horizonte"
-              value={contact.purchaseTimeline ?? ""}
-              options={[{ value: "", label: "—" }, ...Object.entries(TIMELINE_LABEL).map(([value, label]) => ({ value, label }))]}
-              onSave={(v) => save({ purchaseTimeline: v || null })}
-            />
-            <InlineText label="Presupuesto mín." value={contact.budgetMin ? String(contact.budgetMin) : ""} type="number" display={formatCurrency(contact.budgetMin)} onSave={(v) => save({ budgetMin: v ? Number(v) : null })} />
-            <InlineText label="Presupuesto máx." value={contact.budgetMax ? String(contact.budgetMax) : ""} type="number" display={formatCurrency(contact.budgetMax)} onSave={(v) => save({ budgetMax: v ? Number(v) : null })} />
-            <InlineSelectRow
-              label="Forma de pago"
-              value={contact.paymentMethod ?? ""}
-              options={[{ value: "", label: "—" }, ...Object.entries(PAYMENT_LABEL).map(([value, label]) => ({ value, label }))]}
-              onSave={(v) => save({ paymentMethod: v || null })}
-            />
-            <InlineText label="Zona preferida" value={contact.preferredZone} onSave={(v) => save({ preferredZone: v })} />
-            <InlineSelectRow
-              label="Modalidad"
-              value={contact.purchaseModality ?? ""}
-              options={[{ value: "", label: "—" }, ...Object.entries(MODALITY_LABEL).map(([value, label]) => ({ value, label }))]}
-              onSave={(v) => save({ purchaseModality: v || null })}
-            />
-            <InlineSelectRow
-              label="Estrategia de renta"
-              value={contact.rentalStrategy ?? ""}
-              options={[{ value: "", label: "—" }, ...Object.entries(RENTAL_LABEL).map(([value, label]) => ({ value, label }))]}
-              onSave={(v) => save({ rentalStrategy: v || null })}
-            />
+            {gSelect("investmentProfile", "Perfil", [{ value: "", label: "—" }, ...Object.entries(INVESTMENT_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
+            {gSelect("propertyType", "Tipo de propiedad", [{ value: "", label: "—" }, ...Object.entries(PROPERTY_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
+            {gSelect("purchaseTimeline", "Horizonte", [{ value: "", label: "—" }, ...Object.entries(TIMELINE_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
+            {gText("budgetMin", "Presupuesto mín.", { type: "number", display: formatCurrency(contact.budgetMin), transform: (v) => (v ? Number(v) : null) })}
+            {gText("budgetMax", "Presupuesto máx.", { type: "number", display: formatCurrency(contact.budgetMax), transform: (v) => (v ? Number(v) : null) })}
+            {gSelect("paymentMethod", "Forma de pago", [{ value: "", label: "—" }, ...Object.entries(PAYMENT_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
+            {gText("preferredZone", "Zona preferida")}
+            {gSelect("purchaseModality", "Modalidad", [{ value: "", label: "—" }, ...Object.entries(MODALITY_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
+            {gSelect("rentalStrategy", "Estrategia de renta", [{ value: "", label: "—" }, ...Object.entries(RENTAL_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
           </Section>
 
           <Section title="Asignación">
@@ -768,12 +800,14 @@ function ChipSelect({
   options,
   dotColor,
   loading,
+  readOnly,
   onChange,
 }: {
   value: string;
   options: { value: string; label: string }[];
   dotColor?: string;
   loading?: boolean;
+  readOnly?: boolean;
   onChange: (v: string) => void;
 }) {
   const current = options.find((o) => o.value === value);
@@ -784,17 +818,21 @@ function ChipSelect({
     >
       {dotColor && <span className="h-2 w-2 rounded-full" style={{ background: dotColor }} />}
       {current?.label ?? value}
-      <svg className="h-3 w-3 text-[color:var(--text-tertiary)]" viewBox="0 0 12 12" fill="none"><path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" strokeWidth="1.2" /></svg>
-      <select
-        className="absolute inset-0 cursor-pointer opacity-0"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label="Cambiar"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
+      {!readOnly && (
+        <>
+          <svg className="h-3 w-3 text-[color:var(--text-tertiary)]" viewBox="0 0 12 12" fill="none"><path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" strokeWidth="1.2" /></svg>
+          <select
+            className="absolute inset-0 cursor-pointer opacity-0"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-label="Cambiar"
+          >
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </>
+      )}
     </span>
   );
 }

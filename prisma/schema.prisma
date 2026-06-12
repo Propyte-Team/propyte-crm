@@ -1929,6 +1929,21 @@ model FieldPermission {
   @@schema("propyte_crm")
 }
 
+// Field-level security para campos CORE (columnas Prisma, no custom).
+// object = "contact" | "deal"; fieldKey = nombre de la columna (ej. "budgetMin").
+// Ausencia de fila = acceso por defecto EDIT (no restrictivo) para no romper el flujo actual.
+model CoreFieldPermission {
+  id       String      @id @default(uuid())
+  object   String
+  fieldKey String
+  role     UserRole
+  access   FieldAccess @default(EDIT)
+
+  @@unique([object, fieldKey, role])
+  @@map("core_field_permissions")
+  @@schema("propyte_crm")
+}
+
 // =====================================================================
 // PERSONALIZACIÓN — P3 Relaciones entre módulos (speckit §4)
 // =====================================================================

@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { getContact } from "@/server/contacts";
 import { redirect, notFound } from "next/navigation";
 import { ContactDetail } from "@/components/contacts/contact-detail";
+import { resolveCoreFieldAccess, stripHiddenCoreFields } from "@/lib/metadata/core-fields";
 
 interface ContactPageProps {
   params: { id: string };
@@ -27,10 +28,15 @@ export default async function ContactDetailPage({ params }: ContactPageProps) {
     notFound();
   }
 
+  // Field-level security: resolver acceso por rol, ocultar campos HIDDEN (server-side).
+  const fieldAccess = await resolveCoreFieldAccess("contact", session.user.role);
+  const visibleContact = stripHiddenCoreFields("contact", fieldAccess, contact as Record<string, unknown>);
+
   return (
     <ContactDetail
-      contact={JSON.parse(JSON.stringify(contact))}
+      contact={JSON.parse(JSON.stringify(visibleContact))}
       userRole={session.user.role}
+      fieldAccess={fieldAccess}
     />
   );
 }
