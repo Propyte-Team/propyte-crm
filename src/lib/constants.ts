@@ -239,6 +239,55 @@ export const TEMPERATURE_COLORS: Record<string, string> = {
   DEAD: "bg-gray-400",
 } as const;
 
+// --- Estado del contacto (ciclo de seguimiento, distinto del pipeline del deal) ---
+export const CONTACT_STATUS_LABELS: Record<string, string> = {
+  NUEVO: "Nuevo",
+  SIN_RESPUESTA: "Sin respuesta",
+  CONTACTADO: "Contactado",
+  EN_SEGUIMIENTO: "En seguimiento",
+  DESCARTADO: "Descartado",
+} as const;
+
+// Color = señal (dot/chip). Espectro frío→activo→inerte, coherente con el funnel.
+export const CONTACT_STATUS_COLORS: Record<string, string> = {
+  NUEVO: "#3B82F6",
+  SIN_RESPUESTA: "#F59E0B",
+  CONTACTADO: "#6366F1",
+  EN_SEGUIMIENTO: "#0D9488",
+  DESCARTADO: "#9CA3AF",
+} as const;
+
+export const CONTACT_STATUS_ORDER = [
+  "NUEVO",
+  "SIN_RESPUESTA",
+  "CONTACTADO",
+  "EN_SEGUIMIENTO",
+  "DESCARTADO",
+] as const;
+
+// --- Urgencia del contacto ---
+export const URGENCY_LABELS: Record<string, string> = {
+  ALTA: "Alta",
+  MEDIA: "Media",
+  BAJA: "Baja",
+} as const;
+
+export const URGENCY_COLORS: Record<string, string> = {
+  ALTA: "#DC2626",
+  MEDIA: "#D97706",
+  BAJA: "#64748B",
+} as const;
+
+// --- Tipo de contacto ---
+export const CONTACT_TYPE_LABELS: Record<string, string> = {
+  LEAD: "Lead",
+  PROSPECTO: "Prospecto",
+  CLIENTE: "Cliente",
+  INVERSIONISTA: "Inversionista",
+  BROKER_EXTERNO: "Broker externo",
+  REFERIDO: "Referido",
+} as const;
+
 // --- Estados de desarrollo ---
 export const DEVELOPMENT_STATUS_LABELS: Record<string, string> = {
   PREVENTA: "Preventa",

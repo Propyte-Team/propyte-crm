@@ -32,6 +32,8 @@ const createContactSchema = z.object({
   phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
+  contactStatus: z.enum(["NUEVO", "SIN_RESPUESTA", "CONTACTADO", "EN_SEGUIMIENTO", "DESCARTADO"]).optional(),
+  urgency: z.enum(["ALTA", "MEDIA", "BAJA"]).optional().nullable(),
   leadSource: z.enum([
     "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
     "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
@@ -352,6 +354,8 @@ export async function PUT(request: NextRequest) {
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.secondaryPhone !== undefined) updateData.secondaryPhone = data.secondaryPhone || null;
     if (data.contactType !== undefined) updateData.contactType = data.contactType;
+    if (data.contactStatus !== undefined) updateData.contactStatus = data.contactStatus;
+    if (data.urgency !== undefined) updateData.urgency = data.urgency;
     if (data.leadSource !== undefined) updateData.leadSource = data.leadSource;
     if (data.leadSourceDetail !== undefined) updateData.leadSourceDetail = data.leadSourceDetail || null;
     if (data.temperature !== undefined) updateData.temperature = data.temperature;
