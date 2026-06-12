@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
+import { SavedViewsBar } from "@/components/views/saved-views-bar";
 import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER } from "@/lib/constants";
 
 // --- Tipos ---
@@ -221,6 +222,17 @@ export function ContactsList({
     fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, newPage);
   };
 
+  // Aplicar una vista guardada (Fase 5): re-hidrata los filtros y recarga.
+  const applyView = (f: Record<string, unknown>) => {
+    const s = (f.search as string) ?? "";
+    const src = (f.source as string) ?? "ALL";
+    const tmp = (f.temperature as string) ?? "ALL";
+    const typ = (f.type as string) ?? "ALL";
+    const st = (f.status as string) ?? "ALL";
+    setSearch(s); setFilterSource(src); setFilterTemp(tmp); setFilterType(typ); setFilterStatus(st);
+    fetchContacts(s, src, tmp, typ, st, 1);
+  };
+
   // Cambio rápido de estado de contacto desde la lista (edición inline)
   const updateStatus = async (id: string, contactStatus: string) => {
     setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactStatus } : c)));
@@ -315,6 +327,13 @@ export function ContactsList({
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Vistas guardadas (Fase 5) */}
+      <SavedViewsBar
+        module="contacts"
+        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus }}
+        onApply={applyView}
+      />
 
       <Card>
         <CardContent className="p-6">

@@ -1944,6 +1944,23 @@ model CoreFieldPermission {
   @@schema("propyte_crm")
 }
 
+// Vistas guardadas (Fase 5, T5.4): filtros/columnas por módulo y usuario.
+// ownerId sin relación explícita para no tocar el modelo User.
+model SavedView {
+  id        String   @id @default(uuid())
+  name      String
+  module    String // "contacts" | "pipeline" | "quotes"
+  ownerId   String
+  filters   Json     @default("{}")
+  scope     String   @default("personal") // personal | team | org
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([module, ownerId])
+  @@map("saved_views")
+  @@schema("propyte_crm")
+}
+
 // =====================================================================
 // PERSONALIZACIÓN — P3 Relaciones entre módulos (speckit §4)
 // =====================================================================
