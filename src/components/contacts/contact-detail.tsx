@@ -176,6 +176,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
   const [note, setNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [showConv, setShowConv] = useState(false);
 
   const canDelete = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT"].includes(userRole);
 
@@ -624,12 +625,27 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
       )}
 
       {/* ── Conversaciones (WhatsApp/SMS) ── */}
-      <Section title="Conversaciones">
-        <ConversationPanel
-          contactId={contact.id}
-          contactName={`${contact.firstName} ${contact.lastName}`}
-          contactPhone={contact.phone}
-        />
+      {/* Bajo demanda: ConversationPanel hace scrollIntoView al montar; si se renderiza
+          siempre, secuestra el scroll de la página y tapa la edición inline. */}
+      <Section
+        title="Conversaciones"
+        action={
+          <button className="btn-secondary text-[13px]" onClick={() => setShowConv((v) => !v)}>
+            <MessageCircle className="h-3.5 w-3.5" /> {showConv ? "Ocultar" : "Abrir conversación"}
+          </button>
+        }
+      >
+        {showConv ? (
+          <ConversationPanel
+            contactId={contact.id}
+            contactName={`${contact.firstName} ${contact.lastName}`}
+            contactPhone={contact.phone}
+          />
+        ) : (
+          <p className="py-4 text-center text-[13px] text-[color:var(--text-tertiary)]">
+            Abre la conversación para ver el hilo de WhatsApp/SMS de este contacto.
+          </p>
+        )}
       </Section>
 
       {/* Llamada VoIP activa */}

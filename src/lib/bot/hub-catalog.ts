@@ -32,7 +32,7 @@ export async function findMatchingDevelopments(opts: {
               'MXN' AS moneda,
               d.pipeline_status AS status
          FROM real_estate_hub."Propyte_desarrollos" d
-        WHERE d.pipeline_status = 'published'
+        WHERE d.pipeline_status::text = 'Publicado'
           AND ($1::float8 IS NULL OR d.ext_precio_max_mxn >= $1)
           AND ($2::float8 IS NULL OR d.ext_precio_min_mxn <= $2)
           AND ($3::text IS NULL OR d.zona ILIKE '%' || $3 || '%')

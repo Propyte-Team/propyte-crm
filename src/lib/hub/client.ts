@@ -29,13 +29,13 @@ export async function listHubDevelopments(
       `SELECT d.id::text AS id,
               d.nombre_desarrollo AS nombre,
               d.zona AS zona,
-              d.plaza AS plaza,
+              NULL::text AS plaza,
               d.pipeline_status AS status,
               d.ext_precio_min_mxn::float8 AS "precioMin",
               d.ext_precio_max_mxn::float8 AS "precioMax",
               'MXN' AS moneda
          FROM real_estate_hub."Propyte_desarrollos" d
-        WHERE d.pipeline_status = 'published'
+        WHERE d.pipeline_status::text = 'Publicado'
           AND ($1::text IS NULL OR d.nombre_desarrollo ILIKE '%' || $1 || '%')
           AND ($2::text IS NULL OR d.zona ILIKE '%' || $2 || '%')
           AND ($3::float8 IS NULL OR d.ext_precio_max_mxn >= $3)
@@ -59,7 +59,7 @@ export async function getHubDevelopment(id: string): Promise<HubDevelopment | nu
       `SELECT d.id::text AS id,
               d.nombre_desarrollo AS nombre,
               d.zona AS zona,
-              d.plaza AS plaza,
+              NULL::text AS plaza,
               d.pipeline_status AS status,
               d.ext_precio_min_mxn::float8 AS "precioMin",
               d.ext_precio_max_mxn::float8 AS "precioMax",
@@ -97,7 +97,7 @@ export async function listHubUnits(filters: HubUnitFilters = {}): Promise<HubUni
          FROM real_estate_hub."Propyte_unidades" u
         WHERE ($1::text IS NULL OR u.id_desarrollo::text = $1)
           AND ($2::text IS NULL OR u.titulo_unidad ILIKE '%' || $2 || '%' OR u.ext_numero_unidad ILIKE '%' || $2 || '%')
-          AND ($3::bool IS NOT TRUE OR u.estado_unidad ILIKE 'disponible')
+          AND ($3::bool IS NOT TRUE OR u.estado_unidad::text ILIKE 'disponible')
         ORDER BY u.ext_numero_unidad ASC NULLS LAST
         LIMIT ${limit}`,
       filters.developmentId ?? null,
