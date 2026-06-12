@@ -2,6 +2,13 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 g (Fase 5 experiencia)** —
+> - **Command palette ⌘K** global (`src/components/layout/command-palette.tsx`, montado en layout):
+>   búsqueda global contactos+deals (via /api/records/search) + navegación rápida.
+> - **Vistas guardadas** (T5.4): modelo `SavedView` + **migración `saved_views` APLICADA** (con RLS).
+>   API `/api/saved-views`, `SavedViewsBar` integrado en Contactos (guarda/aplica filtros).
+> - Pendiente Fase 5: integrar SavedViewsBar en Pipeline/Cotizaciones; field/layout editor completo (T5.3 parcial ya existe).
+>
 > **🎯 Sesión 2026-06-12 f (Fase 4 automatización)** —
 > - T4.1 **observabilidad** del motor en Config→Flujos: eventos pendientes/procesados(24h), cola,
 >   fallidas, errores recientes + **retry manual** (`/api/admin/automation/retry`).
