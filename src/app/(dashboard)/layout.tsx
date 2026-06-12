@@ -1,6 +1,7 @@
 // Layout del dashboard: estructura con sidebar, topbar y área de contenido principal
 import { Sidebar } from "@/components/layout/sidebar"
 import { Topbar } from "@/components/layout/topbar"
+import { CommandPalette } from "@/components/layout/command-palette"
 
 export default function DashboardLayout({
   children,
@@ -16,6 +17,8 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+      {/* Command palette global ⌘K / Ctrl+K (Fase 5) */}
+      <CommandPalette />
     </div>
   )
 }
