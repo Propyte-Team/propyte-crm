@@ -34,6 +34,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
   {
     title: null,
     items: [
+      { label: "Hoy", href: "/hoy", icon: Sun, roles: TODOS },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: TODOS },
       { label: "Inbox", href: "/inbox", icon: MessageSquare, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "MARKETING"] },
     ],
