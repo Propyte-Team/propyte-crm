@@ -2,6 +2,23 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 b (Detalle de contacto + permisos de campo)** —
+> Feedback de Luis sobre la vista de contacto (pestañas malas, sin notas, sin edición
+> inline, sin estado de contacto, sin ocultación de campos). Entregado:
+> - **Fase A (commit 1501410):** rediseño del detalle de contacto a UNA pantalla 2 columnas
+>   (datos | seguimiento), sin pestañas. Header con estado/temperatura/tipo/urgencia editables
+>   inline (ChipSelect → PUT). Barra resumen (último contacto, # actividades, próx. seguimiento,
+>   deals, score). Edición inline por campo (InlineText/InlineSelectRow). Sistema de notas
+>   (Activity NOTE) + timeline unificada. Diseño minimalista Speckit #6. `contactStatus`/`urgency`
+>   agregados al PUT /api/contacts + constantes CONTACT_STATUS/URGENCY/CONTACT_TYPE.
+> - **Fase B (commiteado):** permisos de campo CORE por rol. Modelo `CoreFieldPermission` +
+>   **migración aditiva APLICADA** vía MCP Supabase (`core_field_permissions`, default sin fila = EDIT).
+>   Catálogo `src/lib/metadata/core-fields.ts` (resiliente si falta tabla), API
+>   `/api/admin/metadata/core-fields` (solo ADMIN), enforcement server-side (PUT bloquea no-EDIT,
+>   page oculta HIDDEN), UI gating en el detalle, panel "Visibilidad de campos" en Configuración.
+> - Build verde, 61 tests verdes. Pendiente: aplicar mismo gating a la LISTA de contactos y a Deal;
+>   extender catálogo core a más módulos.
+>
 > **🎯 Sesión 2026-06-12 (Speckit MAESTRO — Fase 0 + bugs prod)** —
 > Speckit/Plan maestro creados (`specs/SPECKIT-MAESTRO-PROPYTE-CRM.md`, `specs/IMPLEMENTATION-PLAN-MAESTRO-PROPYTE-CRM.md`).
 > Auditoría de estado real: el proyecto está MUCHO más avanzado que el "Veredicto" del speckit (desactualizado).
