@@ -2,7 +2,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Play } from "lucide-react";
+import { Play, Plus, Pencil } from "lucide-react";
+import { AgentStudio } from "./agent-studio";
 
 interface AgentData {
   id: string;
@@ -11,7 +12,10 @@ interface AgentData {
   autonomyLevel: string;
   allowedTools: string[];
   isActive: boolean;
-  systemUser: { name: string; role: string };
+  systemUser: { id?: string; name: string; role: string };
+  systemUserId?: string;
+  trigger?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
   _count: { runs: number };
   runs: Array<{ status: string; startedAt: string }>;
 }
@@ -19,11 +23,17 @@ interface AgentData {
 export function AgentsSection({ userRole }: { userRole: string }) {
   const canEdit = ["ADMIN", "DIRECTOR"].includes(userRole);
   const [agents, setAgents] = useState<AgentData[]>([]);
+  const [availableTools, setAvailableTools] = useState<Array<{ name: string; description: string }>>([]);
+  const [studio, setStudio] = useState<"new" | AgentData | null>(null);
   const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/agents");
-    if (res.ok) setAgents((await res.json()).data ?? []);
+    if (res.ok) {
+      const j = await res.json();
+      setAgents(j.data ?? []);
+      setAvailableTools(j.availableTools ?? []);
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -40,14 +50,35 @@ export function AgentsSection({ userRole }: { userRole: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Agentes IA</h1>
-        <p className="text-muted-foreground">
-          Empleados digitales con identidad RBAC, herramientas acotadas y corridas auditadas.
-          Requieren ANTHROPIC_API_KEY en el servidor.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Agentes IA</h1>
+          <p className="text-muted-foreground">
+            Empleados digitales con identidad RBAC, herramientas acotadas y corridas auditadas.
+            Requieren ANTHROPIC_API_KEY en el servidor.
+          </p>
+        </div>
+        {canEdit && (
+          <button className="btn-primary shrink-0 text-[12px]" onClick={() => setStudio("new")}>
+            <Plus className="h-3.5 w-3.5" /> Nuevo agente
+          </button>
+        )}
       </div>
       {msg && <p className="text-[13px]" style={{ color: "var(--color-error)" }}>{msg}</p>}
+
+      {studio && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4" style={{ background: "rgba(0,0,0,.4)" }}>
+          <div className="my-8 w-full max-w-2xl rounded-lg p-5" style={{ background: "var(--bg-card)" }}>
+            <h2 className="mb-4 text-lg font-semibold">{studio === "new" ? "Nuevo agente" : "Editar agente"}</h2>
+            <AgentStudio
+              agent={studio === "new" ? undefined : studio}
+              availableTools={availableTools}
+              onSaved={() => { setStudio(null); load(); }}
+              onCancel={() => setStudio(null)}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         {agents.map((a) => (
@@ -73,13 +104,18 @@ export function AgentsSection({ userRole }: { userRole: string }) {
                 </p>
               </div>
               {canEdit && (
-                <button
-                  className={a.isActive ? "btn-secondary !py-1.5 !px-3 text-[12px]" : "btn-primary !py-1.5 !px-3 text-[12px]"}
-                  onClick={() => toggle(a)}
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  {a.isActive ? "Pausar" : "Activar"}
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button className="btn-secondary !py-1.5 !px-3 text-[12px]" onClick={() => setStudio(a)}>
+                    <Pencil className="h-3.5 w-3.5" /> Editar
+                  </button>
+                  <button
+                    className={a.isActive ? "btn-secondary !py-1.5 !px-3 text-[12px]" : "btn-primary !py-1.5 !px-3 text-[12px]"}
+                    onClick={() => toggle(a)}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    {a.isActive ? "Pausar" : "Activar"}
+                  </button>
+                </div>
               )}
             </div>
           </div>
