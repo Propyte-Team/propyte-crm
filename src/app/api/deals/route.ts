@@ -28,6 +28,9 @@ const createDealSchema = z.object({
   contactId: z.string().uuid("ID de contacto inválido"),
   developmentId: z.string().uuid("ID de desarrollo inválido").optional(),
   unitId: z.string().uuid("ID de unidad inválido").optional(),
+  // Inventario = Hub (SOT, Fase 1). El deal form ahora manda estos en vez de los FKs locales.
+  hubDevelopmentId: z.string().min(1).optional(),
+  hubUnitId: z.string().min(1).optional(),
   stage: z.enum([
     "NEW_LEAD", "CONTACTED", "DISCOVERY_DONE", "MEETING_SCHEDULED",
     "MEETING_COMPLETED", "PROPOSAL_SENT", "NEGOTIATION", "RESERVED",
@@ -215,7 +218,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Verificar que la unidad existe y está disponible (si se proporcionó)
+    // Verificar que la unidad existe y está disponible (si se proporcionó local — legacy)
     if (data.unitId) {
       const unit = await prisma.unit.findUnique({
         where: { id: data.unitId },
@@ -234,6 +237,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Inventario Hub (SOT): validar contra el Hub y congelar snapshot en el deal.
+    let hubUnitSnapshot: Record<string, unknown> | null = null;
+    if (data.hubUnitId) {
+      const { getHubUnit } = await import("@/lib/hub/client");
+      const hubUnit = await getHubUnit(data.hubUnitId);
+      if (!hubUnit) {
+        return NextResponse.json({ error: "Unidad del Hub no encontrada" }, { status: 404 });
+      }
+      hubUnitSnapshot = {
+        ...hubUnit,
+        snapshotAt: new Date().toISOString(),
+        source: "hub",
+      };
+    }
+
     const assignedToId = data.assignedToId || session.user.id;
     const initialStage = data.stage || "NEW_LEAD";
     const probability = data.probability || DEAL_STAGE_PROBABILITY[initialStage] || 5;
@@ -245,6 +263,8 @@ export async function POST(request: NextRequest) {
         assignedToId,
         developmentId: data.developmentId || null,
         unitId: data.unitId || null,
+        hubDevelopmentId: data.hubDevelopmentId || null,
+        hubUnitId: data.hubUnitId || null,
         stage: initialStage as any,
         dealType: data.dealType,
         estimatedValue: data.estimatedValue,
@@ -252,6 +272,7 @@ export async function POST(request: NextRequest) {
         probability,
         expectedCloseDate: data.expectedCloseDate,
         leadSourceAtDeal: data.leadSourceAtDeal,
+        ...(hubUnitSnapshot ? { custom: { hubUnitSnapshot } as Prisma.InputJsonValue } : {}),
       },
       include: {
         contact: { select: { id: true, firstName: true, lastName: true } },

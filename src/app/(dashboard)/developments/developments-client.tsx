@@ -78,28 +78,14 @@ export function DevelopmentsClient({
             <Filter className="mr-1 h-4 w-4" />
             Filtros
           </Button>
-          {isAdmin && (
-            <Dialog open={showNewDev} onOpenChange={setShowNewDev}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Desarrollo
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Crear Nuevo Desarrollo</DialogTitle>
-                </DialogHeader>
-                <DevelopmentForm
-                  onSuccess={() => {
-                    setShowNewDev(false);
-                    router.refresh();
-                  }}
-                  onCancel={() => setShowNewDev(false)}
-                />
-              </DialogContent>
-            </Dialog>
-          )}
+          {/* Fase 1: el inventario vive en el Hub (SOT). El CRM no crea/edita desarrollos. */}
+          <span
+            className="inline-flex items-center rounded-full border px-3 py-1 text-xs"
+            style={{ borderColor: "var(--border-default, #e5e5e5)", color: "var(--text-tertiary, #888)" }}
+            title="El catálogo de desarrollos y unidades es propiedad del Hub (Propyte Hub). El CRM solo lo consulta."
+          >
+            Catálogo del Hub · solo lectura
+          </span>
         </div>
       </div>
 

@@ -269,9 +269,9 @@ export async function PATCH(
         }
       }
 
-      // Regla: RESERVED requiere unidad asignada
+      // Regla: RESERVED requiere unidad asignada (Hub o local legacy)
       if (newStage === "RESERVED") {
-        const unitId = data.unitId || existingDeal.unitId;
+        const unitId = data.unitId || existingDeal.unitId || existingDeal.hubUnitId;
         if (!unitId) {
           return NextResponse.json(
             { error: "Se requiere una unidad asignada para reservar." },
@@ -336,6 +336,21 @@ export async function PATCH(
       }
     }
 
+    // Hub hold al reservar (SOT del inventario). Un conflicto del Hub BLOQUEA la transición.
+    if (data.stage === "RESERVED" && existingDeal.hubUnitId) {
+      const { requestUnitHold } = await import("@/lib/hub/client");
+      const hold = await requestUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id });
+      if (!hold.ok) {
+        return NextResponse.json(
+          { error: `No se pudo apartar la unidad en el Hub: ${hold.error ?? "no disponible"}` },
+          { status: 409 }
+        );
+      }
+      updateData.holdId = hold.unit?.id ?? existingDeal.hubUnitId;
+      updateData.holdExpiresAt = hold.unit?.holdExpiresAt ? new Date(hold.unit.holdExpiresAt) : null;
+      updateData.reservedAt = new Date();
+    }
+
     // Actualizar el deal
     const updatedDeal = await prisma.deal.update({
       where: { id: params.id },
@@ -348,7 +363,13 @@ export async function PATCH(
       },
     });
 
-    // Actualizar estado de unidad si corresponde
+    // Hub: confirmar venta al ganar (SOT). No bloquea el WON; el webhook reconcilia.
+    if (data.stage === "WON" && existingDeal.hubUnitId) {
+      const { confirmUnitHold } = await import("@/lib/hub/client");
+      await confirmUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id }).catch(() => null);
+    }
+
+    // Actualizar estado de unidad LOCAL si corresponde (legacy, sólo deals con unitId local)
     if (data.stage === "RESERVED" && updatedDeal.unitId) {
       await prisma.unit.update({
         where: { id: updatedDeal.unitId },

@@ -105,7 +105,8 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
   useEffect(() => {
     async function loadDevelopments() {
       try {
-        const res = await fetch("/api/developments");
+        // Catálogo del Hub (SOT del inventario — Fase 1). El CRM no posee inventario.
+        const res = await fetch("/api/hub/developments");
         if (res.ok) {
           const json = await res.json();
           setDevelopments(json.data || []);
@@ -126,7 +127,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
       }
       try {
         const res = await fetch(
-          `/api/units?developmentId=${developmentId}&status=DISPONIBLE`
+          `/api/hub/units?developmentId=${developmentId}&onlyAvailable=true`
         );
         if (res.ok) {
           const json = await res.json();
@@ -165,8 +166,9 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
         leadSourceAtDeal: leadSourceAtDeal || "OTRO",
       };
 
-      if (developmentId) body.developmentId = developmentId;
-      if (unitId) body.unitId = unitId;
+      // Inventario = Hub (SOT). Guardamos los IDs del Hub, no FKs locales.
+      if (developmentId) body.hubDevelopmentId = developmentId;
+      if (unitId) body.hubUnitId = unitId;
 
       const res = await fetch("/api/deals", {
         method: "POST",
