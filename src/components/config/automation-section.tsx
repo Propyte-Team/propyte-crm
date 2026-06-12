@@ -2,7 +2,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Save } from "lucide-react";
+import { Save, Plus, Pencil } from "lucide-react";
+import { WorkflowBuilder } from "./workflow-builder";
 
 interface Rule {
   id: string;
@@ -57,6 +58,7 @@ export function AutomationSection({ userRole }: { userRole: string }) {
   const [slaDraft, setSlaDraft] = useState<Record<string, Partial<Sla>>>({});
   const [msg, setMsg] = useState("");
   const [obs, setObs] = useState<{ recentErrors: any[]; eventsPending: number; eventsDone24h: number }>({ recentErrors: [], eventsPending: 0, eventsDone24h: 0 });
+  const [builderRule, setBuilderRule] = useState<"new" | any | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/automation");
@@ -155,11 +157,18 @@ export function AutomationSection({ userRole }: { userRole: string }) {
 
       {/* Workflows */}
       <div className="crm-card !p-0 overflow-hidden">
-        <div className="px-4 py-3 hairline-b">
-          <p className="text-[13px] font-semibold">Reglas de flujo de trabajo</p>
-          <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            Requieren el cron /api/cron/workflows activo en Hostinger para ejecutarse
-          </p>
+        <div className="flex items-center justify-between px-4 py-3 hairline-b">
+          <div>
+            <p className="text-[13px] font-semibold">Reglas de flujo de trabajo</p>
+            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+              Requieren el cron /api/cron/workflows activo en Hostinger para ejecutarse
+            </p>
+          </div>
+          {canEdit && (
+            <button className="btn-primary shrink-0 text-[12px]" onClick={() => setBuilderRule("new")}>
+              <Plus className="h-3.5 w-3.5" /> Nueva regla
+            </button>
+          )}
         </div>
         {rules.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 hairline-b">
@@ -173,10 +182,38 @@ export function AutomationSection({ userRole }: { userRole: string }) {
                 última: {r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString("es-MX") : "nunca"}
               </p>
             </div>
-            <Switch on={r.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "rule", id: r.id, isActive: v })} />
+            <div className="flex shrink-0 items-center gap-2">
+              {canEdit && (
+                <button onClick={() => setBuilderRule(r)} className="text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]" title="Editar regla">
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              <Switch on={r.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "rule", id: r.id, isActive: v })} />
+            </div>
           </div>
         ))}
+        {rules.length === 0 && (
+          <p className="px-4 py-6 text-center text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+            Sin reglas todavía. Crea la primera con “Nueva regla”.
+          </p>
+        )}
       </div>
+
+      {/* Modal del builder */}
+      {builderRule && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4" style={{ background: "rgba(0,0,0,.4)" }}>
+          <div className="my-8 w-full max-w-2xl rounded-lg p-5" style={{ background: "var(--bg-card)" }}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{builderRule === "new" ? "Nueva regla" : "Editar regla"}</h2>
+            </div>
+            <WorkflowBuilder
+              rule={builderRule === "new" ? undefined : builderRule}
+              onSaved={() => { setBuilderRule(null); load(); }}
+              onCancel={() => setBuilderRule(null)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Cadencias */}
       <div className="crm-card !p-0 overflow-hidden">
