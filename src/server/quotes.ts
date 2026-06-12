@@ -80,6 +80,14 @@ export async function createQuote(data: {
   const discountPct = data.discountPct ?? 0;
   const finalPrice = data.listPrice * (1 - discountPct / 100);
 
+  // T3.1: congelar snapshot de la unidad del Hub al emitir (fuente + precio + fecha).
+  let unitSnapshot: Record<string, unknown> = {};
+  if (data.hubUnitId) {
+    const { getHubUnit } = await import("@/lib/hub/client");
+    const u = await getHubUnit(data.hubUnitId);
+    if (u) unitSnapshot = { ...u, snapshotAt: new Date().toISOString(), source: "hub" };
+  }
+
   const quote = await prisma.quote.create({
     data: {
       dealId: data.dealId,
@@ -93,7 +101,7 @@ export async function createQuote(data: {
       scheme: data.scheme,
       notes: data.notes ?? null,
       expiresAt: data.expiresAt ?? null,
-      unitSnapshot: {},
+      unitSnapshot: unitSnapshot as never,
     },
     include: {
       createdBy: { select: { id: true, name: true } },
