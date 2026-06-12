@@ -2,6 +2,20 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 c (Seguridad RLS + Fase 1 Hub T1.1)** —
+> - **RLS habilitado en 45 tablas de propyte_crm** (advisory crítico de Supabase): cierra la
+>   exposición vía anon key de contact_dossiers (KYC), quotes, conversations, etc. VERIFICADO
+>   seguro antes: Prisma usa rol `postgres` (rolbypassrls=true) y el cliente JS usa service_role
+>   → ambos saltan RLS; sin uso de anon key/Realtime contra propyte_crm. Sin políticas = deny-all
+>   a anon/authenticated. Reversible (DISABLE). Aplicado vía MCP (Luis autorizó). 0 tablas sin RLS.
+>   SQL: `prisma/migrations-manual/2026-06-12-enable-rls.sql`.
+> - **Fase 1 Hub — T1.1 cliente Hub** (`src/lib/hub/client.ts` + `types.ts`): lectura de catálogo
+>   por SQL directo a real_estate_hub (decisión de Luis: SQL directo, no API REST nueva); holds via
+>   REST al Hub (x-hub-api-key). Env: HUB_API_BASE_URL/HUB_API_KEY/HUB_WEBHOOK_SECRET.
+>   PENDIENTE Fase 1: T1.2 developments read-only desde Hub, T1.3 deal form usa unidades Hub,
+>   T1.4 hold al pasar a RESERVED (requiere HUB_API_KEY en env de Luis), T1.5 aislar Development/Unit
+>   locales. T1.4 no se puede probar hasta que Luis ponga HUB_API_KEY.
+>
 > **🎯 Sesión 2026-06-12 b (Detalle de contacto + permisos de campo)** —
 > Feedback de Luis sobre la vista de contacto (pestañas malas, sin notas, sin edición
 > inline, sin estado de contacto, sin ocultación de campos). Entregado:
