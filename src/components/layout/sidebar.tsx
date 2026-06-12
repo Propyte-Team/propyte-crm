@@ -43,7 +43,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
     items: [
       { label: "Contactos", href: "/contacts", icon: Users, roles: TODOS },
       { label: "Pipeline", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
-      { label: "Cotizaciones", href: "/cotizaciones", icon: FileText, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "ASESOR_SENIOR", "ASESOR_JUNIOR", "BROKER", ...ASESORES] },
+      { label: "Cotizaciones", href: "/cotizaciones", icon: FileText, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "BROKER", ...ASESORES] },
       { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING"] },
       { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS"] },
     ],

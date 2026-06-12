@@ -1,6 +1,36 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-11 noche-2 (Speckit #6 Diseño + WhatsApp Cloud API E2E).
+> Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
+>
+> **🎯 Sesión 2026-06-12 (Speckit MAESTRO — Fase 0 + bugs prod)** —
+> Speckit/Plan maestro creados (`specs/SPECKIT-MAESTRO-PROPYTE-CRM.md`, `specs/IMPLEMENTATION-PLAN-MAESTRO-PROPYTE-CRM.md`).
+> Auditoría de estado real: el proyecto está MUCHO más avanzado que el "Veredicto" del speckit (desactualizado).
+> **Fase 0 cerrada:**
+> - ✅ Build roto por `hubUnitStatus` (inexistente en Deal) → webhook `/api/webhooks/hub-unit` ahora
+>   guarda el status en `Deal.custom` JSONB (cero DDL). Build verde, 61 tests verdes.
+> - ✅ Roles inconsistentes: removido `ASESOR_SENIOR`/`ASESOR_JUNIOR` (inexistentes) en `sidebar.tsx`.
+> **Bugs de producción del audit IA (cuenta admin/asesor en crm.propyte.com):**
+> - ✅ **Dropdown "Contacto" vacío en Crear Deal** — BUG REAL: `/api/contacts` GET tenía el `if/else if`
+>   de RBAC en orden incorrecto (OWN→TEAM→PLAZA→FULL). ADMIN ∈ TEAM_ACCESS_ROLES → caía en rama TEAM
+>   y solo veía sus propios contactos. La lista server-side (`getContacts`/`buildRbacFilter`) chequea FULL
+>   primero → por eso la lista SÍ mostraba todo pero el modal no. Reordenado: FULL/READ_ONLY → PLAZA → TEAM → OWN.
+> - ✅ **Slug tarjeta "felipe-luksic"** — era el `placeholder` hardcodeado en `settings-view.tsx` (no un valor
+>   real); el auditor lo leyó como default. Ahora el placeholder se deriva del nombre del usuario (kebab-case sin acentos).
+> - ✅ Placeholder ficticio `4,130,844` en deal-form → neutro. Empty state del dropdown contactos con guía.
+> **Confirmado por MCP Supabase (proyecto oaijxdpevakashxshhvm):**
+> - Migración **F6 YA APLICADA** (tablas quotes/payment_plans/payment_schedules/deal_documents/external_brokers
+>   existen). Las notas "⏳ pendiente aplicar" de sesiones previas estaban STALE.
+> - 🔴 **CRÍTICO RLS:** 44 tablas de `propyte_crm` tienen Row Level Security DESHABILITADO (incl.
+>   `contact_dossiers` KYC/PII, `quotes`, `conversations`, `deals`-relacionadas). Expuestas a quien tenga
+>   el anon key (que usa el sitio web público). Requiere Fase 9 / decisión de Luis (no auto-aplicar: enable
+>   sin policies bloquea todo el acceso). SQL de remediación disponible.
+> **Hub API auditado:** Propyte_hub expone hold/release/confirm (`/api/inventory/units/[id]/*`, header
+> `x-hub-api-key`) PERO **no** GET público de catálogo. El sitio web lee catálogo directo de Supabase
+> (`real_estate_hub.Propyte_desarrollos`/`v_units`). Decisión Fase 1 pendiente: SQL directo vs MCP vs nuevo GET.
+> **Pendiente roadmap (multi-sesión):** Fase 1 (Hub inventario), builder visual workflows/cadencias, Agent Studio,
+> saved views, búsqueda global UI, command palette, MFA/ARCO/RLS, Google/LinkedIn CAPI, suite E2E, polish ES/EN + usuarios duplicados.
+
+> Última actualización previa: 2026-06-11 noche-2 (Speckit #6 Diseño + WhatsApp Cloud API E2E).
 >
 > **🎯 Sesión 2026-06-11 noche-2** —
 > **WhatsApp Cloud API FUNCIONANDO E2E** (sin Twilio): provider intercambiable

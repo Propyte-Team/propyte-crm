@@ -29,14 +29,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   }
 
-  const { unitId, newStatus, crmDealId } = parsed.data;
+  const { unitId, newStatus, crmDealId, ts } = parsed.data;
 
-  // Si hay un deal asociado, actualizamos hubUnitStatus en el deal
+  // Si hay un deal asociado, guardamos el status de la unidad del Hub en el JSONB
+  // `custom` del deal (campo sancionado para datos no-core; ver speckit §5.3 "custom jsonb").
+  // No existe columna dedicada `hubUnitStatus` todavía (decisión Ticket 0.1).
   if (crmDealId) {
-    await prisma.deal.updateMany({
-      where: { id: crmDealId, deletedAt: null },
-      data: { hubUnitStatus: newStatus, updatedAt: new Date() },
-    }).catch(() => null); // no bloquear si la columna no existe aún
+    const deal = await prisma.deal
+      .findFirst({ where: { id: crmDealId, deletedAt: null }, select: { custom: true } })
+      .catch(() => null);
+    if (deal) {
+      const custom = (deal.custom && typeof deal.custom === "object" ? deal.custom : {}) as Record<string, unknown>;
+      await prisma.deal
+        .update({
+          where: { id: crmDealId },
+          data: {
+            custom: { ...custom, hubUnitId: unitId, hubUnitStatus: newStatus, hubUnitStatusAt: ts },
+            updatedAt: new Date(),
+          },
+        })
+        .catch(() => null);
+    }
   }
 
   // Log de actividad

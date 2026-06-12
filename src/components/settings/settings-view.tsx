@@ -67,6 +67,17 @@ export function SettingsView() {
     setProfile((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Sugerencia de slug derivada del nombre real del usuario (kebab-case, sin acentos).
+  // Evita el placeholder hardcodeado que confundía a usuarios (parecía un valor por defecto de otra persona).
+  const suggestedSlug =
+    profile.user?.name
+      ?.normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "nombre-apellido";
+
   async function save(fields: (keyof ProfileData)[]) {
     setSaving(true);
     setMsg("");
@@ -192,7 +203,7 @@ export function SettingsView() {
       {tab === "tarjeta" && (
         <div className="crm-card max-w-2xl space-y-4">
           <Field label="Slug de tu tarjeta" hint="kebab-case; INMUTABLE una vez publicado (se imprime en QR)">
-            <input className="form-input" value={profile.cardSlug ?? ""} onChange={(e) => set("cardSlug", e.target.value)} placeholder="felipe-luksic" />
+            <input className="form-input" value={profile.cardSlug ?? ""} onChange={(e) => set("cardSlug", e.target.value)} placeholder={suggestedSlug} />
           </Field>
           <button className="btn-primary" disabled={saving} onClick={() => save(["cardSlug"])}>
             <Save className="h-4 w-4" /> Guardar tarjeta

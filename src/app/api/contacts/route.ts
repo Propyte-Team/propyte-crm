@@ -94,17 +94,12 @@ export async function GET(request: NextRequest) {
     const userRole = session.user.role;
     const userId = session.user.id;
 
-    if (OWN_ACCESS_ROLES.includes(userRole)) {
-      // Asesores solo ven sus contactos asignados
-      where.assignedToId = userId;
-    } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
-      // Team leaders ven contactos de su equipo
-      const teamMembers = await prisma.user.findMany({
-        where: { teamLeaderId: userId },
-        select: { id: true },
-      });
-      const teamIds = [userId, ...teamMembers.map((m) => m.id)];
-      where.assignedToId = { in: teamIds };
+    // IMPORTANTE: el orden importa. ADMIN pertenece a varios sets (FULL/PLAZA/TEAM),
+    // así que FULL_ACCESS debe evaluarse PRIMERO para no caer en una rama restrictiva.
+    // (Bug previo: ADMIN caía en la rama TEAM y solo veía sus propios contactos →
+    //  el dropdown de "Crear Deal" salía vacío aunque la lista server-side sí mostraba todo.)
+    if (FULL_ACCESS_ROLES.includes(userRole) || READ_ONLY_ROLES.includes(userRole)) {
+      // Acceso total / solo lectura global: sin filtro adicional
     } else if (PLAZA_ACCESS_ROLES.includes(userRole)) {
       // Gerente ve contactos de asesores de su plaza
       const plazaUsers = await prisma.user.findMany({
@@ -116,9 +111,18 @@ export async function GET(request: NextRequest) {
         { assignedToId: { in: plazaUserIds } },
         { assignedToId: null },
       ];
-    } else if (READ_ONLY_ROLES.includes(userRole)) {
-      // Marketing y Hostess pueden ver todos (sin restricción adicional)
-    } else if (!FULL_ACCESS_ROLES.includes(userRole)) {
+    } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
+      // Team leaders ven contactos de su equipo
+      const teamMembers = await prisma.user.findMany({
+        where: { teamLeaderId: userId },
+        select: { id: true },
+      });
+      const teamIds = [userId, ...teamMembers.map((m) => m.id)];
+      where.assignedToId = { in: teamIds };
+    } else if (OWN_ACCESS_ROLES.includes(userRole)) {
+      // Asesores solo ven sus contactos asignados
+      where.assignedToId = userId;
+    } else {
       // Roles no reconocidos no ven nada
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }

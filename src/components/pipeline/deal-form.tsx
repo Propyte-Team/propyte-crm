@@ -210,7 +210,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
             ))}
             {contacts.length === 0 && (
               <div className="p-2 text-center text-sm text-muted-foreground">
-                No se encontraron contactos
+                No tienes contactos disponibles. Crea uno desde la sección Contactos antes de abrir un deal.
               </div>
             )}
           </SelectContent>
@@ -284,7 +284,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
             type="number"
             min="0"
             step="1000"
-            placeholder="4,130,844"
+            placeholder="Monto en la moneda seleccionada"
             value={estimatedValue}
             onChange={(e) => setEstimatedValue(e.target.value)}
             required
