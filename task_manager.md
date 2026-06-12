@@ -2,6 +2,19 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 d (Fase 1 wiring + Fase 2 core) + PUSH a prod** —
+> - **PUSH a main** (cuenta Propyte-Luis; estaba activa WebKoi → 403). Deploy Hostinger reconstruye
+>   con el fix de hubUnitStatus + todo lo de la sesión. HUB_API_KEY ya puesta por Luis.
+> - **Fase 1 Hub wiring (T1.2-T1.5)** CABLEADO: endpoints /api/hub/developments|units, deal form usa
+>   IDs del Hub + snapshot, POST developments 403, hold al RESERVED / confirm al WON.
+> - **Fase 2 core comercial:**
+>   - T2.1 **Vista Hoy** (`/hoy`): SLA en riesgo, leads nuevos, conversaciones sin responder, tareas,
+>     visitas, deals calientes, cotizaciones abiertas. RBAC. `src/server/today.ts`.
+>   - T2.2 **Riel operativo del deal**: next-best-action por etapa + checklist por etapa + contexto de
+>     unidad Hub (snapshot). `src/components/pipeline/deal-operational-rail.tsx`; getDeal incluye quotes/documents.
+> - PENDIENTE: smoke-test autenticado de deal-detail y Vista Hoy (no verificable desde aquí).
+>   Commits nuevos tras Vista Hoy quizá sin pushear según el momento.
+>
 > **🎯 Sesión 2026-06-12 c (Seguridad RLS + Fase 1 Hub T1.1)** —
 > - **RLS habilitado en 45 tablas de propyte_crm** (advisory crítico de Supabase): cierra la
 >   exposición vía anon key de contact_dossiers (KYC), quotes, conversations, etc. VERIFICADO
