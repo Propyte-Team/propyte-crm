@@ -46,6 +46,7 @@ import {
   formatCurrency,
 } from "@/lib/constants";
 import { StageTransitionDialog } from "@/components/pipeline/stage-transition-dialog";
+import { DealOperationalRail } from "@/components/pipeline/deal-operational-rail";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
 
 interface DealDetailClientProps {
@@ -231,6 +232,9 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
           </p>
         </CardContent>
       </Card>
+
+      {/* Riel operativo: next-best-action + checklist por etapa + unidad Hub (T2.2) */}
+      {!isTerminal || deal.stage === "WON" ? <DealOperationalRail deal={deal} /> : null}
 
       {/* Grid de información */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

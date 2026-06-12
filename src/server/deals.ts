@@ -247,6 +247,9 @@ export async function getDeal(id: string) {
           user: { select: { id: true, name: true } },
         },
       },
+      // Para el checklist del riel operativo (T2.2)
+      quotes: { where: { deletedAt: null }, select: { id: true, status: true } },
+      documents: { select: { id: true } },
     },
   });
 
