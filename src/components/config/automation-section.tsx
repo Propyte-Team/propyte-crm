@@ -56,6 +56,7 @@ export function AutomationSection({ userRole }: { userRole: string }) {
   const [queue, setQueue] = useState<Record<string, number>>({});
   const [slaDraft, setSlaDraft] = useState<Record<string, Partial<Sla>>>({});
   const [msg, setMsg] = useState("");
+  const [obs, setObs] = useState<{ recentErrors: any[]; eventsPending: number; eventsDone24h: number }>({ recentErrors: [], eventsPending: 0, eventsDone24h: 0 });
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/automation");
@@ -65,9 +66,20 @@ export function AutomationSection({ userRole }: { userRole: string }) {
       setPlans(data.plans ?? []);
       setSlas(data.slaPolicies ?? []);
       setQueue(data.queue ?? {});
+      setObs(data.observability ?? { recentErrors: [], eventsPending: 0, eventsDone24h: 0 });
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  async function retry(id: string) {
+    const res = await fetch("/api/admin/automation/retry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setMsg(res.ok ? "Acción re-encolada ✓" : "No se pudo reintentar");
+    load();
+  }
 
   async function patch(body: Record<string, unknown>) {
     setMsg("");
@@ -89,6 +101,57 @@ export function AutomationSection({ userRole }: { userRole: string }) {
         </p>
       </div>
       {msg && <p className="text-[13px]" style={{ color: "var(--color-error)" }}>{msg}</p>}
+
+      {/* Observabilidad (T4.1) */}
+      <div className="crm-card !p-0 overflow-hidden">
+        <div className="px-4 py-3 hairline-b flex items-center justify-between">
+          <span className="text-[13px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
+            Observabilidad del motor
+          </span>
+          <button onClick={load} className="text-[12px] hover:underline" style={{ color: "var(--text-tertiary)" }}>Actualizar</button>
+        </div>
+        <div className="grid grid-cols-2 gap-px md:grid-cols-4" style={{ background: "var(--border-subtle)" }}>
+          <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Eventos pendientes</p>
+            <p className="num mt-0.5 text-[15px] font-medium" style={{ color: obs.eventsPending > 0 ? "var(--color-error)" : "var(--text-primary)" }}>{obs.eventsPending}</p>
+          </div>
+          <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Procesados (24h)</p>
+            <p className="num mt-0.5 text-[15px] font-medium">{obs.eventsDone24h}</p>
+          </div>
+          <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>En cola</p>
+            <p className="num mt-0.5 text-[15px] font-medium">{(queue.PENDING ?? 0) + (queue.RUNNING ?? 0)}</p>
+          </div>
+          <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Fallidas</p>
+            <p className="num mt-0.5 text-[15px] font-medium" style={{ color: (queue.FAILED ?? 0) > 0 ? "var(--color-error)" : "var(--text-primary)" }}>{queue.FAILED ?? 0}</p>
+          </div>
+        </div>
+        {obs.recentErrors.length > 0 && (
+          <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            <p className="px-4 pt-3 text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Errores recientes</p>
+            <ul className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+              {obs.recentErrors.map((e) => (
+                <li key={e.id} className="flex items-center justify-between gap-3 px-4 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[13px]">{e.actionType} <span style={{ color: "var(--text-tertiary)" }}>· {e.entityType}</span></p>
+                    <p className="truncate text-[11px]" style={{ color: "var(--color-error)" }}>{e.error ?? "—"} ({e.attempts}/{e.maxAttempts})</p>
+                  </div>
+                  {canEdit && (
+                    <button onClick={() => retry(e.id)} className="btn-secondary shrink-0 text-[12px]">Reintentar</button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {obs.eventsPending === 0 && (queue.FAILED ?? 0) === 0 && obs.recentErrors.length === 0 && (
+          <p className="px-4 py-3 text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+            Motor al día: sin eventos pendientes ni acciones fallidas. (Requiere el cron `/api/cron/workflows` activo.)
+          </p>
+        )}
+      </div>
 
       {/* Workflows */}
       <div className="crm-card !p-0 overflow-hidden">

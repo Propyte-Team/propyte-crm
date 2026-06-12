@@ -11,7 +11,8 @@ export async function GET() {
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  const [rules, plans, slaPolicies, queueStats] = await Promise.all([
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [rules, plans, slaPolicies, queueStats, recentErrors, eventsPending, eventsDone24h] = await Promise.all([
     prisma.automationRule.findMany({
       where: { deletedAt: null },
       orderBy: { priority: "asc" },
@@ -28,6 +29,15 @@ export async function GET() {
     }),
     prisma.slaPolicy.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { timers: true } } } }),
     prisma.actionQueue.groupBy({ by: ["status"], _count: { id: true } }).catch(() => []),
+    // Observabilidad (T4.1): acciones fallidas recientes + throughput de eventos.
+    prisma.actionQueue.findMany({
+      where: { status: "FAILED" },
+      orderBy: { finishedAt: "desc" },
+      take: 10,
+      select: { id: true, actionType: true, entityType: true, entityId: true, attempts: true, maxAttempts: true, error: true, finishedAt: true },
+    }).catch(() => []),
+    prisma.workflowEvent.count({ where: { processedAt: null } }).catch(() => 0),
+    prisma.workflowEvent.count({ where: { processedAt: { gte: since } } }).catch(() => 0),
   ]);
 
   return NextResponse.json({
@@ -36,6 +46,11 @@ export async function GET() {
       plans,
       slaPolicies,
       queue: Object.fromEntries((queueStats as Array<{ status: string; _count: { id: number } }>).map((q) => [q.status, q._count.id])),
+      observability: {
+        recentErrors,
+        eventsPending,
+        eventsDone24h,
+      },
     },
   });
 }
