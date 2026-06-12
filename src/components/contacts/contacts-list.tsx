@@ -251,6 +251,15 @@ export function ContactsList({
 
   return (
     <div className="space-y-4">
+      {/* Encabezado editorial con conteo en vivo */}
+      <div>
+        <p className="eyebrow">Ventas</p>
+        <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">Contactos</h1>
+        <p className="num mt-1 text-[13px]" style={{ color: "var(--text-secondary)" }}>
+          {total} en total
+        </p>
+      </div>
+
       {/* Barra de acciones superior */}
       <div className="flex items-center justify-between gap-4">
         {/* Dialogo para nuevo contacto */}

@@ -17,6 +17,7 @@ import {
   Tag,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -309,6 +310,9 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
                 <InfoRow label="Registro" value={formatDate(contact.createdAt)} />
               </CardContent>
             </Card>
+
+            {/* Campos custom metadata-driven (speckit Personalizacion) */}
+            <CustomFieldsSection object="contact" recordId={contact.id} />
 
             {/* Ubicación */}
             <Card>

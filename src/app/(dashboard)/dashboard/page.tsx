@@ -55,12 +55,12 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
-          Bienvenido, {userName}
-        </h1>
-        <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
-          Resumen general de tu operación
+        <p className="eyebrow">
+          {new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}
         </p>
+        <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">
+          Hola, {userName.split(" ")[0]}
+        </h1>
       </div>
 
       {/* Contenido principal del dashboard con datos reales */}

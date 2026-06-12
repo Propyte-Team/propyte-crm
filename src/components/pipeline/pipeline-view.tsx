@@ -215,6 +215,15 @@ export function PipelineView({
 
   return (
     <div className="space-y-4">
+      {/* Encabezado editorial con estadísticas en vivo */}
+      <div>
+        <p className="eyebrow">Ventas</p>
+        <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">Pipeline</h1>
+        <p className="num mt-1 text-[13px]" style={{ color: "var(--text-secondary)" }}>
+          {activeDeals.length} deals activos &middot; {formatCurrency(valorPonderado)} ponderado
+        </p>
+      </div>
+
       {/* Barra de acciones */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">

@@ -1,6 +1,123 @@
 # Task Manager — propyte-crm (Zoho sync + migración a Hub)
 
-> Última actualización: 2026-06-10 (Fase 1 completa + captura fuera + Meta Leads construido, bloqueado en SQL).
+> Última actualización: 2026-06-11 noche-2 (Speckit #6 Diseño + WhatsApp Cloud API E2E).
+>
+> **🎯 Sesión 2026-06-11 noche-2** —
+> **WhatsApp Cloud API FUNCIONANDO E2E** (sin Twilio): provider intercambiable
+> (`lib/whatsapp/transport.ts`), webhook `/api/webhooks/whatsapp/meta`, template hello_world
+> ENTREGADO al cel de Luis desde el stack del CRM (número test Propyte_App 1091031974089949;
+> texto libre requiere ventana 24h — comportamiento esperado). App suscrita a WABA
+> Propyte/Manychat SIN tocar ManyChat. Pendientes WhatsApp: webhook inbound (túnel o merge),
+> número producción (re-verificar 984 323 5354 sacándolo de ManyChat).
+> **Speckit #6 Diseño minimalista APLICADO** (`specs/SPECKIT-DISENO-WEB-MINIMALISTA.md`):
+> Space Grotesk + JetBrains Mono tabular, tokens exactos (tinta #0A0A0A, hairlines, plano),
+> espectro funnel por etapa como ELEMENTO FIRMA (dot columna + borde tarjeta + chip tinte/tono
+> + stepper), FigureStat cifra-con-procedencia, .num en KPIs. Verificado visual con Playwright.
+> ⚠ Build de producción NO corrido esta vez (dev de Luis activo comparte .next) — se valida al merge.
+> **EN LA FILA:** speckit Google Workspace (correo/calendario/contactos — pedido de Luis) ·
+> activación producción (merge→envs→crons→workflows→agentes).
+
+>
+> **🎯 Sesión 2026-06-11 noche (Speckit #4)** — P123 APLICADA + seeds ✅ (7 objetos, 4 relaciones).
+> Speckit #4 versionado (`specs/SPECKIT-CONECTIVIDAD-AGENTES-CAPI.md`) + decisiones OQ1-7
+> (`docs/superpowers/plans/2026-06-11-conectividad-agentes-capi.md`). Implementado:
+> - **C1 Ingesta omnicanal**: providers de portales + Google/LinkedIn en ConnectorProvider,
+>   direction INBOUND/OUTBOUND, click-ids ttclid/liFatId/portalLeadId en AdAttribution e intake,
+>   webhook genérico de portales `/api/connectors/portal/webhook?cid=` (mapeo configurable).
+> - **C2 Gateway CAPI**: ConversionEvent idempotente, PII SHA-256 normalizada (7 tests), adapters
+>   Meta CAPI + TikTok Events REALES (Google/LinkedIn stubs), dispatcher con backoff en el cron,
+>   eventos Lead/Qualified/MeetingScheduled/Reserved/Won(+value+quality tier) cableados al pipeline.
+> - **C3 Agentes IA**: AgentDef (identidad = User con RBAC, PA1) + AgentRun auditable, registry de
+>   8 tools tipadas (RBAC+opt-out+brand linter), runner Claude tool-use con escalado,
+>   /api/admin/agents + /api/agents/[id]/run, seeds SDR + Calificador (L2, inactivos).
+> - 61 tests verdes · build verde · pusheado.
+> **✅ MIGRACIÓN C123 APLICADA** (Luis autorizó 2026-06-11) + seeds: user sistema
+> `agentes@propyte.local` + agentes SDR Speed-to-lead y Calificador (L2, INACTIVOS hasta
+> ANTHROPIC_API_KEY). `.env.example` reescrito con TODAS las vars requeridas + notas de dónde
+> va cada una. CHECKLIST DE ACTIVACIÓN entregado en sesión (pasos 2-7 son de Luis).
+> **Pendiente próxima sesión:** Agent Studio UI, adapter Google OAuth, LinkedIn, A2A, MCP server expuesto.
+
+>
+> **🎯 Sesión 2026-06-11 tarde (Speckit #3)** — F6 APLICADA en BD (Luis autorizó) ✅. Speckit
+> Personalización & Equipos versionado (`specs/SPECKIT-PERSONALIZACION-Y-EQUIPOS.md`) + decisiones
+> OQ1-7 en `docs/superpowers/plans/2026-06-11-personalizacion-equipos.md`. Implementado:
+> - **P1 Equipos/Territorios**: Team/TeamMember(historial)/Territory(jerarquía+zonas)/TerritoryMember/
+>   TerritoryRule. Ruteo integrado: PRIMERO territorio (DSL, hijo-antes-que-padre), LUEGO estrategia
+>   dentro del territorio. APIs /api/admin/teams + /api/admin/territories.
+> - **P2 Editor de campos**: registro metadata (objetos/campos/opciones/layouts/permisos por rol),
+>   gobernanza anti-sprawl (convención apiName + detector de duplicados con force, solo ADMIN,
+>   AuditLog), validador zod generado del registro + cache TTL 60s, contacts.custom/deals.custom
+>   JSONB, /api/admin/metadata/fields + /api/records/[object]/[id]/custom, render dinámico
+>   CustomFieldsSection montado en detalle de Contacto.
+> - **P3 Relaciones**: RelationshipDef/Labels/Projections(max 5)/Rollups/RecordLink (puente genérico,
+>   PC1) + /api/admin/relationships + /api/links + /api/records/search (picker; Hub = externo read-only).
+> - 55 tests verdes · build verde · 4 commits pusheados.
+> **✅ MIGRACIÓN P123 APLICADA** (Luis autorizó 2026-06-11) + seeds corridos y verificados:
+> 7 objetos registrados (5 núcleo + 2 externos Hub), 4 relaciones sistema, 3 labels, 3 proyecciones.
+> Sistema de personalización 100% operativo en BD.
+> **Pendiente próxima sesión:** UI visual admin (tab Equipos + tab Campos + listas relacionadas en
+> deal), rollups runner, P4 (objetos custom desde cero, fórmulas, búsqueda global).
+
+>
+> **🎯 Sesión 2026-06-11 (rebuild F2-F6, autónoma con aprobación de Luis)** — Continuación sin pausa:
+> - **F1 ✅ APLICADA EN BD** (Luis autorizó): 17 tablas + seeds verificados (8 reglas, SLA, ruteo, plantillas).
+> - **F2 ✅ Motor de workflows**: RuleEngine data-driven (DSL §D.4 con evaluador puro testeado),
+>   ActionQueue pg-backed + runner con backoff, RoutingEngine, SlaEngine (FIRST_TOUCH 5min→RETRY→breach),
+>   ActionPlanScheduler (cadencias), reglas INACTIVITY. Bot core: Claude voz Sage + brand linter +
+>   HubCatalog (SQL read-only a real_estate_hub) + botRespond L2 con escalamiento. Wiring completo:
+>   deal.stage_changed/won/lost, contact.created/lead.captured, WhatsApp in/out (conversación, opt-out
+>   BAJA/STOP, SLA met). **Cron: `/api/cron/workflows` — Luis debe agendarlo en Hostinger CADA MINUTO
+>   con header `x-cron-secret: $CRON_SECRET`** (mismo secret de env).
+> - **F3 ✅ Conectores**: Meta Lead Ads webhook tiempo real (`/api/connectors/meta/webhook`, firma
+>   SHA-256 + Graph API), TikTok pull (`/api/cron/connectors/tiktok` — **agendar cada 5 min**),
+>   webhook web v2 (`/api/webhooks/leads`, X-Webhook-Secret), CRUD admin con credenciales cifradas
+>   + UI en Admin→Integraciones. Anti-doble-alta: UNIQUE(connectorId, externalLeadId) + dedup E.164.
+> - **F4 ✅ Inbox WhatsApp** (`/inbox`): 3 paneles estilo WhatsApp Web, takeover/release/notas internas/
+>   toggle bot, resumen IA post-takeover, polling 5s. Smoke verificado con Playwright.
+> - **F5 ✅ Perfiles** (`/settings`): perfil/correo(firma+alias)/tarjeta digital/plantillas con atajos.
+>   Tarjeta pública `/t/{slug}` + vCard + QR SVG verificados E2E (slug inmutable).
+> - **F6 ⏳ Cotizador**: schema completo (Quote/PaymentPlan/PaymentSchedule/DealDocument/ExternalBroker)
+>   + cron de pagos vencidos (guarda defensiva). **SQL listo en
+>   `prisma/migrations-manual/2026-06-11-f6-cotizador.sql` — decir "aplica la migración F6"**. UI cotizador
+>   pendiente (siguiente sesión).
+> - **F7 (inventario Hub)**: bloqueada por T5.1 en repo Propyte_hub (trabajo cross-repo).
+>
+> **ACCIONES DE LUIS para encender todo:**
+> 1. "Aplica la migración F6" (o pegar el SQL en Supabase)
+> 2. `KYC_ENCRYPTION_KEY` en .env local + Hostinger (generación en .env.example)
+> 3. `ANTHROPIC_API_KEY` en Hostinger (el bot la necesita; sin ella, acciones IA se saltan con nota)
+> 4. Crons Hostinger: `/api/cron/workflows` cada 1 min + `/api/cron/connectors/tiktok` cada 5 min
+>    (header `x-cron-secret`)
+> 5. Activar workflows: en BD `automation_rules.isActive=true` (los 8 están sembrados INACTIVOS a propósito)
+> 6. Review + merge de las ramas `feat/audit-fixes-minimal-ui` → `feat/crm-rebuild-fase1` → main (en orden)
+>
+> **🎯 Sesión 2026-06-10 noche-2 (rebuild F1)** — Luis entregó el **Anexo Técnico** (diccionario de
+> campos, funciones, motor de workflows, inventarios) + 3 requerimientos nuevos (conectores directos
+> Meta/TikTok, inbox WhatsApp con takeover, perfiles de usuario) y aprobó el speckit resultante.
+> Producido: `specs/SPECKIT-ANEXO-TECNICO.md` (verbatim) + `specs/SPECKIT-ANEXO-B-MULTICANAL-PERFILES.md`
+> (nuevo, cierra OQs G.1-G.7) + plan maestro 7 fases + plan F1 detallado (`docs/superpowers/plans/`).
+> **F1 EJECUTADA en rama `feat/crm-rebuild-fase1`** (5 commits, pusheada): 19 enums + 17 modelos nuevos
+> (motor workflows/conectores/inbox/perfiles/KYC/atribución), extensiones a Contact/Deal/Message/User,
+> `lib/phone` E.164 + `lib/crypto` AES-GCM + zod (30 tests verdes), seeds canónicos listos. tsc+build verdes.
+> **⛔ BLOQUEADO — acción de Luis:** aplicar `prisma/migrations-manual/2026-06-10-f1-fundaciones.sql`
+> (verificado 100% additivo: 19 CREATE TYPE, 17 CREATE TABLE, 0 DROPs) — decir "aplica la migración F1"
+> en sesión, o pegarlo en el SQL Editor de Supabase. Después: `npx tsx scripts/seed-rebuild-f1.ts`.
+> También requiere: `KYC_ENCRYPTION_KEY` en .env (generación documentada en .env.example).
+> **Siguiente fase:** F2 motor de workflows (runner/cola/SLA/ruteo) — ver plan maestro.
+>
+> **🎯 Sesión 2026-06-10 noche (autónoma)** — ARRANQUE DEL REBUILD sobre el SPECKIT consolidado
+> (`SPECKIT-PROPYTE-CRM-CONSOLIDADO.md` en Downloads; pendiente moverlo a `specs/`). Local reseteado a
+> main `670f52d` (conflicto robot-02-images.yml: ganó el delete del remote). Audit Playwright completo
+> del núcleo con usuario temporal ADMIN → 9 bugs/hallazgos, TODOS corregidos y re-verificados: ver
+> `docs/audit-2026-06-10/AUDIT.md`. + **Rediseño minimalista B/N** (pedido de Luis: blanco/negro, color
+> solo en etiquetas de etapa): tokens de `globals.css` reescritos, light default, dark neutro opcional.
+> **Rama `feat/audit-fixes-minimal-ui` (commit `d1b15dc`, pusheada) — PENDIENTE: review de Luis + merge a main.**
+> Build verde + tsc limpio. Datos de prueba borrados de BD; usuario `audit-temp@propyte.local` DESACTIVADO.
+> **Veredicto fork `import-crm-base-fork` (NextCRM):** NO usar como base — superseded por el speckit
+> consolidado (base = propyte-crm limpio). Queda como referencia; no mergear.
+> **Próximos pasos:** (1) Luis revisa rama y mergea; (2) mover speckit a `specs/`; (3) Fase A del roadmap
+> (API catálogo read-only en el Hub, T5.1 — repo Propyte_hub); (4) `/developments` del CRM a read-only
+> contra el Hub (quitar "Nuevo Desarrollo", P1 del speckit).
 >
 > **🎯 Sesión 2026-06-10** — F1 COMPLETA (robots verdes en Hub, workflows fuera del CRM). T2.3 ✅ (captura fuera, `d85a0d4c`). Matriz paridad Zoho ✅ (`specs/zoho-parity-matrix.md`, veredicto: no apagar cron CRM hasta resolver inbound). Decisión Luis: **Opción B** + conservar UI visual de discrepancias. F3 código ✅ (rama `feat/meta-leads` Hub, `95c4c94`, build verde). **Bloqueado en: aplicar meta-leads.sql (sin acceso BD)**. Hallazgo: CAPI probablemente muerto (contacts=0). OQ2 abierta (dashboards Meta Ads).
 >

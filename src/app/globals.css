@@ -1,59 +1,65 @@
-/* Propyte CRM — Design System Tokens */
+/* Propyte CRM — Design System Tokens
+   Estilo: minimalista blanco/negro. El color queda reservado para
+   etiquetas con significado (etapas del pipeline, temperatura, estados). */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* ─── LIGHT (default) ─── */
   :root {
-    /* ─── FONDOS (dark mode layers) ─── */
-    --bg-base:        #0b1a16;
-    --bg-sidebar:     #0e1f1a;
-    --bg-surface:     #132820;
-    --bg-card:        #1a3028;
-    --bg-card-hover:  #1f382e;
-    --bg-input:       #162b22;
-    --bg-input-focus: #1a3028;
-    --bg-overlay:     rgba(0, 0, 0, 0.6);
+    /* Fondos */
+    --bg-base:        #ffffff; /* canvas */
+    --bg-sidebar:     #fafafa; /* surface-2 */
+    --bg-surface:     #fafafa;
+    --bg-card:        #ffffff;
+    --bg-card-hover:  #fafafa;
+    --bg-input:       #ffffff;
+    --bg-input-focus: #ffffff;
+    --bg-overlay:     rgba(0, 0, 0, 0.40);
+    --bg-badge-neutral: rgba(0, 0, 0, 0.05);
+    --bg-row-hover:   rgba(0, 0, 0, 0.02);
+    --bg-hover:       rgba(0, 0, 0, 0.04);
 
-    /* ─── BORDES ─── */
-    --border-subtle:  rgba(255, 255, 255, 0.06);
-    --border-default: rgba(255, 255, 255, 0.10);
-    --border-strong:  rgba(255, 255, 255, 0.18);
-    --border-teal:    rgba(0, 180, 200, 0.4);
+    /* Bordes */
+    --border-subtle:  rgba(10, 10, 10, 0.10);
+    --border-default: rgba(10, 10, 10, 0.16);
+    --border-strong:  rgba(10, 10, 10, 0.28);
+    --border-teal:    rgba(17, 17, 17, 0.40);
 
-    /* ─── TEXTO ─── */
-    --text-primary:   #e8f0ed;
-    --text-secondary: #8aab9e;
-    --text-tertiary:  #5a7a6e;
-    --text-inverse:   #0b1a16;
+    /* Texto */
+    --text-primary:   #0a0a0a; /* --ink */
+    --text-secondary: #6b7280;
+    --text-tertiary:  #9ca3af;
+    --text-inverse:   #ffffff;
 
-    /* ─── BRAND PROPYTE ─── */
-    --color-teal:       #00B4C8;
-    --color-teal-dark:  #009AB0;
-    --color-teal-light: rgba(0, 180, 200, 0.15);
-    --color-navy:       #1E3A5F;
-    --color-amber:      #F5A623;
-    --color-amber-light:rgba(245, 166, 35, 0.15);
+    /* Acción principal (negro en light) — conserva el nombre histórico --color-teal */
+    --color-teal:       #0a0a0a;
+    --color-teal-dark:  #000000;
+    --color-teal-light: rgba(0, 0, 0, 0.05);
+    --color-navy:       #111111;
+    --color-amber:      #b45309;
+    --color-amber-light:rgba(180, 83, 9, 0.10);
 
-    /* ─── SEMANTICOS ─── */
-    --color-success:      #22C55E;
-    --color-success-bg:   rgba(34, 197, 94, 0.12);
-    --color-error:        #EF4444;
-    --color-error-bg:     rgba(239, 68, 68, 0.12);
-    --color-warning:      #F5A623;
-    --color-warning-bg:   rgba(245, 166, 35, 0.12);
-    --color-info:         #60A5FA;
-    --color-info-bg:      rgba(96, 165, 250, 0.12);
+    /* Semánticos (tonos -700 para fondo claro, WCAG AA) */
+    --color-success:      #15803d;
+    --color-success-bg:   rgba(21, 128, 61, 0.10);
+    --color-error:        #dc2626;
+    --color-error-bg:     rgba(220, 38, 38, 0.08);
+    --color-warning:      #b45309;
+    --color-warning-bg:   rgba(180, 83, 9, 0.10);
+    --color-info:         #2563eb;
+    --color-info-bg:      rgba(37, 99, 235, 0.08);
 
-    /* ─── TEMPERATURA DE LEADS ─── */
-    --temp-hot:    #EF4444;
-    --temp-hot-bg: rgba(239, 68, 68, 0.15);
-    --temp-warm:   #F5A623;
-    --temp-warm-bg:rgba(245, 166, 35, 0.15);
-    --temp-cold:   #60A5FA;
-    --temp-cold-bg:rgba(96, 165, 250, 0.15);
+    /* Temperatura de leads (etiqueta con significado → conserva color) */
+    --temp-hot:    #dc2626;
+    --temp-hot-bg: rgba(220, 38, 38, 0.10);
+    --temp-warm:   #b45309;
+    --temp-warm-bg:rgba(180, 83, 9, 0.10);
+    --temp-cold:   #2563eb;
+    --temp-cold-bg:rgba(37, 99, 235, 0.10);
 
-    /* ─── RADIOS ─── */
+    /* Radios */
     --radius-sm:  4px;
     --radius-md:  8px;
     --radius-lg:  12px;
@@ -61,72 +67,112 @@
     --radius-full:9999px;
     --radius: 0.5rem;
 
-    /* ─── SOMBRAS ─── */
-    --shadow-sm:  0 1px 3px rgba(0,0,0,0.3);
-    --shadow-md:  0 4px 12px rgba(0,0,0,0.4);
-    --shadow-lg:  0 8px 32px rgba(0,0,0,0.5);
-    --shadow-teal:0 0 0 3px rgba(0, 180, 200, 0.2);
+    /* Sombras (sutiles) */
+    --shadow-sm:  none; /* plano: hairlines estructuran */
+    --shadow-md:  none;
+    --shadow-lg:  0 8px 24px rgba(0,0,0,0.10);
+    --shadow-teal:0 0 0 3px rgba(17, 17, 17, 0.10);
 
-    /* ─── TRANSICIONES ─── */
+    /* Transiciones */
     --transition-fast:   100ms ease;
     --transition-normal: 200ms ease;
     --transition-slow:   300ms ease;
 
-    /* ─── shadcn compatibility ─── */
-    --background: 160 33% 7%;
-    --foreground: 160 16% 93%;
-    --card: 160 27% 13%;
-    --card-foreground: 160 16% 93%;
-    --popover: 160 27% 13%;
-    --popover-foreground: 160 16% 93%;
-    --primary: 187 100% 39%;
-    --primary-foreground: 160 33% 7%;
-    --secondary: 160 20% 18%;
-    --secondary-foreground: 160 16% 93%;
-    --muted: 160 20% 15%;
-    --muted-foreground: 160 15% 55%;
-    --accent: 160 20% 18%;
-    --accent-foreground: 160 16% 93%;
-    --destructive: 0 84% 60%;
+    /* shadcn compatibility */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 7%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 7%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 7%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 94%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 160 20% 15%;
-    --input: 160 20% 15%;
-    --ring: 187 100% 39%;
+    --border: 0 0% 89%;
+    --input: 0 0% 89%;
+    --ring: 0 0% 9%;
   }
 
-  /* Light mode */
-  .light, [data-theme="light"] {
-    --bg-base:        #f5f7fa;
-    --bg-sidebar:     #ffffff;
-    --bg-surface:     #f0f2f5;
-    --bg-card:        #ffffff;
-    --bg-card-hover:  #f8f9fa;
-    --bg-input:       #ffffff;
-    --bg-input-focus: #ffffff;
-    --border-subtle:  rgba(0, 0, 0, 0.06);
-    --border-default: rgba(0, 0, 0, 0.12);
-    --border-strong:  rgba(0, 0, 0, 0.20);
-    --text-primary:   #1a1d21;
-    --text-secondary: #5a6270;
-    --text-tertiary:  #8c95a0;
-    --text-inverse:   #ffffff;
-    --background: 210 20% 97%;
-    --foreground: 210 15% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 210 15% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 210 15% 10%;
-    --primary: 187 100% 39%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 10% 94%;
-    --secondary-foreground: 210 15% 10%;
-    --muted: 210 10% 95%;
-    --muted-foreground: 210 5% 45%;
-    --accent: 210 10% 94%;
-    --accent-foreground: 210 15% 10%;
-    --border: 210 10% 88%;
-    --input: 210 10% 88%;
-    --ring: 187 100% 39%;
+  /* ─── DARK (opcional, neutro sin tintes) ─── */
+  .dark, [data-theme="dark"] {
+    --bg-base:        #0a0a0a;
+    --bg-sidebar:     #111111;
+    --bg-surface:     #161616;
+    --bg-card:        #161616;
+    --bg-card-hover:  #1c1c1c;
+    --bg-input:       #161616;
+    --bg-input-focus: #1c1c1c;
+    --bg-overlay:     rgba(0, 0, 0, 0.60);
+    --bg-badge-neutral: rgba(255, 255, 255, 0.08);
+    --bg-row-hover:   rgba(255, 255, 255, 0.03);
+    --bg-hover:       rgba(255, 255, 255, 0.06);
+
+    --border-subtle:  rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.10);
+    --border-strong:  rgba(255, 255, 255, 0.18);
+    --border-teal:    rgba(245, 245, 245, 0.40);
+
+    --text-primary:   #f5f5f5;
+    --text-secondary: #a3a3a3;
+    --text-tertiary:  #737373;
+    --text-inverse:   #111111;
+
+    /* Acción principal (blanco en dark) */
+    --color-teal:       #f5f5f5;
+    --color-teal-dark:  #ffffff;
+    --color-teal-light: rgba(255, 255, 255, 0.08);
+    --color-navy:       #f5f5f5;
+    --color-amber:      #fbbf24;
+    --color-amber-light:rgba(251, 191, 36, 0.12);
+
+    /* Semánticos (tonos -400 para fondo oscuro, WCAG AA) */
+    --color-success:      #4ade80;
+    --color-success-bg:   rgba(74, 222, 128, 0.12);
+    --color-error:        #f87171;
+    --color-error-bg:     rgba(248, 113, 113, 0.12);
+    --color-warning:      #fbbf24;
+    --color-warning-bg:   rgba(251, 191, 36, 0.12);
+    --color-info:         #60a5fa;
+    --color-info-bg:      rgba(96, 165, 250, 0.12);
+
+    --temp-hot:    #f87171;
+    --temp-hot-bg: rgba(248, 113, 113, 0.12);
+    --temp-warm:   #fbbf24;
+    --temp-warm-bg:rgba(251, 191, 36, 0.12);
+    --temp-cold:   #60a5fa;
+    --temp-cold-bg:rgba(96, 165, 250, 0.12);
+
+    --shadow-sm:  0 1px 3px rgba(0,0,0,0.3);
+    --shadow-md:  0 4px 12px rgba(0,0,0,0.4);
+    --shadow-lg:  0 8px 32px rgba(0,0,0,0.5);
+    --shadow-teal:0 0 0 3px rgba(245, 245, 245, 0.15);
+
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 0 0% 9%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 0 0% 83%;
   }
 }
 
@@ -141,7 +187,7 @@
   /* Scrollbar styling */
   ::-webkit-scrollbar { width: 6px; height: 6px; background: var(--bg-base); }
   ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 }
 
 /* ─── Component Classes ─── */
@@ -160,7 +206,7 @@
   .badge-error    { background: var(--color-error-bg);   color: var(--color-error);   }
   .badge-info     { background: var(--color-info-bg);    color: var(--color-info);    }
   .badge-teal     { background: var(--color-teal-light); color: var(--color-teal);    }
-  .badge-neutral  { background: rgba(255,255,255,0.07);  color: var(--text-secondary);}
+  .badge-neutral  { background: var(--bg-badge-neutral); color: var(--text-secondary);}
   .badge-hot      { background: var(--temp-hot-bg);  color: var(--temp-hot);  }
   .badge-warm     { background: var(--temp-warm-bg); color: var(--temp-warm); }
   .badge-cold     { background: var(--temp-cold-bg); color: var(--temp-cold); }
@@ -180,6 +226,7 @@
     transition: var(--transition-fast);
   }
   .btn-primary:hover { background: var(--color-teal-dark); }
+  .btn-primary:active { transform: translateY(0.5px); opacity: 0.92; }
 
   .btn-secondary {
     background: transparent;
@@ -196,14 +243,15 @@
   }
   .btn-secondary:hover {
     border-color: var(--border-strong);
-    background: rgba(255,255,255,0.04);
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
+  .btn-secondary:active { transform: translateY(0.5px); }
 
   .btn-danger {
     background: var(--color-error-bg);
     color: var(--color-error);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    border: 1px solid var(--color-error-bg);
     padding: 8px 16px;
     border-radius: var(--radius-md);
     font-size: 14px;
@@ -279,7 +327,7 @@
     vertical-align: middle;
   }
   .data-table tr:hover td {
-    background: rgba(255,255,255,0.02);
+    background: var(--bg-row-hover);
   }
 
   /* Empty state */
@@ -298,5 +346,86 @@
     font-size: 13px;
     max-width: 320px;
     line-height: 1.6;
+  }
+
+  /* ── Speckit diseño §2.2/§4: cifras en mono tabular ── */
+  .num {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Hairline real de 0.5px donde el borde de 1px pesa demasiado */
+  .hairline {
+    border-width: 0.5px;
+    border-style: solid;
+    border-color: var(--border-subtle);
+  }
+  .hairline-b {
+    border-bottom: 0.5px solid var(--border-subtle);
+  }
+
+  /* Eyebrow editorial: contexto en mayúsculas arriba del h1 (jerarquía con drama) */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  /* Tecla (hint ⌘K) */
+  .kbd {
+    font-family: var(--font-mono), monospace;
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--border-default);
+    color: var(--text-tertiary);
+    background: var(--bg-card);
+    line-height: 1;
+  }
+
+  /* Stat strip: una sola superficie dividida por hairlines (no 4 tarjetas iguales) */
+  .stat-strip {
+    display: grid;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .stat-cell {
+    padding: 16px 20px;
+    border-left: 1px solid var(--border-subtle);
+  }
+  .stat-cell:first-child { border-left: none; }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .stat-value {
+    font-family: var(--font-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin-top: 4px;
+  }
+  .stat-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  /* Cifra con procedencia (firma secundaria §4): el dato + de dónde viene */
+  .provenance {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 400;
   }
 }

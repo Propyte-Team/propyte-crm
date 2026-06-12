@@ -7,7 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Clock, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { formatCurrency, TEMPERATURE_COLORS, DEAL_TYPE_LABELS } from "@/lib/constants";
+import { formatCurrency, TEMPERATURE_COLORS, STAGE_COLORS, DEAL_TYPE_LABELS } from "@/lib/constants";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
 
 interface DealCardProps {
@@ -45,6 +45,8 @@ export function DealCard({ deal, isDragging = false }: DealCardProps) {
 
   // Color del indicador de temperatura
   const tempColor = TEMPERATURE_COLORS[deal.temperature] || "bg-gray-400";
+  // Firma del speckit de diseño: el color de etapa vive en el borde izquierdo del chip
+  const stageColor = STAGE_COLORS[deal.stage] || "#9CA3AF";
 
   // Navegar al detalle al hacer clic (no durante drag)
   function handleClick(e: React.MouseEvent) {
@@ -56,12 +58,12 @@ export function DealCard({ deal, isDragging = false }: DealCardProps) {
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ ...style, borderLeft: `2px solid ${stageColor}` }}
       {...attributes}
       {...listeners}
       onClick={handleClick}
       className={cn(
-        "cursor-grab rounded-lg border bg-card p-3 shadow-sm transition-all hover:shadow-md",
+        "cursor-grab rounded-lg border bg-card p-3 transition-colors hover:bg-[var(--bg-card-hover)]",
         isSortableDragging && "opacity-50",
         isDragging && "rotate-2 shadow-lg",
         deal.isStagnant && "border-amber-400 border-2"
@@ -88,7 +90,7 @@ export function DealCard({ deal, isDragging = false }: DealCardProps) {
 
       {/* Fila inferior: valor, días en etapa, avatar del asesor */}
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-primary">
+        <span className="num text-sm font-medium text-primary">
           {formattedValue}
         </span>
         <div className="flex items-center gap-2">

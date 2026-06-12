@@ -16,12 +16,23 @@ import {
 } from "@/components/ui/select";
 
 // --- Esquema de validación Zod ---
+// El teléfono se normaliza (sin espacios/guiones/paréntesis) antes de validar,
+// para que formatos como "+52 984 123 4567" sean válidos
+const phoneField = z
+  .string()
+  .transform((v) => v.replace(/[\s\-().]/g, ""))
+  .pipe(
+    z
+      .string()
+      .regex(/^\+?\d{10,15}$/, "Teléfono inválido: usa 10 a 15 dígitos (ej. +52 984 123 4567)")
+  );
+
 const contactFormSchema = z.object({
   firstName: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(100),
   lastName: z.string().min(2, "El apellido debe tener al menos 2 caracteres").max(100),
   email: z.string().email("Email inválido").optional().or(z.literal("")),
-  phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15),
-  secondaryPhone: z.string().max(15).optional().or(z.literal("")),
+  phone: phoneField,
+  secondaryPhone: phoneField.optional().or(z.literal("")),
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
   leadSource: z.enum([
@@ -184,7 +195,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
 
   // Cargar lista de asesores al montar
   useEffect(() => {
-    fetch("/api/users?role=advisor")
+    fetch("/api/users?role=ASESOR,ASESOR_SR,ASESOR_JR,TEAM_LEADER&isActive=true&basic=true")
       .then((res) => res.json())
       .then((data) => {
         if (data.data) setAdvisors(data.data);

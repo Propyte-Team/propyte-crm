@@ -74,6 +74,7 @@ enum LeadSource {
   FACEBOOK_ADS
   GOOGLE_ADS
   INSTAGRAM
+  TIKTOK_ADS
   PORTAL_INMOBILIARIO
   REFERIDO_CLIENTE
   REFERIDO_BROKER
@@ -376,6 +377,204 @@ enum LeadAssignmentMode {
 }
 
 // =====================================================================
+// ENUMS REBUILD F1 (Anexo Técnico §B/§D + Anexo B §H/§I/§J)
+// =====================================================================
+
+// Ciclo del contacto (Zoho: Nuevo/Sin respuesta/Contactado) — distinto de ContactType
+enum ContactStatus {
+  NUEVO
+  SIN_RESPUESTA
+  CONTACTADO
+  EN_SEGUIMIENTO
+  DESCARTADO
+
+  @@schema("propyte_crm")
+}
+
+enum Urgency {
+  ALTA
+  MEDIA
+  BAJA
+
+  @@schema("propyte_crm")
+}
+
+enum DocumentType {
+  INE
+  PASAPORTE
+  FM2
+  FM3
+  OTRO
+
+  @@schema("propyte_crm")
+}
+
+enum MaritalStatus {
+  SOLTERO
+  CASADO
+  DIVORCIADO
+  VIUDO
+  UNION_LIBRE
+
+  @@schema("propyte_crm")
+}
+
+enum TaxRegime {
+  PFAE
+  PM
+  PF
+
+  @@schema("propyte_crm")
+}
+
+enum TriggerType {
+  EVENT
+  TIME
+  BEHAVIORAL
+  INACTIVITY
+  STAGE_CHANGE
+  SLA_BREACH
+  SCORE_THRESHOLD
+
+  @@schema("propyte_crm")
+}
+
+enum WorkflowActionType {
+  CREATE_TASK
+  SEND_WHATSAPP
+  SEND_EMAIL
+  MAKE_CALL
+  ASSIGN
+  REASSIGN
+  NOTIFY
+  UPDATE_FIELD
+  ADD_TAG
+  CHANGE_STAGE
+  ENROLL_PLAN
+  ESCALATE
+  AI_DRAFT
+  AI_REPLY
+  AI_CALL_SUMMARY
+  WEBHOOK
+
+  @@schema("propyte_crm")
+}
+
+// Nivel de autonomía de IA: L0 sugiere / L1 envío con aprobación 1-clic / L2 autónomo con red
+enum AutonomyLevel {
+  L0
+  L1
+  L2
+
+  @@schema("propyte_crm")
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  EXITED
+
+  @@schema("propyte_crm")
+}
+
+enum SlaTimerType {
+  FIRST_TOUCH
+  RETRY
+  ORPHAN
+
+  @@schema("propyte_crm")
+}
+
+enum SlaTimerStatus {
+  RUNNING
+  MET
+  BREACHED
+  CANCELLED
+
+  @@schema("propyte_crm")
+}
+
+enum ActionQueueStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+  SKIPPED
+
+  @@schema("propyte_crm")
+}
+
+enum ConnectorProvider {
+  META
+  TIKTOK
+  WEBSITE
+  ZAPIER
+  MANUAL
+  GOOGLE
+  LINKEDIN
+  INMUEBLES24
+  LAMUDI_PROPPIT
+  PROPIEDADES
+  VIVANUNCIOS
+  EASYBROKER
+  CUSTOM
+
+  @@schema("propyte_crm")
+}
+
+enum ConnectorStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+
+  @@schema("propyte_crm")
+}
+
+enum ConnectorLeadStatus {
+  RECEIVED
+  PROCESSED
+  DUPLICATE
+  ERROR
+
+  @@schema("propyte_crm")
+}
+
+enum ConversationChannel {
+  WHATSAPP
+  SMS
+  WEB
+
+  @@schema("propyte_crm")
+}
+
+enum ConversationStatus {
+  BOT
+  HUMAN
+  SNOOZED
+  CLOSED
+
+  @@schema("propyte_crm")
+}
+
+enum MessageSender {
+  CONTACT
+  ADVISOR
+  BOT
+  SYSTEM
+
+  @@schema("propyte_crm")
+}
+
+enum TemplateChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
 // MODELOS
 // =====================================================================
 
@@ -409,6 +608,23 @@ model User {
   auditLogs        AuditLog[]
   notifications    Notification[]
   messages         Message[]
+
+  agentIdentities AgentDef[] @relation("AgentIdentity")
+
+  // Relaciones personalizacion & equipos
+  ledTeams             Team[]            @relation("TeamLeader")
+  forecastTeams        Team[]            @relation("TeamForecast")
+  teamMemberships      TeamMember[]
+  territoryMemberships TerritoryMember[]
+  forecastTerritories  Territory[]       @relation("TerritoryForecast")
+
+  // Relaciones rebuild F1/F6
+  quotesCreated           Quote[]        @relation("QuotesCreated")
+  dealDocsUploaded        DealDocument[] @relation("DealDocsUploaded")
+  profile                 UserProfile?
+  templates               UserTemplate[]
+  ownedActionPlans        ActionPlan[]   @relation("OwnedActionPlans")
+  controlledConversations Conversation[] @relation("ControlledConversations")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -452,12 +668,40 @@ model Contact {
   score        Int             @default(0)
   tags         String[]
 
+  // Campos custom metadata-driven (speckit Personalizacion 3.4)
+  custom Json @default("{}")
+
+  // Ciclo de contacto y cumplimiento (Anexo Técnico §B.2)
+  contactStatus     ContactStatus @default(NUEVO)
+  urgency           Urgency?
+  lastActivityAt    DateTime?
+  originalCreatedAt DateTime?
+  doNotContact      Boolean       @default(false)
+  whatsappOptOut    Boolean       @default(false)
+  recordingConsent  Boolean       @default(false)
+  zohoId            String?       @unique
+  hubContactId      String?
+
+  // Dedup / merge (confirmación humana salvo phone+email idénticos — Anexo B §K G.6)
+  mergedIntoId String?
+  mergedInto   Contact?  @relation("MergedContacts", fields: [mergedIntoId], references: [id])
+  mergedFrom   Contact[] @relation("MergedContacts")
+
   // Relaciones
   deals      Deal[]
   activities Activity[]
   walkIns    WalkIn[]
   units      Unit[]     @relation("ReservedByContact")
   messages   Message[]
+
+  // Relaciones rebuild F1
+  dossier          ContactDossier?
+  conversionEvents ConversionEvent[]
+  adAttribution    AdAttribution?
+  webBehavior      WebBehavior?
+  conversations    Conversation[]
+  slaTimers        SlaTimer[]
+  connectorLeads   ConnectorLeadLog[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -496,9 +740,8 @@ model Development {
   isActive              Boolean           @default(true)
 
   // Relaciones
-  units            Unit[]
-  deals            Deal[]
-
+  units Unit[]
+  deals Deal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -578,8 +821,31 @@ model Deal {
   // Atribución
   leadSourceAtDeal String
 
+  // Referencias al catálogo del Hub (Fase 7 las vuelve obligatorias; aquí preparan el terreno)
+  hubDevelopmentId String?
+  hubUnitId        String?
+  holdId           String?
+  holdExpiresAt    DateTime?
+
+  // Fechas hito (paridad Zoho, consolidado §2.3.8)
+  reservedAt       DateTime?
+  contractSignedAt DateTime?
+  deedAt           DateTime?
+  deliveredAt      DateTime?
+
+  // Campos custom metadata-driven (speckit Personalizacion 3.4)
+  custom Json @default("{}")
+
+  // Broker externo asociado (F6, §2.3.7)
+  externalBrokerId String?
+  externalBroker   ExternalBroker? @relation(fields: [externalBrokerId], references: [id])
+
   // Relaciones
-  activities Activity[]
+  activities       Activity[]
+  slaTimers        SlaTimer[]
+  quotes           Quote[]
+  documents        DealDocument[]
+  conversionEvents ConversionEvent[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -716,9 +982,18 @@ model Message {
   status        MessageStatus    @default(QUEUED)
   externalPhone String
 
+  // Inbox / bot (Anexo B §I.2)
+  conversationId String?
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id])
+  sender         MessageSender  @default(SYSTEM)
+  aiGenerated    Boolean        @default(false)
+  aiAutonomy     AutonomyLevel?
+  internalNote   Boolean        @default(false)
+
   createdAt DateTime @default(now())
 
   @@index([contactId, createdAt])
+  @@index([conversationId, createdAt])
   @@map("messages")
   @@schema("propyte_crm")
 }
@@ -769,3 +1044,1155 @@ model ApiKey {
 // NOTA (2026-06-10, spec crm-hub-migration-cleanup T2.3): los modelos IntakeLink/
 // IntakeSubmission se retiraron — el intake público vive en el Hub (hub.propyte.com/captura).
 // Las tablas propyte_crm.intake_links / intake_submissions NO se droppearon (datos históricos).
+
+// =====================================================================
+// REBUILD F1 — Contacto extendido (Anexo Técnico §B.3-B.5)
+// =====================================================================
+
+// Expediente KYC (PII sensible: documentNumber/taxId se guardan CIFRADOS con lib/crypto)
+model ContactDossier {
+  id        String  @id @default(uuid())
+  contactId String  @unique
+  contact   Contact @relation(fields: [contactId], references: [id])
+
+  documentType   DocumentType?
+  documentNumber String? // cifrado AES-256-GCM (lib/crypto), nunca en logs ni payloads de IA
+  birthDate      DateTime?
+  birthPlace     String?
+  maritalStatus  MaritalStatus?
+  occupation     String?
+  taxId          String? // cifrado AES-256-GCM
+  taxRegime      TaxRegime?
+
+  // Domicilio de correspondencia
+  corrStreet  String?
+  corrColonia String?
+  corrCity    String?
+  corrState   String?
+  corrZip     String?
+  corrCountry String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("contact_dossiers")
+  @@schema("propyte_crm")
+}
+
+// Atribución publicitaria (1:1 con Contact; la pueblan los conectores y el webhook web)
+model AdAttribution {
+  id        String  @id @default(uuid())
+  contactId String  @unique
+  contact   Contact @relation(fields: [contactId], references: [id])
+
+  gclid        String?
+  fbclid       String?
+  ttclid       String? // TikTok click id
+  liFatId      String? // LinkedIn first-party ad tracking id
+  portalLeadId String? // id del lead en el portal inmobiliario
+  socialLeadId String? // Meta leadgen_id / TikTok lead id
+
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmTerm     String?
+  utmContent  String?
+
+  campaignName String?
+  adName       String?
+  adsetName    String?
+  network      String?
+  device       String?
+  keyword      String?
+
+  costPerClick      Decimal? @db.Decimal(10, 2)
+  costPerConversion Decimal? @db.Decimal(10, 2)
+
+  conversionExportStatus String?
+  conversionExportedAt   DateTime?
+
+  landingPage String?
+  referrer    String?
+  firstTouch  DateTime?
+  lastTouch   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ad_attributions")
+  @@schema("propyte_crm")
+}
+
+// Comportamiento web (equivalente SalesIQ; alimenta scoring conductual)
+model WebBehavior {
+  id        String  @id @default(uuid())
+  contactId String  @unique
+  contact   Contact @relation(fields: [contactId], references: [id])
+
+  visitorScore     Int?
+  firstVisitAt     DateTime?
+  lastVisitAt      DateTime?
+  daysVisited      Int?
+  avgTimeOnSiteMin Decimal?  @db.Decimal(6, 2)
+  chatCount        Int?
+  firstPageUrl     String?
+  pagesViewed      String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("web_behavior")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// REBUILD F1 — Motor de workflows (Anexo Técnico §D.2)
+// =====================================================================
+
+// Log append-only de eventos de dominio. `type` es String (extensible sin migración):
+// lead.captured, lead.assigned, contact.scored, deal.stage_changed, quote.opened,
+// whatsapp.replied, unit.viewed, payment.overdue, visit.completed, deal.won, deal.lost…
+model WorkflowEvent {
+  id          String    @id @default(uuid())
+  type        String
+  entityType  String // "contact" | "deal" | "conversation" | …
+  entityId    String
+  payload     Json      @default("{}")
+  occurredAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([processedAt])
+  @@index([entityType, entityId])
+  @@index([type, occurredAt])
+  @@map("workflow_events")
+  @@schema("propyte_crm")
+}
+
+// Regla de automatización data-driven (conditions = DSL §D.4, actions = ActionSpec[])
+model AutomationRule {
+  id              String      @id @default(uuid())
+  name            String      @unique
+  description     String?     @db.Text
+  isActive        Boolean     @default(false)
+  priority        Int         @default(100)
+  triggerType     TriggerType
+  triggerConfig   Json        @default("{}")
+  conditions      Json        @default("{}")
+  actions         Json        @default("[]")
+  cooldownMinutes Int?
+  lastFiredAt     DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("automation_rules")
+  @@schema("propyte_crm")
+}
+
+// Cadencia / action plan. ownerUserId=null → global; con valor → cadencia personal (Anexo B §J.3)
+model ActionPlan {
+  id             String  @id @default(uuid())
+  name           String  @unique
+  description    String? @db.Text
+  isActive       Boolean @default(false)
+  ownerUserId    String?
+  owner          User?   @relation("OwnedActionPlans", fields: [ownerUserId], references: [id])
+  entryTrigger   Json    @default("{}")
+  exitConditions Json    @default("{}")
+
+  steps           ActionPlanStep[]
+  enrollments     ActionPlanEnrollment[]
+  defaultForUsers UserProfile[]          @relation("DefaultCadence")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("action_plans")
+  @@schema("propyte_crm")
+}
+
+model ActionPlanStep {
+  id            String             @id @default(uuid())
+  planId        String
+  plan          ActionPlan         @relation(fields: [planId], references: [id])
+  order         Int
+  delayMinutes  Int                @default(0)
+  actionType    WorkflowActionType
+  config        Json               @default("{}")
+  conditions    Json?
+  autonomyLevel AutonomyLevel      @default(L0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([planId, order])
+  @@map("action_plan_steps")
+  @@schema("propyte_crm")
+}
+
+model ActionPlanEnrollment {
+  id          String           @id @default(uuid())
+  planId      String
+  plan        ActionPlan       @relation(fields: [planId], references: [id])
+  entityType  String
+  entityId    String
+  currentStep Int              @default(0)
+  status      EnrollmentStatus @default(ACTIVE)
+  nextRunAt   DateTime?
+  enrolledAt  DateTime         @default(now())
+  exitedAt    DateTime?
+
+  @@unique([planId, entityType, entityId])
+  @@index([status, nextRunAt])
+  @@map("action_plan_enrollments")
+  @@schema("propyte_crm")
+}
+
+// Cola de acciones (decisión Anexo B §K G.5: pg-backed + cron + API runner).
+// dedupeKey garantiza idempotencia (entity+rule+día): reintentos no duplican envíos.
+model ActionQueue {
+  id          String             @id @default(uuid())
+  ruleId      String?
+  planStepId  String?
+  actionType  WorkflowActionType
+  entityType  String
+  entityId    String
+  config      Json               @default("{}")
+  dedupeKey   String             @unique
+  status      ActionQueueStatus  @default(PENDING)
+  attempts    Int                @default(0)
+  maxAttempts Int                @default(3)
+  runAfter    DateTime           @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  error       String?            @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([status, runAfter])
+  @@map("action_queue")
+  @@schema("propyte_crm")
+}
+
+// Ruteo de leads (conditions: plaza/idioma/fuente/score/perfil; targets: userIds/roles + weights)
+model RoutingRule {
+  id         String             @id @default(uuid())
+  name       String             @unique
+  priority   Int                @default(100)
+  isActive   Boolean            @default(true)
+  conditions Json               @default("{}")
+  strategy   LeadAssignmentMode
+  targets    Json               @default("{}")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("routing_rules")
+  @@schema("propyte_crm")
+}
+
+// Política SLA (businessHours keyed por plaza — decisión Anexo B §K G.7)
+model SlaPolicy {
+  id                String  @id @default(uuid())
+  name              String  @unique
+  isDefault         Boolean @default(false)
+  isActive          Boolean @default(true)
+  firstTouchMinutes Int     @default(5)
+  retryMinutes      Int     @default(30)
+  orphanHours       Int     @default(24)
+  escalationChain   Json    @default("[]")
+  businessHours     Json    @default("{}")
+  channelFallback   Json    @default("{}")
+
+  timers SlaTimer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sla_policies")
+  @@schema("propyte_crm")
+}
+
+model SlaTimer {
+  id         String         @id @default(uuid())
+  contactId  String
+  contact    Contact        @relation(fields: [contactId], references: [id])
+  dealId     String?
+  deal       Deal?          @relation(fields: [dealId], references: [id])
+  policyId   String?
+  policy     SlaPolicy?     @relation(fields: [policyId], references: [id])
+  type       SlaTimerType
+  status     SlaTimerStatus @default(RUNNING)
+  dueAt      DateTime
+  metAt      DateTime?
+  breachedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([status, dueAt])
+  @@map("sla_timers")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// REBUILD F1 — Conectores de leads (Anexo B §H) e Inbox (§I)
+// =====================================================================
+
+// Conector de intake (Meta Lead Ads / TikTok Lead Gen / Web). credentials va CIFRADO (lib/crypto).
+model LeadConnector {
+  id          String             @id @default(uuid())
+  name        String
+  provider    ConnectorProvider
+  direction   ConnectorDirection @default(INBOUND)
+  status      ConnectorStatus    @default(PAUSED)
+  credentials String?            @db.Text // JSON cifrado AES-256-GCM — nunca en claro
+  config      Json               @default("{}")
+  fieldMap    Json               @default("{}")
+  lastLeadAt  DateTime?
+  lastSyncAt  DateTime?
+  errorCount  Int                @default(0)
+  lastError   String?            @db.Text
+
+  leadLogs ConnectorLeadLog[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("lead_connectors")
+  @@schema("propyte_crm")
+}
+
+// Log de leads entrantes por conector — idempotencia (UNIQUE) + replay + auditoría
+model ConnectorLeadLog {
+  id             String              @id @default(uuid())
+  connectorId    String
+  connector      LeadConnector       @relation(fields: [connectorId], references: [id])
+  externalLeadId String
+  rawPayload     Json
+  contactId      String?
+  contact        Contact?            @relation(fields: [contactId], references: [id])
+  status         ConnectorLeadStatus @default(RECEIVED)
+  errorDetail    String?             @db.Text
+  receivedAt     DateTime            @default(now())
+  processedAt    DateTime?
+
+  @@unique([connectorId, externalLeadId])
+  @@index([status, receivedAt])
+  @@map("connector_lead_logs")
+  @@schema("propyte_crm")
+}
+
+// Conversación (un hilo por contacto+canal). status=HUMAN ⇒ el bot NUNCA envía en este hilo.
+model Conversation {
+  id             String              @id @default(uuid())
+  contactId      String
+  contact        Contact             @relation(fields: [contactId], references: [id])
+  channel        ConversationChannel @default(WHATSAPP)
+  status         ConversationStatus  @default(BOT)
+  controlledById String?
+  controlledBy   User?               @relation("ControlledConversations", fields: [controlledById], references: [id])
+  botEnabled     Boolean             @default(true)
+  lastMessageAt  DateTime?
+  lastInboundAt  DateTime?
+  unreadCount    Int                 @default(0)
+  aiSummary      String?             @db.Text
+  takeoverAt     DateTime?
+  snoozedUntil   DateTime?
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([contactId, channel])
+  @@index([status, lastMessageAt])
+  @@map("conversations")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// REBUILD F1 — Perfiles de usuario (Anexo B §J)
+// =====================================================================
+
+model UserProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  jobTitle       String?
+  bioEs          String?  @db.Text
+  bioEn          String?  @db.Text
+  photoUrl       String?
+  phoneDirect    String?
+  whatsappNumber String?
+  languages      String[] @default(["ES"])
+
+  // Correo
+  emailFromAlias     String?
+  emailSignatureHtml String? @db.Text
+
+  // Tarjeta digital pública /t/{cardSlug} (slug inmutable tras publicar — los QR impresos no se rompen)
+  cardSlug  String? @unique
+  cardTheme Json    @default("{}")
+
+  socialLinks       Json        @default("{}")
+  calendarUrl       String?
+  defaultCadenceId  String?
+  defaultCadence    ActionPlan? @relation("DefaultCadence", fields: [defaultCadenceId], references: [id])
+  notificationPrefs Json        @default("{}")
+  workingHours      Json        @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_profiles")
+  @@schema("propyte_crm")
+}
+
+// Plantillas de mensaje. userId=null → plantilla GLOBAL de marca (solo ADMIN/MARKETING editan).
+model UserTemplate {
+  id         String            @id @default(uuid())
+  userId     String?
+  user       User?             @relation(fields: [userId], references: [id])
+  channel    TemplateChannel
+  name       String
+  shortcut   String?
+  subject    String?
+  body       String            @db.Text
+  language   PreferredLanguage @default(ES)
+  isActive   Boolean           @default(true)
+  usageCount Int               @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([userId, shortcut])
+  @@map("user_templates")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// REBUILD F6 — Cotizador y cobranza (consolidado §2.3 items 4-8, Anexo §C.2)
+// =====================================================================
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  OPENED
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+
+  @@schema("propyte_crm")
+}
+
+enum PaymentScheme {
+  CONTADO
+  FINANCIAMIENTO_DIRECTO
+  CREDITO_BANCARIO
+  MIXTO
+
+  @@schema("propyte_crm")
+}
+
+enum InstallmentStatus {
+  PENDIENTE
+  PAGADA
+  VENCIDA
+  CONDONADA
+
+  @@schema("propyte_crm")
+}
+
+enum DealDocumentType {
+  KYC
+  CONTRATO_ENVIADO
+  CONTRATO_FIRMADO
+  COMPROBANTE_ENGANCHE
+  RECIBO
+  COMPROBANTE_DOMICILIO
+  OTRO
+
+  @@schema("propyte_crm")
+}
+
+// Cotización como entidad (paridad Zoho "Cotizaciones"). unitSnapshot congela
+// precio del Hub + FX al momento de cotizar (data-gate + multimoneda §2.4)
+model Quote {
+  id          String @id @default(uuid())
+  dealId      String
+  deal        Deal   @relation(fields: [dealId], references: [id])
+  createdById String
+  createdBy   User   @relation("QuotesCreated", fields: [createdById], references: [id])
+
+  hubUnitId    String?
+  unitSnapshot Json          @default("{}")
+  currency     Currency      @default(MXN)
+  listPrice    Decimal       @db.Decimal(14, 2)
+  discountPct  Decimal       @default(0) @db.Decimal(5, 2)
+  finalPrice   Decimal       @db.Decimal(14, 2)
+  fxRate       Decimal?      @db.Decimal(10, 4)
+  scheme       PaymentScheme
+  status       QuoteStatus   @default(DRAFT)
+  pdfUrl       String?
+  sentAt       DateTime?
+  openedAt     DateTime?
+  expiresAt    DateTime?
+  notes        String?       @db.Text
+
+  paymentPlan PaymentPlan?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([dealId])
+  @@map("quotes")
+  @@schema("propyte_crm")
+}
+
+model PaymentPlan {
+  id      String @id @default(uuid())
+  quoteId String @unique
+  quote   Quote  @relation(fields: [quoteId], references: [id])
+
+  downPaymentPct     Decimal @db.Decimal(5, 2)
+  downPaymentAmount  Decimal @db.Decimal(14, 2)
+  monthsCount        Int     @default(0)
+  monthlyAmount      Decimal @default(0) @db.Decimal(14, 2)
+  deliveryPaymentPct Decimal @default(0) @db.Decimal(5, 2)
+  deliveryAmount     Decimal @default(0) @db.Decimal(14, 2)
+
+  schedules PaymentSchedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_plans")
+  @@schema("propyte_crm")
+}
+
+model PaymentSchedule {
+  id     String      @id @default(uuid())
+  planId String
+  plan   PaymentPlan @relation(fields: [planId], references: [id])
+
+  number     Int
+  dueDate    DateTime
+  amount     Decimal           @db.Decimal(14, 2)
+  status     InstallmentStatus @default(PENDIENTE)
+  paidAt     DateTime?
+  paidAmount Decimal?          @db.Decimal(14, 2)
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([planId, number])
+  @@index([status, dueDate])
+  @@map("payment_schedules")
+  @@schema("propyte_crm")
+}
+
+// Documentación del negocio (KYC, contratos, comprobantes — Zoho §2.3.6)
+model DealDocument {
+  id           String           @id @default(uuid())
+  dealId       String
+  deal         Deal             @relation(fields: [dealId], references: [id])
+  type         DealDocumentType
+  name         String
+  url          String
+  uploadedById String
+  uploadedBy   User             @relation("DealDocsUploaded", fields: [uploadedById], references: [id])
+  verifiedAt   DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([dealId])
+  @@map("deal_documents")
+  @@schema("propyte_crm")
+}
+
+// Broker externo asociado + split (Zoho "Broker Asociado", §2.3.7)
+model ExternalBroker {
+  id       String  @id @default(uuid())
+  name     String
+  agency   String?
+  phone    String?
+  email    String?
+  splitPct Decimal @default(50) @db.Decimal(5, 2)
+  isActive Boolean @default(true)
+  notes    String? @db.Text
+
+  deals Deal[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("external_brokers")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// PERSONALIZACIÓN & EQUIPOS — P1 Equipos/Territorios (speckit §2)
+// =====================================================================
+
+enum TeamRole {
+  LEADER
+  SENIOR
+  JUNIOR
+  HOSTESS
+
+  @@schema("propyte_crm")
+}
+
+enum TerritoryType {
+  GEO
+  SEGMENT
+
+  @@schema("propyte_crm")
+}
+
+enum TerritoryAccess {
+  VIEW
+  EDIT
+
+  @@schema("propyte_crm")
+}
+
+// Capa matricial ENCIMA de la jerarquía de roles RH (User.teamLeaderId NO se duplica)
+model Team {
+  id                String  @id @default(uuid())
+  name              String  @unique
+  plaza             Plaza
+  leaderId          String?
+  leader            User?   @relation("TeamLeader", fields: [leaderId], references: [id])
+  parentTeamId      String?
+  parentTeam        Team?   @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
+  childTeams        Team[]  @relation("TeamHierarchy")
+  forecastManagerId String?
+  forecastManager   User?   @relation("TeamForecast", fields: [forecastManagerId], references: [id])
+  isActive          Boolean @default(true)
+
+  members TeamMember[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("teams")
+  @@schema("propyte_crm")
+}
+
+// Membresía N:N con rol e historial (joinedAt/leftAt — nunca se borra)
+model TeamMember {
+  id         String    @id @default(uuid())
+  teamId     String
+  team       Team      @relation(fields: [teamId], references: [id])
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  roleInTeam TeamRole  @default(JUNIOR)
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+
+  @@index([teamId, leftAt])
+  @@index([userId, leftAt])
+  @@map("team_members")
+  @@schema("propyte_crm")
+}
+
+// Territorio = matriz de asignación/visibilidad (distinta a jerarquía RH). Zona dentro de plaza (OQ2).
+model Territory {
+  id                String        @id @default(uuid())
+  name              String        @unique
+  type              TerritoryType @default(GEO)
+  parentTerritoryId String?
+  parentTerritory   Territory?    @relation("TerritoryHierarchy", fields: [parentTerritoryId], references: [id])
+  childTerritories  Territory[]   @relation("TerritoryHierarchy")
+  plaza             Plaza?
+  zones             String[]      @default([])
+  forecastManagerId String?
+  forecastManager   User?         @relation("TerritoryForecast", fields: [forecastManagerId], references: [id])
+  isActive          Boolean       @default(true)
+
+  members TerritoryMember[]
+  rules   TerritoryRule[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("territories")
+  @@schema("propyte_crm")
+}
+
+model TerritoryMember {
+  id          String          @id @default(uuid())
+  territoryId String
+  territory   Territory       @relation(fields: [territoryId], references: [id])
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  accessLevel TerritoryAccess @default(VIEW)
+
+  createdAt DateTime @default(now())
+
+  @@unique([territoryId, userId])
+  @@map("territory_members")
+  @@schema("propyte_crm")
+}
+
+// Regla de asignación a territorio (conditions = DSL del Anexo D.4 sobre contact); hijo antes que padre
+model TerritoryRule {
+  id          String    @id @default(uuid())
+  territoryId String
+  territory   Territory @relation(fields: [territoryId], references: [id])
+  priority    Int       @default(100)
+  conditions  Json      @default("{}")
+  isActive    Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, priority])
+  @@map("territory_rules")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// PERSONALIZACIÓN — P2 Registro de metadata (speckit §3)
+// =====================================================================
+
+enum FieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  CURRENCY
+  PERCENT
+  DATE
+  DATETIME
+  BOOLEAN
+  EMAIL
+  PHONE
+  URL
+  PICKLIST
+  MULTI_PICKLIST
+  AUTO_NUMBER
+  FORMULA
+  FILE
+  USER
+  LOOKUP
+  MASTER_DETAIL
+  ROLLUP
+  GEO
+
+  @@schema("propyte_crm")
+}
+
+enum FieldAccess {
+  HIDDEN
+  READ
+  EDIT
+
+  @@schema("propyte_crm")
+}
+
+// Objetos del CRM (núcleo isSystem; Hub isExternal=read-only — decisión OQ5)
+model CustomObjectDef {
+  id              String  @id @default(uuid())
+  apiName         String  @unique // INMUTABLE (lección HubSpot)
+  label           String
+  pluralLabel     String
+  icon            String?
+  isSystem        Boolean @default(false)
+  isExternal      Boolean @default(false)
+  recordNameField String  @default("name")
+  isActive        Boolean @default(true)
+
+  fields  CustomFieldDef[]
+  layouts Layout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("custom_objects")
+  @@schema("propyte_crm")
+}
+
+// Definición de campo. isSystem=true documenta columnas tipadas reales; custom vive en JSONB.
+model CustomFieldDef {
+  id            String          @id @default(uuid())
+  objectApiName String
+  object        CustomObjectDef @relation(fields: [objectApiName], references: [apiName])
+  apiName       String // INMUTABLE tras crear; convención obj_snake
+  label         String
+  fieldType     FieldType // INMUTABLE tras crear
+  isRequired    Boolean         @default(false)
+  isUnique      Boolean         @default(false)
+  isSearchable  Boolean         @default(false)
+  defaultValue  Json?
+  helpText      String?
+  validation    Json            @default("{}")
+  order         Int             @default(100)
+  isSystem      Boolean         @default(false)
+  isActive      Boolean         @default(true)
+  archivedAt    DateTime? // archivar conserva valores (PC6)
+
+  options     FieldOption[]
+  permissions FieldPermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([objectApiName, apiName])
+  @@map("custom_fields")
+  @@schema("propyte_crm")
+}
+
+model FieldOption {
+  id       String         @id @default(uuid())
+  fieldId  String
+  field    CustomFieldDef @relation(fields: [fieldId], references: [id])
+  value    String
+  label    String
+  color    String?
+  order    Int            @default(100)
+  isActive Boolean        @default(true) // nunca borrar opción en uso → desactivar
+
+  @@unique([fieldId, value])
+  @@map("field_options")
+  @@schema("propyte_crm")
+}
+
+model Layout {
+  id            String          @id @default(uuid())
+  objectApiName String
+  object        CustomObjectDef @relation(fields: [objectApiName], references: [apiName])
+  name          String          @default("Default")
+  isDefault     Boolean         @default(true)
+
+  sections LayoutSection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([objectApiName, name])
+  @@map("layouts")
+  @@schema("propyte_crm")
+}
+
+model LayoutSection {
+  id         String @id @default(uuid())
+  layoutId   String
+  layout     Layout @relation(fields: [layoutId], references: [id])
+  title      String
+  order      Int    @default(100)
+  columns    Int    @default(2)
+  conditions Json? // DSL Anexo D.4: mostrar/ocultar sección
+
+  fields LayoutField[]
+
+  @@map("layout_sections")
+  @@schema("propyte_crm")
+}
+
+model LayoutField {
+  id           String        @id @default(uuid())
+  sectionId    String
+  section      LayoutSection @relation(fields: [sectionId], references: [id])
+  fieldApiName String
+  order        Int           @default(100)
+  conditions   Json? // DSL: mostrar/ocultar/forzar-obligatorio (OQ6: v1)
+
+  @@map("layout_fields")
+  @@schema("propyte_crm")
+}
+
+// Field-level security por rol (PC5: restrictivo por defecto)
+model FieldPermission {
+  id      String         @id @default(uuid())
+  fieldId String
+  field   CustomFieldDef @relation(fields: [fieldId], references: [id])
+  role    UserRole
+  access  FieldAccess    @default(READ)
+
+  @@unique([fieldId, role])
+  @@map("field_permissions")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// PERSONALIZACIÓN — P3 Relaciones entre módulos (speckit §4)
+// =====================================================================
+
+enum RelationshipKind {
+  LOOKUP
+  MASTER_DETAIL
+  MANY_TO_MANY
+
+  @@schema("propyte_crm")
+}
+
+enum OnDeleteBehavior {
+  SET_NULL
+  CASCADE
+  RESTRICT
+
+  @@schema("propyte_crm")
+}
+
+enum RollupAggregate {
+  COUNT
+  SUM
+  MIN
+  MAX
+  AVG
+
+  @@schema("propyte_crm")
+}
+
+model RelationshipDef {
+  id               String           @id @default(uuid())
+  name             String           @unique
+  fromObject       String
+  toObject         String
+  kind             RelationshipKind
+  onDelete         OnDeleteBehavior @default(SET_NULL)
+  relatedListLabel String
+  isRequired       Boolean          @default(false)
+  allowMultiple    Boolean          @default(true)
+  isActive         Boolean          @default(true)
+  isSystem         Boolean          @default(false) // describe relaciones físicas Prisma existentes (speckit 4.4)
+
+  labels      RelationshipLabel[]
+  projections LookupProjection[]
+  rollups     RollupFieldDef[]
+  links       RecordLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("relationships")
+  @@schema("propyte_crm")
+}
+
+// Rol del record en la relación (estilo HubSpot association labels)
+model RelationshipLabel {
+  id             String          @id @default(uuid())
+  relationshipId String
+  relationship   RelationshipDef @relation(fields: [relationshipId], references: [id])
+  label          String
+  fromRole       String?
+  toRole         String?
+
+  links RecordLink[]
+
+  @@unique([relationshipId, label])
+  @@map("relationship_labels")
+  @@schema("propyte_crm")
+}
+
+// Field-of-lookup (estilo Zoho, máx 5 — se valida en API)
+model LookupProjection {
+  id                 String          @id @default(uuid())
+  relationshipId     String
+  relationship       RelationshipDef @relation(fields: [relationshipId], references: [id])
+  sourceFieldApiName String
+  displayLabel       String
+  order              Int             @default(100)
+
+  @@map("lookup_projections")
+  @@schema("propyte_crm")
+}
+
+// Rollup (estilo Salesforce) — solo MASTER_DETAIL/FK fuerte; lo calcula el motor/cron
+model RollupFieldDef {
+  id                  String          @id @default(uuid())
+  parentObject        String
+  childRelationshipId String
+  childRelationship   RelationshipDef @relation(fields: [childRelationshipId], references: [id])
+  aggregate           RollupAggregate
+  childFieldApiName   String?
+  filter              Json?
+
+  createdAt DateTime @default(now())
+
+  @@map("rollup_fields")
+  @@schema("propyte_crm")
+}
+
+// Puente N:N GENÉRICO con label/rol — evita DDL en runtime (PC1; desviación
+// documentada del speckit 4.2 "tabla por relación": un solo puente indexado)
+model RecordLink {
+  id             String             @id @default(uuid())
+  relationshipId String
+  relationship   RelationshipDef    @relation(fields: [relationshipId], references: [id])
+  fromObject     String
+  fromId         String
+  toObject       String
+  toId           String
+  labelId        String?
+  label          RelationshipLabel? @relation(fields: [labelId], references: [id])
+  createdById    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([relationshipId, fromId, toId])
+  @@index([fromObject, fromId])
+  @@index([toObject, toId])
+  @@map("record_links")
+  @@schema("propyte_crm")
+}
+
+// Records de objetos custom desde cero (P4 — tabla lista, editor después)
+model CustomRecord {
+  id            String  @id @default(uuid())
+  objectApiName String
+  recordName    String
+  data          Json    @default("{}")
+  createdById   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([objectApiName, deletedAt])
+  @@map("custom_records")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// CONECTIVIDAD & CAPI — Speckit #4 (C1/C2)
+// =====================================================================
+
+enum ConnectorDirection {
+  INBOUND
+  OUTBOUND
+  BOTH
+
+  @@schema("propyte_crm")
+}
+
+enum ConversionEventName {
+  LEAD
+  QUALIFIED
+  MEETING_SCHEDULED
+  RESERVED
+  WON
+
+  @@schema("propyte_crm")
+}
+
+enum ConversionStatus {
+  PENDING
+  SENT
+  PARTIAL
+  FAILED
+  SKIPPED
+
+  @@schema("propyte_crm")
+}
+
+// Log outbound de conversiones (speckit #4 §5.1). eventId UNIQUE = idempotencia
+// (dedup interno y vs pixel). hashedPII se construye al despachar, nunca PII en claro.
+model ConversionEvent {
+  id              String              @id @default(uuid())
+  contactId       String
+  contact         Contact             @relation(fields: [contactId], references: [id])
+  dealId          String?
+  deal            Deal?               @relation(fields: [dealId], references: [id])
+  eventName       ConversionEventName
+  eventId         String              @unique
+  occurredAt      DateTime            @default(now())
+  value           Decimal?            @db.Decimal(14, 2)
+  currency        Currency            @default(MXN)
+  leadQualityTier String?
+  clickIds        Json                @default("{}")
+  platforms       String[]            @default([])
+  status          ConversionStatus    @default(PENDING)
+  attempts        Int                 @default(0)
+  results         Json                @default("{}") // por plataforma: ok/emq/error
+  lastError       String?             @db.Text
+  sentAt          DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([contactId])
+  @@map("conversion_events")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// AGENTES DE IA — Speckit #4 (C3): agente = empleado digital gobernado (PA1)
+// =====================================================================
+
+enum AgentType {
+  PREBUILT
+  CUSTOM
+
+  @@schema("propyte_crm")
+}
+
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  ESCALATED
+  FAILED
+
+  @@schema("propyte_crm")
+}
+
+// Identidad del agente = systemUserId (User con rol RBAC). allowedTools acota
+// el registry de lib/agents/tools.ts. limits: horario, tope de pasos, etc.
+model AgentDef {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  type          AgentType     @default(PREBUILT)
+  systemUserId  String
+  systemUser    User          @relation("AgentIdentity", fields: [systemUserId], references: [id])
+  goal          String        @db.Text
+  autonomyLevel AutonomyLevel @default(L2)
+  allowedTools  String[]      @default([])
+  trigger       Json          @default("{}")
+  schedule      String?
+  limits        Json          @default("{}")
+  isActive      Boolean       @default(false)
+
+  runs AgentRun[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("agents")
+  @@schema("propyte_crm")
+}
+
+// Cada corrida: razonamiento + tool calls auditables (PA1: trazable como un humano)
+model AgentRun {
+  id                String         @id @default(uuid())
+  agentId           String
+  agent             AgentDef       @relation(fields: [agentId], references: [id])
+  trigger           String
+  input             Json           @default("{}")
+  steps             Json           @default("[]")
+  output            String?        @db.Text
+  status            AgentRunStatus @default(RUNNING)
+  escalatedToUserId String?
+  error             String?        @db.Text
+  startedAt         DateTime       @default(now())
+  endedAt           DateTime?
+
+  @@index([agentId, startedAt])
+  @@map("agent_runs")
+  @@schema("propyte_crm")
+}

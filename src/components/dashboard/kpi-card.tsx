@@ -40,7 +40,7 @@ export function KpiCard({ title, value, subtitle, icon: Icon, trend, color, acce
         </span>
       </div>
       <div className="mt-4">
-        <p className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>{value}</p>
+        <p className="num text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>{value}</p>
         <p className="mt-0.5 text-[13px] font-medium" style={{ color: "var(--text-secondary)" }}>{title}</p>
         {subtitle && <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>{subtitle}</p>}
       </div>

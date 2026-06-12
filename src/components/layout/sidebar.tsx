@@ -8,10 +8,12 @@ import { useSession, signOut } from "next-auth/react"
 import {
   LayoutDashboard,
   Users,
+  MessageSquare,
   Kanban,
   Building2,
   DollarSign,
   BarChart3,
+  TrendingUp,
   UserCheck,
   Settings,
   ChevronLeft,
@@ -23,16 +25,43 @@ import {
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
 
-const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER", "HOSTESS"] },
-  { label: "Contactos", href: "/contacts", icon: Users, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER", "HOSTESS"] },
-  { label: "Pipeline", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
-  { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
-  { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "LIDER", "ASESOR", "BROKER"] },
-  { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "LIDER"] },
-  // Meta Ads/Leads, Sync Drive y Zoho migraron al Hub (spec crm-hub-migration-cleanup T2.2/T3.4/T4)
-  { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["HOSTESS"] },
-  { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+// Roles alineados al enum UserRole de Prisma (ADMIN ve todo sin filtro).
+// Nav agrupado: el ritmo visual viene de las secciones, no de una lista plana.
+const ASESORES = ["ASESOR", "ASESOR_SR", "ASESOR_JR"]
+const TODOS = ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING"]
+const navGroups: Array<{ title: string | null; items: Array<{ label: string; href: string; icon: typeof LayoutDashboard; roles: string[] }> }> = [
+  {
+    title: null,
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: TODOS },
+      { label: "Inbox", href: "/inbox", icon: MessageSquare, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "MARKETING"] },
+    ],
+  },
+  {
+    title: "Ventas",
+    items: [
+      { label: "Contactos", href: "/contacts", icon: Users, roles: TODOS },
+      { label: "Pipeline", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
+      { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING"] },
+      { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS"] },
+    ],
+  },
+  {
+    title: "Desempeno",
+    items: [
+      { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
+      { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "MARKETING"] },
+      { label: "Mi Carrera", href: "/career", icon: TrendingUp, roles: ["TEAM_LEADER", ...ASESORES] },
+    ],
+  },
+  {
+    title: "Sistema",
+    items: [
+      { label: "Mi Config", href: "/settings", icon: UserCheck, roles: TODOS },
+      { label: "Configuracion", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+      { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+    ],
+  },
 ]
 
 export function Sidebar() {
@@ -54,10 +83,6 @@ export function Sidebar() {
     .toUpperCase()
     .slice(0, 2)
 
-  const filteredNavItems = navItems.filter((item) =>
-    userRole === "ADMIN" || item.roles.includes(userRole)
-  )
-
   const isDark = resolvedTheme === "dark"
 
   return (
@@ -71,65 +96,64 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-12 items-center px-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
         {collapsed ? (
-          <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-md" style={{ background: "var(--color-teal)" }}>
-            <span className="text-xs font-bold text-white">P</span>
-          </div>
+          <span className="mx-auto text-[15px] font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>P.</span>
         ) : (
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ background: "var(--color-teal)" }}>
-              <span className="text-xs font-bold text-white">P</span>
-            </div>
-            <span className="text-sm font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>Propyte</span>
-            <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ background: "var(--color-teal-light)", color: "var(--color-teal)" }}>CRM</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[16px] font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>Propyte</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--text-tertiary)" }}>CRM</span>
           </div>
         )}
       </div>
 
-      {/* Navigation */}
+      {/* Navigation agrupada */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
-        <div className="space-y-0.5">
-          {filteredNavItems.map((item) => {
-            const isActive = pathname?.startsWith(item.href)
-            const Icon = item.icon
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  "group relative flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] font-medium",
-                  "transition-colors"
-                )}
-                style={{
-                  background: isActive ? "var(--color-teal-light)" : "transparent",
-                  color: isActive ? "var(--color-teal)" : "var(--text-secondary)",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = "rgba(255,255,255,0.04)"
-                    e.currentTarget.style.color = "var(--text-primary)"
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = "transparent"
-                    e.currentTarget.style.color = "var(--text-secondary)"
-                  }
-                }}
-              >
-                {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r" style={{ background: "var(--color-teal)" }} />
-                )}
-                <Icon
-                  className="h-4 w-4 shrink-0"
-                  style={{ color: isActive ? "var(--color-teal)" : "var(--text-tertiary)" }}
-                />
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            )
-          })}
-        </div>
+        {navGroups.map((group) => {
+          const items = group.items.filter((item) => userRole === "ADMIN" || item.roles.includes(userRole))
+          if (items.length === 0) return null
+          return (
+            <div key={group.title ?? "_top"} className="mb-4 last:mb-0">
+              {group.title && !collapsed && (
+                <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--text-tertiary)" }}>
+                  {group.title}
+                </p>
+              )}
+              <div className="space-y-px">
+                {items.map((item) => {
+                  const isActive = pathname?.startsWith(item.href)
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      title={collapsed ? item.label : undefined}
+                      className="group relative flex items-center gap-2.5 rounded-md px-2.5 py-[6px] text-[13px] transition-colors"
+                      style={{
+                        color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                        fontWeight: isActive ? 600 : 450,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) e.currentTarget.style.color = "var(--text-primary)"
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) e.currentTarget.style.color = "var(--text-secondary)"
+                      }}
+                    >
+                      {isActive && (
+                        <span className="absolute left-0 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-r" style={{ background: "var(--text-primary)" }} />
+                      )}
+                      <Icon
+                        className="h-4 w-4 shrink-0 transition-colors"
+                        style={{ color: isActive ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                        strokeWidth={isActive ? 2.2 : 1.8}
+                      />
+                      {!collapsed && <span>{item.label}</span>}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </nav>
 
       {/* Footer */}
@@ -141,7 +165,7 @@ export function Sidebar() {
               onClick={() => setTheme(isDark ? "light" : "dark")}
               className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--text-tertiary)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "var(--bg-hover)" }}
               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent" }}
               title={isDark ? "Modo claro" : "Modo oscuro"}
             >
@@ -152,7 +176,7 @@ export function Sidebar() {
             onClick={() => setCollapsed(!collapsed)}
             className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
             style={{ color: "var(--text-tertiary)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "var(--bg-hover)" }}
             onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent" }}
             title={collapsed ? "Expandir" : "Colapsar"}
           >
@@ -163,8 +187,8 @@ export function Sidebar() {
         {/* User */}
         <div className={cn("flex items-center gap-2 rounded-md p-2 cursor-default", collapsed && "justify-center p-1")}>
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-            style={{ background: "var(--color-teal)" }}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+            style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}
           >
             {initials}
           </div>

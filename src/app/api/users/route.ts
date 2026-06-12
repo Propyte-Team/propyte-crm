@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { Prisma } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 
 // Roles con acceso completo a todos los usuarios
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -87,7 +87,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Filtros adicionales
-    if (role) where.role = role as any;
+    // role acepta uno o varios valores separados por coma; valores fuera del enum → 400
+    if (role) {
+      const requestedRoles = role.split(",").map((r) => r.trim().toUpperCase());
+      const validRoles = requestedRoles.filter((r): r is UserRole =>
+        Object.values(UserRole).includes(r as UserRole)
+      );
+      if (validRoles.length !== requestedRoles.length) {
+        return NextResponse.json(
+          { error: `Rol inválido. Valores permitidos: ${Object.values(UserRole).join(", ")}` },
+          { status: 400 }
+        );
+      }
+      where.role = validRoles.length === 1 ? validRoles[0] : { in: validRoles };
+    }
     if (plaza) where.plaza = plaza as any;
     if (isActive !== null && isActive !== undefined) {
       where.isActive = isActive === "true";

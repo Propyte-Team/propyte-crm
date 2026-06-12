@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+// Teléfono: se normaliza (sin espacios/guiones/paréntesis) antes de validar,
+// y se persiste normalizado — clave para dedup por teléfono
+const phoneSchema = z
+  .string()
+  .transform((v) => v.replace(/[\s\-().]/g, ""))
+  .pipe(
+    z
+      .string()
+      .regex(/^\+?\d{10,15}$/, "Teléfono inválido: usa 10 a 15 dígitos (ej. +52 984 123 4567)")
+  );
+
 // --- Esquema base para campos de contacto (alineado con modelo Prisma) ---
 const contactBaseSchema = z.object({
   // Nombre del contacto
@@ -25,20 +36,11 @@ const contactBaseSchema = z.object({
     .optional()
     .or(z.literal("")),
 
-  // Teléfono principal (formato mexicano o internacional)
-  phone: z
-    .string()
-    .min(10, "El teléfono debe tener al menos 10 dígitos")
-    .max(15, "El teléfono no puede exceder 15 dígitos")
-    .trim(),
+  // Teléfono principal (formato mexicano o internacional, normalizado)
+  phone: phoneSchema,
 
   // Teléfono secundario (opcional)
-  secondaryPhone: z
-    .string()
-    .max(15)
-    .trim()
-    .optional()
-    .or(z.literal("")),
+  secondaryPhone: phoneSchema.optional().or(z.literal("")),
 
   // Tipo de contacto (enum ContactType)
   contactType: z.enum([

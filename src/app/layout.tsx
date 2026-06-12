@@ -1,13 +1,23 @@
-// Layout raíz del CRM Propyte - configura fuente, metadata y proveedores globales
+// Layout raíz del CRM Propyte - configura fuentes, metadata y proveedores globales
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Space_Grotesk, JetBrains_Mono } from "next/font/google"
 
 import { Providers } from "@/components/layout/providers"
 import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 
-// Fuente principal del CRM
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
+// Pareja tipográfica del speckit de diseño §2.2: grotesque con carácter para UI
+// + mono tabular para cifras ("instrumento financiero", no app de IA)
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+})
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-mono",
+})
 
 // Metadata de la aplicación
 export const metadata: Metadata = {
@@ -22,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <Providers>
           {children}
           <Toaster />
