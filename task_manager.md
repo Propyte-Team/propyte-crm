@@ -9,12 +9,18 @@
 >   → ambos saltan RLS; sin uso de anon key/Realtime contra propyte_crm. Sin políticas = deny-all
 >   a anon/authenticated. Reversible (DISABLE). Aplicado vía MCP (Luis autorizó). 0 tablas sin RLS.
 >   SQL: `prisma/migrations-manual/2026-06-12-enable-rls.sql`.
-> - **Fase 1 Hub — T1.1 cliente Hub** (`src/lib/hub/client.ts` + `types.ts`): lectura de catálogo
->   por SQL directo a real_estate_hub (decisión de Luis: SQL directo, no API REST nueva); holds via
->   REST al Hub (x-hub-api-key). Env: HUB_API_BASE_URL/HUB_API_KEY/HUB_WEBHOOK_SECRET.
->   PENDIENTE Fase 1: T1.2 developments read-only desde Hub, T1.3 deal form usa unidades Hub,
->   T1.4 hold al pasar a RESERVED (requiere HUB_API_KEY en env de Luis), T1.5 aislar Development/Unit
->   locales. T1.4 no se puede probar hasta que Luis ponga HUB_API_KEY.
+> - **Fase 1 Hub COMPLETA (CABLEADO)** — el CRM ya no posee inventario:
+>   - T1.1 cliente Hub (`src/lib/hub/client.ts`+`types.ts`): lectura SQL directa a real_estate_hub
+>     (decisión de Luis); holds via REST (x-hub-api-key). Env HUB_API_BASE_URL/HUB_API_KEY/HUB_WEBHOOK_SECRET.
+>   - T1.2/T1.5: endpoints `/api/hub/developments` y `/api/hub/units` read-only; POST /api/developments
+>     deshabilitado (403); página de desarrollos sin crear ("Catálogo del Hub · solo lectura").
+>   - T1.3: deal form consume /api/hub/* y guarda hubDevelopmentId/hubUnitId; POST de deals valida
+>     unidad contra el Hub + congela hubUnitSnapshot en Deal.custom.
+>   - T1.4: RESERVED → requestUnitHold (conflicto bloquea, 409); guarda holdId/holdExpiresAt/reservedAt;
+>     WON → confirmUnitHold.
+>   - **FALTA de Luis:** poner HUB_API_KEY (=HUB_INTERNAL_API_KEY del Hub) para que el hold funcione;
+>     smoke-test autenticado del flujo deal→reservar. La lectura de catálogo ya funciona (SQL directo).
+>   - Cotizador con selector Hub = Fase 3 (T3.1), no incluido aquí.
 >
 > **🎯 Sesión 2026-06-12 b (Detalle de contacto + permisos de campo)** —
 > Feedback de Luis sobre la vista de contacto (pestañas malas, sin notas, sin edición
