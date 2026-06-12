@@ -2,6 +2,12 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 h (Fase 7 Agent Studio)** —
+> Agent Studio (`src/components/config/agent-studio.tsx`): crear/editar agentes IA — goal/prompt,
+> identidad usuario sistema (RBAC), autonomía L0-L2, tools permitidas (desde AGENT_TOOLS), trigger,
+> límites, activar/pausar. Reusa upsert /api/admin/agents. Falta: simulación/preview, versionado.
+> Requiere ANTHROPIC_API_KEY para ejecutar. **Tras esto: pausa para validaciones de Luis.**
+>
 > **🎯 Sesión 2026-06-12 g (Fase 5 experiencia)** —
 > - **Command palette ⌘K** global (`src/components/layout/command-palette.tsx`, montado en layout):
 >   búsqueda global contactos+deals (via /api/records/search) + navegación rápida.
