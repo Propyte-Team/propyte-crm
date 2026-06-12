@@ -84,6 +84,7 @@ export async function GET(request: NextRequest) {
     const source = searchParams.get("source") || undefined;
     const temperature = searchParams.get("temperature") || undefined;
     const contactType = searchParams.get("type") || undefined;
+    const contactStatus = searchParams.get("status") || undefined;
     const assignedToId = searchParams.get("assignedTo") || undefined;
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
@@ -158,6 +159,9 @@ export async function GET(request: NextRequest) {
     }
     if (contactType) {
       where.contactType = contactType as any;
+    }
+    if (contactStatus) {
+      where.contactStatus = contactStatus as any;
     }
     if (assignedToId) {
       where.assignedToId = assignedToId;

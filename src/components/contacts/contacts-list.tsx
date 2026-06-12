@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
+import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER } from "@/lib/constants";
 
 // --- Tipos ---
 interface ContactData {
@@ -56,6 +57,7 @@ interface ContactData {
   leadSource: string;
   temperature: string;
   contactType: string;
+  contactStatus: string;
   createdAt: string;
   assignedTo: { id: string; name: string; email: string } | null;
   _count: { deals: number; activities: number };
@@ -132,6 +134,7 @@ export function ContactsList({
   const [filterSource, setFilterSource] = useState("ALL");
   const [filterTemp, setFilterTemp] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
+  const [filterStatus, setFilterStatus] = useState("ALL");
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -146,6 +149,7 @@ export function ContactsList({
       sourceVal: string,
       tempVal: string,
       typeVal: string,
+      statusVal: string,
       pageVal: number
     ) => {
       setLoading(true);
@@ -157,6 +161,7 @@ export function ContactsList({
         if (sourceVal !== "ALL") params.set("source", sourceVal);
         if (tempVal !== "ALL") params.set("temperature", tempVal);
         if (typeVal !== "ALL") params.set("type", typeVal);
+        if (statusVal !== "ALL") params.set("status", statusVal);
 
         const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("Error al cargar contactos");
@@ -180,22 +185,24 @@ export function ContactsList({
     setSearch(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchContacts(value, filterSource, filterTemp, filterType, 1);
+      fetchContacts(value, filterSource, filterTemp, filterType, filterStatus, 1);
     }, 300);
   };
 
   // Cambio de filtro: recargar desde página 1
   const handleFilterChange = (
-    type: "source" | "temp" | "type",
+    type: "source" | "temp" | "type" | "status",
     value: string
   ) => {
     const newSource = type === "source" ? value : filterSource;
     const newTemp = type === "temp" ? value : filterTemp;
     const newType = type === "type" ? value : filterType;
+    const newStatus = type === "status" ? value : filterStatus;
     if (type === "source") setFilterSource(value);
     if (type === "temp") setFilterTemp(value);
     if (type === "type") setFilterType(value);
-    fetchContacts(search, newSource, newTemp, newType, 1);
+    if (type === "status") setFilterStatus(value);
+    fetchContacts(search, newSource, newTemp, newType, newStatus, 1);
   };
 
   // Limpiar todos los filtros
@@ -204,13 +211,24 @@ export function ContactsList({
     setFilterSource("ALL");
     setFilterTemp("ALL");
     setFilterType("ALL");
-    fetchContacts("", "ALL", "ALL", "ALL", 1);
+    setFilterStatus("ALL");
+    fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1);
   };
 
   // Cambio de página
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    fetchContacts(search, filterSource, filterTemp, filterType, newPage);
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, newPage);
+  };
+
+  // Cambio rápido de estado de contacto desde la lista (edición inline)
+  const updateStatus = async (id: string, contactStatus: string) => {
+    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactStatus } : c)));
+    await fetch(`/api/contacts?id=${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactStatus }),
+    }).catch(() => null);
   };
 
   // Abrir WhatsApp con el número del contacto
@@ -224,7 +242,7 @@ export function ContactsList({
     setCreateOpen(false);
     setEditOpen(false);
     setEditContact(null);
-    fetchContacts(search, filterSource, filterTemp, filterType, page);
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
   };
 
   // Eliminar contacto
@@ -234,7 +252,7 @@ export function ContactsList({
     try {
       const res = await fetch(`/api/contacts?id=${id}`, { method: "DELETE" });
       if (res.ok) {
-        fetchContacts(search, filterSource, filterTemp, filterType, page);
+        fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
       }
     } catch (err) {
       console.error("Error al eliminar contacto:", err);
@@ -243,7 +261,7 @@ export function ContactsList({
 
   // Verificar si hay filtros activos
   const hasActiveFilters =
-    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL";
+    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL";
 
   // Calcular rango visible
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -292,7 +310,7 @@ export function ContactsList({
             </DialogHeader>
             <ContactImport onSuccess={() => {
               setImportOpen(false);
-              fetchContacts(search, filterSource, filterTemp, filterType, page);
+              fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
             }} />
           </DialogContent>
         </Dialog>
@@ -335,6 +353,22 @@ export function ContactsList({
                 <SelectItem value="WEBSITE">Sitio web</SelectItem>
                 <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
                 <SelectItem value="OTRO">Otro</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Filtro por estado de contacto */}
+            <Select
+              value={filterStatus}
+              onValueChange={(v) => handleFilterChange("status", v)}
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todos los estados</SelectItem>
+                {CONTACT_STATUS_ORDER.map((s) => (
+                  <SelectItem key={s} value={s}>{CONTACT_STATUS_LABELS[s]}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -425,6 +459,7 @@ export function ContactsList({
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="pb-3 font-medium">Nombre</th>
+                    <th className="pb-3 font-medium">Estado</th>
                     <th className="pb-3 font-medium">Teléfono</th>
                     <th className="pb-3 font-medium">Email</th>
                     <th className="pb-3 font-medium">Fuente</th>
@@ -444,6 +479,26 @@ export function ContactsList({
                       {/* Nombre completo */}
                       <td className="py-3 font-medium">
                         {contact.firstName} {contact.lastName}
+                      </td>
+                      {/* Estado de contacto — edición rápida inline */}
+                      <td className="py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="relative inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs" style={{ borderColor: "var(--border-default, #e5e5e5)" }}>
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ background: CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF" }}
+                          />
+                          {CONTACT_STATUS_LABELS[contact.contactStatus] ?? "Nuevo"}
+                          <select
+                            className="absolute inset-0 cursor-pointer opacity-0"
+                            value={contact.contactStatus ?? "NUEVO"}
+                            onChange={(e) => updateStatus(contact.id, e.target.value)}
+                            aria-label="Cambiar estado"
+                          >
+                            {CONTACT_STATUS_ORDER.map((s) => (
+                              <option key={s} value={s}>{CONTACT_STATUS_LABELS[s]}</option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                       {/* Teléfono */}
                       <td className="py-3">{contact.phone}</td>

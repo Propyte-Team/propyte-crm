@@ -83,7 +83,7 @@ export function AutomationSection({ userRole }: { userRole: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Workflows & SLA</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Flujos de trabajo y SLA</h1>
         <p className="text-muted-foreground">
           Cola de acciones: {Object.entries(queue).map(([k, v]) => `${k} ${v}`).join(" · ") || "vacía"}
         </p>

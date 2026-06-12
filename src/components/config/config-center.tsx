@@ -29,7 +29,7 @@ const GROUPS: Array<{ title: string; cards: CardDef[] }> = [
   {
     title: "Automatización",
     cards: [
-      { key: "automation", icon: Workflow, title: "Workflows & SLA", items: ["Reglas de flujo (8 canónicas)", "Cadencias / action plans", "Políticas SLA", "Cola de acciones"] },
+      { key: "automation", icon: Workflow, title: "Flujos de trabajo y SLA", items: ["Reglas de flujo (8 canónicas)", "Cadencias / planes de acción", "Políticas SLA", "Cola de acciones"] },
       { key: "agents", icon: Bot, title: "Agentes IA", items: ["SDR Speed-to-lead", "Calificador", "Autonomía L0-L3", "Corridas auditadas"] },
     ],
   },
