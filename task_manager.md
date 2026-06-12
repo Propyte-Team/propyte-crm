@@ -2,6 +2,15 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 f (Fase 4 automatización)** —
+> - T4.1 **observabilidad** del motor en Config→Flujos: eventos pendientes/procesados(24h), cola,
+>   fallidas, errores recientes + **retry manual** (`/api/admin/automation/retry`).
+> - T4.2 **builder visual de reglas** (form-based, sin JSON): trigger + condiciones DSL por filas
+>   (all/any · field/op/value) + acciones (16 tipos con config por tipo) + cooldown/prioridad +
+>   guardar pausada/activar. API `/api/admin/automation/rules` (POST/PUT, Dirección/Admin).
+>   Componente `src/components/config/workflow-builder.tsx`.
+> - T4.3 cadencias NO incluido (Luis eligió solo reglas). Pusheado.
+>
 > **🎯 Sesión 2026-06-12 e (Fase 3 cotizador/cobranza) + deploy** —
 > - T3.1 selector unidad Hub en cotizador (auto-precio + snapshot congelado).
 > - T3.2 plan de pagos: ya existía (payment-plan-form / schedule-table).
