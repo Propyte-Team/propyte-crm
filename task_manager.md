@@ -2,6 +2,16 @@
 
 > Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
 >
+> **🎯 Sesión 2026-06-12 e (Fase 3 cotizador/cobranza) + deploy** —
+> - T3.1 selector unidad Hub en cotizador (auto-precio + snapshot congelado).
+> - T3.2 plan de pagos: ya existía (payment-plan-form / schedule-table).
+> - T3.3 **landing pública** `/q/[id]` (sin auth, fuera del matcher): branding, unidad (snapshot),
+>   precio, plan, vigencia, CTA WhatsApp; marca openedAt; bloquea si vencida.
+> - T3.4 **Cobranza** `/cobranza`: aging de parcialidades (por vencer/1-30/31-60/61-90/90+) +
+>   tabla de vencidas, RBAC. `src/server/cobranza.ts`. En sidebar.
+> - Pusheado (deploy Hostinger auto). PENDIENTE: T3.3 PDF real (hoy es HTML imprimible),
+>   registro de pagos en cobranza, smoke-test.
+>
 > **🎯 Sesión 2026-06-12 d (Fase 1 wiring + Fase 2 core) + PUSH a prod** —
 > - **PUSH a main** (cuenta Propyte-Luis; estaba activa WebKoi → 403). Deploy Hostinger reconstruye
 >   con el fix de hubUnitStatus + todo lo de la sesión. HUB_API_KEY ya puesta por Luis.
