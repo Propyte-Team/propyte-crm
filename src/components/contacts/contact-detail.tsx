@@ -31,6 +31,8 @@ import {
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { CallIndicator } from "@/components/contacts/call-indicator";
+import { QuoteList } from "@/components/quotes/quote-list";
+import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
 
 // --- Etiquetas en español ---
 const SOURCE_LABEL: Record<string, string> = {
@@ -163,6 +165,9 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [activeCall, setActiveCall] = useState(false);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(
+    contact.deals?.length > 0 ? contact.deals[0].id : null
+  );
 
   // Formatear fecha legible
   const formatDate = (dateStr: string) => {
@@ -288,6 +293,7 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
             Conversaciones
           </TabsTrigger>
           <TabsTrigger value="documents">Documentos</TabsTrigger>
+          <TabsTrigger value="cotizaciones">Cotizaciones</TabsTrigger>
         </TabsList>
 
         {/* Pestaña: Información */}
@@ -530,6 +536,44 @@ export function ContactDetail({ contact, userRole }: ContactDetailProps) {
               </p>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Pestaña: Cotizaciones */}
+        <TabsContent value="cotizaciones" className="space-y-6">
+          {contact.deals?.length === 0 ? (
+            <div className="border border-dashed border-zinc-200 py-12 text-center text-sm text-zinc-400">
+              Este contacto no tiene deals. Crea uno primero para agregar cotizaciones.
+            </div>
+          ) : (
+            <>
+              {/* Selector de deal si hay más de uno */}
+              {contact.deals?.length > 1 && (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs uppercase tracking-widest text-zinc-400">Deal</span>
+                  <select
+                    className="border border-border bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-900"
+                    value={selectedDealId ?? ""}
+                    onChange={(e) => setSelectedDealId(e.target.value)}
+                  >
+                    {contact.deals.map((d: any) => (
+                      <option key={d.id} value={d.id}>
+                        {d.development?.name ?? "Sin desarrollo"} — {d.stage}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {selectedDealId && (
+                <>
+                  <QuoteList dealId={selectedDealId} />
+                  <div className="border-t border-border pt-6">
+                    <DealDocumentsSection dealId={selectedDealId} />
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </TabsContent>
       </Tabs>
 
