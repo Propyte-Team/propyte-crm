@@ -625,6 +625,7 @@ model User {
   templates               UserTemplate[]
   ownedActionPlans        ActionPlan[]   @relation("OwnedActionPlans")
   controlledConversations Conversation[] @relation("ControlledConversations")
+  googleOAuthToken        GoogleOAuthToken?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1451,6 +1452,26 @@ model UserProfile {
   updatedAt DateTime @updatedAt
 
   @@map("user_profiles")
+  @@schema("propyte_crm")
+}
+
+model GoogleOAuthToken {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken    String    @db.Text   // cifrado AES-256-GCM
+  refreshToken   String    @db.Text   // cifrado AES-256-GCM
+  tokenExpiry    DateTime
+  scope          String    @db.Text
+  googleEmail    String
+  gmailHistoryId String?              // baseline para delta sync (GW-1)
+  isValid        Boolean   @default(true)
+  connectedAt    DateTime  @default(now())
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("google_oauth_tokens")
   @@schema("propyte_crm")
 }
 
