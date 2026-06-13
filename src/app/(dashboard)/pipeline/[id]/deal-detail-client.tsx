@@ -19,7 +19,6 @@ import {
   MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FigureStat } from "@/components/ui/figure-stat";
 import { Separator } from "@/components/ui/separator";
@@ -42,12 +41,12 @@ import {
   STAGE_COLORS,
   DEAL_TYPE_LABELS,
   LOST_REASON_LABELS,
-  ACTIVITY_TYPE_LABELS,
   formatCurrency,
 } from "@/lib/constants";
 import { StageTransitionDialog } from "@/components/pipeline/stage-transition-dialog";
 import { DealOperationalRail } from "@/components/pipeline/deal-operational-rail";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
+import { ActivityLog } from "@/components/activities/activity-log";
 
 interface DealDetailClientProps {
   deal: any;
@@ -89,20 +88,6 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
       day: "numeric",
       timeZone: "UTC",
     });
-  }
-
-  // Formatear tiempo relativo
-  function timeAgo(dateStr: string): string {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffDays > 0) return `hace ${diffDays}d`;
-    if (diffHours > 0) return `hace ${diffHours}h`;
-    return `hace ${diffMins}m`;
   }
 
   // Crear PipelineDeal para el diálogo de transición
@@ -410,51 +395,15 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
         </CardContent>
       </Card>
 
-      {/* Timeline de actividades */}
+      {/* Actividades */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Historial de Actividades ({deal.activities?.length || 0})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {deal.activities && deal.activities.length > 0 ? (
-            <div className="space-y-4">
-              {deal.activities.map((activity: any) => (
-                <div key={activity.id} className="flex gap-3">
-                  {/* Línea vertical */}
-                  <div className="flex flex-col items-center">
-                    <div className="h-2 w-2 rounded-full bg-primary mt-2" />
-                    <div className="w-px flex-1 bg-muted" />
-                  </div>
-
-                  {/* Contenido de la actividad */}
-                  <div className="flex-1 pb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">
-                        {activity.subject}
-                      </span>
-                      <Badge variant="outline" className="text-xs">
-                        {ACTIVITY_TYPE_LABELS[activity.activityType] || activity.activityType}
-                      </Badge>
-                    </div>
-                    {activity.description && (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {activity.description}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {activity.user?.name} &middot; {timeAgo(activity.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              Sin actividades registradas
-            </p>
-          )}
+        <CardContent className="pt-6">
+          <ActivityLog
+            contactId={deal.contactId}
+            contactName={`${deal.contact?.firstName ?? ""} ${deal.contact?.lastName ?? ""}`.trim()}
+            dealId={deal.id}
+            onChanged={() => router.refresh()}
+          />
         </CardContent>
       </Card>
 
