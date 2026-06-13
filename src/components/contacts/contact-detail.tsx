@@ -15,15 +15,6 @@ import {
   Pencil,
   Check,
   X,
-  StickyNote,
-  PhoneCall,
-  PhoneIncoming,
-  Mail,
-  CalendarDays,
-  FileText,
-  CheckSquare,
-  Activity as ActivityIcon,
-  Send,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,6 +28,7 @@ import { CallIndicator } from "@/components/contacts/call-indicator";
 import { QuoteList } from "@/components/quotes/quote-list";
 import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
 import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
+import { ActivityLog } from "@/components/activities/activity-log";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -107,27 +99,6 @@ const RENTAL_LABEL: Record<string, string> = {
   BOTH: "Ambos",
   NA: "No aplica",
 };
-const ACTIVITY_TYPE_LABEL: Record<string, string> = {
-  CALL_OUTBOUND: "Llamada saliente",
-  CALL_INBOUND: "Llamada entrante",
-  WHATSAPP_OUT: "WhatsApp enviado",
-  WHATSAPP_IN: "WhatsApp recibido",
-  SMS_OUT: "SMS enviado",
-  SMS_IN: "SMS recibido",
-  EMAIL_SENT: "Email enviado",
-  EMAIL_RECEIVED: "Email recibido",
-  MEETING_VIRTUAL: "Reunión virtual",
-  MEETING_PRESENTIAL: "Reunión presencial",
-  MEETING_SHOWROOM: "Visita a showroom",
-  DISCOVERY_CALL: "Llamada de descubrimiento",
-  PROPOSAL_DELIVERY: "Entrega de propuesta",
-  FOLLOW_UP: "Seguimiento",
-  WALK_IN: "Walk-in",
-  NOTE: "Nota",
-  TASK: "Tarea",
-  CONTRACT_REVIEW: "Revisión de contrato",
-  CLOSING_ACTIVITY: "Actividad de cierre",
-};
 const DEAL_STAGE_LABEL: Record<string, string> = {
   NEW_LEAD: "Nuevo lead",
   CONTACTED: "Contactado",
@@ -143,17 +114,6 @@ const DEAL_STAGE_LABEL: Record<string, string> = {
   LOST: "Perdido",
   FROZEN: "Congelado",
 };
-
-function activityIcon(type: string) {
-  if (type === "NOTE") return StickyNote;
-  if (type.startsWith("CALL")) return type === "CALL_INBOUND" ? PhoneIncoming : PhoneCall;
-  if (type.startsWith("WHATSAPP") || type.startsWith("SMS")) return MessageCircle;
-  if (type.startsWith("EMAIL")) return Mail;
-  if (type.startsWith("MEETING")) return CalendarDays;
-  if (type === "TASK") return CheckSquare;
-  if (type.includes("CONTRACT") || type.includes("PROPOSAL")) return FileText;
-  return ActivityIcon;
-}
 
 type FieldAccess = "HIDDEN" | "READ" | "EDIT";
 
@@ -173,8 +133,6 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
   const [selectedDealId, setSelectedDealId] = useState<string | null>(
     contact.deals?.length > 0 ? contact.deals[0].id : null
   );
-  const [note, setNote] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [showConv, setShowConv] = useState(false);
 
@@ -282,28 +240,6 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
         onSave={(v) => save({ [key]: opts.nullable ? v || null : v })}
       />
     );
-  }
-
-  async function addNote() {
-    const text = note.trim();
-    if (!text) return;
-    setSavingNote(true);
-    const res = await fetch("/api/activities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contactId: contact.id,
-        activityType: "NOTE",
-        subject: text.length > 60 ? text.slice(0, 57) + "…" : text,
-        description: text,
-        status: "COMPLETADA",
-      }),
-    });
-    setSavingNote(false);
-    if (res.ok) {
-      setNote("");
-      router.refresh();
-    }
   }
 
   const openWhatsApp = () => {
@@ -476,77 +412,12 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
         </div>
 
         {/* Columna derecha — timeline unificada + notas */}
-        <div className="lg:col-span-7">
-          <Section title="Seguimiento">
-            {/* Compositor de notas */}
-            <div className="mb-4">
-              <textarea
-                className="form-input min-h-[64px] resize-y text-[13px]"
-                placeholder="Escribe una nota rápida sobre este contacto…"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") addNote();
-                }}
-              />
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-[11px] text-[color:var(--text-tertiary)]">⌘/Ctrl + Enter para guardar</span>
-                <button className="btn-primary text-[13px]" onClick={addNote} disabled={savingNote || !note.trim()}>
-                  <Send className="h-3.5 w-3.5" /> {savingNote ? "Guardando…" : "Agregar nota"}
-                </button>
-              </div>
-            </div>
-
-            {/* Timeline */}
-            {activities.length > 0 ? (
-              <ol className="relative space-y-4 border-l pl-5" style={{ borderColor: "var(--border-subtle)" }}>
-                {activities.map((a: any) => {
-                  const Icon = activityIcon(a.activityType);
-                  const isNote = a.activityType === "NOTE";
-                  return (
-                    <li key={a.id} className="relative">
-                      <span
-                        className="absolute -left-[27px] flex h-5 w-5 items-center justify-center rounded-full"
-                        style={{ background: isNote ? "var(--color-teal, #0D9488)" : "var(--bg-card)", border: "1px solid var(--border-default)" }}
-                      >
-                        <Icon className="h-3 w-3" style={{ color: isNote ? "var(--text-inverse, #fff)" : "var(--text-tertiary)" }} />
-                      </span>
-                      <div
-                        className="rounded-md border p-3"
-                        style={{
-                          borderColor: "var(--border-subtle)",
-                          background: isNote ? "var(--bg-hover)" : "transparent",
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[13px] font-medium text-[color:var(--text-primary)]">
-                            {a.subject}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-[color:var(--text-tertiary)]">
-                            {ACTIVITY_TYPE_LABEL[a.activityType] ?? a.activityType}
-                          </span>
-                        </div>
-                        {a.description && a.description !== a.subject && (
-                          <p className="mt-1 whitespace-pre-wrap text-[13px] text-[color:var(--text-secondary)]">{a.description}</p>
-                        )}
-                        <div className="mt-1.5 flex items-center gap-3 text-[11px] text-[color:var(--text-tertiary)]">
-                          <span>{a.user?.name ?? "Sistema"}</span>
-                          <span>{formatDate(a.createdAt)}</span>
-                          {a.status === "PENDIENTE" && a.dueDate && (
-                            <span style={{ color: "var(--color-error, #DC2626)" }}>Vence {formatShort(a.dueDate)}</span>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            ) : (
-              <p className="py-8 text-center text-[13px] text-[color:var(--text-tertiary)]">
-                Sin actividades aún. Agrega una nota o registra una llamada/visita para empezar el seguimiento.
-              </p>
-            )}
-          </Section>
+        <div className="crm-card lg:col-span-7">
+          <ActivityLog
+            contactId={contact.id}
+            contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+            onChanged={() => router.refresh()}
+          />
         </div>
       </div>
 
