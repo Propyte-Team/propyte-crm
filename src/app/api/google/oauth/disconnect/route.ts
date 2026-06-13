@@ -24,7 +24,7 @@ export async function DELETE() {
     }
     return NextResponse.json({ data: { ok: true } })
   } catch (e) {
-    console.error("Google disconnect error:", e)
+    console.error("Google disconnect error:", e instanceof Error ? e.message : String(e))
     return NextResponse.json({ error: "Error al desconectar" }, { status: 500 })
   }
 }

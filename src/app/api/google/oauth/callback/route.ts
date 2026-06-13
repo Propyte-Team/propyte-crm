@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     })
     return settingsRedirect(req, "connected")
   } catch (e) {
-    console.error("Google OAuth callback error:", e)
+    console.error("Google OAuth callback error:", e instanceof Error ? e.message : String(e))
     return settingsRedirect(req, "error")
   }
 }
