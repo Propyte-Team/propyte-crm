@@ -11,6 +11,7 @@ const TABS = [
   { key: "correo", label: "Correo" },
   { key: "tarjeta", label: "Tarjeta" },
   { key: "plantillas", label: "Plantillas" },
+  { key: "google", label: "Google Workspace" },
 ] as const;
 
 interface ProfileData {
@@ -62,6 +63,22 @@ export function SettingsView() {
     if (t.ok) setTemplates((await t.json()).data ?? []);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const [gw, setGw] = useState<{ connected: boolean; googleEmail?: string; isValid?: boolean } | null>(null)
+
+  const loadGw = useCallback(async () => {
+    try {
+      const res = await fetch("/api/google/oauth/status")
+      if (res.ok) setGw((await res.json()).data)
+    } catch { /* degradación suave */ }
+  }, [])
+
+  useEffect(() => { loadGw() }, [loadGw])
+
+  async function disconnectGoogle() {
+    await fetch("/api/google/oauth/disconnect", { method: "DELETE" })
+    await loadGw()
+  }
 
   function set<K extends keyof ProfileData>(key: K, value: ProfileData[K]) {
     setProfile((prev) => ({ ...prev, [key]: value }));
@@ -224,6 +241,39 @@ export function SettingsView() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`/t/${profile.cardSlug}/qr`} alt="QR" className="h-36 w-36 rounded-lg border" style={{ borderColor: "var(--border-default)" }} />
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Google Workspace ── */}
+      {tab === "google" && (
+        <div className="crm-card max-w-2xl space-y-4">
+          <div>
+            <h3 className="text-[15px] font-medium text-[color:var(--text-primary)]">Google Workspace</h3>
+            <p className="mt-1 text-[13px] text-[color:var(--text-secondary)]">
+              Conecta tu cuenta de Gmail para enviar correos desde el CRM y registrar automáticamente tus conversaciones en el timeline de cada contacto.
+            </p>
+          </div>
+
+          {gw?.connected ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-md border p-3" style={{ borderColor: "var(--border-subtle)" }}>
+                <div>
+                  <p className="text-[13px] font-medium text-[color:var(--text-primary)]">
+                    {gw.isValid === false ? "Reconexión requerida" : "Conectado"}
+                  </p>
+                  <p className="text-[12px] text-[color:var(--text-tertiary)]">{gw.googleEmail}</p>
+                </div>
+                {gw.isValid === false && (
+                  <a className="btn-secondary text-[13px]" href="/api/google/oauth/connect">Reconectar</a>
+                )}
+              </div>
+              <button className="btn-secondary text-[13px]" onClick={disconnectGoogle}>Desconectar</button>
+            </div>
+          ) : (
+            <a className="btn-primary inline-flex text-[13px]" href="/api/google/oauth/connect">
+              Conectar cuenta Gmail
+            </a>
           )}
         </div>
       )}
