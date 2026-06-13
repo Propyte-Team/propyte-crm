@@ -7,6 +7,7 @@ import prisma from "@/lib/db"
 import { getServerSession } from "@/lib/auth/session"
 import { ActivityType, ActivityStatus, Prisma } from "@prisma/client"
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher"
+import { canModifyActivity } from "@/lib/activities/permissions"
 
 // Roles con acceso total
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"]
@@ -254,10 +255,8 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
   })
   if (!existing) throw new Error("Actividad no encontrada")
 
-  // RBAC: solo el dueño, su líder o roles superiores pueden editar
-  const userRole = session.user.role
-  const currentUserId = session.user.id
-  if (OWN_ACCESS_ROLES.includes(userRole) && existing.userId !== currentUserId) {
+  // RBAC vía predicado compartido (DRY con deleteActivity)
+  if (!canModifyActivity(session.user.role, existing.userId === session.user.id)) {
     throw new Error("No tienes permiso para editar esta actividad")
   }
 
@@ -536,4 +535,29 @@ export async function getActivityAgreementProgress(
   )
 
   return { metrics, overallPercentage }
+}
+
+// ============================================================
+// deleteActivity — soft-delete (deletedAt) con RBAC
+// ============================================================
+
+export async function deleteActivity(id: string) {
+  const session = await getServerSession()
+  if (!session?.user) throw new Error("No autorizado")
+
+  const existing = await prisma.activity.findUnique({
+    where: { id, deletedAt: null },
+  })
+  if (!existing) throw new Error("Actividad no encontrada")
+
+  if (!canModifyActivity(session.user.role, existing.userId === session.user.id)) {
+    throw new Error("No tienes permiso para eliminar esta actividad")
+  }
+
+  await prisma.activity.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  })
+
+  return { ok: true }
 }
