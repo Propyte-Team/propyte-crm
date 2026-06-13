@@ -238,10 +238,10 @@ export async function createActivity(data: CreateActivityInput) {
 
 export interface UpdateActivityInput {
   subject?: string
-  description?: string
+  description?: string | null
   dueDate?: Date | null
   status?: ActivityStatus
-  outcome?: string
+  outcome?: string | null
   duration_minutes?: number
 }
 

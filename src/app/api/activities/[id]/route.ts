@@ -42,8 +42,8 @@ export async function PATCH(
     const { description, outcome, dueDate, duration_minutes, ...rest } = validation.data;
     const activity = await updateActivity(params.id, {
       ...rest,
-      description: description ?? undefined,
-      outcome: outcome ?? undefined,
+      description: description,
+      outcome: outcome,
       dueDate: dueDate,
       duration_minutes: duration_minutes ?? undefined,
     });
