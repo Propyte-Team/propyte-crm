@@ -61,6 +61,7 @@ export function ActivityLog({ contactId, contactName, dealId, onChanged }: Activ
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<ActivityForEdit | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const scopeQuery = dealId ? `dealId=${dealId}` : `contactId=${contactId}`
 
@@ -102,26 +103,45 @@ export function ActivityLog({ contactId, contactName, dealId, onChanged }: Activ
       body: JSON.stringify(body),
     })
     setSavingNote(false)
-    if (res.ok) { setNote(""); afterMutation() }
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      setActionError((json as { error?: string }).error ?? "No se pudo agregar la nota")
+    } else {
+      setActionError(null)
+      setNote("")
+      afterMutation()
+    }
   }
 
   async function completeTask(id: string) {
     setBusyId(id)
-    await fetch(`/api/activities/${id}`, {
+    const res = await fetch(`/api/activities/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "COMPLETADA" }),
     })
     setBusyId(null)
-    afterMutation()
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      setActionError((json as { error?: string }).error ?? "No se pudo completar la actividad")
+    } else {
+      setActionError(null)
+      afterMutation()
+    }
   }
 
   async function remove(id: string) {
     if (!window.confirm("¿Eliminar esta actividad? No se puede deshacer.")) return
     setBusyId(id)
-    await fetch(`/api/activities/${id}`, { method: "DELETE" })
+    const res = await fetch(`/api/activities/${id}`, { method: "DELETE" })
     setBusyId(null)
-    afterMutation()
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      setActionError((json as { error?: string }).error ?? "No se pudo eliminar la actividad")
+    } else {
+      setActionError(null)
+      afterMutation()
+    }
   }
 
   function openCreate() { setEditing(null); setShowForm(true) }
@@ -145,6 +165,11 @@ export function ActivityLog({ contactId, contactName, dealId, onChanged }: Activ
           <Plus className="h-3.5 w-3.5" /> Registrar actividad
         </button>
       </div>
+
+      {/* Error de acción */}
+      {actionError && (
+        <p className="mb-2 text-[12px]" style={{ color: "var(--color-error, #DC2626)" }}>{actionError}</p>
+      )}
 
       {/* Compositor de nota rápida */}
       <div className="mb-4">
