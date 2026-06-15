@@ -1,6 +1,7 @@
 // ============================================================
 // EmailComposerDrawer — slide-over para redactar y enviar un correo
-// desde la cuenta Gmail del asesor. Prellena destinatario + firma.
+// desde la cuenta Gmail del asesor. Remitente (send-as verificado),
+// plantillas (con variables), firma y destinatario prellenados.
 // ============================================================
 "use client"
 
@@ -12,15 +13,45 @@ interface EmailComposerDrawerProps {
   contactId: string
   contactName: string
   contactEmail: string
+  contactFirstName?: string
+  contactLastName?: string
   dealId?: string
   onClose: () => void
   onSent: () => void
+}
+
+interface SendAsAddress {
+  email: string
+  name: string
+  isPrimary: boolean
+  isDefault: boolean
+}
+
+interface EmailTemplate {
+  id: string
+  name: string
+  subject?: string | null
+  body: string
+  channel: string
+}
+
+/** Resuelve {{contact.*}} y descarta líneas con variables sin resolver (espejo client de renderEmailTemplate). */
+function renderVars(text: string, firstName?: string, lastName?: string): string {
+  const out = text
+    .replaceAll("{{contact.firstName}}", firstName ?? "")
+    .replaceAll("{{contact.lastName}}", lastName ?? "")
+  return out
+    .split("\n")
+    .filter((line) => !/\{\{[^}]+\}\}/.test(line))
+    .join("\n")
 }
 
 export function EmailComposerDrawer({
   contactId,
   contactName,
   contactEmail,
+  contactFirstName,
+  contactLastName,
   dealId,
   onClose,
   onSent,
@@ -28,23 +59,54 @@ export function EmailComposerDrawer({
   const [to, setTo] = useState(contactEmail)
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
+  const [signature, setSignature] = useState("")
+  const [sendAs, setSendAs] = useState<SendAsAddress[]>([])
+  const [from, setFrom] = useState<string>("")
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [templateId, setTemplateId] = useState<string>("")
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Anexa la firma del asesor (si tiene) al abrir.
+  // Carga inicial: firma + alias preferido (perfil), remitentes verificados, plantillas EMAIL.
   useEffect(() => {
     let alive = true
-    fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        const sig = json?.data?.emailSignatureHtml as string | undefined
-        if (alive && sig) setBody(`<p></p><p></p>${sig}`)
-      })
-      .catch(() => {})
+    Promise.all([
+      fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/google/gmail/send-as").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/profile/templates").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([profile, sendAsRes, tplRes]) => {
+      if (!alive) return
+      const sig = profile?.data?.emailSignatureHtml as string | undefined
+      if (sig) {
+        setSignature(sig)
+        setBody(`<p></p><p></p>${sig}`)
+      }
+      const preferredAlias = (profile?.data?.emailFromAlias as string | undefined)?.toLowerCase()
+      const addresses = (sendAsRes?.data ?? []) as SendAsAddress[]
+      setSendAs(addresses)
+      // Default: alias preferido si está verificado, si no el isDefault, si no el primary, si no el primero.
+      const pick =
+        addresses.find((a) => a.email === preferredAlias) ??
+        addresses.find((a) => a.isDefault) ??
+        addresses.find((a) => a.isPrimary) ??
+        addresses[0]
+      if (pick) setFrom(pick.email)
+      const tpls = ((tplRes?.data ?? []) as EmailTemplate[]).filter((t) => t.channel === "EMAIL")
+      setTemplates(tpls)
+    })
     return () => {
       alive = false
     }
   }, [])
+
+  function applyTemplate(id: string) {
+    setTemplateId(id)
+    const tpl = templates.find((t) => t.id === id)
+    if (!tpl) return
+    setSubject(renderVars(tpl.subject ?? "", contactFirstName, contactLastName))
+    const rendered = renderVars(tpl.body, contactFirstName, contactLastName)
+    setBody(signature ? `${rendered}<p></p>${signature}` : rendered)
+  }
 
   async function send() {
     setError(null)
@@ -56,7 +118,14 @@ export function EmailComposerDrawer({
     const res = await fetch("/api/google/gmail/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactId, to: to.trim(), subject: subject.trim(), body, dealId }),
+      body: JSON.stringify({
+        contactId,
+        to: to.trim(),
+        subject: subject.trim(),
+        body,
+        from: from || undefined,
+        dealId,
+      }),
     })
     setSending(false)
     if (!res.ok) {
@@ -67,6 +136,9 @@ export function EmailComposerDrawer({
     onSent()
     onClose()
   }
+
+  const labelCls =
+    "mb-1 block text-[11px] font-medium uppercase tracking-wide text-[color:var(--text-tertiary)]"
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
@@ -89,16 +161,45 @@ export function EmailComposerDrawer({
         {/* Body */}
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           {error && <p className="text-[12px]" style={{ color: "var(--color-error, #DC2626)" }}>{error}</p>}
+
+          {/* Desde — solo si hay más de un remitente verificado */}
+          {sendAs.length > 1 && (
+            <div>
+              <label className={labelCls}>Desde</label>
+              <select className="form-input text-[13px]" value={from} onChange={(e) => setFrom(e.target.value)}>
+                {sendAs.map((a) => (
+                  <option key={a.email} value={a.email}>
+                    {a.name ? `${a.name} <${a.email}>` : a.email}
+                    {a.isPrimary ? " · principal" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Plantilla — solo si el asesor tiene plantillas EMAIL */}
+          {templates.length > 0 && (
+            <div>
+              <label className={labelCls}>Plantilla</label>
+              <select className="form-input text-[13px]" value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
+                <option value="">— Sin plantilla —</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[color:var(--text-tertiary)]">Para</label>
+            <label className={labelCls}>Para</label>
             <input className="form-input text-[13px]" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="correo@ejemplo.com" />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[color:var(--text-tertiary)]">Asunto</label>
+            <label className={labelCls}>Asunto</label>
             <input className="form-input text-[13px]" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Asunto del correo" />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[color:var(--text-tertiary)]">Mensaje</label>
+            <label className={labelCls}>Mensaje</label>
             <EmailRichText value={body} onChange={setBody} placeholder="Escribe tu mensaje…" />
           </div>
         </div>

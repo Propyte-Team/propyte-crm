@@ -95,13 +95,14 @@ export async function sendGmail(opts: {
   to: string
   subject: string
   html: string
+  from?: string // remitente elegido (ya validado contra send-as por la ruta); default = cuenta conectada
   threadId?: string
 }): Promise<{ messageId: string; threadId: string; from: string }> {
   const record = await prisma.googleOAuthToken.findUnique({
     where: { userId: opts.userId },
     select: { googleEmail: true },
   })
-  const from = record?.googleEmail ?? "me"
+  const from = opts.from?.trim() || record?.googleEmail || "me"
   const gmail: Gmail = await getGmailClient(opts.userId)
   const raw = buildRawEmail({ to: opts.to, from, subject: opts.subject, html: opts.html })
   const res = await gmail.users.messages.send({
@@ -109,6 +110,54 @@ export async function sendGmail(opts: {
     requestBody: { raw, threadId: opts.threadId },
   })
   return { messageId: res.data.id as string, threadId: res.data.threadId as string, from }
+}
+
+export interface SendAsAddress {
+  email: string
+  name: string
+  isPrimary: boolean
+  isDefault: boolean
+}
+
+/** Remitentes verificados de la cuenta ("Send mail as"). Degrada a [] si falta scope/no conectado. */
+export async function listSendAsAddresses(userId: string): Promise<SendAsAddress[]> {
+  try {
+    const gmail: Gmail = await getGmailClient(userId)
+    const res = await gmail.users.settings.sendAs.list({ userId: "me" })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const all = (res.data.sendAs ?? []) as any[]
+    return all
+      // Solo los que Google aceptará: primary o verificados.
+      .filter((s) => s.isPrimary || s.verificationStatus === "accepted")
+      .map((s) => ({
+        email: String(s.sendAsEmail ?? "").toLowerCase(),
+        name: String(s.displayName ?? ""),
+        isPrimary: Boolean(s.isPrimary),
+        isDefault: Boolean(s.isDefault),
+      }))
+      .filter((s) => s.email)
+  } catch (e) {
+    console.warn("[gmail] sendAs.list no disponible (scope/no conectado):", e instanceof Error ? e.message : e)
+    return []
+  }
+}
+
+/** Resuelve variables {{contact.*}} de una plantilla y descarta líneas con variables sin resolver (J.2). */
+export function renderEmailTemplate(
+  text: string,
+  contact: { firstName?: string | null; lastName?: string | null },
+): string {
+  const vars: Record<string, string> = {
+    "contact.firstName": contact.firstName ?? "",
+    "contact.lastName": contact.lastName ?? "",
+  }
+  let out = text
+  for (const [k, v] of Object.entries(vars)) out = out.replaceAll(`{{${k}}}`, v)
+  // Líneas con variables sin resolver → fuera (nunca enviar {{...}} crudo)
+  return out
+    .split("\n")
+    .filter((line) => !/\{\{[^}]+\}\}/.test(line))
+    .join("\n")
 }
 
 // ---------- log de actividad + upsert de hilo ----------

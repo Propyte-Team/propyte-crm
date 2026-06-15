@@ -402,6 +402,8 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
             contactId={deal.contactId}
             contactName={`${deal.contact?.firstName ?? ""} ${deal.contact?.lastName ?? ""}`.trim()}
             contactEmail={deal.contact?.email ?? undefined}
+            contactFirstName={deal.contact?.firstName ?? undefined}
+            contactLastName={deal.contact?.lastName ?? undefined}
             dealId={deal.id}
             onChanged={() => router.refresh()}
           />

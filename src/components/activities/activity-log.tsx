@@ -50,6 +50,8 @@ interface ActivityLogProps {
   contactId: string
   contactName: string
   contactEmail?: string
+  contactFirstName?: string
+  contactLastName?: string
   dealId?: string
   onChanged?: () => void
 }
@@ -58,7 +60,7 @@ function fmt(d: string): string {
   return format(new Date(d), "d MMM yyyy, HH:mm", { locale: es })
 }
 
-export function ActivityLog({ contactId, contactName, contactEmail, dealId, onChanged }: ActivityLogProps) {
+export function ActivityLog({ contactId, contactName, contactEmail, contactFirstName, contactLastName, dealId, onChanged }: ActivityLogProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState("")
@@ -200,6 +202,8 @@ export function ActivityLog({ contactId, contactName, contactEmail, dealId, onCh
           contactId={contactId}
           contactName={contactName}
           contactEmail={contactEmail}
+          contactFirstName={contactFirstName}
+          contactLastName={contactLastName}
           dealId={dealId}
           onClose={() => setShowComposer(false)}
           onSent={afterMutation}

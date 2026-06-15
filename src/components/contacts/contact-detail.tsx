@@ -417,6 +417,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
             contactId={contact.id}
             contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
             contactEmail={contact.email ?? undefined}
+            contactFirstName={contact.firstName ?? undefined}
+            contactLastName={contact.lastName ?? undefined}
             onChanged={() => router.refresh()}
           />
         </div>

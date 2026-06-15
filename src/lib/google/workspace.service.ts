@@ -6,10 +6,11 @@ import { google } from "googleapis"
 import prisma from "@/lib/db"
 import { encryptGoogleToken, decryptGoogleToken } from "@/lib/crypto-google"
 
-// Scopes mínimos (PG5): leer + enviar Gmail.
+// Scopes mínimos (PG5): leer + enviar Gmail + leer config "send-as" (remitentes verificados).
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
 
 export class GWNotConnectedError extends Error {

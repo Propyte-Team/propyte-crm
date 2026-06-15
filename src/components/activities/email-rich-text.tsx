@@ -4,6 +4,7 @@
 // ============================================================
 "use client"
 
+import { useEffect } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Link from "@tiptap/extension-link"
@@ -31,6 +32,14 @@ export function EmailRichText({ value, onChange, placeholder }: EmailRichTextPro
       },
     },
   })
+
+  // Sincroniza cuando el valor cambia desde fuera (ej. al insertar una plantilla),
+  // sin pisar lo que el usuario escribe (value === getHTML cuando él teclea).
+  useEffect(() => {
+    if (editor && value !== editor.getHTML()) {
+      editor.commands.setContent(value, { emitUpdate: false })
+    }
+  }, [value, editor])
 
   if (!editor) return null
 

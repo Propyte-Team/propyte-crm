@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import prisma from "@/lib/db"
 import { getServerSession } from "@/lib/auth/session"
-import { sendGmail, logOutboundSend } from "@/lib/google/gmail"
+import { sendGmail, logOutboundSend, listSendAsAddresses } from "@/lib/google/gmail"
 import { GWNotConnectedError } from "@/lib/google/workspace.service"
 
 export const dynamic = "force-dynamic"
@@ -14,6 +14,7 @@ const schema = z.object({
   to: z.string().email(),
   subject: z.string().min(1).max(998),
   body: z.string().min(1), // HTML permitido (rich text)
+  from: z.string().email().optional(), // remitente elegido; se valida contra send-as verificados
   dealId: z.string().uuid().optional(),
   threadId: z.string().optional(), // para responder dentro de un hilo
 })
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Datos inválidos", details: parsed.error.flatten() }, { status: 400 })
   }
-  const { contactId, to, subject, body, dealId, threadId } = parsed.data
+  const { contactId, to, subject, body, from, dealId, threadId } = parsed.data
 
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
@@ -46,8 +47,15 @@ export async function POST(req: NextRequest) {
   if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 })
   if (contact.doNotContact) return NextResponse.json({ error: "El contacto está marcado como No contactar" }, { status: 422 })
 
+  // Remitente: solo se honra si está entre los send-as verificados; si no, sendGmail usa el primary.
+  let validFrom: string | undefined
+  if (from) {
+    const sendAs = await listSendAsAddresses(session.user.id)
+    if (sendAs.some((s) => s.email === from.toLowerCase())) validFrom = from
+  }
+
   try {
-    const sent = await sendGmail({ userId: session.user.id, to, subject, html: body, threadId })
+    const sent = await sendGmail({ userId: session.user.id, to, subject, html: body, from: validFrom, threadId })
     await logOutboundSend({
       userId: session.user.id,
       contactId,

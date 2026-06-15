@@ -1,7 +1,7 @@
 // src/lib/google/gmail.test.ts
 // Tests de las funciones puras de Gmail (MIME, parseo de headers, cuerpo).
 import { describe, it, expect } from "vitest"
-import { encodeHeaderWord, extractEmail, extractEmails, buildRawEmail, extractBody } from "./gmail"
+import { encodeHeaderWord, extractEmail, extractEmails, buildRawEmail, extractBody, renderEmailTemplate } from "./gmail"
 
 describe("encodeHeaderWord (RFC 2047)", () => {
   it("deja ASCII intacto", () => {
@@ -49,6 +49,25 @@ describe("buildRawEmail", () => {
     const raw = buildRawEmail({ to: "c@d.com", from: "m@e.com", subject: "Día de cierre", html: "x" })
     const decoded = Buffer.from(raw, "base64url").toString("utf8")
     expect(decoded).toMatch(/Subject: =\?UTF-8\?B\?/)
+  })
+})
+
+describe("renderEmailTemplate", () => {
+  it("resuelve {{contact.firstName}} y {{contact.lastName}}", () => {
+    const out = renderEmailTemplate("Hola {{contact.firstName}} {{contact.lastName}}, saludos", {
+      firstName: "Luis",
+      lastName: "Flores",
+    })
+    expect(out).toBe("Hola Luis Flores, saludos")
+  })
+  it("descarta líneas con variables sin resolver", () => {
+    const out = renderEmailTemplate("Hola {{contact.firstName}}\nTu asesor {{advisor.name}} te saluda\nGracias", {
+      firstName: "Ana",
+    })
+    expect(out).toBe("Hola Ana\nGracias")
+  })
+  it("lastName ausente → cadena vacía, sin romper", () => {
+    expect(renderEmailTemplate("{{contact.firstName}} {{contact.lastName}}", { firstName: "Sol" })).toBe("Sol ")
   })
 })
 
