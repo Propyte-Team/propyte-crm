@@ -9,13 +9,19 @@ import prisma from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
+// Detrás del proxy de Hostinger, req.url resuelve al host interno (0.0.0.0:3000).
+// Usar el dominio público configurado para los redirects.
+function appBase(req: NextRequest): string {
+  return process.env.NEXTAUTH_URL || new URL(req.url).origin
+}
+
 function settingsRedirect(req: NextRequest, status: string) {
-  return NextResponse.redirect(new URL(`/settings?google=${status}`, req.url))
+  return NextResponse.redirect(new URL(`/settings?google=${status}`, appBase(req)))
 }
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession()
-  if (!session?.user) return NextResponse.redirect(new URL("/login", req.url))
+  if (!session?.user) return NextResponse.redirect(new URL("/login", appBase(req)))
 
   const url = new URL(req.url)
   const code = url.searchParams.get("code")
