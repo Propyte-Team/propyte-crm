@@ -1,6 +1,26 @@
-# Task Manager — propyte-crm (Zoho sync + migración a Hub)
+# Task Manager — propyte-crm (núcleo CRM + Google Workspace)
 
-> Última actualización: 2026-06-12 (Speckit MAESTRO: Fase 0 estabilización + bugs de producción del audit IA).
+> Última actualización: 2026-06-15 (Activación Gmail GW-0 + fixes de acceso/correo).
+>
+> ## 🔭 Pendientes activos (top)
+> - [ ] **GW-1 Gmail** — enviar desde el CRM + auto-log entrantes/salientes + hilos, todo en `ActivityLog`. Pieza grande restante de Entregable B. (yo: código+migración por MCP; Luis: tópico Pub/Sub en GCP, o arrancamos con cron de respaldo)
+> - [ ] **Luis: verificar SMTP** (forgot-password) y **cambiar la contraseña temporal** `PropyteTmp2026!` de marketing@nativatulum.mx.
+> - [ ] **Luis: SMTP_USER/SMTP_PASS** (Gmail/Workspace: smtp.gmail.com:465 + App Password de cuenta Workspace) en Hostinger.
+> - [ ] Verificar `ActivityLog` en **detalle de deal** a runtime cuando exista un deal real (no verificado: pipeline en 0 deals).
+> - [ ] (Futuro, aparte) GW-2 Calendar · GW-3 Google Contacts.
+> - [ ] (Pre-existente) Aplicar SQL `unit_inventory.hold_deal_id` (Hub inventory hold) — sale en logs como ERROR.
+>
+> **🎯 Sesión 2026-06-15 (Activación Gmail GW-0 + fixes de soporte)** —
+> - ✅ **GW-0 Gmail OAuth ACTIVADO en prod**: migración `google_oauth_tokens` aplicada por MCP (FK→`users`, no `"User"`); cliente OAuth **Web** creado en GCP proyecto PROPYTE (antes solo Desktop google-ads-mcp); 4 env vars en Hostinger; **token de marketing@nativatulum.mx guardado → "Conectado"**.
+> - ✅ **Fix redirect callback** (commit `596720a`): usaba `req.url` → `0.0.0.0:3000` tras proxy Hostinger; ahora usa `NEXTAUTH_URL`. Ver [[feedback_proxy_redirect_req_url]].
+> - ✅ **Email transaccional Resend→Nodemailer/SMTP** (commit `33d6f75`). **SMTP = Gmail/Workspace** (smtp.gmail.com:465 + App Password), no Hostinger.
+> - 🔍 **Causa raíz de login 401 + /api/activities 500 + /configuracion crash**: caída/recovery transitorio de la BD Supabase (logs "database system is not accepting connections"). Ya recuperada. Sesiones JWT seguían vivas → confundía el diagnóstico.
+> - ⚠️ **Contraseña temporal** `PropyteTmp2026!` (reset directo en BD; pgcrypto NO casa con bcryptjs.compare → hash con bcryptjs del repo). Ver [[feedback_pgcrypto_bcryptjs_mismatch]].
+>
+> **🎯 Sesión 2026-06-13 (Entregable A Actividades + Entregable B GW-0)** —
+> - ✅ **Actividades en contacto y deal** (merge a main `1e366a4`): nuevo componente B/N `ActivityLog` (compositor + timeline interactivo: registrar/completar/editar/borrar, 17 tipos), API `PATCH/DELETE /api/activities/[id]`, server `deleteActivity`, predicado RBAC `canModifyActivity`+test. Montado en `contact-detail` y `deal-detail`. Sin migración (modelo ya existía). Smoke contacto PASS.
+> - ✅ **GW-0 OAuth infra** (merge a main `c15a397`): `crypto-google`, modelo `GoogleOAuthToken`, `GoogleWorkspaceService`, rutas `/api/google/oauth/{connect,callback,status,disconnect}`, tab Google Workspace en `/settings`. Specs: `docs/superpowers/specs/2026-06-13-gmail-integration-design.md` + plan `docs/superpowers/plans/2026-06-13-gw0-oauth.md`.
+> - Componentes coloridos viejos `activity-form`/`activity-timeline` quedaron intactos (orphaned; candidatos a borrar).
 >
 > **🎯 Sesión 2026-06-12 h (Fase 7 Agent Studio)** —
 > Agent Studio (`src/components/config/agent-studio.tsx`): crear/editar agentes IA — goal/prompt,
