@@ -2,7 +2,7 @@
 -- GW-0: tokens OAuth de Google por asesor. Aplicar en Supabase (schema propyte_crm).
 CREATE TABLE IF NOT EXISTS propyte_crm.google_oauth_tokens (
   id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  "userId"         TEXT NOT NULL UNIQUE REFERENCES propyte_crm."User"(id) ON DELETE CASCADE,
+  "userId"         TEXT NOT NULL UNIQUE REFERENCES propyte_crm.users(id) ON DELETE CASCADE,
   "accessToken"    TEXT NOT NULL,
   "refreshToken"   TEXT NOT NULL,
   "tokenExpiry"    TIMESTAMP(3) NOT NULL,
