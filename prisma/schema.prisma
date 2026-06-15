@@ -456,6 +456,8 @@ enum WorkflowActionType {
   AI_REPLY
   AI_CALL_SUMMARY
   WEBHOOK
+  GW_GMAIL_LOG_INBOUND
+  GW_GMAIL_LOG_OUTBOUND
 
   @@schema("propyte_crm")
 }
@@ -874,11 +876,41 @@ model Activity {
   outcome          String?
   duration_minutes Int?
 
+  // Trazabilidad Google Workspace (GW-1 Gmail / GW-2 Calendar). FKs lógicas a Gmail/Calendar — no Prisma relations.
+  gmailThreadId    String?
+  gmailMessageId   String?        @unique  // dedup de mensajes Gmail (un Activity por messageId)
+  googleEventId    String?        @unique  // reservado GW-2 Calendar
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([gmailThreadId])
   @@map("activities")
+  @@schema("propyte_crm")
+}
+
+// Hilo de Gmail ligero (GW-1): headers + snippet en DB; cuerpo on-demand vía Gmail API (speckit §2.6).
+// contactId/dealId/userId son FKs lógicas (constraints en el SQL manual) — sin Prisma relations para
+// no expandir Contact/Deal/User. Se consulta por (userId, threadId) y por contactId.
+model GmailThread {
+  id            String   @id @default(uuid())
+  contactId     String
+  dealId        String?
+  userId        String
+  threadId      String   // Gmail threadId del asesor dueño del token
+  messageCount  Int      @default(1)
+  subject       String?
+  lastMessageAt DateTime
+  direction     String   // INBOUND | OUTBOUND | MIXED
+  snippet       String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, threadId])
+  @@index([contactId])
+  @@map("gmail_threads")
   @@schema("propyte_crm")
 }
 

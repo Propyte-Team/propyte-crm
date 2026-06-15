@@ -12,10 +12,13 @@ import {
   Send, Plus, Check, Pencil, Trash2,
   Phone, MessageSquare, Mail, Users, ClipboardCheck,
   FileText, Bell, StickyNote, CheckSquare, MapPin, FileSignature, Trophy,
+  ChevronDown, ChevronRight,
   type LucideIcon,
 } from "lucide-react"
 import { ACTIVITY_TYPE_LABELS } from "@/lib/constants"
 import { ActivityLogForm, type ActivityForEdit } from "./activity-log-form"
+import { EmailComposerDrawer } from "./email-composer-drawer"
+import { EmailThread } from "./email-thread"
 
 const TYPE_ICON: Record<string, LucideIcon> = {
   CALL_OUTBOUND: Phone, CALL_INBOUND: Phone,
@@ -39,12 +42,14 @@ interface Activity {
   status: string
   outcome?: string | null
   duration_minutes?: number | null
+  gmailThreadId?: string | null
   user?: { name: string } | null
 }
 
 interface ActivityLogProps {
   contactId: string
   contactName: string
+  contactEmail?: string
   dealId?: string
   onChanged?: () => void
 }
@@ -53,7 +58,7 @@ function fmt(d: string): string {
   return format(new Date(d), "d MMM yyyy, HH:mm", { locale: es })
 }
 
-export function ActivityLog({ contactId, contactName, dealId, onChanged }: ActivityLogProps) {
+export function ActivityLog({ contactId, contactName, contactEmail, dealId, onChanged }: ActivityLogProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState("")
@@ -62,6 +67,22 @@ export function ActivityLog({ contactId, contactName, dealId, onChanged }: Activ
   const [editing, setEditing] = useState<ActivityForEdit | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [gmailConnected, setGmailConnected] = useState(false)
+  const [showComposer, setShowComposer] = useState(false)
+  const [openThread, setOpenThread] = useState<string | null>(null)
+
+  // ¿El asesor tiene Gmail conectado? (degradación suave: si no, no mostramos "Enviar email")
+  useEffect(() => {
+    let alive = true
+    fetch("/api/google/oauth/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        const s = json?.data
+        if (alive && s?.connected && s?.isValid !== false) setGmailConnected(true)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
 
   const scopeQuery = dealId ? `dealId=${dealId}` : `contactId=${contactId}`
 
@@ -161,10 +182,29 @@ export function ActivityLog({ contactId, contactName, dealId, onChanged }: Activ
         <span className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-tertiary)]">
           Seguimiento
         </span>
-        <button className="btn-secondary text-[13px]" onClick={openCreate}>
-          <Plus className="h-3.5 w-3.5" /> Registrar actividad
-        </button>
+        <div className="flex items-center gap-2">
+          {gmailConnected && contactEmail && (
+            <button className="btn-secondary text-[13px]" onClick={() => setShowComposer(true)}>
+              <Mail className="h-3.5 w-3.5" /> Enviar email
+            </button>
+          )}
+          <button className="btn-secondary text-[13px]" onClick={openCreate}>
+            <Plus className="h-3.5 w-3.5" /> Registrar actividad
+          </button>
+        </div>
       </div>
+
+      {/* Drawer de envío de email */}
+      {showComposer && contactEmail && (
+        <EmailComposerDrawer
+          contactId={contactId}
+          contactName={contactName}
+          contactEmail={contactEmail}
+          dealId={dealId}
+          onClose={() => setShowComposer(false)}
+          onSent={afterMutation}
+        />
+      )}
 
       {/* Error de acción */}
       {actionError && (
@@ -270,6 +310,20 @@ export function ActivityLog({ contactId, contactName, dealId, onChanged }: Activ
                       <Trash2 className="h-3 w-3" /> Borrar
                     </button>
                   </div>
+
+                  {/* Expand de hilo Gmail (solo correos con threadId) */}
+                  {a.gmailThreadId && (a.activityType === "EMAIL_SENT" || a.activityType === "EMAIL_RECEIVED") && (
+                    <div className="mt-2">
+                      <button
+                        className="flex items-center gap-1 text-[11px] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
+                        onClick={() => setOpenThread(openThread === a.gmailThreadId ? null : a.gmailThreadId!)}
+                      >
+                        {openThread === a.gmailThreadId ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        {openThread === a.gmailThreadId ? "Ocultar hilo" : "Ver hilo completo"}
+                      </button>
+                      {openThread === a.gmailThreadId && <EmailThread threadId={a.gmailThreadId} />}
+                    </div>
+                  )}
                 </div>
               </li>
             )

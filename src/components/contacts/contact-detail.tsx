@@ -416,6 +416,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           <ActivityLog
             contactId={contact.id}
             contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+            contactEmail={contact.email ?? undefined}
             onChanged={() => router.refresh()}
           />
         </div>

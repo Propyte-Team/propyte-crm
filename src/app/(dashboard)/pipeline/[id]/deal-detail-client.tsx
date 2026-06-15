@@ -401,6 +401,7 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
           <ActivityLog
             contactId={deal.contactId}
             contactName={`${deal.contact?.firstName ?? ""} ${deal.contact?.lastName ?? ""}`.trim()}
+            contactEmail={deal.contact?.email ?? undefined}
             dealId={deal.id}
             onChanged={() => router.refresh()}
           />

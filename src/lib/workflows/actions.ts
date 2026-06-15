@@ -210,6 +210,25 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
     case "MAKE_CALL":
       return { skipped: true, note: "Dialer disponible en fase posterior (voz)" };
 
+    case "GW_GMAIL_LOG_INBOUND": {
+      // Disparado por webhook Pub/Sub o cron: corre el delta sync del buzón del asesor.
+      const userId = String(config.userId ?? "");
+      if (!userId) return { skipped: true, note: "Sin userId" };
+      const { processGmailHistory } = await import("@/lib/google/gmail");
+      const r = await processGmailHistory(userId);
+      return { note: `gmail inbound: ${r.logged} logueados, ${r.skipped} omitidos` };
+    }
+
+    case "GW_GMAIL_LOG_OUTBOUND": {
+      // Log diferido de un saliente por messageId (respaldo si el log inline del envío falló).
+      const userId = String(config.userId ?? "");
+      const messageId = String(config.messageId ?? "");
+      if (!userId || !messageId) return { skipped: true, note: "Faltan userId/messageId" };
+      const { logGmailMessageById } = await import("@/lib/google/gmail");
+      const ok = await logGmailMessageById(userId, messageId);
+      return ok ? {} : { skipped: true, note: "No logueado (sin match o duplicado)" };
+    }
+
     case "WEBHOOK": {
       const url = String(config.url ?? "");
       if (!url.startsWith("https://")) return { skipped: true, note: "URL inválida" };
