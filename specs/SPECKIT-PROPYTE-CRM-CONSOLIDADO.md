@@ -128,9 +128,10 @@ El schema Prisma ya cubre la mayoría. Faltan, tomados de la config Zoho real:
 
 ## 3. CONTRATOS DE INTEGRACIÓN
 
-### 3.1 CRM ↔ Hub (inventario — read-only)
+### 3.1 CRM ↔ Hub (inventario — lectura + captación write-through)
 - El CRM **lee** catálogo (developments, units, developers) vía **API read-only del Hub** (su T5.1) o lectura directa del esquema `real_estate_hub` (RLS). `Deal` guarda `hubUnitId` / `hubDevelopmentId`; **se eliminan los modelos `Development`/`Unit` locales** (su T5.2).
 - **Reserva/bloqueo de unidad:** el CRM **solicita** un hold vía API del Hub (`POST /api/inventory/units/:id/hold` con TTL p. ej. 72 h). El **Hub** ejecuta la transacción atómica (`SELECT … FOR UPDATE` + unicidad parcial de hold/venta activa) y responde OK/conflict. El Hub emite **webhook** al cambiar el estado de la unidad → el CRM actualiza el `Deal`. Anti-doble-venta garantizado en una sola capa.
+- **Captación write-through (NUEVO):** el asesor crea una propiedad **desde el CRM** y esta se **escribe en el Hub** (`POST /api/inventory/units` con `source=crm`, `createdBy`, estado `draft`). El Hub sigue siendo el **SOT único**; el CRM **no** crea tabla de inventario local (duplicarla está prohibido, §4.2/§8). Ver §5.13.
 - Expiración de holds: job en el Hub (pg_cron), no en el CRM.
 
 ### 3.2 CRM ↔ Web (intake de leads)
@@ -144,6 +145,53 @@ El schema Prisma ya cubre la mayoría. Faltan, tomados de la config Zoho real:
 ### 3.4 CRM ↔ Meta / Twilio
 - Meta se está **centralizando en el Hub** (su T3.x). El CRM **consume** los Meta leads desde el Hub, no integra Meta por su cuenta.
 - Twilio (WhatsApp/SMS/voz) es del CRM: alimenta `Message` + `Activity` y habilita el SLA de speed-to-lead.
+
+### 3.5 CRM ↔ datos Zoho (reportes comerciales — visualización fiable)
+> Auditado el 2026-06-15 contra Supabase (`oaijxdpevakashxshhvm`). Ver §9.13.
+
+**Estado real (verificado, no estimado):** el Hub corre un **cron pull cada ~30 min** (`Propyte_hub: api/cron/sync-zoho` → `lib/reports/connectors/zoho/*`) que vuelca el CRM comercial de Zoho v6 al esquema **`reports`** de la Supabase compartida. Cifras vivas y frescas (15-jun 23:00–23:03): `reports.zoho_contactos` **22,498**, `zoho_negocios` 221, `zoho_actividades` 21,106, `zoho_llamadas` 20,656, `zoho_reuniones` 990, `zoho_empresas` 671. Las páginas `/reportes/*` del Hub leen **snapshots** (`reports.reporte_runs`, JSONB); los calculadores leen `reports.zoho_*` en crudo.
+
+**Hallazgo crítico:** el **CRM hoy NO lee el esquema `reports`** en ningún archivo. Sus reportes (`/reports`, `/dashboard`, `/hoy`) consultan solo `propyte_crm.*` (deals/contacts/activities), que están **casi vacíos** (se pueblan por intake, no por Zoho). `Contact.zohoId` existe en Prisma pero no se puebla. **→ los 22,498 contactos y todo el histórico comercial de Zoho NO son visualizables en el CRM actualmente.**
+
+**Feasibility:** alcanzable sin fricción — el CRM ya lee `real_estate_hub` por **SQL directo con el mismo rol Postgres** (`lib/hub/client.ts`, `$queryRawUnsafe`); el mismo cliente puede leer `reports.zoho_*` (mismo Postgres, mismo rol que salta RLS — ver [[feedback_supabase_rls_prisma_bypass]]). No requiere infra nueva, solo código.
+
+**Diseño (decisión §9.13):**
+- **Recomendado (ahora):** **vistas read-only** en el CRM sobre `reports.zoho_*` — un módulo "Reportes Zoho / histórico comercial" que replica lo que ve Dirección en el Hub (embudo, contactos por fuente/asesor, actividad, cierres), leyendo en vivo del esquema `reports`. Cero duplicación, dato siempre fresco.
+- **Cutover (Fase E):** migración de `reports.zoho_*` → `propyte_crm.contacts/deals` como registros nativos (poblar `zohoId`), cuando el CRM se vuelva SOT comercial.
+
+**Requisitos de fiabilidad (condición de salida):**
+1. **Reconciliación de picklists (bloqueante, §9.7):** los enums del CRM (`LeadSource` 13 · `ContactStatus` · `DealStage` 13) **no** cuadran 1:1 con los valores Zoho (`fuente`, `etapa_interna`, `tipo_contacto`, `lead_status`). Una vista fiel muestra el valor Zoho crudo + tabla de mapeo explícita; sin mapeo, el reporte miente.
+2. **Contactabilidad:** **32% de contactos sin teléfono** y 6% sin email — marcar como gap en cualquier vista WhatsApp-first (P4); no asumir que todo contacto es accionable.
+3. **Observabilidad del sync (bug):** los fallos intermitentes de `zoho_llamadas`/`zoho_actividades` registran `error_message="[object Object]"` (objeto no serializado) → arreglar el logging en el Hub para diagnosticar; hoy se recuperan solos al siguiente ciclo pero el dato puede quedar stale entre corridas.
+4. **Frescura:** declarar la latencia (≤30 min) en la UI del reporte; no venderlo como tiempo real.
+
+### 3.6 Preparación del CRM para el cutover — matriz de cobertura Zoho→CRM
+> Decisión de Luis (2026-06-15): la visualización espera al **cutover** (Fase E), pero el modelo del CRM debe **estar listo para recibir TODO** el dato Zoho. Auditados los valores reales de `reports.zoho_*` contra los enums Prisma del CRM. **Cada valor de origen necesita un destino, o se pierde en la migración.**
+
+**Ya cubierto (cutover-ready):**
+- **Pipeline de negocios** — `neg.tipo_resultado` (Recorrido/Firma/Propuesta/Demo/Apartado/Negocio Perdido) mapea limpio a `DealStage` vía §2.2. Único ruido: `HOT` (1, es temperatura, no etapa) → limpiar.
+- **Fuentes que sí existen** — Google Ads, Portales, Evento, Sitio web, Walk-in, Referido, Llamada, Tiktok, WhatsApp → ya hay valor en `LeadSource`.
+
+**Brechas a cerrar en el modelo del CRM (antes del cutover):**
+
+1. **`LeadSource` — faltan valores** (hoy se perderían): `Base de Datos` (1,528), `Self-Gen`/`Prospección propia` (1,246), `Registro de Broker` (287), `Webinar` (7), `LinkedIn` (5), y un `META_ADS` genérico (11,626 con `fuente='Meta Ads'` sin desglose). **`Portales de Empleo` (50) + `tipo_contacto='Empleo'` (1,717) NO son leads inmobiliarios** → decidir: excluir de la migración o tipo aparte. → agregar valores a `LeadSource` + regla de exclusión de reclutamiento.
+
+2. **Taxonomía de fuente: Zoho tiene 3 niveles, el CRM 1.** Zoho separa `fuente` (canal) · `plataforma` (Facebook/Instagram/Tiktok Ads) · `plataforma_llegada` (etiqueta cruda: `fb`/`ig`/`meta`/`FB`/`IG`…). El CRM solo tiene `leadSource` + `leadSourceDetail` + `AdAttribution`. **Decisión:** `fuente`→`leadSource`; `plataforma`→`AdAttribution.network` o `leadSourceDetail`; `plataforma_llegada`→normalizar y archivar en `custom`/raw. **Riesgo de fidelidad #1** por el caos de casing (ver hygiene).
+
+3. **`ContactType` — faltan `Empleo` (1,717) e `Interno` (11)** → excluir de la migración comercial (no son contactos de venta) o crear tipos no-comerciales. `null` (7,182) → default `LEAD`.
+
+4. **`ContactStatus` — sin destino para `Demo o Visita` (898) y `Agendó` (19)** (son señal de etapa de deal, no de contacto). Además **Zoho tiene DOS campos de estado en conflicto** (`estado`/`etapa_interna` idénticos vs. `lead_status` con otros valores) → elegir el **autoritativo** antes de migrar; mapear el otro a `LeadTemperature`/deal.
+
+5. **`ActivityType` — Zoho no trae dirección.** El CRM separa `CALL_OUTBOUND/INBOUND`, `WHATSAPP_OUT/IN`, `EMAIL_SENT/RECEIVED`; las 20k llamadas + 6.5k WhatsApp + 6.3k emails de Zoho **no dicen dirección** → default o parsear de `raw`. Además `act.estado='Cancelada'` (66) **no tiene equivalente** en el `Activity` del CRM (solo completado/no) → agregar estado cancelado.
+
+6. **`Deal` no tiene `zohoId`** (solo `Contact` lo tiene). → agregar `zohoId` a `Deal` para trazabilidad de la migración (idempotencia + reconciliación).
+
+**Higiene de datos requerida ANTES de migrar (en origen o en el mapeo):**
+- **Casing/duplicados:** `Whatsapp`/`WhatsApp`/`WHATSAPP`, `Prospección propia`/`Prospección Propia`, `Sin Contactar`/`Sin contactar`, `fb`/`FB`/`Facebook` → normalizador determinista.
+- **Basura semántica:** `HOT` en `tipo_resultado`, `Datos no reales` en `lead_status`, `Tulum` en `plataforma`.
+- **`fuente` null = 6,046 (27%)** y **32% sin teléfono** → declarar política de default + flag de no-accionable.
+
+> Entregable de la Fase E: un **diccionario de mapeo Zoho→CRM versionado** (origen→destino + transformación por campo) + script de migración idempotente por `zohoId`. Cierra §9.7 y §9.13.
 
 ---
 
@@ -175,6 +223,55 @@ El schema Prisma ya cubre la mayoría. Faltan, tomados de la config Zoho real:
 7. **Walk-ins** — captura en sala de ventas (ya presente).
 8. **Matching invertido** — unidades del Hub ↔ requisitos del lead.
 9. **Capa de IA y seguimiento automatizado** — chatbot, correo IA, voz/llamadas, scoring predictivo, next-best-action (ver §6).
+
+### 5.10 Adiciones confirmadas — input AlterEstate (2026-06-15)
+> Capturadas tras contrastar AlterEstate. **Confirmadas para roadmap** (no son Open Questions). El resto de AlterEstate —inventario, CMS/sitio, portales, red Trexo— queda fuera por diseño (§8): es del Hub/Web.
+
+1. **Inbox unificado de redes sociales (IG DM + FB Messenger).** Extiende P4: hoy la timeline unifica WhatsApp/SMS/email/llamada, pero **no DMs de Instagram ni Messenger**, canal real de entrada de leads inmobiliarios. Cada conversación entra a la timeline del `Contact` y al intake (dedup + ruteo + SLA). Se consume vía el pipeline Meta del **Hub** (§3.4), sin integración Meta propia del CRM. → Fase B/D.
+2. **Vista/reporte de contactos duplicados.** El dedup ya vive en el intake (§3.2), pero falta una **vista de gestión de duplicados** (detectar + fusionar) como utilidad para el equipo, no solo dedup silencioso al ingreso. Apoya la acción "Fusionar" que ya existe en `Deal`. → Fase B.
+3. **Tasas bancarias + FX en tiempo real en el dashboard.** Widget de tasas hipotecarias (Santander/Banamex/etc.) y tipo de cambio USD/MXN en el dashboard del asesor. Barato de añadir, útil para asesor hipotecario; complementa la multimoneda con FX congelado (§2.4). → Fase B (cosmético, sin bloquear).
+
+### 5.11 Broker journey — experiencia del asesor (2026-06-15)
+> Tres dolores reales del equipo (hoy en Zoho) que el CRM debe resolver con **UI simple, sin fricción** (P7). El asesor debe poder hacer cada una en segundos.
+
+4. **Shortlist enviable por contacto — "Propuesta express".**
+   - **Dolor:** desde Zoho no hay forma de enviar al cliente un listado de unidades del inventario como propuesta. El asesor arma todo a mano fuera del sistema.
+   - **Diseño:** al `Contact`/`Deal` se le **agregan propiedades del Hub** (referencias `hubUnitId`/`hubDevelopmentId`, **read-only, solo de vista** — el CRM no posee inventario, P1). Forman una colección curada (Shortlist) que el **matching invertido** (§5.8) puede pre-poblar. El asesor la **envía formateada** como microsite con token público (`/p/:token`, sin auth) + PDF con branding, y queda **trackeable** (aperturas/vistas con timestamp). Objetivo UX: *"me envió 10 opciones en 1 minuto"*.
+   - **Modelo:** nueva entidad ligera `Shortlist` + `ShortlistItem` (referencia a unidad del Hub) + `ShortlistView` (tracking). **Distinta de `Quote`** (§4.3): la `Quote` es formal (1 unidad + descuento + esquema de pago + PDF); la Shortlist es multi-unidad, ligera, de descubrimiento. La Shortlist puede *promover* una unidad a `Quote`.
+   - **Voz de marca:** el texto de presentación pasa por los guardarraíles §6.0 (anti-hype, data-gate desde el Hub). → **Fase B** (núcleo del journey; el asesor lo usa a diario).
+
+5. **Registro automático de llamadas y WhatsApp como actividad.**
+   - **Dolor:** quiere llamar **desde el CRM** y que la llamada se registre sola — duración, resultado, notas y grabación — sin capturar nada a mano. *No depende de IA.*
+   - **Diseño (determinista primero, IA opcional encima):** click-to-call vía **Twilio** (ya en stack, §6.3). Al colgar, el webhook de Twilio devuelve duración + URL de grabación → el CRM **crea automáticamente** un `Activity(type=CALL)` con `duration`, `recordingUrl`, `outcome` (picklist: contestó / no contestó / buzón / agendó / no interesado) y notas editables. WhatsApp inbound/outbound (Twilio/Cloud API) → auto-log a `Message` + `Activity` en la timeline unificada (P4). La **transcripción/resumen IA (§6.3) es una capa opcional encima**, no requisito para que el registro exista.
+   - **Modelo:** extender `Activity` con `duration`, `recordingUrl`, `direction`, `outcome`; aviso de grabación / opt-out (cumplimiento §6.0). → **Fase B** (el auto-log determinista) · resumen IA en **Fase D**.
+
+6. **Supervisión de conversaciones del equipo + asignación en tiempo real.**
+   - **Dolor:** admins y team leaders no pueden revisar las conversaciones de su equipo, ni reasignar una **conversación** (hoy solo se asigna el contacto/negocio).
+   - **Diseño:** bandeja de supervisión con **RBAC** (ADMIN/TEAM_LEADER ven las conversaciones de los asesores de su equipo/`Plaza`; ver SPECKIT-PERSONALIZACION-Y-EQUIPOS) sobre la timeline unificada (WhatsApp/SMS/email + Inbox social §5.10.1). **Asignación/reasignación de la conversación en tiempo real**, como objeto distinto del owner del contacto, ligada a `RoutingRule`. Tiempo real con **Supabase Realtime** (ya en stack — evita un microservicio de inbox aparte como el de AlterEstate).
+   - **Modelo:** `Conversation` (canal, contacto, `assignedTo`, `status`) sobre `Message`; reasignación auditada (`AuditLog`). → **Fase B/D**.
+
+### 5.12 UX de adopción — simple y sin fricción (P7)
+> Aprovechables del análisis de AlterEstate que sirven al objetivo "el CRM más simple, no el más cargado".
+
+7. **Onboarding guiado in-app (estilo UserGuiding).** Tours interactivos contextuales para que el asesor sea operativo **en horas, sin manual** (materializa P7). Checklists de primer uso por rol, tooltips sobre la vista "Hoy". → transversal, arranca en **Fase B**.
+8. **Optimistic UI en pipeline y acciones rápidas.** El Kanban (dnd-kit ya presente) mueve la tarjeta al instante y revierte si la API falla; igual en marcar actividad, asignar, enviar shortlist. Es lo que hace sentir el CRM **rápido**. Principio de implementación, no entidad. → **Fase B**.
+9. **Tiempo real sin segundo backend.** Conversaciones, notificaciones y movimientos de pipeline en vivo con **Supabase Realtime** (ya en stack) — ventaja de arquitectura sobre el microservicio de inbox separado de AlterEstate. → soporta §5.11.6.
+11. **PWA + push notifications (asesor en campo).** App instalable (sala de ventas / recorridos) con **push**: lead nuevo (speed-to-lead P2), SLA en riesgo, conversación asignada (§5.11.6). Refuerza el móvil-first del broker journey. Next.js PWA + Web Push (o el canal `Notification` ya existente). → **Fase B/D**.
+
+### 5.13 Captación de propiedades por el asesor (sin pasar por Marketing)
+> **Contexto:** el Hub (`hub.propyte.com`) es herramienta del equipo de **Marketing**; los asesores **no lo ven**. Hoy en Zoho el asesor captura y un gate de aprobación lo lleva al Hub/web. Replicamos ese patrón **dentro del CRM** para que el asesor agregue propiedades sin intervención de Marketing.
+
+10. **Vista de captación en el CRM.** Formulario simple (móvil-first para sala de ventas / recorrido) que crea la propiedad **write-through al Hub** (§3.1): se escribe en `real_estate_hub` con `source=crm`, `createdBy=asesor`, estado **`draft`**. Queda **usable de inmediato dentro del CRM** (shortlist §5.11.4, `Deal`, matching §5.8) sin esperar a Marketing.
+    - **Refina P1, no lo rompe:** el CRM sigue **sin poseer** inventario; solo es un *cliente de escritura* del Hub (SOT único). Prohibido crear tabla de inventario local en el CRM (§4.2/§8).
+    - **Gate de publicación (decisión abierta → §9.12):** la propiedad capturada por el asesor es de uso comercial inmediato en el CRM, pero la **publicación al sitio público** (SEO/editorial, dueño Marketing) **recomendado**: entra como `draft` y Marketing publica/cura en el Hub. Alternativa: auto-publish con quality gate automático.
+    - **Requiere:** endpoint de **escritura** en el Hub (complementa la API read-only de Fase A / T5.1). → **Fase B/C**.
+
+### 5.14 Metas y scorecard por asesor (input ChatGPT · 2026-06-15)
+> Materializa P5 (visibilidad para Dirección) y da paridad con Zoho ("Metas Personalizadas"). No existía en el speckit.
+
+12. **Módulo de Metas + Scorecard.** El admin/TL fija metas **por asesor/equipo/mes** sobre métricas configurables: captaciones, negocios creados, propuestas/cotizaciones enviadas, actividades completadas, negocios ganados, **monto de venta** (MXN/USD). El sistema calcula **real-vs-meta** y muestra un scorecard mensual.
+    - **Modelo:** `Goal` (`scope` USER/TEAM/COMPANY, `period` mes, `metric`, `target`, `currency`); el real se **deriva** de `Deal`/`Activity`/`Quote` (no se duplica). Sin entidad pesada de tracking.
+    - **Encaje:** alimenta el dashboard de Dirección (§5.6) y aparece en la vista "Hoy" del asesor (mi avance del mes). → **Fase B** (metas simples) · refinamiento en **Fase E** (forecast).
 
 ---
 
@@ -260,6 +357,8 @@ Objetivo: **contacto inmediato y seguimiento sin fricción, con opción de IA en
 9. **Bot: Claude-native vs ManyChat para arrancar** (ManyChat estaba diferido a mes 3+ de la estrategia). Recomendado Claude-native por control de marca.
 10. **Voz IA fuera de horario:** alcance v1 (¿solo agendar/calificar?) y proveedor de síntesis de voz ES/EN.
 11. **Cumplimiento MX:** consentimiento/aviso de grabación en llamadas y opt-out WhatsApp/SMS — confirmar requisitos.
+12. **Captación del asesor (§5.13):** ¿la propiedad capturada desde el CRM entra como `draft` con gate de publicación de Marketing (recomendado), o se auto-publica al sitio con un quality gate automático? Define qué campos mínimos exige el Hub para aceptar el write-through.
+13. **Visualización de datos Zoho (§3.5):** ¿vistas read-only del CRM sobre `reports.zoho_*` ahora (recomendado), o esperar al cutover de Fase E que migra todo a `propyte_crm.*`? ¿Qué reportes Zoho necesita ver el asesor vs. solo Dirección? Requiere cerrar antes la tabla de mapeo de picklists Zoho→CRM (§9.7).
 
 ---
 
@@ -271,4 +370,4 @@ Objetivo: **contacto inmediato y seguimiento sin fricción, con opción de IA en
 - Análisis de configuración Zoho (sesión paralela) — módulos, campos, automatizaciones.
 - Investigación de industria 2026 — speed-to-lead, ruteo, automatización conductual, modelo de preventa de desarrollador.
 
-*Fin — SPECKIT Propyte CRM consolidado v1.1 (+ capa de IA y seguimiento automatizado).*
+*Fin — SPECKIT Propyte CRM consolidado v1.7 (+ §5.10–§5.14 auditorías AlterEstate · §3.1 write path · §3.5 visualización Zoho · §3.6 matriz de cobertura Zoho→CRM para el cutover [auditoría Supabase 2026-06-15]).*

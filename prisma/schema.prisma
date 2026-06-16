@@ -82,6 +82,13 @@ enum LeadSource {
   EVENTO
   WEBSITE
   WHATSAPP
+  // Cutover Zoho (consolidado §3.6): valores presentes en reports.zoho_contactos sin destino previo
+  META_ADS // 'Meta Ads' genérico sin desglose FB/IG (la plataforma desglosa en AdAttribution.network)
+  BASE_DE_DATOS // 'Base de Datos'
+  SELF_GEN // 'Self-Gen' / 'Prospección propia'
+  REGISTRO_BROKER // 'Registro de Broker' (alta de broker, distinto de REFERIDO_BROKER)
+  WEBINAR
+  LINKEDIN
   OTRO
 
   @@schema("propyte_crm")
@@ -823,6 +830,9 @@ model Deal {
 
   // Atribución
   leadSourceAtDeal String
+
+  // Trazabilidad de migración Zoho (cutover Fase E, consolidado §3.6) — idempotencia + reconciliación
+  zohoId String? @unique
 
   // Referencias al catálogo del Hub (Fase 7 las vuelve obligatorias; aquí preparan el terreno)
   hubDevelopmentId String?
