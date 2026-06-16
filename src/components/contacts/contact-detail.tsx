@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { CallIndicator } from "@/components/contacts/call-indicator";
 import { QuoteList } from "@/components/quotes/quote-list";
@@ -131,6 +132,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
+  const [dealOpen, setDealOpen] = useState(false);
   const [activeCall, setActiveCall] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(
     contact.deals?.length > 0 ? contact.deals[0].id : null
@@ -333,7 +335,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           </button>
           <button
             className="btn-secondary text-[13px]"
-            onClick={() => router.push(`/pipeline?newDeal=true&contactId=${contact.id}`)}
+            onClick={() => setDealOpen(true)}
           >
             <Plus className="h-4 w-4" /> Crear Deal
           </button>
@@ -440,7 +442,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
       <Section
         title={`Deals (${contact.deals?.length ?? 0})`}
         action={
-          <button className="btn-secondary text-[13px]" onClick={() => router.push(`/pipeline?newDeal=true&contactId=${contact.id}`)}>
+          <button className="btn-secondary text-[13px]" onClick={() => setDealOpen(true)}>
             <Plus className="h-3.5 w-3.5" /> Nuevo deal
           </button>
         }
@@ -543,6 +545,23 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           onClose={() => setActiveCall(false)}
         />
       )}
+
+      {/* Modal de crear deal */}
+      <Dialog open={dealOpen} onOpenChange={setDealOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crear nuevo deal</DialogTitle>
+          </DialogHeader>
+          <DealForm
+            initialData={{ contactId: contact.id }}
+            onSuccess={() => {
+              setDealOpen(false);
+              router.refresh();
+            }}
+            onCancel={() => setDealOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de edición completa */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

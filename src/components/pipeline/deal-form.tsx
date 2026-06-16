@@ -21,11 +21,11 @@ interface DealFormProps {
     contactId: string;
     developmentId?: string;
     unitId?: string;
-    dealType: string;
-    estimatedValue: number;
-    currency: string;
-    expectedCloseDate: string;
-    leadSourceAtDeal: string;
+    dealType?: string;
+    estimatedValue?: number;
+    currency?: string;
+    expectedCloseDate?: string;
+    leadSourceAtDeal?: string;
     notes?: string;
     stage?: string;
   };
