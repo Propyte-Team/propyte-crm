@@ -25,6 +25,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  await softDeleteShortlist(params.id);
-  return NextResponse.json({ ok: true });
+  try {
+    await softDeleteShortlist(params.id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("[DELETE /api/shortlists/[id]]", e);
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+  }
 }
