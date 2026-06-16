@@ -47,6 +47,7 @@ import { StageTransitionDialog } from "@/components/pipeline/stage-transition-di
 import { DealOperationalRail } from "@/components/pipeline/deal-operational-rail";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
 import { ActivityLog } from "@/components/activities/activity-log";
+import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 
 interface DealDetailClientProps {
   deal: any;
@@ -407,6 +408,13 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
             dealId={deal.id}
             onChanged={() => router.refresh()}
           />
+        </CardContent>
+      </Card>
+
+      {/* Propuestas express */}
+      <Card>
+        <CardContent className="pt-6">
+          <ShortlistPanel contactId={deal.contactId} dealId={deal.id} />
         </CardContent>
       </Card>
 

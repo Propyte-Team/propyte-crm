@@ -29,6 +29,7 @@ import { QuoteList } from "@/components/quotes/quote-list";
 import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
 import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
 import { ActivityLog } from "@/components/activities/activity-log";
+import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -412,15 +413,18 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
         </div>
 
         {/* Columna derecha — timeline unificada + notas */}
-        <div className="crm-card lg:col-span-7">
-          <ActivityLog
-            contactId={contact.id}
-            contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
-            contactEmail={contact.email ?? undefined}
-            contactFirstName={contact.firstName ?? undefined}
-            contactLastName={contact.lastName ?? undefined}
-            onChanged={() => router.refresh()}
-          />
+        <div className="space-y-5 lg:col-span-7">
+          <div className="crm-card">
+            <ActivityLog
+              contactId={contact.id}
+              contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+              contactEmail={contact.email ?? undefined}
+              contactFirstName={contact.firstName ?? undefined}
+              contactLastName={contact.lastName ?? undefined}
+              onChanged={() => router.refresh()}
+            />
+          </div>
+          <ShortlistPanel contactId={contact.id} />
         </div>
       </div>
 
