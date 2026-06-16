@@ -30,6 +30,7 @@ import { DealDocumentsSection } from "@/components/quotes/deal-documents-section
 import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
 import { ActivityLog } from "@/components/activities/activity-log";
 import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
+import { AdvisorSelect } from "@/components/shared/advisor-select";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -392,7 +393,14 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           </Section>
 
           <Section title="Asignación">
-            <ReadRow label="Asesor" value={contact.assignedTo?.name ?? "Sin asignar"} />
+            <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+              <span className="text-[color:var(--text-tertiary)]">Asesor</span>
+              <AdvisorSelect
+                value={contact.assignedToId ?? contact.assignedTo?.id ?? null}
+                allowUnassigned
+                onChange={(id) => changeField("assignedToId", id)}
+              />
+            </div>
             <div className="flex items-start justify-between gap-3 py-1.5">
               <span className="text-[13px] text-[color:var(--text-tertiary)]">Etiquetas</span>
               <div className="flex flex-wrap justify-end gap-1">

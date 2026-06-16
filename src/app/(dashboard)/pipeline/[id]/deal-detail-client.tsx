@@ -48,6 +48,7 @@ import { DealOperationalRail } from "@/components/pipeline/deal-operational-rail
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
 import { ActivityLog } from "@/components/activities/activity-log";
 import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
+import { AdvisorSelect } from "@/components/shared/advisor-select";
 
 interface DealDetailClientProps {
   deal: any;
@@ -392,6 +393,20 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
                 {deal.assignedTo?.email} &middot; {deal.assignedTo?.role}
               </p>
             </div>
+          </div>
+          <div className="mt-3">
+            <AdvisorSelect
+              value={deal.assignedToId ?? deal.assignedTo?.id ?? null}
+              onChange={async (id) => {
+                if (!id) return;
+                const res = await fetch(`/api/deals/${deal.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ assignedToId: id }),
+                });
+                if (res.ok) router.refresh();
+              }}
+            />
           </div>
         </CardContent>
       </Card>
