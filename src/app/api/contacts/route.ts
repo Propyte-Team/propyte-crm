@@ -251,6 +251,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validar que el asesor asignado exista antes de crear (BUG-04: evita FK P2003 → 500 opaco)
+    if (data.assignedToId) {
+      const assignee = await prisma.user.findUnique({
+        where: { id: data.assignedToId },
+        select: { id: true },
+      });
+      if (!assignee) {
+        return NextResponse.json(
+          { error: "El asesor asignado no existe" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Si no se asignó a nadie, asignar al usuario actual (si es asesor/TL)
     const assignedToId =
       data.assignedToId ||
@@ -292,6 +306,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: contact }, { status: 201 });
   } catch (error) {
     console.error("Error al crear contacto:", error);
+    // Mapear errores conocidos de Prisma a respuestas claras (BUG-04: no más 500 opacos por FK)
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2003") {
+        return NextResponse.json(
+          { error: "Referencia inválida: el asesor o una relación no existe" },
+          { status: 400 }
+        );
+      }
+      if (error.code === "P2002") {
+        return NextResponse.json(
+          { error: "Ya existe un contacto con esos datos únicos" },
+          { status: 409 }
+        );
+      }
+    }
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }
