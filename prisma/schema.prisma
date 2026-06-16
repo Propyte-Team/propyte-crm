@@ -635,6 +635,7 @@ model User {
   ownedActionPlans        ActionPlan[]   @relation("OwnedActionPlans")
   controlledConversations Conversation[] @relation("ControlledConversations")
   googleOAuthToken        GoogleOAuthToken?
+  shortlistsCreated       Shortlist[]    @relation("ShortlistsCreated")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -712,6 +713,7 @@ model Contact {
   conversations    Conversation[]
   slaTimers        SlaTimer[]
   connectorLeads   ConnectorLeadLog[]
+  shortlists       Shortlist[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -859,6 +861,7 @@ model Deal {
   quotes           Quote[]
   documents        DealDocument[]
   conversionEvents ConversionEvent[]
+  shortlists       Shortlist[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2289,5 +2292,72 @@ model AgentRun {
 
   @@index([agentId, startedAt])
   @@map("agent_runs")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// SHORTLIST / PROPUESTA EXPRESS — feat/shortlist-propuesta-express
+// =====================================================================
+
+enum ShortlistStatus {
+  DRAFT
+  SENT
+  OPENED
+
+  @@schema("propyte_crm")
+}
+
+// Propuesta express: lista curada de unidades del Hub enviable por link público.
+// El CRM NO posee inventario — solo refs hubUnitId + snapshot congelado (P1, §5.11.4).
+model Shortlist {
+  id          String          @id @default(uuid())
+  token       String          @unique
+  contactId   String
+  contact     Contact         @relation(fields: [contactId], references: [id])
+  dealId      String?
+  deal        Deal?           @relation(fields: [dealId], references: [id])
+  createdById String
+  createdBy   User            @relation("ShortlistsCreated", fields: [createdById], references: [id])
+  title       String          @default("Propuesta de unidades")
+  status      ShortlistStatus @default(DRAFT)
+  sentAt      DateTime?
+  openedAt    DateTime?
+  expiresAt   DateTime?
+  items       ShortlistItem[]
+  views       ShortlistView[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+
+  @@index([contactId])
+  @@index([dealId])
+  @@map("shortlists")
+  @@schema("propyte_crm")
+}
+
+model ShortlistItem {
+  id          String    @id @default(uuid())
+  shortlistId String
+  shortlist   Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  hubUnitId   String
+  snapshot    Json      @default("{}")
+  note        String?   @db.Text
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([shortlistId])
+  @@map("shortlist_items")
+  @@schema("propyte_crm")
+}
+
+model ShortlistView {
+  id          String    @id @default(uuid())
+  shortlistId String
+  shortlist   Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  viewedAt    DateTime  @default(now())
+  userAgent   String?
+
+  @@index([shortlistId])
+  @@map("shortlist_views")
   @@schema("propyte_crm")
 }
