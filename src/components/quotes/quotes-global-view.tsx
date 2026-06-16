@@ -158,7 +158,7 @@ export function QuotesGlobalView({ initialQuotes }: QuotesGlobalViewProps) {
         <div className="border border-dashed border-zinc-200 py-16 text-center text-sm text-zinc-400">
           {search || statusFilter !== "ALL"
             ? "Sin resultados para los filtros actuales."
-            : "Aún no hay cotizaciones. Se crean desde un deal: abre un deal en el Pipeline y usa “Cotizar”."}
+            : "Aún no hay cotizaciones. Para crear una: 1) crea un contacto, 2) crea un deal en el Pipeline, 3) abre el deal y genera la cotización desde ahí."}
         </div>
       ) : (
         <div className="border border-border">

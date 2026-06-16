@@ -35,6 +35,50 @@ function from(): string {
   );
 }
 
+// Escapa HTML de inputs de usuario antes de interpolarlos en el correo
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Notifica al equipo una solicitud de acceso al CRM desde el landing (BUG-15).
+ */
+export async function sendAccessRequest(input: {
+  name: string;
+  email: string;
+  company?: string;
+  message?: string;
+}) {
+  const transporter = getTransporter();
+  const to = process.env.ACCESS_REQUEST_TO ?? "marketing@propyte.com";
+
+  try {
+    await transporter.sendMail({
+      from: from(),
+      to,
+      replyTo: input.email,
+      subject: `Solicitud de acceso al CRM — ${input.name}`,
+      html: `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#ffffff;">
+  <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+    <h2 style="color:#1a1a1a;margin-bottom:16px;">Solicitud de acceso — Propyte CRM</h2>
+    <p style="color:#444;margin:4px 0;"><b>Nombre:</b> ${esc(input.name)}</p>
+    <p style="color:#444;margin:4px 0;"><b>Email:</b> ${esc(input.email)}</p>
+    ${input.company ? `<p style="color:#444;margin:4px 0;"><b>Empresa:</b> ${esc(input.company)}</p>` : ""}
+    ${input.message ? `<p style="color:#444;margin:12px 0 0;"><b>Mensaje:</b><br>${esc(input.message)}</p>` : ""}
+  </div>
+</body>
+</html>`,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error enviando solicitud de acceso:", message);
+    throw new Error("No se pudo enviar la solicitud de acceso");
+  }
+}
+
 /**
  * Envía un código de acceso temporal al correo del usuario.
  */

@@ -210,29 +210,21 @@ export function WalkInsContent({
       setError("");
       setSuccess("");
 
-      // Validaciones
+      // Validaciones: reúne TODOS los campos faltantes a la vez, no uno por uno (BUG-11)
+      const missing: string[] = [];
       if (!selectedContact && !showNewContactForm) {
-        setError("Busca un contacto existente o crea uno nuevo");
-        return;
+        missing.push("Busca un contacto existente o crea uno nuevo");
       }
-
       if (showNewContactForm) {
-        if (!newFirstName.trim()) {
-          setError("El nombre es obligatorio");
-          return;
-        }
-        if (!newLastName.trim()) {
-          setError("El apellido es obligatorio");
-          return;
-        }
-        if (!newPhone.trim()) {
-          setError("El teléfono es obligatorio");
-          return;
-        }
+        if (!newFirstName.trim()) missing.push("El nombre es obligatorio");
+        if (!newLastName.trim()) missing.push("El apellido es obligatorio");
+        if (!newPhone.trim()) missing.push("El teléfono es obligatorio");
       }
-
       if (!visitPurpose) {
-        setError("Selecciona el motivo de visita");
+        missing.push("Selecciona el motivo de visita");
+      }
+      if (missing.length > 0) {
+        setError(missing.join(" · "));
         return;
       }
 

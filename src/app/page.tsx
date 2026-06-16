@@ -1,7 +1,7 @@
 // Landing page pre-login — CRM Propyte (ES/EN)
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, type FormEvent } from "react"
 import Link from "next/link"
 
 // ─── Translations ────────────────────────────────────────────────────────────
@@ -276,10 +276,72 @@ function CrmMockup({ t }: { t: typeof translations.es | typeof translations.en }
 }
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
+// Modal de solicitud de acceso (BUG-15): reemplaza el mailto por un formulario real.
+function RequestAccessModal({ lang, onClose }: { lang: Lang; onClose: () => void }) {
+  const s =
+    lang === "en"
+      ? { title: "Request access", name: "Name", email: "Email", company: "Company (optional)", message: "Message (optional)", send: "Send request", sending: "Sending...", ok: "Request sent. We'll be in touch.", err: "Could not send. Try again or email marketing@propyte.com.", close: "Close" }
+      : { title: "Solicitar acceso", name: "Nombre", email: "Email", company: "Empresa (opcional)", message: "Mensaje (opcional)", send: "Enviar solicitud", sending: "Enviando...", ok: "Solicitud enviada. Te contactaremos pronto.", err: "No se pudo enviar. Intenta de nuevo o escribe a marketing@propyte.com.", close: "Cerrar" }
+
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [company, setCompany] = useState("")
+  const [message, setMessage] = useState("")
+  const [status, setStatus] = useState<"idle" | "sending" | "ok" | "error">("idle")
+  const [errMsg, setErrMsg] = useState("")
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setStatus("sending")
+    setErrMsg("")
+    try {
+      const res = await fetch("/api/request-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, company: company || undefined, message: message || undefined }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || s.err)
+      }
+      setStatus("ok")
+    } catch (err) {
+      setStatus("error")
+      setErrMsg(err instanceof Error ? err.message : s.err)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white p-6 text-left text-zinc-900" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold">{s.title}</h3>
+          <button onClick={onClose} aria-label={s.close} className="text-zinc-400 hover:text-zinc-700">✕</button>
+        </div>
+        {status === "ok" ? (
+          <p className="py-6 text-center text-sm text-zinc-600">{s.ok}</p>
+        ) : (
+          <form onSubmit={submit} className="space-y-3">
+            <input required value={name} onChange={(e) => setName(e.target.value)} placeholder={s.name} className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+            <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={s.email} className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+            <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder={s.company} className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder={s.message} rows={3} className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+            {status === "error" && <p className="text-sm text-red-600">{errMsg}</p>}
+            <button type="submit" disabled={status === "sending"} className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "var(--color-teal)" }}>
+              {status === "sending" ? s.sending : s.send}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false)
   const [statsVisible, setStatsVisible] = useState(false)
   const [lang, setLang] = useState<Lang>("es")
+  const [accessOpen, setAccessOpen] = useState(false)
   const statsRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef<HTMLDivElement[]>([])
 
@@ -439,11 +501,15 @@ export default function LandingPage() {
               <button
                 className="rounded-lg px-8 py-3.5 text-base font-semibold text-white transition-all hover:bg-white/[0.08]"
                 style={{ border: "1px solid rgba(255,255,255,0.3)" }}
-                onClick={() => window.location.href = "mailto:marketing@propyte.com?subject=Solicitar%20acceso%20CRM"}
+                onClick={() => setAccessOpen(true)}
               >
                 {t.ctaAccess}
               </button>
             </div>
+
+            {accessOpen && (
+              <RequestAccessModal lang={lang} onClose={() => setAccessOpen(false)} />
+            )}
 
             <div className="mt-8 flex flex-wrap items-center justify-center gap-2 text-[13px]" style={{ color: "rgba(255,255,255,0.45)" }}>
               <IconLock />

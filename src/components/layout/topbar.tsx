@@ -16,9 +16,12 @@ import {
 
 const MODULE_LABELS: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/hoy": "Hoy",
   "/contacts": "Contactos",
   "/inbox": "Inbox",
   "/pipeline": "Pipeline",
+  "/cotizaciones": "Cotizaciones",
+  "/cobranza": "Cobranza",
   "/developments": "Desarrollos",
   "/commissions": "Comisiones",
   "/reports": "Reportes",

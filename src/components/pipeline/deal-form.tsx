@@ -150,10 +150,27 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
     }
   }, [contactId, contacts, leadSourceAtDeal]);
 
+  // Errores por campo para validación visible (BUG-10)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
   // Enviar formulario
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setFieldErrors({});
+
+    // Validación visible: reúne TODOS los campos obligatorios faltantes (no uno a la vez)
+    const errs: Record<string, string> = {};
+    if (!contactId) errs.contactId = "Selecciona un contacto";
+    if (!dealType) errs.dealType = "Selecciona el tipo de operación";
+    if (!estimatedValue) errs.estimatedValue = "Ingresa el valor estimado";
+    if (!expectedCloseDate) errs.expectedCloseDate = "Ingresa la fecha esperada de cierre";
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      setError("Faltan campos obligatorios. Revisa los marcados en rojo.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -217,6 +234,9 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
             )}
           </SelectContent>
         </Select>
+        {fieldErrors.contactId && (
+          <p className="text-sm text-red-600">{fieldErrors.contactId}</p>
+        )}
       </div>
 
       {/* Desarrollo */}
@@ -275,6 +295,9 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
             ))}
           </SelectContent>
         </Select>
+        {fieldErrors.dealType && (
+          <p className="text-sm text-red-600">{fieldErrors.dealType}</p>
+        )}
       </div>
 
       {/* Valor estimado y moneda */}
@@ -291,6 +314,9 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
             onChange={(e) => setEstimatedValue(e.target.value)}
             required
           />
+          {fieldErrors.estimatedValue && (
+            <p className="text-sm text-red-600">{fieldErrors.estimatedValue}</p>
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="currency">Moneda</Label>
@@ -319,6 +345,9 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
           onChange={(e) => setExpectedCloseDate(e.target.value)}
           required
         />
+        {fieldErrors.expectedCloseDate && (
+          <p className="text-sm text-red-600">{fieldErrors.expectedCloseDate}</p>
+        )}
       </div>
 
       {/* Fuente del lead */}
@@ -343,7 +372,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={submitting || !contactId || !dealType || !estimatedValue}>
+        <Button type="submit" disabled={submitting}>
           {submitting ? "Guardando..." : isEdit ? "Actualizar" : "Crear Deal"}
         </Button>
       </div>
