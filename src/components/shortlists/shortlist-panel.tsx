@@ -18,14 +18,17 @@ interface ShortlistItemLite {
   hubUnitId: string;
   note: string | null;
   snapshot: {
+    // forma optimista (desde /api/hub/units, claves CRM-mapeadas)
     unitNumber?: string | null;
     unitType?: string | null;
     price?: number | null;
     moneda?: string;
-    // legacy fields in case snapshot was saved with old keys
+    // forma persistida (buildUnitSnapshot, claves del Hub)
     titulo?: string | null;
     numero?: string | null;
+    tipo?: string | null;
     precioMxn?: number | null;
+    precioUsd?: number | null;
   };
 }
 
@@ -49,12 +52,18 @@ function money(n: number | null | undefined, currency = "MXN") {
 }
 
 function snapshotLabel(s: ShortlistItemLite["snapshot"]): string {
-  return s?.unitNumber ?? s?.numero ?? s?.titulo ?? "Unidad";
+  return s?.titulo ?? s?.unitNumber ?? s?.numero ?? "Unidad";
+}
+
+function snapshotType(s: ShortlistItemLite["snapshot"]): string {
+  return s?.unitType ?? s?.tipo ?? "";
 }
 
 function snapshotPrice(s: ShortlistItemLite["snapshot"]): string {
-  const price = s?.price ?? s?.precioMxn;
-  return money(price, s?.moneda ?? "MXN");
+  const currency = s?.moneda ?? "MXN";
+  const persisted = currency === "USD" ? s?.precioUsd : s?.precioMxn;
+  const price = s?.price ?? persisted;
+  return money(price, currency);
 }
 
 export function ShortlistPanel({
@@ -255,7 +264,7 @@ export function ShortlistPanel({
                   <span className="text-[color:var(--text-secondary)]">
                     {snapshotLabel(i.snapshot)}{" "}
                     <span className="text-[color:var(--text-tertiary)]">
-                      · {i.snapshot?.unitType ?? ""}
+                      · {snapshotType(i.snapshot)}
                     </span>{" "}
                     · {snapshotPrice(i.snapshot)}
                   </span>
