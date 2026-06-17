@@ -18,14 +18,15 @@ import { DEAL_TYPE_LABELS, CURRENCY_LABELS, LEAD_SOURCE_LABELS } from "@/lib/con
 interface DealFormProps {
   // Datos iniciales para edición
   initialData?: {
+    id?: string;
     contactId: string;
     developmentId?: string;
     unitId?: string;
-    dealType: string;
-    estimatedValue: number;
-    currency: string;
-    expectedCloseDate: string;
-    leadSourceAtDeal: string;
+    dealType?: string;
+    estimatedValue?: number;
+    currency?: string;
+    expectedCloseDate?: string;
+    leadSourceAtDeal?: string;
     notes?: string;
     stage?: string;
   };
@@ -55,7 +56,7 @@ interface UnitOption {
 }
 
 export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
-  const isEdit = !!initialData;
+  const isEdit = !!initialData?.id;
 
   // Estado del formulario
   const [contactId, setContactId] = useState(initialData?.contactId || "");

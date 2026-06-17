@@ -174,7 +174,7 @@ export function KanbanBoard({
   const visibleStages = ACTIVE_PIPELINE_STAGES;
 
   // Etapas que requieren datos adicionales al transicionar
-  const STAGES_REQUIRING_DIALOG = ["DISCOVERY_DONE", "RESERVED", "WON", "LOST"];
+  const STAGES_REQUIRING_DIALOG = ["DISCOVERY_DONE", "RESERVED", "WON", "LOST", "MEETING_SCHEDULED", "MEETING_COMPLETED"];
 
   // Manejar inicio de arrastre
   function handleDragStart(event: DragStartEvent) {

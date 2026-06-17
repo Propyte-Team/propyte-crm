@@ -82,6 +82,13 @@ enum LeadSource {
   EVENTO
   WEBSITE
   WHATSAPP
+  // Cutover Zoho (consolidado §3.6): valores presentes en reports.zoho_contactos sin destino previo
+  META_ADS // 'Meta Ads' genérico sin desglose FB/IG (la plataforma desglosa en AdAttribution.network)
+  BASE_DE_DATOS // 'Base de Datos'
+  SELF_GEN // 'Self-Gen' / 'Prospección propia'
+  REGISTRO_BROKER // 'Registro de Broker' (alta de broker, distinto de REFERIDO_BROKER)
+  WEBINAR
+  LINKEDIN
   OTRO
 
   @@schema("propyte_crm")
@@ -628,6 +635,11 @@ model User {
   ownedActionPlans        ActionPlan[]   @relation("OwnedActionPlans")
   controlledConversations Conversation[] @relation("ControlledConversations")
   googleOAuthToken        GoogleOAuthToken?
+  shortlistsCreated       Shortlist[]    @relation("ShortlistsCreated")
+
+  // Metas/Scorecard (§5.14)
+  goals        Goal[] @relation("UserGoals")
+  goalsCreated Goal[] @relation("GoalsCreated")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -705,6 +717,7 @@ model Contact {
   conversations    Conversation[]
   slaTimers        SlaTimer[]
   connectorLeads   ConnectorLeadLog[]
+  shortlists       Shortlist[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -824,6 +837,9 @@ model Deal {
   // Atribución
   leadSourceAtDeal String
 
+  // Trazabilidad de migración Zoho (cutover Fase E, consolidado §3.6) — idempotencia + reconciliación
+  zohoId String? @unique
+
   // Referencias al catálogo del Hub (Fase 7 las vuelve obligatorias; aquí preparan el terreno)
   hubDevelopmentId String?
   hubUnitId        String?
@@ -849,6 +865,7 @@ model Deal {
   quotes           Quote[]
   documents        DealDocument[]
   conversionEvents ConversionEvent[]
+  shortlists       Shortlist[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1737,6 +1754,7 @@ model Team {
   isActive          Boolean @default(true)
 
   members TeamMember[]
+  goals   Goal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2279,5 +2297,121 @@ model AgentRun {
 
   @@index([agentId, startedAt])
   @@map("agent_runs")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// SHORTLIST / PROPUESTA EXPRESS — feat/shortlist-propuesta-express
+// =====================================================================
+
+enum ShortlistStatus {
+  DRAFT
+  SENT
+  OPENED
+
+  @@schema("propyte_crm")
+}
+
+// Propuesta express: lista curada de unidades del Hub enviable por link público.
+// El CRM NO posee inventario — solo refs hubUnitId + snapshot congelado (P1, §5.11.4).
+model Shortlist {
+  id          String          @id @default(uuid())
+  token       String          @unique
+  contactId   String
+  contact     Contact         @relation(fields: [contactId], references: [id])
+  dealId      String?
+  deal        Deal?           @relation(fields: [dealId], references: [id])
+  createdById String
+  createdBy   User            @relation("ShortlistsCreated", fields: [createdById], references: [id])
+  title       String          @default("Propuesta de unidades")
+  status      ShortlistStatus @default(DRAFT)
+  sentAt      DateTime?
+  openedAt    DateTime?
+  expiresAt   DateTime?
+  items       ShortlistItem[]
+  views       ShortlistView[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+
+  @@index([contactId])
+  @@index([dealId])
+  @@map("shortlists")
+  @@schema("propyte_crm")
+}
+
+model ShortlistItem {
+  id          String    @id @default(uuid())
+  shortlistId String
+  shortlist   Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  hubUnitId   String
+  snapshot    Json      @default("{}")
+  note        String?   @db.Text
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([shortlistId])
+  @@map("shortlist_items")
+  @@schema("propyte_crm")
+}
+
+model ShortlistView {
+  id          String    @id @default(uuid())
+  shortlistId String
+  shortlist   Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  viewedAt    DateTime  @default(now())
+  userAgent   String?
+
+  @@index([shortlistId])
+  @@map("shortlist_views")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// METAS / SCORECARD — §5.14
+// =====================================================================
+
+enum GoalScope {
+  USER
+  TEAM
+  COMPANY
+
+  @@schema("propyte_crm")
+}
+
+enum GoalMetric {
+  CAPTACIONES
+  NEGOCIOS_CREADOS
+  COTIZACIONES_ENVIADAS
+  ACTIVIDADES_COMPLETADAS
+  NEGOCIOS_GANADOS
+  MONTO_VENTA
+
+  @@schema("propyte_crm")
+}
+
+// Metas mensuales por asesor/equipo/empresa (§5.14). El "real" se DERIVA, no se guarda.
+model Goal {
+  id          String     @id @default(uuid())
+  scope       GoalScope
+  userId      String?
+  user        User?      @relation("UserGoals", fields: [userId], references: [id])
+  teamId      String?
+  team        Team?      @relation(fields: [teamId], references: [id])
+  period      DateTime
+  metric      GoalMetric
+  target      Decimal    @db.Decimal(14, 2)
+  currency    Currency?
+  createdById String
+  createdBy   User       @relation("GoalsCreated", fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([scope, userId, teamId, period, metric, currency])
+  @@index([period])
+  @@index([userId])
+  @@index([teamId])
+  @@map("goals")
   @@schema("propyte_crm")
 }

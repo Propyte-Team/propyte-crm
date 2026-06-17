@@ -24,6 +24,7 @@ import {
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 import { STAGE_LABELS, STAGE_COLORS, LOST_REASON_LABELS } from "@/lib/constants";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
+import { meetingStageMode, MEETING_ACTIVITY_TYPES } from "@/lib/pipeline/meeting-gate";
 
 interface StageTransitionDialogProps {
   deal: PipelineDeal;
@@ -56,6 +57,14 @@ export function StageTransitionDialog({
   const [lostReason, setLostReason] = useState("");
   const [lostReasonDetail, setLostReasonDetail] = useState("");
 
+  const meetingMode = meetingStageMode(toStage); // "schedule" | "complete" | null
+  const [meetingType, setMeetingType] = useState("MEETING_VIRTUAL");
+  const [meetingDate, setMeetingDate] = useState("");
+  const [meetingNote, setMeetingNote] = useState("");
+  const [meetingResult, setMeetingResult] = useState("");
+  const [pendingMeeting, setPendingMeeting] = useState<{ id: string; activityType: string; dueDate: string | null; subject: string } | null>(null);
+  const [pendingLoaded, setPendingLoaded] = useState(false);
+
   // Unidades disponibles (para RESERVED)
   const [units, setUnits] = useState<UnitOption[]>([]);
 
@@ -83,12 +92,73 @@ export function StageTransitionDialog({
     }
   }, [toStage, deal.developmentId]);
 
+  useEffect(() => {
+    if (meetingMode !== "complete") { setPendingLoaded(true); return; }
+    setPendingLoaded(false);
+    fetch(`/api/deals/${deal.id}/pending-meeting`)
+      .then((r) => r.json())
+      .then((j) => setPendingMeeting(j.data ?? null))
+      .catch(() => setPendingMeeting(null))
+      .finally(() => setPendingLoaded(true));
+  }, [meetingMode, deal.id]);
+
+  async function handleMeetingActivity(): Promise<boolean> {
+    if (meetingMode === "schedule") {
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId: deal.contactId,
+          dealId: deal.id,
+          activityType: meetingType,
+          subject: "Reunión agendada",
+          dueDate: meetingDate,
+          status: "PENDIENTE",
+          description: meetingNote || undefined,
+        }),
+      });
+      return res.ok;
+    }
+    if (meetingMode === "complete") {
+      if (pendingMeeting) {
+        const res = await fetch(`/api/activities/${pendingMeeting.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "COMPLETADA", outcome: meetingResult }),
+        });
+        return res.ok;
+      }
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId: deal.contactId,
+          dealId: deal.id,
+          activityType: meetingType,
+          subject: "Reunión realizada",
+          dueDate: meetingDate || undefined,
+          status: "COMPLETADA",
+          outcome: meetingResult,
+        }),
+      });
+      return res.ok;
+    }
+    return true;
+  }
+
   // Enviar transición al servidor
   async function handleConfirm() {
     setError(null);
     setSubmitting(true);
 
     try {
+      if (meetingMode) {
+        const okMeeting = await handleMeetingActivity();
+        if (!okMeeting) {
+          throw new Error("No se pudo registrar la reunión. Intenta de nuevo.");
+        }
+      }
+
       const body: any = { stage: toStage };
 
       // Agregar campos según la etapa destino
@@ -127,6 +197,12 @@ export function StageTransitionDialog({
     if (toStage === "RESERVED" && !unitId && !deal.unitId) return false;
     if (toStage === "WON" && !actualCloseDate) return false;
     if (toStage === "LOST" && !lostReason) return false;
+    if (meetingMode === "schedule" && (!meetingType || !meetingDate)) return false;
+    if (meetingMode === "complete") {
+      if (!pendingLoaded) return false;
+      if (!meetingResult.trim()) return false;
+      if (!pendingMeeting && !meetingType) return false;
+    }
     return true;
   }
 
@@ -278,6 +354,67 @@ export function StageTransitionDialog({
                 />
               </div>
             </>
+          )}
+
+          {meetingMode === "schedule" && (
+            <div className="space-y-3 rounded-md border bg-blue-50 p-4">
+              <p className="text-sm font-medium text-blue-800">Registra la reunión agendada</p>
+              <div className="space-y-2">
+                <Label>Tipo <span className="text-red-500">*</span></Label>
+                <Select value={meetingType} onValueChange={setMeetingType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {MEETING_ACTIVITY_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="meetDate">Fecha y hora <span className="text-red-500">*</span></Label>
+                <Input id="meetDate" type="datetime-local" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="meetNote">Nota (opcional)</Label>
+                <Input id="meetNote" value={meetingNote} maxLength={500} onChange={(e) => setMeetingNote(e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          {meetingMode === "complete" && (
+            <div className="space-y-3 rounded-md border bg-green-50 p-4">
+              {!pendingLoaded ? (
+                <p className="text-sm text-green-800">Cargando reunión agendada…</p>
+              ) : pendingMeeting ? (
+                <p className="text-sm text-green-800">
+                  Reunión agendada{" "}
+                  {pendingMeeting.dueDate ? `para ${new Date(pendingMeeting.dueDate).toLocaleString("es-MX")}` : ""}. Captura el resultado para cerrarla.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-green-800">No hay reunión agendada previa. Registra la reunión realizada.</p>
+                  <div className="space-y-2">
+                    <Label>Tipo <span className="text-red-500">*</span></Label>
+                    <Select value={meetingType} onValueChange={setMeetingType}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {MEETING_ACTIVITY_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="meetDate2">Fecha</Label>
+                    <Input id="meetDate2" type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
+                  </div>
+                </>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="meetResult">Resultado <span className="text-red-500">*</span></Label>
+                <Input id="meetResult" value={meetingResult} maxLength={1000} placeholder="¿Qué resultó de la reunión?" onChange={(e) => setMeetingResult(e.target.value)} />
+              </div>
+            </div>
           )}
         </div>
 

@@ -561,3 +561,20 @@ export async function deleteActivity(id: string) {
 
   return { ok: true }
 }
+
+// ============================================================
+// getLatestPendingMeeting — reunión pendiente más reciente de un deal
+// (para el gate de etapa "Realizada")
+// ============================================================
+
+export async function getLatestPendingMeeting(dealId: string) {
+  return prisma.activity.findFirst({
+    where: {
+      dealId,
+      deletedAt: null,
+      status: "PENDIENTE",
+      activityType: { in: ["MEETING_VIRTUAL", "MEETING_PRESENTIAL", "MEETING_SHOWROOM"] },
+    },
+    orderBy: [{ dueDate: "desc" }, { createdAt: "desc" }],
+  });
+}

@@ -1,6 +1,6 @@
 # Task Manager — propyte-crm (núcleo CRM + Google Workspace)
 
-> Última actualización: 2026-06-15 (Activación Gmail GW-0 + fixes de acceso/correo).
+> Última actualización: 2026-06-15 (Activación Gmail GW-0 + fixes de acceso/correo + triage auditoría externa 22 bugs).
 >
 > ## 🔭 Pendientes activos (top)
 > - [ ] **GW-1 Gmail** — enviar desde el CRM + auto-log entrantes/salientes + hilos, todo en `ActivityLog`. Pieza grande restante de Entregable B. (yo: código+migración por MCP; Luis: tópico Pub/Sub en GCP, o arrancamos con cron de respaldo)
@@ -9,6 +9,47 @@
 > - [ ] Verificar `ActivityLog` en **detalle de deal** a runtime cuando exista un deal real (no verificado: pipeline en 0 deals).
 > - [ ] (Futuro, aparte) GW-2 Calendar · GW-3 Google Contacts.
 > - [ ] (Pre-existente) Aplicar SQL `unit_inventory.hold_deal_id` (Hub inventory hold) — sale en logs como ERROR.
+>
+> ### 🐛 AUDITORÍA EXTERNA 2026-06-15 (Claude Bug Finder) — 22 bugs · TRIAGE
+> Corrida con sesión ADMIN heredada (marketing@nativatulum.mx) en crm.propyte.com. **Caveat clave:** la auditoría es del MISMO día que la **caída transitoria de BD Supabase** ("database system is not accepting connections", ya recuperada) → varios P0 (500 / Application Error / 503) **probablemente son ese outage, no bugs de código**. Reproducir ANTES de tocar código (ver [[feedback_data_gap_vs_code_bug]]).
+>
+> **A. Verificar si reproducen ahora (probable outage de BD, no código):**
+> - [ ] BUG-04 `POST /api/contacts` 500 · BUG-08 `POST /reports` 500
+> - [ ] BUG-05/06/07 Application Error en /commissions, /cobranza, /career (digests 262838427 ×2 + 2141296930) — mismo patrón de fallo server-side, coincide con la caída
+> - [ ] BUG-14 HTTP 503 intermitentes en `*?_rsc=*` — coincide con recovery de BD + queries lentas del sync Zoho
+>
+> **B. Conocido / en progreso (no abrir nuevo):**
+> - [ ] BUG-01 creds de auditoría no entran — `audit-temp@propyte.local` está **DESACTIVADO a propósito** (changelog 06-10) + sin hash. Expected. *Gap real derivado:* falta UI "reset password by admin".
+> - [ ] BUG-02/03 forgot-password / email-code 500 — ya migrado a Nodemailer/SMTP (commit `33d6f75`); **pendiente Luis: SMTP vars + verificar**. Mismo origen ambos.
+> - [ ] BUG-19 workflows toggles inactivos — el cron `/api/cron/workflows` **no está agendado en Hostinger** (pendiente Luis ya listado). No es bug del toggle.
+>
+> **C. Probable FALSO POSITIVO (confirmar, casi seguro):**
+> - [ ] BUG-09 "sesión cross-tenant de alterestate" — `marketing@nativatulum.mx` ES la cuenta ADMIN real de Luis en el CRM; el auditor confundió "ya había sesión activa" con "se aceptó sesión de otro dominio". NO hay relación con alterestate. Confirmar solo que `NEXTAUTH_SECRET` no se comparte.
+> - BUG-20 admin expone emails — by design para ADMIN. No es bug.
+> - BUG-16 KPIs en $0 · BUG-17 sin botón "Agregar Desarrollo" — esperado (pipeline en 0 deals; Desarrollos = Hub read-only por diseño). → mejorar copy/empty-state, no es bug.
+>
+> **D. Bugs reales a corregir (UX/funcional):**
+> - [ ] BUG-10 form de Deal sin validación visible (no dice qué campo falta)
+> - [ ] BUG-11 Walk-ins valida solo el primer campo required
+> - [ ] BUG-12 routing SPA: URL directa carga página incorrecta (/developments→Cotizaciones, /hoy→Admin…) — investigar prefetch/layout vs efecto del 503
+> - [ ] BUG-13 header/breadcrumb no actualiza el nombre de página activa (posible misma raíz que BUG-12)
+> - [ ] BUG-18 copy roto en Cotizaciones: menciona botón "Cotizar" que no se ve sin deals
+> - [ ] BUG-15 "Request Access" (landing) es `mailto:`, no formulario
+>
+> **E. Mejoras backlog:**
+> - [ ] MEJORA-01 error boundaries (`error.tsx`) en commissions/cobranza/career — **alta prioridad real:** captura el crash de pantalla blanca aunque la causa sea la BD
+> - [ ] MEJORA-02 toasts en CRUD · MEJORA-04 validación tel `libphonenumber-js` · MEJORA-05 dark mode en login
+> - [ ] MEJORA-03 / BUG-16 onboarding checklist → ya en speckit consolidado §5.12 (onboarding guiado)
+>
+> **Confirmado OK por el auditor:** Vista Hoy, Pipeline Kanban, 8 workflows, Configuración, Walk-ins, Admin CRUD, Mi Config (tabs), Inbox (filtros), form de contacto completo, dark mode.
+>
+> #### ✅ VERIFICADO 2026-06-15 (logs postgres Supabase + lectura de código)
+> - **Outage CONFIRMADO:** la BD `oaijxdpevakashxshhvm` crasheó+recuperó ≥2 veces hoy (mañana + ~23:27–23:32 UTC: "database system was interrupted… automatic recovery in progress… the database system is not accepting connections" ×N FATAL). **Grupo A (BUG-05/06/07/08 + parte de 04 + 14) = ese outage**, no código. NINGUNA página bajo `(dashboard)/` tiene `error.tsx` → toda excepción = pantalla blanca "Application Error" (por eso 05 y 06 comparten digest 262838427; career 2141296930 cae en otra query).
+> - **BUG-04 SÍ es bug de código real (independiente de BD):** `POST /api/contacts` (route.ts ~276) NO valida que `assignedToId` exista en `users` antes del `create` → si el form manda un id inexistente → Prisma P2003 FK error → 500 genérico. Fix: validar/normalizar `assignedToId` o atrapar P2003 → 400 con mensaje. *(El resto del handler está bien: try/catch + zod con leadSource requerido.)*
+> - **Riesgo latente real (no por BD):** null-deref con filas huérfanas — `deal.assignedTo.name`/`deal.contact.*` en `commissions.ts:180-184`, `act.user.name` en `reports.ts:366`, `deal.assignedTo.name` en `reports.ts:644`. Hoy no crashea (FKs íntegras) pero es frágil.
+> - **MEJORA-01 sube a P0 real:** `error.tsx` por módulo convierte estos crashes de outage en "Reintentar" en vez de pantalla blanca. **Fix de mayor palanca** y de bajo riesgo.
+> - **BUG-14 tiene causa de infra real:** la Supabase compartida es inestable (multi-crash hoy); sospechoso el **full-replace del sync Zoho cada 30 min** (20k+ filas/tabla, queries 15-19s). Evaluar sync incremental / recursos del proyecto.
+> - **Ruido de logs NO del CRM:** `column unit_inventory.hold_deal_id does not exist` (SQL Hub hold pendiente, ya listado) y `duplicate key … Propyte_zoho_pending_deletes` + `ON CONFLICT … cannot affect row a second time` (bug del sync de borrados del **Hub**, no del CRM).
 >
 > **🎯 Sesión 2026-06-15 (Activación Gmail GW-0 + fixes de soporte)** —
 > - ✅ **GW-0 Gmail OAuth ACTIVADO en prod**: migración `google_oauth_tokens` aplicada por MCP (FK→`users`, no `"User"`); cliente OAuth **Web** creado en GCP proyecto PROPYTE (antes solo Desktop google-ads-mcp); 4 env vars en Hostinger; **token de marketing@nativatulum.mx guardado → "Conectado"**.

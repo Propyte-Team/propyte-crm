@@ -23,12 +23,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { CallIndicator } from "@/components/contacts/call-indicator";
 import { QuoteList } from "@/components/quotes/quote-list";
 import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
 import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
 import { ActivityLog } from "@/components/activities/activity-log";
+import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
+import { AdvisorSelect } from "@/components/shared/advisor-select";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -129,6 +132,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
+  const [dealOpen, setDealOpen] = useState(false);
   const [activeCall, setActiveCall] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(
     contact.deals?.length > 0 ? contact.deals[0].id : null
@@ -331,7 +335,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           </button>
           <button
             className="btn-secondary text-[13px]"
-            onClick={() => router.push(`/pipeline?newDeal=true&contactId=${contact.id}`)}
+            onClick={() => setDealOpen(true)}
           >
             <Plus className="h-4 w-4" /> Crear Deal
           </button>
@@ -391,7 +395,14 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           </Section>
 
           <Section title="Asignación">
-            <ReadRow label="Asesor" value={contact.assignedTo?.name ?? "Sin asignar"} />
+            <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+              <span className="text-[color:var(--text-tertiary)]">Asesor</span>
+              <AdvisorSelect
+                value={contact.assignedToId ?? contact.assignedTo?.id ?? null}
+                allowUnassigned
+                onChange={(id) => changeField("assignedToId", id)}
+              />
+            </div>
             <div className="flex items-start justify-between gap-3 py-1.5">
               <span className="text-[13px] text-[color:var(--text-tertiary)]">Etiquetas</span>
               <div className="flex flex-wrap justify-end gap-1">
@@ -412,15 +423,18 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
         </div>
 
         {/* Columna derecha — timeline unificada + notas */}
-        <div className="crm-card lg:col-span-7">
-          <ActivityLog
-            contactId={contact.id}
-            contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
-            contactEmail={contact.email ?? undefined}
-            contactFirstName={contact.firstName ?? undefined}
-            contactLastName={contact.lastName ?? undefined}
-            onChanged={() => router.refresh()}
-          />
+        <div className="space-y-5 lg:col-span-7">
+          <div className="crm-card">
+            <ActivityLog
+              contactId={contact.id}
+              contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+              contactEmail={contact.email ?? undefined}
+              contactFirstName={contact.firstName ?? undefined}
+              contactLastName={contact.lastName ?? undefined}
+              onChanged={() => router.refresh()}
+            />
+          </div>
+          <ShortlistPanel contactId={contact.id} />
         </div>
       </div>
 
@@ -428,7 +442,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
       <Section
         title={`Deals (${contact.deals?.length ?? 0})`}
         action={
-          <button className="btn-secondary text-[13px]" onClick={() => router.push(`/pipeline?newDeal=true&contactId=${contact.id}`)}>
+          <button className="btn-secondary text-[13px]" onClick={() => setDealOpen(true)}>
             <Plus className="h-3.5 w-3.5" /> Nuevo deal
           </button>
         }
@@ -531,6 +545,23 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
           onClose={() => setActiveCall(false)}
         />
       )}
+
+      {/* Modal de crear deal */}
+      <Dialog open={dealOpen} onOpenChange={setDealOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crear nuevo deal</DialogTitle>
+          </DialogHeader>
+          <DealForm
+            initialData={{ contactId: contact.id }}
+            onSuccess={() => {
+              setDealOpen(false);
+              router.refresh();
+            }}
+            onCancel={() => setDealOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de edición completa */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

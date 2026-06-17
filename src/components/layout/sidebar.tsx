@@ -22,6 +22,8 @@ import {
   Sun,
   LogOut,
   FileText,
+  Target,
+  CopyCheck,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
@@ -54,6 +56,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
     items: [
       { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
       { label: "Cobranza", href: "/cobranza", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES] },
+      { label: "Metas", href: "/metas", icon: Target, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES] },
       { label: "Reportes", href: "/reports", icon: BarChart3, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "MARKETING"] },
       { label: "Mi Carrera", href: "/career", icon: TrendingUp, roles: ["TEAM_LEADER", ...ASESORES] },
     ],
@@ -64,6 +67,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
       { label: "Mi Config", href: "/settings", icon: UserCheck, roles: TODOS },
       { label: "Configuracion", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
       { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+      { label: "Duplicados", href: "/duplicados", icon: CopyCheck, roles: ["ADMIN", "DIRECTOR"] },
     ],
   },
 ]
