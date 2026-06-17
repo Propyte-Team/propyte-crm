@@ -24,8 +24,8 @@ export async function captureLead(
 
   // --- Dedup por teléfono E.164, email o identificador social (invariante B.6) ---
   const phone = lead.phone ? normalizePhoneE164(lead.phone) : null;
-  const instagramId = (input as Record<string, unknown>).instagramId as string | undefined;
-  const messengerPsid = (input as Record<string, unknown>).messengerPsid as string | undefined;
+  const instagramId = lead.instagramId;
+  const messengerPsid = lead.messengerPsid;
   const dedupOr: object[] = [];
   if (phone) dedupOr.push({ phone });
   if (lead.email) dedupOr.push({ email: lead.email });
