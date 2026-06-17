@@ -22,11 +22,15 @@ export async function captureLead(
   }
   const lead = parsed.data;
 
-  // --- Dedup por teléfono E.164 o email (invariante B.6) ---
+  // --- Dedup por teléfono E.164, email o identificador social (invariante B.6) ---
   const phone = lead.phone ? normalizePhoneE164(lead.phone) : null;
+  const instagramId = (input as Record<string, unknown>).instagramId as string | undefined;
+  const messengerPsid = (input as Record<string, unknown>).messengerPsid as string | undefined;
   const dedupOr: object[] = [];
   if (phone) dedupOr.push({ phone });
   if (lead.email) dedupOr.push({ email: lead.email });
+  if (instagramId) dedupOr.push({ instagramId });
+  if (messengerPsid) dedupOr.push({ messengerPsid });
 
   const existing = dedupOr.length
     ? await prisma.contact.findFirst({
@@ -74,6 +78,8 @@ export async function captureLead(
       contactStatus: "NUEVO",
       lastActivityAt: new Date(),
       tags: [],
+      instagramId: instagramId ?? null,
+      messengerPsid: messengerPsid ?? null,
     },
   });
 
