@@ -144,9 +144,7 @@ export async function handleInboundMessage(msg: IncomingMessage) {
   ) {
     try {
       const { botRespond } = await import("@/lib/bot/bot-respond");
-      // NOTE: Task 12 actualizará la firma de botRespond para aceptar { channel }.
-      // Por ahora casteamos para desbloquear compilación sin modificar botRespond.
-      await (botRespond as (id: string, opts: { channel: MessagingChannel }) => Promise<unknown>)(contact.id, { channel: msg.channel });
+      await botRespond(contact.id, { channel: msg.channel });
     } catch (err) {
       console.error(`[messaging] botRespond (${msg.channel}) falló:`, err);
     }
