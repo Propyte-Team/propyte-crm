@@ -637,6 +637,10 @@ model User {
   googleOAuthToken        GoogleOAuthToken?
   shortlistsCreated       Shortlist[]    @relation("ShortlistsCreated")
 
+  // Metas/Scorecard (§5.14)
+  goals        Goal[] @relation("UserGoals")
+  goalsCreated Goal[] @relation("GoalsCreated")
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -1750,6 +1754,7 @@ model Team {
   isActive          Boolean @default(true)
 
   members TeamMember[]
+  goals   Goal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2359,5 +2364,54 @@ model ShortlistView {
 
   @@index([shortlistId])
   @@map("shortlist_views")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// METAS / SCORECARD — §5.14
+// =====================================================================
+
+enum GoalScope {
+  USER
+  TEAM
+  COMPANY
+
+  @@schema("propyte_crm")
+}
+
+enum GoalMetric {
+  CAPTACIONES
+  NEGOCIOS_CREADOS
+  COTIZACIONES_ENVIADAS
+  ACTIVIDADES_COMPLETADAS
+  NEGOCIOS_GANADOS
+  MONTO_VENTA
+
+  @@schema("propyte_crm")
+}
+
+// Metas mensuales por asesor/equipo/empresa (§5.14). El "real" se DERIVA, no se guarda.
+model Goal {
+  id          String     @id @default(uuid())
+  scope       GoalScope
+  userId      String?
+  user        User?      @relation("UserGoals", fields: [userId], references: [id])
+  teamId      String?
+  team        Team?      @relation(fields: [teamId], references: [id])
+  period      DateTime
+  metric      GoalMetric
+  target      Decimal    @db.Decimal(14, 2)
+  currency    Currency?
+  createdById String
+  createdBy   User       @relation("GoalsCreated", fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([scope, userId, teamId, period, metric, currency])
+  @@index([period])
+  @@index([userId])
+  @@index([teamId])
+  @@map("goals")
   @@schema("propyte_crm")
 }
