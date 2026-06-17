@@ -16,4 +16,8 @@ describe("pickSnapshotPrice", () => {
   it("sin precio → listPrice null", () => {
     expect(pickSnapshotPrice({ moneda: "MXN", precioMxn: null, precioUsd: null }).listPrice).toBeNull();
   });
+  it("item optimista → fallback a price", () => {
+    expect(pickSnapshotPrice({ moneda: "MXN", price: 3300000 }))
+      .toEqual({ listPrice: 3300000, currency: "MXN" });
+  });
 });
