@@ -13,12 +13,19 @@ const SOURCE: Record<MessagingChannel, "WHATSAPP" | "INSTAGRAM" | "MESSENGER"> =
   MESSENGER: "MESSENGER",
 };
 
-/** Busca el contacto por el id propio del canal. */
+/** Busca el contacto por el id propio del canal. Para WHATSAPP usa match flexible (exacto + últimos 10 dígitos). */
 async function findContactByChannel(channel: MessagingChannel, senderId: string) {
-  const where =
-    channel === "INSTAGRAM" ? { instagramId: senderId }
-    : channel === "MESSENGER" ? { messengerPsid: senderId }
-    : { phone: senderId };
+  if (channel === "WHATSAPP") {
+    return prisma.contact.findFirst({
+      where: {
+        OR: [{ phone: senderId }, { phone: { endsWith: senderId.slice(-10) } }],
+        deletedAt: null,
+        mergedIntoId: null,
+      },
+      include: { assignedTo: { select: { id: true, name: true } } },
+    });
+  }
+  const where = channel === "INSTAGRAM" ? { instagramId: senderId } : { messengerPsid: senderId };
   return prisma.contact.findFirst({
     where: { ...where, deletedAt: null, mergedIntoId: null },
     include: { assignedTo: { select: { id: true, name: true } } },
@@ -53,6 +60,7 @@ export async function handleInboundMessage(msg: IncomingMessage) {
       where: { id: result.contactId },
       include: { assignedTo: { select: { id: true, name: true } } },
     });
+    // include sin select de escalares → whatsappOptOut disponible en ambas ramas
     if (!contact) return null;
   }
 
@@ -108,6 +116,14 @@ export async function handleInboundMessage(msg: IncomingMessage) {
   const { meetSlaTimers } = await import("@/lib/workflows/sla");
   await meetSlaTimers(contact.id);
 
+  if (msg.channel === "WHATSAPP") {
+    const { emitEvent } = await import("@/lib/workflows/events");
+    await emitEvent("whatsapp.replied", "conversation", conversation.id, {
+      contactId: contact.id,
+      body: msg.text.slice(0, 500),
+    });
+  }
+
   if (conversation.status === "HUMAN") {
     const notifyUserId = (conversation as { controlledById?: string | null }).controlledById ?? contact.assignedToId;
     if (notifyUserId) {
@@ -121,7 +137,11 @@ export async function handleInboundMessage(msg: IncomingMessage) {
         },
       });
     }
-  } else if (conversation.status === "BOT" && conversation.botEnabled) {
+  } else if (
+    conversation.status === "BOT" &&
+    conversation.botEnabled &&
+    !(msg.channel === "WHATSAPP" && contact.whatsappOptOut)
+  ) {
     try {
       const { botRespond } = await import("@/lib/bot/bot-respond");
       // NOTE: Task 12 actualizará la firma de botRespond para aceptar { channel }.

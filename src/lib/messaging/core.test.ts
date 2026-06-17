@@ -21,12 +21,13 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a) }));
-vi.mock("@/lib/workflows/events", () => ({ emitEvent: vi.fn() }));
+const emitEvent = vi.fn();
+vi.mock("@/lib/workflows/events", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
 
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
-  [contactFindFirst, convUpsert, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers].forEach((m) => m.mockReset());
+  [contactFindFirst, convUpsert, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers, emitEvent].forEach((m) => m.mockReset());
   convUpsert.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
   msgCreate.mockResolvedValue({ id: "m1" });
   activityCreate.mockResolvedValue({});
@@ -70,5 +71,41 @@ describe("handleInboundMessage", () => {
     contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
     await handleInboundMessage(base);
     expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+  });
+});
+
+const wa = { channel: "WHATSAPP" as const, senderId: "+529991112233", externalMessageId: "wamid-1", text: "hola", profileName: "Ana" };
+
+describe("handleInboundMessage – regresiones WhatsApp", () => {
+  beforeEach(() => {
+    convUpsert.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+    msgCreate.mockResolvedValue({ id: "m1" });
+    activityCreate.mockResolvedValue({});
+  });
+
+  it("WHATSAPP: contacto con opt-out NO dispara el bot", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: true });
+    await handleInboundMessage(wa);
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("WHATSAPP: contacto sin opt-out SÍ dispara el bot", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage(wa);
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP" });
+  });
+
+  it("WHATSAPP: emite el evento whatsapp.replied (no-regresión)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage(wa);
+    expect(emitEvent).toHaveBeenCalledWith("whatsapp.replied", "conversation", "conv1", expect.objectContaining({ contactId: "c1" }));
+  });
+
+  it("WHATSAPP: busca contacto con match flexible (exact OR endsWith last10)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage(wa);
+    expect(contactFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ OR: expect.arrayContaining([{ phone: "+529991112233" }]) }) })
+    );
   });
 });
