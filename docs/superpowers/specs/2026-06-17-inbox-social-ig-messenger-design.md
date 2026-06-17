@@ -56,6 +56,9 @@ Migración manual `prisma/migrations-manual/2026-06-17-inbox-social.sql` (additi
 | `enum ConnectorProvider` | += `INSTAGRAM`, `MESSENGER` (distintos de `META`, que es Lead Ads) |
 | `Contact` | += `instagramId String?`, `messengerPsid String?` — **índice único parcial** `WHERE col IS NOT NULL` (patrón `gmailMessageId`). Ids de sistema → columnas, no `custom` JSON (no aplica la regla JSONB+registro de §P2). |
 | `Message` | += `externalMessageId String?` — único parcial. Dedup del `mid` de Meta (replay-safe). WhatsApp sigue usando `twilioSid`. |
+| `Message.externalPhone` | pasa a **nullable** (`DROP NOT NULL`). Hoy es `NOT NULL` (WhatsApp lo llena con el E.164); un DM social no tiene teléfono. Aditivo-seguro (relaja constraint). |
+
+**Validación (`incomingLeadSchema`, `src/lib/validations/rebuild-f1.ts`):** hoy el `source` es un enum Zod hardcoded **sin** `MESSENGER` y el schema **exige `phone` OR `email`** (`.refine`). Ajustes: `source` += `MESSENGER`; campos opcionales `instagramId?`/`messengerPsid?`; el `.refine` pasa a exigir **`phone` OR `email` OR `instagramId` OR `messengerPsid`** (un lead social se identifica por su id social). `captureLead` debe (a) matchear por `instagramId`/`messengerPsid` además de phone/email, y (b) persistir el id social al crear el `Contact`.
 
 `Conversation` ya tiene `@@unique([contactId, channel])`: un contacto puede tener hilos separados de WhatsApp / IG / Messenger. Sin cambios estructurales ahí.
 
@@ -90,7 +93,7 @@ Migración manual `prisma/migrations-manual/2026-06-17-inbox-social.sql` (additi
 
 ## 6. Bot IA
 
-Sin cambios en el motor: `botRespond` y los guardarraíles §6.0 son agnósticos del canal. La única diferencia es que el envío de la respuesta sale por el adapter del canal (dispatcher). Takeover humano → `status = HUMAN`, `controlledById = userId` (lógica existente del inbox).
+El motor de razonamiento (`botRespond`: contexto + catálogo Hub + Claude + brand-linter) no cambia. Pero hoy `botRespond` está **acoplado a WhatsApp**: crea/usa la `Conversation` WHATSAPP y envía con `sendWhatsAppMessage`. Se **parametriza por canal**: `botRespond(contactId, { channel?, goal? })` (default `WHATSAPP` para no romper a los llamadores actuales) y el envío de la respuesta pasa por el **dispatcher** (`sendChannelMessage`). Para IG/Messenger respeta la ventana de 24h (si el envío falla por ventana, no reintenta). Takeover humano → `status = HUMAN`, `controlledById = userId` (lógica existente del inbox).
 
 ## 7. Inbox UI
 
