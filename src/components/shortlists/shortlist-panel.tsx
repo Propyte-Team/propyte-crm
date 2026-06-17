@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { pickSnapshotPrice } from "@/lib/shortlists/quote-from-item";
 
 // /api/hub/units returns { data: [...], source: "hub" }
 // Each item: { id, unitNumber, unitType, price, moneda, status, ... }
@@ -38,6 +39,7 @@ interface ShortlistLite {
   title: string;
   status: "DRAFT" | "SENT" | "OPENED";
   openedAt: string | null;
+  dealId: string | null;
   items: ShortlistItemLite[];
   _count?: { views: number };
 }
@@ -168,6 +170,18 @@ export function ShortlistPanel({
     if (!res.ok) setActive((a) => (a ? { ...a, items: prev } : a));
   }
 
+  async function promover(item: { hubUnitId: string; snapshot: ShortlistItemLite["snapshot"] }) {
+    if (!active?.dealId) return;
+    const { listPrice, currency } = pickSnapshotPrice(item.snapshot ?? {});
+    if (!listPrice) { alert("La unidad no tiene precio en el snapshot; no se puede cotizar."); return; }
+    const res = await fetch("/api/quotes", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dealId: active.dealId, hubUnitId: item.hubUnitId, listPrice, currency, scheme: "CONTADO" }),
+    });
+    if (res.ok) alert("Cotización creada en el negocio vinculado.");
+    else { const j = await res.json().catch(() => ({})); alert(j.error ?? "No se pudo crear la cotización."); }
+  }
+
   async function generateLink() {
     if (!active) return;
     await fetch(`/api/shortlists/${active.id}`, {
@@ -268,12 +282,22 @@ export function ShortlistPanel({
                     </span>{" "}
                     · {snapshotPrice(i.snapshot)}
                   </span>
-                  <button
-                    className="text-[11px] text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]"
-                    onClick={() => removeUnit(i.id)}
-                  >
-                    Quitar
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="text-xs text-[color:var(--text-secondary)] hover:underline disabled:opacity-40"
+                      disabled={!active.dealId}
+                      title={active.dealId ? "Crear cotización de esta unidad" : "Vincula la propuesta a un negocio para cotizar"}
+                      onClick={() => promover(i)}
+                    >
+                      Cotizar
+                    </button>
+                    <button
+                      className="text-[11px] text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]"
+                      onClick={() => removeUnit(i.id)}
+                    >
+                      Quitar
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
