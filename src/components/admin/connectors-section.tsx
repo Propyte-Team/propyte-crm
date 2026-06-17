@@ -149,7 +149,21 @@ export function ConnectorsSection() {
               ))}
               {(provider === "META" || provider === "INSTAGRAM" || provider === "MESSENGER") && (
                 <p className="text-[11px] text-muted-foreground">
-                  Webhook callback: <code>https://crm.propyte.com/api/connectors/meta/webhook</code> (objeto page, campo leadgen / mensajes)
+                  {(() => {
+                    const webhookPath =
+                      provider === "INSTAGRAM" || provider === "MESSENGER"
+                        ? "/api/webhooks/meta-dm"
+                        : "/api/connectors/meta/webhook";
+                    return (
+                      <>
+                        Webhook callback:{" "}
+                        <code>https://crm.propyte.com{webhookPath}</code>
+                        {(provider === "INSTAGRAM" || provider === "MESSENGER")
+                          ? " (mensajes DM — objeto instagram / página)"
+                          : " (objeto page, campo leadgen)"}
+                      </>
+                    );
+                  })()}
                 </p>
               )}
               {error && <p className="text-[12px] text-destructive">{error}</p>}

@@ -50,12 +50,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // Enviar como humano: si el bot seguía activo, el envío manual implica takeover suave
-  const message = await sendChannelMessage(
-    conv.channel as MessagingChannel,
-    conv.contact.id,
-    parsed.data.body,
-    session.user.id
-  );
+  let message;
+  try {
+    message = await sendChannelMessage(
+      conv.channel as MessagingChannel,
+      conv.contact.id,
+      parsed.data.body,
+      session.user.id
+    );
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "No se pudo enviar el mensaje" },
+      { status: 422 }
+    );
+  }
   if (conv.status === "BOT") {
     await prisma.conversation.update({
       where: { id: conv.id },

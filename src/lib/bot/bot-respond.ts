@@ -72,7 +72,7 @@ export async function botRespond(
 ): Promise<boolean> {
   const channel: MessagingChannel = opts.channel ?? "WHATSAPP";
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
-  if (!contact || contact.doNotContact || contact.whatsappOptOut) return false;
+  if (!contact || contact.doNotContact || (channel === "WHATSAPP" && contact.whatsappOptOut)) return false;
 
   const conv = opts.createConversation
     ? await ensureConversation(contactId, channel)
