@@ -23,6 +23,7 @@ import {
   LogOut,
   FileText,
   Target,
+  CopyCheck,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
@@ -66,6 +67,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
       { label: "Mi Config", href: "/settings", icon: UserCheck, roles: TODOS },
       { label: "Configuracion", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
       { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+      { label: "Duplicados", href: "/duplicados", icon: CopyCheck, roles: ["ADMIN", "DIRECTOR"] },
     ],
   },
 ]
