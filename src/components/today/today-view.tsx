@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { TodayView as TodayData, TodayMini } from "@/server/today";
+import { MiAvanceWidget } from "@/components/goals/mi-avance-widget";
 
 function relTime(iso?: string): string {
   if (!iso) return "";
@@ -107,6 +108,8 @@ export function TodayView({ data, firstName }: { data: TodayData; firstName: str
         <Section title="Deals calientes" icon={Flame} count={data.hotDeals.count} items={data.hotDeals.items}
           accent="#DC2626" emptyText="Sin deals calientes activos." viewAllHref="/pipeline" />
       </div>
+
+      <MiAvanceWidget />
 
       <div className="crm-card flex items-center justify-between !py-3">
         <div className="flex items-center gap-2">
