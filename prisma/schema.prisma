@@ -82,6 +82,7 @@ enum LeadSource {
   EVENTO
   WEBSITE
   WHATSAPP
+  MESSENGER
   // Cutover Zoho (consolidado §3.6): valores presentes en reports.zoho_contactos sin destino previo
   META_ADS // 'Meta Ads' genérico sin desglose FB/IG (la plataforma desglosa en AdAttribution.network)
   BASE_DE_DATOS // 'Base de Datos'
@@ -288,6 +289,10 @@ enum ActivityType {
   WHATSAPP_IN
   SMS_OUT
   SMS_IN
+  INSTAGRAM_IN
+  INSTAGRAM_OUT
+  MESSENGER_IN
+  MESSENGER_OUT
   EMAIL_SENT
   EMAIL_RECEIVED
   MEETING_VIRTUAL
@@ -305,10 +310,12 @@ enum ActivityType {
   @@schema("propyte_crm")
 }
 
-// Canal de mensaje (Twilio)
+// Canal de mensaje (Twilio/Meta)
 enum MessageChannel {
   WHATSAPP
   SMS
+  INSTAGRAM
+  MESSENGER
 
   @@schema("propyte_crm")
 }
@@ -516,6 +523,8 @@ enum ActionQueueStatus {
 
 enum ConnectorProvider {
   META
+  INSTAGRAM
+  MESSENGER
   TIKTOK
   WEBSITE
   ZAPIER
@@ -553,6 +562,8 @@ enum ConversationChannel {
   WHATSAPP
   SMS
   WEB
+  INSTAGRAM
+  MESSENGER
 
   @@schema("propyte_crm")
 }
@@ -696,6 +707,8 @@ model Contact {
   recordingConsent  Boolean       @default(false)
   zohoId            String?       @unique
   hubContactId      String?
+  instagramId       String?       @unique
+  messengerPsid     String?       @unique
 
   // Dedup / merge (confirmación humana salvo phone+email idénticos — Anexo B §K G.6)
   mergedIntoId String?
@@ -1027,10 +1040,11 @@ model Message {
   direction     MessageDirection
   body          String           @db.Text
   mediaUrl      String?
-  twilioSid     String?          @unique
-  templateName  String?
-  status        MessageStatus    @default(QUEUED)
-  externalPhone String
+  twilioSid         String?          @unique
+  externalMessageId String?          @unique
+  templateName      String?
+  status            MessageStatus    @default(QUEUED)
+  externalPhone     String?
 
   // Inbox / bot (Anexo B §I.2)
   conversationId String?
