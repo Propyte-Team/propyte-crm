@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { getShortlistByToken, recordView } from "@/server/shortlists";
 import type { UnitSnapshot } from "@/lib/shortlists/snapshot";
+import { PrintButton } from "@/components/shortlists/print-button";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default async function PublicShortlistPage({ params }: { params: { token:
 
   return (
     <main style={{ background: "#FAFAFA", minHeight: "100vh", color: "#0A0A0A", fontFamily: "system-ui, sans-serif" }}>
+      <style dangerouslySetInnerHTML={{ __html: "@media print { .no-print { display: none !important; } body { background: #fff !important; } }" }} />
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "1px solid #E5E5E5", paddingBottom: 16 }}>
           <div>
@@ -70,12 +72,16 @@ export default async function PublicShortlistPage({ params }: { params: { token:
         </section>
 
         {advisor && (
-          <a
-            href={`https://wa.me/?text=${encodeURIComponent(`Hola, me interesa la propuesta "${shortlist.title}".`)}`}
-            style={{ display: "inline-block", marginTop: 24, background: "#0A0A0A", color: "#fff", padding: "12px 24px", borderRadius: 6, textDecoration: "none", fontSize: 14, fontWeight: 600 }}
-          >
-            Hablar con mi asesor por WhatsApp
-          </a>
+          <>
+            <PrintButton />
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(`Hola, me interesa la propuesta "${shortlist.title}".`)}`}
+              className="no-print"
+              style={{ display: "inline-block", marginTop: 24, background: "#0A0A0A", color: "#fff", padding: "12px 24px", borderRadius: 6, textDecoration: "none", fontSize: 14, fontWeight: 600 }}
+            >
+              Hablar con mi asesor por WhatsApp
+            </a>
+          </>
         )}
 
         <footer style={{ marginTop: 40, paddingTop: 16, borderTop: "1px solid #E5E5E5", fontSize: 11, color: "#aaa" }}>
