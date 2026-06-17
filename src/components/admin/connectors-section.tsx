@@ -18,7 +18,7 @@ import { Plus, Pause, Play, Trash2 } from "lucide-react";
 interface Connector {
   id: string;
   name: string;
-  provider: "META" | "TIKTOK" | "WEBSITE" | "ZAPIER" | "MANUAL";
+  provider: "META" | "TIKTOK" | "WEBSITE" | "ZAPIER" | "MANUAL" | "INSTAGRAM" | "MESSENGER";
   status: "ACTIVE" | "PAUSED" | "ERROR";
   lastLeadAt: string | null;
   errorCount: number;
@@ -27,13 +27,17 @@ interface Connector {
   _count: { leadLogs: number };
 }
 
+const META_CRED_FIELDS = [
+  { key: "pageId", label: "Page ID" },
+  { key: "pageAccessToken", label: "Page Access Token (long-lived)" },
+  { key: "appSecret", label: "App Secret" },
+  { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
+];
+
 const CRED_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
-  META: [
-    { key: "pageId", label: "Page ID" },
-    { key: "pageAccessToken", label: "Page Access Token (long-lived)" },
-    { key: "appSecret", label: "App Secret" },
-    { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
-  ],
+  META: META_CRED_FIELDS,
+  INSTAGRAM: META_CRED_FIELDS,
+  MESSENGER: META_CRED_FIELDS,
   TIKTOK: [
     { key: "advertiserId", label: "Advertiser ID" },
     { key: "accessToken", label: "Access Token" },
@@ -122,6 +126,8 @@ export function ConnectorsSection() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="META">Meta Lead Ads</SelectItem>
+                    <SelectItem value="INSTAGRAM">Instagram DM</SelectItem>
+                    <SelectItem value="MESSENGER">Messenger</SelectItem>
                     <SelectItem value="TIKTOK">TikTok Lead Gen</SelectItem>
                     <SelectItem value="WEBSITE">Sitio web (webhook)</SelectItem>
                   </SelectContent>
@@ -141,9 +147,9 @@ export function ConnectorsSection() {
                   />
                 </div>
               ))}
-              {provider === "META" && (
+              {(provider === "META" || provider === "INSTAGRAM" || provider === "MESSENGER") && (
                 <p className="text-[11px] text-muted-foreground">
-                  Webhook callback: <code>https://crm.propyte.com/api/connectors/meta/webhook</code> (objeto page, campo leadgen)
+                  Webhook callback: <code>https://crm.propyte.com/api/connectors/meta/webhook</code> (objeto page, campo leadgen / mensajes)
                 </p>
               )}
               {error && <p className="text-[12px] text-destructive">{error}</p>}
