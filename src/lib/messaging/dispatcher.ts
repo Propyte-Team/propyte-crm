@@ -14,13 +14,21 @@ export async function sendChannelMessage(
   channel: MessagingChannel,
   contactId: string,
   body: string,
-  userId: string
+  userId: string,
+  opts: { bot?: boolean } = {}
 ) {
   if (channel === "WHATSAPP") {
     const c = await prisma.contact.findUnique({ where: { id: contactId }, select: { phone: true } });
     if (!c?.phone) throw new Error("Contacto sin teléfono");
     const { sendWhatsAppMessage } = await import("@/lib/twilio/whatsapp");
-    return sendWhatsAppMessage(c.phone, body, contactId, userId);
+    const message = await sendWhatsAppMessage(c.phone, body, contactId, userId);
+    if (opts.bot) {
+      return prisma.message.update({
+        where: { id: message.id },
+        data: { sender: "BOT", aiGenerated: true, aiAutonomy: "L2" },
+      });
+    }
+    return message;
   }
 
   const contact = await prisma.contact.findUnique({
@@ -59,7 +67,9 @@ export async function sendChannelMessage(
       externalMessageId: result.externalMessageId,
       status: result.status as MessageStatus,
       conversationId: conversation.id,
-      sender: "ADVISOR",
+      sender: opts.bot ? "BOT" : "ADVISOR",
+      aiGenerated: opts.bot ?? false,
+      aiAutonomy: opts.bot ? "L2" : null,
     },
   });
 

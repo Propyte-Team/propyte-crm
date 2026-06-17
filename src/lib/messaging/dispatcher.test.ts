@@ -5,6 +5,7 @@ const sendInstagram = vi.fn();
 const contactFindUnique = vi.fn();
 const connectorFindFirst = vi.fn();
 const msgCreate = vi.fn();
+const msgUpdate = vi.fn();
 const convUpsert = vi.fn();
 
 vi.mock("@/lib/twilio/whatsapp", () => ({ sendWhatsAppMessage: (...a: unknown[]) => sendWhatsAppMessage(...a) }));
@@ -16,7 +17,10 @@ vi.mock("@/lib/db", () => ({
     contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
     leadConnector: { findFirst: (...a: unknown[]) => connectorFindFirst(...a) },
     conversation: { upsert: (...a: unknown[]) => convUpsert(...a) },
-    message: { create: (...a: unknown[]) => msgCreate(...a) },
+    message: {
+      create: (...a: unknown[]) => msgCreate(...a),
+      update: (...a: unknown[]) => msgUpdate(...a),
+    },
     activity: { create: vi.fn() },
   },
 }));
@@ -25,9 +29,10 @@ vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: vi.fn() }));
 import { sendChannelMessage } from "./dispatcher";
 
 beforeEach(() => {
-  [sendWhatsAppMessage, sendInstagram, contactFindUnique, connectorFindFirst, msgCreate, convUpsert].forEach((m) => m.mockReset());
+  [sendWhatsAppMessage, sendInstagram, contactFindUnique, connectorFindFirst, msgCreate, msgUpdate, convUpsert].forEach((m) => m.mockReset());
   convUpsert.mockResolvedValue({ id: "conv1" });
   msgCreate.mockResolvedValue({ id: "m1" });
+  msgUpdate.mockResolvedValue({ id: "m1", sender: "BOT", aiGenerated: true, aiAutonomy: "L2" });
 });
 
 describe("sendChannelMessage", () => {
@@ -46,6 +51,42 @@ describe("sendChannelMessage", () => {
     expect(sendInstagram).toHaveBeenCalledWith("PAGE_TOKEN", "IGSID-1", "hola");
     expect(msgCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ channel: "INSTAGRAM", direction: "OUTBOUND", externalMessageId: "mid-out", sender: "ADVISOR" }) })
+    );
+  });
+
+  it("INSTAGRAM con {bot:true} guarda sender BOT y aiGenerated true", async () => {
+    contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-1", messengerPsid: null });
+    connectorFindFirst.mockResolvedValue({ id: "conn1", credentials: "enc" });
+    sendInstagram.mockResolvedValue({ externalMessageId: "mid-bot", status: "SENT" });
+    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1", { bot: true });
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sender: "BOT", aiGenerated: true }),
+      })
+    );
+  });
+
+  it("INSTAGRAM sin opts bot sigue siendo sender ADVISOR", async () => {
+    contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-2", messengerPsid: null });
+    connectorFindFirst.mockResolvedValue({ id: "conn1", credentials: "enc" });
+    sendInstagram.mockResolvedValue({ externalMessageId: "mid-adv", status: "SENT" });
+    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1");
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sender: "ADVISOR", aiGenerated: false }),
+      })
+    );
+  });
+
+  it("WHATSAPP con {bot:true} llama message.update con sender BOT", async () => {
+    contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: null, messengerPsid: null });
+    sendWhatsAppMessage.mockResolvedValue({ id: "wa1" });
+    await sendChannelMessage("WHATSAPP", "c1", "hola bot", "u1", { bot: true });
+    expect(msgUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "wa1" },
+        data: expect.objectContaining({ sender: "BOT", aiGenerated: true, aiAutonomy: "L2" }),
+      })
     );
   });
 });

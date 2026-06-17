@@ -78,7 +78,8 @@ describe("botRespond — canal", () => {
       "INSTAGRAM",
       "c1",
       expect.any(String),
-      expect.any(String)
+      expect.any(String),
+      { bot: true }
     );
   });
 
@@ -89,7 +90,8 @@ describe("botRespond — canal", () => {
       "WHATSAPP",
       "c1",
       expect.any(String),
-      expect.any(String)
+      expect.any(String),
+      { bot: true }
     );
   });
 

@@ -136,12 +136,8 @@ export async function botRespond(
       (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
     if (!ownerId) return false;
 
-    // sendChannelMessage crea el Message (sender ADVISOR) y la actividad.
-    // NOTE: aiGenerated/aiAutonomy no se marcan aquí en v1 (la firma del dispatcher
-    // no expone esos campos). El mensaje queda como sender ADVISOR en vez de BOT.
-    // Decisión documentada: aceptable para v1; marcar sender=BOT requiere extender
-    // el dispatcher en una tarea futura.
-    await sendChannelMessage(channel, contact.id, clean, ownerId);
+    // sendChannelMessage con opts.bot=true marca sender=BOT, aiGenerated=true, aiAutonomy=L2.
+    await sendChannelMessage(channel, contact.id, clean, ownerId, { bot: true });
     await prisma.conversation.update({
       where: { id: conv.id },
       data: { lastMessageAt: new Date() },
