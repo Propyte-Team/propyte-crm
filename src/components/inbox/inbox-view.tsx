@@ -17,6 +17,7 @@ interface ConversationListItem {
   unreadCount: number;
   lastMessageAt: string | null;
   aiSummary: string | null;
+  channel: string;
   contact: {
     id: string;
     firstName: string;
@@ -68,9 +69,18 @@ const TEMP_CLASS: Record<string, string> = {
   DEAD: "badge-neutral",
 };
 
+const CHANNEL_LABEL: Record<string, string> = {
+  WHATSAPP: "WhatsApp",
+  SMS: "SMS",
+  WEB: "Web",
+  INSTAGRAM: "Instagram",
+  MESSENGER: "Messenger",
+};
+
 export function InboxView({ userId }: { userId: string; userRole: string }) {
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<string>("all");
+  const [channelFilter, setChannelFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [list, setList] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("c"));
@@ -180,6 +190,17 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               </button>
             ))}
           </div>
+          <select
+            className="form-input !py-1 text-[11px]"
+            aria-label="Filtrar por canal"
+            value={channelFilter}
+            onChange={(e) => setChannelFilter(e.target.value)}
+          >
+            <option value="all">Todos los canales</option>
+            <option value="WHATSAPP">WhatsApp</option>
+            <option value="INSTAGRAM">Instagram</option>
+            <option value="MESSENGER">Messenger</option>
+          </select>
         </div>
         <div className="flex-1 overflow-y-auto">
           {list.length === 0 && (
@@ -187,7 +208,7 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               Sin conversaciones
             </p>
           )}
-          {list.map((c) => (
+          {list.filter((c) => channelFilter === "all" || c.channel === channelFilter).map((c) => (
             <button
               key={c.id}
               onClick={() => setSelectedId(c.id)}
@@ -217,9 +238,14 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
                   )}
                 </span>
               </div>
-              <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                {c.messages[0]?.body ?? "—"}
-              </p>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span className="badge badge-neutral !text-[10px] !py-0">
+                  {CHANNEL_LABEL[c.channel] ?? c.channel}
+                </span>
+                <p className="truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                  {c.messages[0]?.body ?? "—"}
+                </p>
+              </div>
             </button>
           ))}
         </div>
