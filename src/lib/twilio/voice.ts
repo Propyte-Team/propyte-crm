@@ -39,7 +39,7 @@ export async function initiateCall(
       userId,
       activityType: "CALL_OUTBOUND",
       subject: "Llamada saliente VoIP",
-      description: `Llamada a ${normalized} — SID: ${call.sid}`,
+      callSid: call.sid,
       status: "PENDIENTE",
     },
   });

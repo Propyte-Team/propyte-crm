@@ -14,7 +14,7 @@ function formReq(fields: Record<string, string>) {
   }) as unknown as import("next/server").NextRequest;
 }
 
-beforeEach(() => { create.mockReset(); findUnique.mockReset(); create.mockResolvedValue({ id: "a1" }); findUnique.mockResolvedValue({ preferredLanguage: "ES" }); });
+beforeEach(() => { create.mockReset(); findUnique.mockReset(); create.mockResolvedValue({ id: "a1" }); findUnique.mockResolvedValue({ preferredLanguage: "ES", doNotContact: false }); });
 
 describe("voice/twiml (salida)", () => {
   it("crea Activity CALL_OUTBOUND con callSid+contactId y devuelve TwiML con Dial+record", async () => {
@@ -30,6 +30,14 @@ describe("voice/twiml (salida)", () => {
     const res = await POST(formReq({ CallSid: "CA1", To: "abc", contactId: "c1", userId: "u1" }));
     const xml = await res.text();
     expect(xml).toContain("inválido");
+    expect(create).not.toHaveBeenCalled();
+  });
+  it("doNotContact → Hangup sin Activity", async () => {
+    findUnique.mockResolvedValue({ preferredLanguage: "ES", doNotContact: true });
+    const res = await POST(formReq({ CallSid: "CA1", To: "+529991112233", contactId: "c1", userId: "u1" }));
+    const xml = await res.text();
+    expect(xml).toContain("<Hangup");
+    expect(xml).not.toContain("<Dial");
     expect(create).not.toHaveBeenCalled();
   });
   it("firma inválida → 403", async () => {

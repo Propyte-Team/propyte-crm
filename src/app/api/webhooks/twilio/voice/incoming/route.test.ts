@@ -15,20 +15,32 @@ function formReq(fields: Record<string, string>) {
 beforeEach(() => { [findContactByPhone, captureLead, create].forEach(m => m.mockReset()); create.mockResolvedValue({ id: "a1" }); });
 
 describe("voice/incoming", () => {
-  it("contacto conocido con asesor → Dial al Client del asesor + crea Activity CALL_INBOUND", async () => {
+  it("contacto conocido con asesor → Dial al Client del asesor + crea Activity CALL_INBOUND; sin buzón en este TwiML", async () => {
     findContactByPhone.mockResolvedValue({ id: "c1", assignedToId: "u1" });
     const res = await POST(formReq({ CallSid: "CA9", From: "+529991112233", To: "+52..." }));
     const xml = await res.text();
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ activityType: "CALL_INBOUND", callSid: "CA9", contactId: "c1" }) }));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          activityType: "CALL_INBOUND",
+          callSid: "CA9",
+          contactId: "c1",
+          userId: "u1",
+        }),
+      })
+    );
     expect(xml).toContain("<Client>u1</Client>");
+    expect(xml).toContain("dial-action");
+    expect(xml).not.toContain("<Record");
   });
-  it("desconocido → captureLead LLAMADA_ENTRANTE y va a buzón si no hay asesor", async () => {
+  it("desconocido → captureLead LLAMADA_ENTRANTE y va a buzón si no hay asesor; NO crea Activity", async () => {
     findContactByPhone.mockResolvedValue(null);
     captureLead.mockResolvedValue({ contactId: "c2", assignedToId: null });
     const res = await POST(formReq({ CallSid: "CA10", From: "+521000000000", To: "+52..." }));
     const xml = await res.text();
     expect(captureLead).toHaveBeenCalledWith(expect.objectContaining({ source: "LLAMADA_ENTRANTE", phone: "+521000000000" }));
     expect(xml).toContain("<Record");
+    expect(create).not.toHaveBeenCalled();
   });
   it("firma inválida → 403", async () => {
     const { validateTwilioSignature } = await import("@/lib/twilio/client");

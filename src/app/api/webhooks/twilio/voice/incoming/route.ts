@@ -58,19 +58,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (contact && params.CallSid) {
+  if (contact && contact.assignedToId && params.CallSid) {
     await prisma.activity
       .create({
         data: {
           contactId: contact.id,
-          userId: contact.assignedToId ?? contact.id,
+          userId: contact.assignedToId,
           activityType: "CALL_INBOUND",
           subject: "Llamada entrante",
           status: "PENDIENTE",
           callSid: params.CallSid,
         },
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        if ((e as { code?: string })?.code !== "P2002")
+          console.error("[voice/incoming] activity.create:", e);
+      });
+  } else if (contact && !contact.assignedToId) {
+    console.warn(
+      `[voice/incoming] llamada entrante sin asesor asignado, contacto ${contact.id} — Activity no registrada`
+    );
   }
 
   const recordingCb = escapeXml(
@@ -84,9 +91,8 @@ export async function POST(req: NextRequest) {
   if (contact?.assignedToId) {
     return xml(
       notice +
-        `<Dial timeout="20" record="record-from-answer-dual" recordingStatusCallback="${recordingCb}" recordingStatusCallbackEvent="completed">` +
-        `<Client>${escapeXml(contact.assignedToId)}</Client></Dial>` +
-        voicemail
+        `<Dial timeout="20" record="record-from-answer-dual" recordingStatusCallback="${recordingCb}" recordingStatusCallbackEvent="completed" action="${escapeXml(`${appUrl}/api/webhooks/twilio/voice/dial-action`)}">` +
+        `<Client>${escapeXml(contact.assignedToId)}</Client></Dial>`
     );
   }
 

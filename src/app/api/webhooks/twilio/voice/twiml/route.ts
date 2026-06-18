@@ -46,8 +46,13 @@ export async function POST(req: NextRequest) {
   if (params.contactId) {
     const contact = await prisma.contact.findUnique({
       where: { id: params.contactId },
-      select: { preferredLanguage: true },
+      select: { preferredLanguage: true, doNotContact: true },
     });
+    if (contact?.doNotContact) {
+      return xml(
+        `<Say language="es-MX">Este contacto no autoriza llamadas.</Say><Hangup/>`
+      );
+    }
     if (contact?.preferredLanguage === "EN") {
       lang = "en-US";
       notice = "This call may be recorded for quality purposes.";
@@ -67,7 +72,10 @@ export async function POST(req: NextRequest) {
           callSid: params.CallSid,
         },
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        if ((e as { code?: string })?.code !== "P2002")
+          console.error("[voice/twiml] activity.create:", e);
+      });
   }
 
   const recordingCb = `${appUrl}/api/webhooks/twilio/voice/recording`;
