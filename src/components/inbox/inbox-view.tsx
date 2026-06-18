@@ -219,7 +219,11 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               }}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                <span
+                  className="truncate text-[13px] font-semibold"
+                  style={{ color: "var(--text-primary)" }}
+                  title={`${c.contact.firstName} ${c.contact.lastName}`}
+                >
                   {c.contact.firstName} {c.contact.lastName}
                 </span>
                 <span className="flex items-center gap-1">
@@ -326,7 +330,11 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
                       )}
                       <p className="whitespace-pre-wrap break-words">{m.body}</p>
                       <p className="mt-1 text-[10px] opacity-60">
-                        {m.sender === "BOT" ? "🤖 Bot · " : ""}
+                        {m.sender === "BOT"
+                          ? "🤖 Bot · "
+                          : m.sender === "ADVISOR"
+                          ? "Asesor · "
+                          : ""}
                         {new Date(m.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </div>
