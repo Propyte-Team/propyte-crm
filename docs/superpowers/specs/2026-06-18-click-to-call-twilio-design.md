@@ -92,7 +92,7 @@ Migración manual `prisma/migrations-manual/2026-06-18-click-to-call.sql` (aditi
 1. Cuenta Twilio + número de voz con permisos de México.
 2. **TwiML App**: Voice Request URL → `https://crm.propyte.com/api/webhooks/twilio/voice/twiml` (salida); el número entrante apunta a `…/voice/incoming`; status callback → `…/voice/status`.
 3. **API Key/Secret** (para firmar Access Tokens del SDK).
-4. Env vars: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_TWIML_APP_SID`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`.
+4. Env vars (nombres reales del código): `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_TWIML_APP_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `NEXT_PUBLIC_APP_URL`.
 
 ## 11. Riesgos / notas
 
