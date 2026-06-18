@@ -19,6 +19,7 @@ import { ACTIVITY_TYPE_LABELS } from "@/lib/constants"
 import { ActivityLogForm, type ActivityForEdit } from "./activity-log-form"
 import { EmailComposerDrawer } from "./email-composer-drawer"
 import { EmailThread } from "./email-thread"
+import { CallButton } from "@/components/voice/call-button"
 
 const TYPE_ICON: Record<string, LucideIcon> = {
   CALL_OUTBOUND: Phone, CALL_INBOUND: Phone,
@@ -43,6 +44,7 @@ interface Activity {
   outcome?: string | null
   duration_minutes?: number | null
   gmailThreadId?: string | null
+  recordingUrl?: string | null
   user?: { name: string } | null
 }
 
@@ -52,6 +54,9 @@ interface ActivityLogProps {
   contactEmail?: string
   contactFirstName?: string
   contactLastName?: string
+  contactPhone?: string
+  doNotContact?: boolean
+  currentUserId?: string
   dealId?: string
   onChanged?: () => void
 }
@@ -60,7 +65,7 @@ function fmt(d: string): string {
   return format(new Date(d), "d MMM yyyy, HH:mm", { locale: es })
 }
 
-export function ActivityLog({ contactId, contactName, contactEmail, contactFirstName, contactLastName, dealId, onChanged }: ActivityLogProps) {
+export function ActivityLog({ contactId, contactName, contactEmail, contactFirstName, contactLastName, contactPhone, doNotContact, currentUserId, dealId, onChanged }: ActivityLogProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState("")
@@ -190,6 +195,14 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
               <Mail className="h-3.5 w-3.5" /> Enviar email
             </button>
           )}
+          {contactPhone && currentUserId && (
+            <CallButton
+              phone={contactPhone}
+              contactId={contactId}
+              userId={currentUserId}
+              doNotContact={doNotContact}
+            />
+          )}
           <button className="btn-secondary text-[13px]" onClick={openCreate}>
             <Plus className="h-3.5 w-3.5" /> Registrar actividad
           </button>
@@ -289,6 +302,17 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
                   )}
                   {a.outcome && (
                     <p className="mt-1 text-[12px] text-[color:var(--text-secondary)]">Resultado: {a.outcome}</p>
+                  )}
+                  {a.recordingUrl && (
+                    <a
+                      href={a.recordingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 block text-[11px] underline"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      Escuchar grabación
+                    </a>
                   )}
                   <div className="mt-1.5 flex items-center gap-3 text-[11px] text-[color:var(--text-tertiary)]">
                     <span>{a.user?.name ?? "Sistema"}</span>

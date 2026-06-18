@@ -420,6 +420,9 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
             contactEmail={deal.contact?.email ?? undefined}
             contactFirstName={deal.contact?.firstName ?? undefined}
             contactLastName={deal.contact?.lastName ?? undefined}
+            contactPhone={deal.contact?.phone ?? undefined}
+            doNotContact={deal.contact?.doNotContact ?? false}
+            currentUserId={userId}
             dealId={deal.id}
             onChanged={() => router.refresh()}
           />

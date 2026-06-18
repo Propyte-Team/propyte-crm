@@ -37,6 +37,7 @@ export default async function ContactDetailPage({ params }: ContactPageProps) {
       contact={JSON.parse(JSON.stringify(visibleContact))}
       userRole={session.user.role}
       fieldAccess={fieldAccess}
+      currentUserId={session.user.id}
     />
   );
 }
