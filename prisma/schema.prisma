@@ -91,6 +91,7 @@ enum LeadSource {
   WEBINAR
   LINKEDIN
   OTRO
+  LLAMADA_ENTRANTE
 
   @@schema("propyte_crm")
 }
@@ -910,6 +911,10 @@ model Activity {
   gmailThreadId    String?
   gmailMessageId   String?        @unique  // dedup de mensajes Gmail (un Activity por messageId)
   googleEventId    String?        @unique  // reservado GW-2 Calendar
+
+  // Twilio Voice (click-to-call §5.11). Índice parcial en SQL manual (WHERE callSid IS NOT NULL).
+  callSid      String? @unique
+  recordingUrl String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
