@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/db";
 import { getTwilioClient } from "./client";
 import { normalizePhone } from "./utils";
+import { statusToOutcome } from "./call-outcomes";
 import Twilio from "twilio";
 
 const { AccessToken } = Twilio.jwt;
@@ -59,30 +60,31 @@ export async function handleCallStatus(payload: {
 }) {
   const { CallSid, CallStatus, CallDuration } = payload;
 
-  // Buscar la actividad por el SID en la descripción
-  const activity = await prisma.activity.findFirst({
-    where: {
-      description: { contains: CallSid },
-      activityType: "CALL_OUTBOUND",
-    },
-  });
-
+  const activity = await prisma.activity.findFirst({ where: { callSid: CallSid } });
   if (!activity) return;
+  if (!["completed", "no-answer", "busy", "failed"].includes(CallStatus)) return;
 
-  // Solo actualizar en estados finales
-  if (["completed", "no-answer", "busy", "failed"].includes(CallStatus)) {
-    await prisma.activity.update({
-      where: { id: activity.id },
-      data: {
-        status: "COMPLETADA",
-        completedAt: new Date(),
-        duration_minutes: CallDuration ? Math.ceil(parseInt(CallDuration) / 60) : null,
-        outcome: CallStatus === "completed"
-          ? `Llamada completada (${CallDuration}s)`
-          : `Llamada ${CallStatus}`,
-      },
-    });
-  }
+  const data: Record<string, unknown> = {
+    status: "COMPLETADA",
+    completedAt: new Date(),
+    duration_minutes: CallDuration ? Math.ceil(parseInt(CallDuration) / 60) : null,
+  };
+  const auto = statusToOutcome(CallStatus);
+  if (auto && !activity.outcome) data.outcome = auto;
+  await prisma.activity.update({ where: { id: activity.id }, data: data as never });
+}
+
+/**
+ * Procesa el recording callback de Twilio.
+ * Guarda la URL del audio en la actividad correspondiente.
+ */
+export async function handleRecording(payload: { CallSid: string; RecordingUrl: string }) {
+  const activity = await prisma.activity.findFirst({ where: { callSid: payload.CallSid } });
+  if (!activity) return;
+  await prisma.activity.update({
+    where: { id: activity.id },
+    data: { recordingUrl: payload.RecordingUrl.endsWith(".mp3") ? payload.RecordingUrl : `${payload.RecordingUrl}.mp3` },
+  });
 }
 
 /**
