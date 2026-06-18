@@ -1,11 +1,14 @@
-// Endpoint TwiML para conectar llamadas VoIP del browser
+// TwiML de SALIDA (click-to-call WebRTC). Twilio invoca este endpoint cuando el
+// browser hace device.connect({ To, contactId, userId }). Crea la Activity con el
+// CallSid y devuelve TwiML con aviso de grabación + Dial grabado.
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { validateTwilioSignature } from "@/lib/twilio/client";
 
-// Solo permite dígitos, +, - y espacios (formato E.164 y variantes comunes)
 const PHONE_REGEX = /^\+?[\d\s\-()]{8,20}$/;
 
-function escapeXml(str: string): string {
-  return str
+function escapeXml(s: string): string {
+  return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -13,32 +16,67 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export async function POST(req: NextRequest) {
-  const formData = await req.formData();
-  const to = formData.get("To")?.toString() || "";
+function xml(body: string) {
+  return new NextResponse(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<Response>${body}</Response>`,
+    { headers: { "Content-Type": "text/xml" } }
+  );
+}
 
-  if (!to || !PHONE_REGEX.test(to)) {
-    const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say language="es-MX">Número de teléfono inválido.</Say>
-</Response>`;
-    return new NextResponse(errorTwiml, {
-      headers: { "Content-Type": "text/xml" },
-    });
+export async function POST(req: NextRequest) {
+  const form = await req.formData();
+  const params: Record<string, string> = {};
+  form.forEach((v, k) => (params[k] = v.toString()));
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const valid = await validateTwilioSignature(
+    `${appUrl}/api/webhooks/twilio/voice/twiml`,
+    params
+  );
+  if (!valid) return new NextResponse("Firma inválida", { status: 403 });
+
+  const to = params.To ?? "";
+  if (!PHONE_REGEX.test(to)) {
+    return xml(`<Say language="es-MX">Número de teléfono inválido.</Say>`);
   }
 
+  // Determinar idioma del contacto para aviso de grabación
+  let lang = "es-MX";
+  let notice = "Esta llamada puede ser grabada con fines de calidad.";
+  if (params.contactId) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: params.contactId },
+      select: { preferredLanguage: true },
+    });
+    if (contact?.preferredLanguage === "EN") {
+      lang = "en-US";
+      notice = "This call may be recorded for quality purposes.";
+    }
+  }
+
+  // Registrar Activity CALL_OUTBOUND con el CallSid de Twilio
+  if (params.CallSid && params.contactId && params.userId) {
+    await prisma.activity
+      .create({
+        data: {
+          contactId: params.contactId,
+          userId: params.userId,
+          activityType: "CALL_OUTBOUND",
+          subject: "Llamada saliente",
+          status: "PENDIENTE",
+          callSid: params.CallSid,
+        },
+      })
+      .catch(() => {});
+  }
+
+  const recordingCb = `${appUrl}/api/webhooks/twilio/voice/recording`;
   const safeTo = escapeXml(to);
-  const safeCallerId = escapeXml(process.env.TWILIO_PHONE_NUMBER || "");
+  const callerId = escapeXml(process.env.TWILIO_PHONE_NUMBER ?? "");
 
-  // Generar TwiML para conectar la llamada al número destino
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial callerId="${safeCallerId}">
-    <Number>${safeTo}</Number>
-  </Dial>
-</Response>`;
-
-  return new NextResponse(twiml, {
-    headers: { "Content-Type": "text/xml" },
-  });
+  return xml(
+    `<Say language="${lang}">${escapeXml(notice)}</Say>` +
+      `<Dial callerId="${callerId}" record="record-from-answer-dual" recordingStatusCallback="${escapeXml(recordingCb)}" recordingStatusCallbackEvent="completed">` +
+      `<Number>${safeTo}</Number></Dial>`
+  );
 }
