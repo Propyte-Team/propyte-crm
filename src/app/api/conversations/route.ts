@@ -51,7 +51,9 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
     take: 100,
-    include: {
+    select: {
+      id: true, status: true, botEnabled: true, unreadCount: true,
+      lastMessageAt: true, aiSummary: true, channel: true,
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, temperature: true,

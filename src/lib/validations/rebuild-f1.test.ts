@@ -87,6 +87,21 @@ describe("plantillas (§J.2)", () => {
   });
 });
 
+describe("incomingLeadSchema — identidad social", () => {
+  it("acepta un lead solo con instagramId (sin phone/email)", () => {
+    const r = incomingLeadSchema.safeParse({ source: "INSTAGRAM", firstName: "Ana", instagramId: "178414000000000" });
+    expect(r.success).toBe(true);
+  });
+  it("acepta source MESSENGER con messengerPsid", () => {
+    const r = incomingLeadSchema.safeParse({ source: "MESSENGER", firstName: "Beto", messengerPsid: "24680" });
+    expect(r.success).toBe(true);
+  });
+  it("rechaza si no hay phone, email, instagramId ni messengerPsid", () => {
+    const r = incomingLeadSchema.safeParse({ source: "INSTAGRAM", firstName: "Sin Id" });
+    expect(r.success).toBe(false);
+  });
+});
+
 describe("incoming lead (webhook §H.5)", () => {
   it("exige teléfono o email", () => {
     expect(

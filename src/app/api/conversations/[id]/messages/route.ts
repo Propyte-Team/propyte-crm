@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { sendWhatsAppMessage } from "@/lib/twilio/whatsapp";
+import { sendChannelMessage } from "@/lib/messaging/dispatcher";
+import type { MessagingChannel } from "@/lib/messaging/types";
 
 const sendSchema = z.object({
   body: z.string().min(1).max(4096),
@@ -30,7 +31,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         contactId: conv.contact.id,
         userId: session.user.id,
         conversationId: conv.id,
-        channel: conv.channel === "SMS" ? "SMS" : "WHATSAPP",
+        // conv.channel puede ser WEB (no en MessageChannel); cast a MessageChannel es seguro
+        // porque las conversaciones WEB no tienen nota interna activa en v1.
+        channel: conv.channel as import("@prisma/client").MessageChannel,
         direction: "OUTBOUND",
         body: parsed.data.body,
         status: "DELIVERED",
@@ -47,12 +50,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // Enviar como humano: si el bot seguía activo, el envío manual implica takeover suave
-  const message = await sendWhatsAppMessage(
-    conv.contact.phone,
-    parsed.data.body,
-    conv.contact.id,
-    session.user.id
-  );
+  let message;
+  try {
+    message = await sendChannelMessage(
+      conv.channel as MessagingChannel,
+      conv.contact.id,
+      parsed.data.body,
+      session.user.id
+    );
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "No se pudo enviar el mensaje" },
+      { status: 422 }
+    );
+  }
   if (conv.status === "BOT") {
     await prisma.conversation.update({
       where: { id: conv.id },

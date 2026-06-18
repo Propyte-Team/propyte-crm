@@ -5,15 +5,16 @@ import prisma from "@/lib/db";
 import { askClaude, SAGE_SYSTEM_PROMPT, type BotMessage } from "./claude";
 import { lintBrandVoice } from "./brand-linter";
 import { findMatchingDevelopments, catalogBrief } from "./hub-catalog";
-import { sendWhatsAppMessage } from "@/lib/twilio/whatsapp";
+import type { MessagingChannel } from "@/lib/messaging/types";
+import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 
 const ESCALATE_MARKER = "[ESCALAR]";
 
-async function ensureConversation(contactId: string) {
+async function ensureConversation(contactId: string, channel: MessagingChannel) {
   return prisma.conversation.upsert({
-    where: { contactId_channel: { contactId, channel: "WHATSAPP" } },
+    where: { contactId_channel: { contactId, channel } },
     update: {},
-    create: { contactId, channel: "WHATSAPP", status: "BOT" },
+    create: { contactId, channel, status: "BOT" },
   });
 }
 
@@ -67,15 +68,16 @@ export async function escalateToHuman(conversationId: string, reason: string): P
 
 export async function botRespond(
   contactId: string,
-  opts: { goal?: string; createConversation?: boolean } = {}
+  opts: { goal?: string; createConversation?: boolean; channel?: MessagingChannel } = {}
 ): Promise<boolean> {
+  const channel: MessagingChannel = opts.channel ?? "WHATSAPP";
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
-  if (!contact || contact.doNotContact || contact.whatsappOptOut) return false;
+  if (!contact || contact.doNotContact || (channel === "WHATSAPP" && contact.whatsappOptOut)) return false;
 
   const conv = opts.createConversation
-    ? await ensureConversation(contactId)
+    ? await ensureConversation(contactId, channel)
     : await prisma.conversation.findUnique({
-        where: { contactId_channel: { contactId, channel: "WHATSAPP" } },
+        where: { contactId_channel: { contactId, channel } },
       });
   if (!conv || conv.status !== "BOT" || !conv.botEnabled) return false;
 
@@ -134,11 +136,8 @@ export async function botRespond(
       (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
     if (!ownerId) return false;
 
-    const message = await sendWhatsAppMessage(contact.phone, clean, contact.id, ownerId);
-    await prisma.message.update({
-      where: { id: message.id },
-      data: { conversationId: conv.id, sender: "BOT", aiGenerated: true, aiAutonomy: "L2" },
-    });
+    // sendChannelMessage con opts.bot=true marca sender=BOT, aiGenerated=true, aiAutonomy=L2.
+    await sendChannelMessage(channel, contact.id, clean, ownerId, { bot: true });
     await prisma.conversation.update({
       where: { id: conv.id },
       data: { lastMessageAt: new Date() },

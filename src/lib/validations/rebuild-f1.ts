@@ -128,7 +128,7 @@ export const incomingLeadSchema = z
     source: z.enum([
       "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS",
       "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA",
-      "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
+      "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
     ]),
     firstName: z.string().min(1).max(80).trim(),
     lastName: z.string().min(1).max(80).trim().default("(sin apellido)"),
@@ -154,9 +154,11 @@ export const incomingLeadSchema = z
     portalLeadId: z.string().optional(),
     landingPage: z.string().optional(),
     referrer: z.string().optional(),
+    instagramId: z.string().min(1).max(120).optional(),
+    messengerPsid: z.string().min(1).max(120).optional(),
   })
-  .refine((d) => !!d.phone || !!d.email, {
-    message: "Se requiere teléfono o email",
+  .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {
+    message: "Se requiere teléfono, email o identificador social",
     path: ["phone"],
   });
 

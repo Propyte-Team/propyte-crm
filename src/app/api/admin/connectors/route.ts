@@ -15,14 +15,14 @@ const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
 const createSchema = z.object({
   name: z.string().min(2).max(120),
-  provider: z.enum(["META", "TIKTOK", "WEBSITE", "ZAPIER", "MANUAL"]),
+  provider: z.enum(["META", "TIKTOK", "WEBSITE", "ZAPIER", "MANUAL", "INSTAGRAM", "MESSENGER"]),
   credentials: z.record(z.string()).optional(),
   config: z.record(z.unknown()).optional(),
   fieldMap: z.record(z.string()).optional(),
 });
 
 function credentialsSchemaFor(provider: string) {
-  if (provider === "META") return connectorCredentialsMetaSchema;
+  if (provider === "META" || provider === "INSTAGRAM" || provider === "MESSENGER") return connectorCredentialsMetaSchema;
   if (provider === "TIKTOK") return connectorCredentialsTikTokSchema;
   if (provider === "WEBSITE") return connectorCredentialsWebsiteSchema;
   return z.record(z.string());
