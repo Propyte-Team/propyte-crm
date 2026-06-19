@@ -16,25 +16,34 @@ const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "p
 export function ConnectionsView({ initial }: { initial: Conn[] }) {
   const [connectors, setConnectors] = useState<Conn[]>(initial);
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const res = await fetch("/api/admin/connectors");
-    if (res.ok) setConnectors((await res.json()).data ?? []);
+    try {
+      const res = await fetch("/api/admin/connectors");
+      if (!res.ok) { setError("No se pudieron cargar las conexiones."); return; }
+      setConnectors((await res.json()).data ?? []);
+      setError(null);
+    } catch {
+      setError("Error de red al cargar las conexiones.");
+    }
   }, []);
 
-  async function toggle(c: Conn) {
-    await fetch(`/api/admin/connectors/${c.id}`, {
+  const toggle = useCallback(async (c: Conn) => {
+    const res = await fetch(`/api/admin/connectors/${c.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: c.status === "ACTIVE" ? "PAUSED" : "ACTIVE" }),
     });
+    if (!res.ok) { setError(`No se pudo cambiar el estado de "${c.name}".`); return; }
     reload();
-  }
+  }, [reload]);
 
-  async function remove(c: Conn) {
+  const remove = useCallback(async (c: Conn) => {
     if (!confirm(`¿Eliminar conexión "${c.name}"?`)) return;
-    await fetch(`/api/admin/connectors/${c.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/connectors/${c.id}`, { method: "DELETE" });
+    if (!res.ok) { setError(`No se pudo eliminar "${c.name}".`); return; }
     reload();
-  }
+  }, [reload]);
 
   const byGroup = GROUP_ORDER.map((g) => ({
     group: g,
@@ -51,6 +60,10 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
           Conecta tus cuentas para jalar leads al CRM. Multicuenta por plataforma.
         </p>
       </header>
+
+      {error && (
+        <p className="mb-4 rounded-md border border-destructive p-2 text-[12px] text-destructive">{error}</p>
+      )}
 
       {byGroup.map((grp) => (
         <section key={grp.group} className="mb-8">
@@ -107,11 +120,11 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                         </span>
                       </div>
                     ))}
-                    {accounts.some((c) => c.lastError) && (
-                      <p className="mt-1 truncate text-[11px] text-destructive">
-                        {accounts.find((c) => c.lastError)?.lastError}
+                    {accounts.filter((c) => c.lastError).map((c) => (
+                      <p key={`err-${c.id}`} className="mt-1 truncate text-[11px] text-destructive">
+                        {c.name}: {c.lastError}
                       </p>
-                    )}
+                    ))}
                     <button
                       className="mt-1.5 w-full rounded-md border border-dashed p-2 text-left text-[12px] text-muted-foreground hover:text-foreground"
                       onClick={() => setWizardProvider(p.id)}
