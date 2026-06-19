@@ -141,7 +141,7 @@ const normalizedPhone = z
 export const incomingLeadSchema = z
   .object({
     source: z.enum([
-      "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS",
+      "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "LINKEDIN",
       "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA",
       "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
     ]),

@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     data: {
       name: parsed.data.name,
       provider: parsed.data.provider,
-      status: encrypted ? "PAUSED" : "PAUSED", // se activa explícitamente tras probar
+      status: "PAUSED", // se activa explícitamente tras probar
       credentials: encrypted,
       config: (parsed.data.config ?? {}) as never,
       fieldMap: (parsed.data.fieldMap ?? {}) as never,

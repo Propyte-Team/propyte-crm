@@ -79,10 +79,18 @@ export async function processIncomingLead(
   // 2. Capturar
   const connector = await prisma.leadConnector.findUnique({ where: { id: connectorId } });
   const config = (connector?.config ?? {}) as { defaultLeadSource?: string };
+  const PROVIDER_SOURCE: Record<string, string> = {
+    META: "FACEBOOK_ADS",
+    INSTAGRAM: "INSTAGRAM",
+    MESSENGER: "MESSENGER",
+    TIKTOK: "TIKTOK_ADS",
+    GOOGLE_ADS: "GOOGLE_ADS",
+    LINKEDIN: "LINKEDIN",
+  };
   const source =
     (mappedFields.source as string | undefined) ??
     config.defaultLeadSource ??
-    (connector?.provider === "META" ? "FACEBOOK_ADS" : connector?.provider === "TIKTOK" ? "TIKTOK_ADS" : "WEBSITE");
+    (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? "WEBSITE" : "WEBSITE");
 
   try {
     const result = await captureLead({ ...mappedFields, source }, { connectorId });
