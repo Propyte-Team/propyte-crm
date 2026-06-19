@@ -48,4 +48,18 @@ describe("resolveRoute", () => {
   it("resuelve PUT /config/territories", () => {
     expect(resolveRoute("PUT", ["config", "territories"])?.key).toBe("PUT /config/territories");
   });
+
+  // F4 — Datos
+  it("resuelve GET /data/contacts y GET /data/contacts/:id", () => {
+    expect(resolveRoute("GET", ["data", "contacts"])?.key).toBe("GET /data/contacts");
+    const r = resolveRoute("GET", ["data", "contacts", "c1"]);
+    expect(r?.key).toBe("GET /data/contacts/:id");
+    expect(r?.params.id).toBe("c1");
+  });
+  it("resuelve POST /data/capture-lead", () => {
+    expect(resolveRoute("POST", ["data", "capture-lead"])?.key).toBe("POST /data/capture-lead");
+  });
+  it("resuelve GET /data/quotes", () => {
+    expect(resolveRoute("GET", ["data", "quotes"])?.key).toBe("GET /data/quotes");
+  });
 });

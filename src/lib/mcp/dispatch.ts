@@ -3,6 +3,8 @@ import * as intro from "./handlers/introspection";
 import * as wf from "./handlers/automation";
 import * as conn from "./handlers/connectors";
 import * as cfg from "./handlers/config";
+import * as data from "./handlers/data";
+import * as at from "./handlers/agent-tools";
 
 type Ctx = { userId: string };
 export type Handler = (args: { body: unknown; params: Record<string, string>; query?: Record<string, string>; ctx: Ctx }) => Promise<unknown>;
@@ -57,6 +59,17 @@ const ROUTES: Record<string, Handler> = {
   "PATCH /config/agents/:id": async ({ body, params, ctx }) => cfg.updateAgent(params.id, body, ctx.userId),
   "GET /config/relationships": async () => cfg.listRelationships(),
   "POST /config/relationships": async ({ body, ctx }) => cfg.createRelationship(body, ctx.userId),
+
+  // F4 — Datos
+  "GET /data/contacts": async ({ query }) => data.searchContacts(query ?? {}),
+  "GET /data/contacts/:id": async ({ params }) => data.getContactById(params.id),
+  "GET /data/deals": async ({ query }) => data.listDeals(query ?? {}),
+  "GET /data/deals/:id": async ({ params }) => data.getDealById(params.id),
+  "GET /data/quotes": async ({ query }) => data.listQuotes(query ?? {}),
+  "POST /data/capture-lead": async ({ body }) => at.captureLead(body),
+  "POST /data/match-units": async ({ body }) => at.matchUnits(body),
+  "POST /data/send-whatsapp": async ({ body }) => at.sendWhatsapp(body),
+  "POST /data/create-task": async ({ body }) => at.createTask(body),
 };
 
 export function resolveRoute(method: string, segments: string[]) {
