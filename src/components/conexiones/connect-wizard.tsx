@@ -35,16 +35,27 @@ export function ConnectWizard({
   }
 
   async function guardar() {
+    setMsg("");
+    const defLabel = def!.label;
     const create = await fetch("/api/admin/connectors", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() || def!.label, provider, credentials: creds }),
+      body: JSON.stringify({ name: name.trim() || defLabel, provider, credentials: creds }),
     });
-    if (!create.ok) { setMsg("Error al guardar"); return; }
-    const { data } = await create.json();
-    await fetch(`/api/admin/connectors/${data.id}`, {
+    const created = await create.json().catch(() => null);
+    if (!create.ok || !created?.data?.id) {
+      setTestState("fail"); setMsg("Error al guardar la cuenta");
+      return;
+    }
+    const patch = await fetch(`/api/admin/connectors/${created.data.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "ACTIVE" }),
     });
+    if (!patch.ok) {
+      setTestState("fail");
+      setMsg("Cuenta creada, pero no se pudo activar. Actívala desde la lista.");
+      onConnected();
+      return;
+    }
     reset(); onConnected(); onOpenChange(false);
   }
 
@@ -71,13 +82,14 @@ export function ConnectWizard({
         {isLast && (
           <div className="mt-3 space-y-2">
             <div className="space-y-1">
-              <label className="text-[10px] uppercase tracking-wide text-muted-foreground">Nombre de la cuenta</label>
-              <input className="form-input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder={def.label} />
+              <label htmlFor="conn-name" className="text-[10px] uppercase tracking-wide text-muted-foreground">Nombre de la cuenta</label>
+              <input id="conn-name" className="form-input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder={def.label} />
             </div>
             {def.credFields.map((f) => (
               <div key={f.key} className="space-y-1">
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground">{f.label}</label>
+                <label htmlFor={`cred-${f.key}`} className="text-[10px] uppercase tracking-wide text-muted-foreground">{f.label}</label>
                 <input
+                  id={`cred-${f.key}`}
                   className="form-input w-full"
                   type={f.secret ? "password" : "text"}
                   value={creds[f.key] ?? ""}
