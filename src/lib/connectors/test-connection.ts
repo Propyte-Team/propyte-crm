@@ -19,8 +19,10 @@ export async function testConnection(
   try {
     switch (def.testKind) {
       case "meta": {
-        const url = `https://graph.facebook.com/v21.0/${encodeURIComponent(creds.pageId)}?fields=name,id&access_token=${encodeURIComponent(creds.pageAccessToken)}`;
-        const res = await fetch(url);
+        const res = await fetch(
+          `https://graph.facebook.com/v21.0/${encodeURIComponent(creds.pageId)}?fields=name,id`,
+          { headers: { Authorization: `Bearer ${creds.pageAccessToken}` } }
+        );
         const data = (await res.json()) as { name?: string; error?: { message?: string } };
         if (!res.ok || data.error) return { ok: false, detail: data.error?.message ?? `HTTP ${res.status}` };
         return { ok: true, accountName: data.name };
@@ -31,7 +33,7 @@ export async function testConnection(
           { headers: { "Access-Token": creds.accessToken } }
         );
         const data = (await res.json()) as { code?: number; message?: string; data?: { list?: Array<{ advertiser_name?: string }> } };
-        if (data.code !== 0) return { ok: false, detail: data.message ?? `code ${data.code}` };
+        if (!res.ok || data.code !== 0) return { ok: false, detail: data.message ?? `HTTP ${res.status}` };
         return { ok: true, accountName: data.data?.list?.[0]?.advertiser_name };
       }
       case "googleAds": {
