@@ -22,6 +22,7 @@ import {
   generateNewApiKey,
   revokeApiKey,
 } from "@/server/admin";
+import Link from "next/link";
 import { useToast } from "@/components/ui/use-toast";
 
 // Eventos disponibles para webhooks
@@ -184,7 +185,7 @@ export function IntegrationsTab({
         <p className="mt-1 text-[12px] text-muted-foreground">
           Gestiona tus cuentas de redes y ads (multicuenta) en el nuevo Centro de Conexiones.
         </p>
-        <a href="/conexiones" className="mt-2 inline-block text-[12px] underline">Ir a Conexiones →</a>
+        <Link href="/conexiones" className="mt-2 inline-block text-[12px] underline">Ir a Conexiones →</Link>
       </div>
 
       {/* Webhooks salientes */}
