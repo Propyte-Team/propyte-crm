@@ -70,7 +70,7 @@ describe("connectors", () => {
     expect(r.hasCredentials).toBe(true);
   });
 
-  it("updateConnector rechaza cuerpo inválido (proveedor no permitido cambiar)", async () => {
+  it("updateConnector ignora 'provider' en el body (no se puede cambiar el proveedor)", async () => {
     (prisma.leadConnector.findFirst as any).mockResolvedValue({ id: "c1", name: "Meta", provider: "META" });
     // provider en el body se ignora (schema no lo incluye), NO debe rechazar con error
     // Confirmar que update procede normalmente sin provider

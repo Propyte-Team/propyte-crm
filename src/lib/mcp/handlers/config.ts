@@ -220,8 +220,8 @@ export async function createCustomField(body: unknown, userId: string) {
 }
 
 export async function updateCustomField(id: string, body: unknown, userId: string) {
-  const existing = await prisma.customFieldDef.findFirst({ where: { id } });
-  if (!existing) throw new Error("Campo no encontrado");
+  const existing = await prisma.customFieldDef.findFirst({ where: { id, archivedAt: null } });
+  if (!existing) throw new Error("Campo no encontrado o ya archivado");
 
   const d = updateFieldSchema.parse(body);
   const data: Record<string, unknown> = {};
@@ -324,7 +324,7 @@ export async function updateAgent(id: string, body: unknown, userId: string) {
   if (!existing) throw new Error("Agente no encontrado");
 
   const d = updateAgentSchema.parse(body);
-  if (d.allowedTools) validateTools(d.allowedTools);
+  if (d.allowedTools !== undefined) validateTools(d.allowedTools);
 
   const data: Record<string, unknown> = {};
   if (d.isActive      !== undefined) data.isActive      = d.isActive;

@@ -9,11 +9,13 @@ vi.mock("@/lib/agents/tools", () => ({
     {
       name: "send_whatsapp",
       description: "Enviar WA",
+      allowedRoles: ["ADMIN", "DIRECTOR"],
       handler: vi.fn(async () => ({ sent: true })),
     },
     {
       name: "capture_lead",
       description: "Captura lead",
+      allowedRoles: ["ADMIN"],
       handler: vi.fn(async () => ({ isNew: true })),
     },
   ],
@@ -51,5 +53,10 @@ describe("runAgentTool", () => {
     (prisma.user.findUnique as any).mockResolvedValue({ id: "sys-u1", role: "ADMIN" });
     const r: any = await sendWhatsapp({ contactId: "c1", body: "Test" });
     expect(r.sent).toBe(true);
+  });
+
+  it("rechaza por RBAC si el rol del usuario-sistema no está en allowedRoles", async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({ id: "sys-u1", role: "ASESOR" });
+    await expect(runAgentTool("capture_lead", { firstName: "X" })).rejects.toThrow(/RBAC/);
   });
 });

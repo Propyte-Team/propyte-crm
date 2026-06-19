@@ -7,7 +7,8 @@ import { getMcpUserId } from "../auth";
 async function loadSystemUser() {
   const id = await getMcpUserId();
   const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new Error("Sistema MCP: usuario no encontrado (re-run seed)");
+  // Mensaje SIN "no encontrad" para no disparar el mapeo a 404 del route (es 500 de config).
+  if (!user) throw new Error("MCP system user missing: re-run scripts/seed-mcp-user.ts");
   return user;
 }
 
@@ -15,6 +16,9 @@ export async function runAgentTool(name: string, input: Record<string, unknown>)
   const tool = AGENT_TOOLS.find((t) => t.name === name);
   if (!tool) throw new Error(`tool_desconocida: ${name}`);
   const systemUser = await loadSystemUser();
+  // Honra el contrato de allowedRoles del AgentTool (hoy el usuario-sistema es ADMIN).
+  if (!tool.allowedRoles.includes(systemUser.role))
+    throw new Error(`RBAC: usuario-sistema sin permiso para ${name}`);
   return tool.handler(input, systemUser);
 }
 

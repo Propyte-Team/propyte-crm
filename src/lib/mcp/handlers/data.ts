@@ -15,7 +15,8 @@ const searchContactsSchema = z.object({
   temperature: z.string().optional(),
   type:       z.string().optional(),
   assignedTo: z.string().optional(),
-  plaza:      z.string().optional(),
+  // plaza: Contact no tiene columna plaza (se deriva del usuario asignado). Omitido en v1;
+  // filtra por assignedTo. Se añadirá vía relación assignedTo.plaza cuando se verifique.
   page:       z.coerce.number().int().min(1).default(1),
   pageSize:   z.coerce.number().int().min(1).default(20), // clamped to 100 below
 });
