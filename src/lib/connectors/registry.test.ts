@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { PROVIDERS, providerById, pullProviders } from "./registry";
 
 describe("registry de proveedores", () => {
-  it("tiene los 7 grupos esperados", () => {
+  it("tiene los 7 proveedores esperados", () => {
     const ids = PROVIDERS.map((p) => p.id);
     for (const id of ["META", "INSTAGRAM", "TIKTOK", "GOOGLE_ADS", "LINKEDIN", "YOUTUBE", "PINTEREST"]) {
       expect(ids).toContain(id);
@@ -22,6 +22,11 @@ describe("registry de proveedores", () => {
     for (const p of pullProviders()) {
       expect(p.credFields.length).toBeGreaterThan(0);
       expect(p.wizardSteps.length).toBeGreaterThan(0);
+    }
+  });
+  it("cada proveedor webhook declara webhookPath", () => {
+    for (const p of PROVIDERS.filter((x) => x.pull === "webhook")) {
+      expect(p.webhookPath).toBeDefined();
     }
   });
 });

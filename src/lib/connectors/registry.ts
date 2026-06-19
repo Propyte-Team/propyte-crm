@@ -76,7 +76,7 @@ export const PROVIDERS: ProviderDef[] = [
       { key: "clientId", label: "OAuth Client ID" },
       { key: "clientSecret", label: "OAuth Client Secret", secret: true },
       { key: "refreshToken", label: "Refresh Token", secret: true },
-      { key: "webhookKey", label: "Webhook Key (Lead Form)", help: "La 'key' que pones en el Lead Form para firmar el webhook." },
+      { key: "webhookKey", label: "Webhook Key (Lead Form)", help: "La 'key' que pones en el Lead Form para firmar el webhook.", secret: true },
     ],
     wizardSteps: [
       { title: "Crea el Lead Form en Google Ads", body: "En el formulario, define una Webhook URL + Key.", link: "https://ads.google.com" },
