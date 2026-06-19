@@ -131,6 +131,7 @@ export async function updatePlan(id: string, body: unknown, userId: string) {
 const routingSchema = z.object({
   name: z.string().min(3).max(120).trim(),
   priority: z.number().int().min(1).max(1000).default(100),
+  // Nace inactiva: activación explícita tras revisión (principio de seguridad del MCP; difiere del default true del modelo).
   isActive: z.boolean().default(false),
   conditions: z.record(z.unknown()).default({}),
   strategy: z.enum(["ROUND_ROBIN", "PERFORMANCE", "MANUAL", "GUARDIA"]),
@@ -149,7 +150,7 @@ export async function createRouting(body: unknown, userId: string) {
   return r;
 }
 export async function updateRouting(id: string, body: unknown, userId: string) {
-  const existing = await prisma.routingRule.findUnique({ where: { id } });
+  const existing = await prisma.routingRule.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Regla de ruteo no encontrada");
   const d = routingSchema.partial().parse(body);
   const r = await prisma.routingRule.update({ where: { id }, data: {

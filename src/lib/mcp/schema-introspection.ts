@@ -12,7 +12,7 @@ export function describeSchema() {
       "GOOGLE", "LINKEDIN", "INMUEBLES24", "LAMUDI_PROPPIT", "PROPIEDADES",
       "VIVANUNCIOS", "EASYBROKER", "CUSTOM",
     ],
-    roles: ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER", "MARKETING", "ASESOR", "BROKER"],
+    roles: ["ADMIN", "ASESOR", "BROKER", "MANTENIMIENTO", "DIRECTOR", "GERENTE", "TEAM_LEADER", "ASESOR_SR", "ASESOR_JR", "HOSTESS", "MARKETING", "DEVELOPER_EXT"],
     plazas: ["PDC", "TULUM", "MERIDA"],
     conditionsDsl: {
       shape: "ConditionGroup recursivo",

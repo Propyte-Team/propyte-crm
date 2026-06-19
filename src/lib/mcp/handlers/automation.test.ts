@@ -37,12 +37,31 @@ describe("createRule", () => {
   });
 });
 
-import { createRouting, createSla } from "./automation";
+import { createRouting, createSla, retryQueue } from "./automation";
 
 describe("createRouting", () => {
   beforeEach(() => vi.clearAllMocks());
   it("routing rechaza duplicado", async () => {
     (prisma.routingRule.findFirst as any).mockResolvedValue({ id: "x" });
     await expect(createRouting({ name: "Ruteo TULUM", strategy: "ROUND_ROBIN" }, "u1")).rejects.toThrow(/ya existe/i);
+  });
+});
+
+describe("retryQueue", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("rechaza item que no está FAILED", async () => {
+    (prisma.actionQueue.findUnique as any).mockResolvedValue({ id: "q1", status: "DONE" });
+    await expect(retryQueue("q1", "u1")).rejects.toThrow(/FAILED/i);
+  });
+  it("reencola item FAILED a PENDING", async () => {
+    (prisma.actionQueue.findUnique as any).mockResolvedValue({ id: "q1", status: "FAILED" });
+    (prisma.actionQueue.update as any).mockImplementation(({ data }: any) => ({ id: "q1", ...data }));
+    await retryQueue("q1", "u1");
+    expect(prisma.actionQueue.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "PENDING", attempts: 0, error: null }),
+      })
+    );
+    expect(prisma.auditLog.create).toHaveBeenCalled();
   });
 });
