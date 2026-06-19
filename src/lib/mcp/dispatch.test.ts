@@ -27,4 +27,25 @@ describe("resolveRoute", () => {
     expect(r?.key).toBe("PATCH /connectors/:id");
     expect(r?.params.id).toBe("x");
   });
+
+  // F3 — Configuración
+  it("resuelve rutas de config/teams", () => {
+    expect(resolveRoute("GET", ["config", "teams"])?.key).toBe("GET /config/teams");
+    expect(resolveRoute("POST", ["config", "teams"])?.key).toBe("POST /config/teams");
+    const r = resolveRoute("PATCH", ["config", "teams", "t1"]);
+    expect(r?.key).toBe("PATCH /config/teams/:id");
+    expect(r?.params.id).toBe("t1");
+  });
+  it("resuelve rutas de config/fields con GET", () => {
+    expect(resolveRoute("GET", ["config", "fields"])?.key).toBe("GET /config/fields");
+  });
+  it("resuelve rutas de config/agents", () => {
+    expect(resolveRoute("GET", ["config", "agents"])?.key).toBe("GET /config/agents");
+    const r = resolveRoute("GET", ["config", "agents", "a1"]);
+    expect(r?.key).toBe("GET /config/agents/:id");
+    expect(r?.params.id).toBe("a1");
+  });
+  it("resuelve PUT /config/territories", () => {
+    expect(resolveRoute("PUT", ["config", "territories"])?.key).toBe("PUT /config/territories");
+  });
 });

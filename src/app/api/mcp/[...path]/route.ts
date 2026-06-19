@@ -18,7 +18,8 @@ async function handle(req: NextRequest, segments: string[]) {
 
   try {
     const userId = await getMcpUserId();
-    const data = await route.handler({ body, params: route.params, ctx: { userId } });
+    const query = Object.fromEntries(req.nextUrl.searchParams);
+    const data = await route.handler({ body, params: route.params, query, ctx: { userId } });
     return ok(data, req.method === "POST" ? 201 : 200);
   } catch (e) {
     const msg = (e as Error).message ?? "error";
@@ -32,4 +33,5 @@ type P = { params: { path: string[] } };
 export async function GET(req: NextRequest, { params }: P) { return handle(req, params.path); }
 export async function POST(req: NextRequest, { params }: P) { return handle(req, params.path); }
 export async function PATCH(req: NextRequest, { params }: P) { return handle(req, params.path); }
+export async function PUT(req: NextRequest, { params }: P) { return handle(req, params.path); }
 // Sin DELETE: el route no lo exporta → 405 automático.
