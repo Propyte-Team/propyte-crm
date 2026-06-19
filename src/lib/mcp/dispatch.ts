@@ -1,9 +1,10 @@
 // src/lib/mcp/dispatch.ts
 import * as intro from "./handlers/introspection";
 import * as wf from "./handlers/automation";
+import * as conn from "./handlers/connectors";
 
 type Ctx = { userId: string };
-export type Handler = (args: { body: unknown; params: Record<string, string>; ctx: Ctx }) => Promise<unknown>;
+export type Handler = (args: { body: unknown; params: Record<string, string>; query?: Record<string, string>; ctx: Ctx }) => Promise<unknown>;
 
 // Patrones de ruta: ":id" matchea cualquier segmento.
 const ROUTES: Record<string, Handler> = {
@@ -32,6 +33,12 @@ const ROUTES: Record<string, Handler> = {
 
   "GET /automation/queue": async () => wf.listQueue(),
   "POST /automation/queue/:id/retry": async ({ params, ctx }) => wf.retryQueue(params.id, ctx.userId),
+
+  // F2 — Conectores
+  "GET /connectors": async () => conn.listConnectors(),
+  "POST /connectors": async ({ body, ctx }) => conn.createConnector(body, ctx.userId),
+  "GET /connectors/:id": async ({ params }) => conn.getConnector(params.id),
+  "PATCH /connectors/:id": async ({ body, params, ctx }) => conn.updateConnector(params.id, body, ctx.userId),
 };
 
 export function resolveRoute(method: string, segments: string[]) {

@@ -17,4 +17,14 @@ describe("resolveRoute", () => {
     expect(resolveRoute("DELETE", ["automation", "rules", "abc"])).toBeNull();
     expect(resolveRoute("GET", ["nope"])).toBeNull();
   });
+
+  // F2 — Conectores
+  it("resuelve POST /connectors", () => {
+    expect(resolveRoute("POST", ["connectors"])?.key).toBe("POST /connectors");
+  });
+  it("resuelve PATCH /connectors/:id con params", () => {
+    const r = resolveRoute("PATCH", ["connectors", "x"]);
+    expect(r?.key).toBe("PATCH /connectors/:id");
+    expect(r?.params.id).toBe("x");
+  });
 });
