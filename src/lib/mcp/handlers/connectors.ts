@@ -16,10 +16,12 @@ function redact(c: LeadConnector): RedactedConnector {
 
 // ── schemas ───────────────────────────────────────────────────────────────────
 
+// Alineado con el enum ConnectorProvider de main. GOOGLE_ADS/YOUTUBE/PINTEREST
+// llegan con el Centro de Conexiones (rama aparte); se añadirán cuando esa rama caiga en main.
 const PROVIDERS = [
   "META","INSTAGRAM","MESSENGER","TIKTOK","WEBSITE","ZAPIER","MANUAL","GOOGLE",
   "LINKEDIN","INMUEBLES24","LAMUDI_PROPPIT","PROPIEDADES","VIVANUNCIOS","EASYBROKER",
-  "GOOGLE_ADS","YOUTUBE","PINTEREST","CUSTOM",
+  "CUSTOM",
 ] as const;
 
 const DIRECTIONS = ["INBOUND","OUTBOUND","BOTH"] as const;
