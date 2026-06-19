@@ -42,3 +42,6 @@ next-env.d.ts
 *.pfx
 .claude/settings.local.json
 scripts/migrated-users.json
+
+# superpowers brainstorm mockups (efímeros)
+.superpowers/
