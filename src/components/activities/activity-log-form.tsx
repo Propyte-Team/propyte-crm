@@ -7,6 +7,7 @@
 
 import { useState } from "react"
 import { ACTIVITY_TYPE_LABELS } from "@/lib/constants"
+import { CALL_OUTCOMES } from "@/lib/twilio/call-outcomes"
 
 const ACTIVITY_TYPE_GROUPS = [
   { label: "Contacto", types: ["CALL_OUTBOUND", "CALL_INBOUND", "WHATSAPP_OUT", "WHATSAPP_IN", "EMAIL_SENT", "EMAIL_RECEIVED"] },
@@ -57,6 +58,7 @@ export function ActivityLogForm({ contactId, contactName, dealId, initial, onSav
 
   const showDue = activityType === "TASK"
   const showDur = DURATION_TYPES.includes(activityType)
+  const isCall = activityType === "CALL_OUTBOUND" || activityType === "CALL_INBOUND"
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -175,7 +177,14 @@ export function ActivityLogForm({ contactId, contactName, dealId, initial, onSav
 
       <div className="space-y-1">
         <label className="text-[12px] text-[color:var(--text-secondary)]">Resultado</label>
-        <input className="form-input text-[13px]" value={outcome ?? ""} onChange={(e) => setOutcome(e.target.value)} placeholder="Resultado de la actividad…" maxLength={1000} />
+        {isCall ? (
+          <select className="form-input text-[13px]" value={outcome ?? ""} onChange={(e) => setOutcome(e.target.value)}>
+            <option value="">Resultado…</option>
+            {CALL_OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        ) : (
+          <input className="form-input text-[13px]" value={outcome ?? ""} onChange={(e) => setOutcome(e.target.value)} placeholder="Resultado de la actividad…" maxLength={1000} />
+        )}
       </div>
 
       <div className="space-y-1">

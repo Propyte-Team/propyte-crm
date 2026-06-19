@@ -18,11 +18,18 @@ export async function POST(req: NextRequest) {
 
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
-    select: { phone: true, firstName: true, lastName: true },
+    select: { phone: true, firstName: true, lastName: true, doNotContact: true },
   });
 
   if (!contact) {
     return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  }
+
+  if (contact.doNotContact) {
+    return NextResponse.json(
+      { error: "Contacto marcado doNotContact" },
+      { status: 422 }
+    );
   }
 
   try {

@@ -124,9 +124,10 @@ interface ContactDetailProps {
   contact: any;
   userRole: string;
   fieldAccess?: Record<string, FieldAccess>;
+  currentUserId?: string;
 }
 
-export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDetailProps) {
+export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId }: ContactDetailProps) {
   // Acceso por campo core (default EDIT). HIDDEN ya viene removido del server; aquí
   // ocultamos en UI igual por robustez y degradamos READ a solo lectura.
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
@@ -431,6 +432,9 @@ export function ContactDetail({ contact, userRole, fieldAccess = {} }: ContactDe
               contactEmail={contact.email ?? undefined}
               contactFirstName={contact.firstName ?? undefined}
               contactLastName={contact.lastName ?? undefined}
+              contactPhone={contact.phone ?? undefined}
+              doNotContact={contact.doNotContact ?? false}
+              currentUserId={currentUserId}
               onChanged={() => router.refresh()}
             />
           </div>
