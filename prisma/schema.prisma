@@ -537,6 +537,9 @@ enum ConnectorProvider {
   PROPIEDADES
   VIVANUNCIOS
   EASYBROKER
+  GOOGLE_ADS
+  YOUTUBE
+  PINTEREST
   CUSTOM
 
   @@schema("propyte_crm")
