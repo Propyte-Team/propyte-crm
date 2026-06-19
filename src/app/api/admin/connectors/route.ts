@@ -9,13 +9,18 @@ import {
   connectorCredentialsMetaSchema,
   connectorCredentialsTikTokSchema,
   connectorCredentialsWebsiteSchema,
+  connectorCredentialsGoogleAdsSchema,
+  connectorCredentialsLinkedInSchema,
 } from "@/lib/validations/rebuild-f1";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
 const createSchema = z.object({
   name: z.string().min(2).max(120),
-  provider: z.enum(["META", "TIKTOK", "WEBSITE", "ZAPIER", "MANUAL", "INSTAGRAM", "MESSENGER"]),
+  provider: z.enum([
+    "META", "TIKTOK", "WEBSITE", "ZAPIER", "MANUAL", "INSTAGRAM", "MESSENGER",
+    "GOOGLE_ADS", "LINKEDIN",
+  ]),
   credentials: z.record(z.string()).optional(),
   config: z.record(z.unknown()).optional(),
   fieldMap: z.record(z.string()).optional(),
@@ -25,6 +30,8 @@ function credentialsSchemaFor(provider: string) {
   if (provider === "META" || provider === "INSTAGRAM" || provider === "MESSENGER") return connectorCredentialsMetaSchema;
   if (provider === "TIKTOK") return connectorCredentialsTikTokSchema;
   if (provider === "WEBSITE") return connectorCredentialsWebsiteSchema;
+  if (provider === "GOOGLE_ADS") return connectorCredentialsGoogleAdsSchema;
+  if (provider === "LINKEDIN") return connectorCredentialsLinkedInSchema;
   return z.record(z.string());
 }
 
