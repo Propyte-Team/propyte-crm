@@ -23,7 +23,6 @@ import {
   revokeApiKey,
 } from "@/server/admin";
 import { useToast } from "@/components/ui/use-toast";
-import { ConnectorsSection } from "./connectors-section";
 
 // Eventos disponibles para webhooks
 const WEBHOOK_EVENTS = [
@@ -180,7 +179,13 @@ export function IntegrationsTab({
   return (
     <div className="space-y-6">
       {/* Conectores de leads (Meta/TikTok/Web) */}
-      <ConnectorsSection />
+      <div className="rounded-lg border p-4">
+        <h3 className="text-sm font-semibold">Conectores de Leads</h3>
+        <p className="mt-1 text-[12px] text-muted-foreground">
+          Gestiona tus cuentas de redes y ads (multicuenta) en el nuevo Centro de Conexiones.
+        </p>
+        <a href="/conexiones" className="mt-2 inline-block text-[12px] underline">Ir a Conexiones →</a>
+      </div>
 
       {/* Webhooks salientes */}
       <Card>
