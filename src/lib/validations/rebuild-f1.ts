@@ -68,6 +68,21 @@ export const connectorCredentialsWebsiteSchema = z.object({
   webhookSecret: z.string().min(16, "Mínimo 16 caracteres"),
 });
 
+export const connectorCredentialsGoogleAdsSchema = z.object({
+  customerId: z.string().min(1),       // ID de cliente Google Ads (sin guiones o con ellos)
+  developerToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+  webhookKey: z.string().min(8),        // "key" compartida del Lead Form webhook
+  loginCustomerId: z.string().optional(), // MCC, si aplica
+});
+
+export const connectorCredentialsLinkedInSchema = z.object({
+  adAccountId: z.string().min(1),
+  accessToken: z.string().min(1),
+});
+
 // ---------------------------------------------------------------------------
 // Perfiles de usuario (Anexo B §J.1) — todos los campos opcionales (PATCH parcial)
 // ---------------------------------------------------------------------------
