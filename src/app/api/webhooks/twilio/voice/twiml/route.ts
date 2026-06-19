@@ -79,12 +79,13 @@ export async function POST(req: NextRequest) {
   }
 
   const recordingCb = `${appUrl}/api/webhooks/twilio/voice/recording`;
+  const actionCb = escapeXml(`${appUrl}/api/webhooks/twilio/voice/dial-action-outbound`);
   const safeTo = escapeXml(to);
   const callerId = escapeXml(process.env.TWILIO_PHONE_NUMBER ?? "");
 
   return xml(
     `<Say language="${lang}">${escapeXml(notice)}</Say>` +
-      `<Dial callerId="${callerId}" record="record-from-answer-dual" recordingStatusCallback="${escapeXml(recordingCb)}" recordingStatusCallbackEvent="completed">` +
+      `<Dial callerId="${callerId}" record="record-from-answer-dual" recordingStatusCallback="${escapeXml(recordingCb)}" recordingStatusCallbackEvent="completed" action="${actionCb}">` +
       `<Number>${safeTo}</Number></Dial>`
   );
 }

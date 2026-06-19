@@ -24,6 +24,7 @@ describe("voice/twiml (salida)", () => {
     expect(res.headers.get("content-type")).toContain("text/xml");
     expect(xml).toContain("<Dial");
     expect(xml).toContain('record="record-from-answer-dual"');
+    expect(xml).toContain("dial-action-outbound");
     expect(xml).toContain("+529991112233");
   });
   it("número inválido → TwiML de error sin crear Activity", async () => {
