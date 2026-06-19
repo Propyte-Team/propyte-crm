@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "@/lib/auth/session";
 import { testConnection } from "@/lib/connectors/test-connection";
+import { providerById } from "@/lib/connectors/registry";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
 const schema = z.object({
-  provider: z.string().min(1),
+  provider: z.string().min(1).refine((p) => providerById(p) !== undefined, "Proveedor desconocido"),
   credentials: z.record(z.string()),
 });
 
