@@ -5,8 +5,9 @@
 import { useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import {
-  buildTriggerConfig, buildConditions, nodeToRows, parseTriggerValue,
-  FIELD_SUGGESTIONS, DEAL_STAGES, type CondLeaf, type ActionRow,
+  buildTriggerConfig, buildConditionsTree, parseConditions, parseTriggerValue,
+  isGroup, FIELD_SUGGESTIONS, DEAL_STAGES,
+  type CondLeaf, type CondItem, type CondGroup, type ConditionTree, type ActionRow,
 } from "@/lib/workflows/builder-model";
 
 const TRIGGER_TYPES = [
@@ -65,15 +66,30 @@ interface Props {
   onCancel: () => void;
 }
 
+function CondRowFields({ c, onChange, onDelete }: { c: CondLeaf; onChange: (c: CondLeaf) => void; onDelete: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <input list="field-suggestions" className="form-input text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
+        onChange={(e) => onChange({ ...c, field: e.target.value })} />
+      <select className="form-input !w-auto text-[13px]" value={c.op} onChange={(e) => onChange({ ...c, op: e.target.value })}>
+        {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {c.op !== "exists" && (
+        <input className="form-input text-[13px]" placeholder={c.op === "in" || c.op === "nin" ? "a,b,c" : "valor"} value={c.value}
+          onChange={(e) => onChange({ ...c, value: e.target.value })} />
+      )}
+      <button type="button" onClick={onDelete} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+    </div>
+  );
+}
+
 export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const isEdit = !!rule;
   const [name, setName] = useState(rule?.name ?? "");
   const [description, setDescription] = useState(rule?.description ?? "");
   const [triggerType, setTriggerType] = useState(rule?.triggerType ?? "EVENT");
   const [triggerValue, setTriggerValue] = useState<string>(parseTriggerValue(rule));
-  const initCond = nodeToRows(rule?.conditions);
-  const [combinator, setCombinator] = useState<"all" | "any">(initCond.combinator);
-  const [conds, setConds] = useState<CondLeaf[]>(initCond.rows);
+  const [tree, setTree] = useState<ConditionTree>(parseConditions(rule?.conditions));
   const [actions, setActions] = useState<ActionRow[]>(
     Array.isArray(rule?.actions) && rule.actions.length
       ? rule.actions.map((a: any) => ({ type: a.type, config: a.config ?? {}, delayMinutes: a.delayMinutes != null ? String(a.delayMinutes) : "" }))
@@ -84,6 +100,12 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const setRoot = (combinator: "all" | "any") => setTree({ ...tree, combinator });
+  const addLeaf = () => setTree({ ...tree, items: [...tree.items, { field: "", op: "eq", value: "" }] });
+  const addGroup = () => setTree({ ...tree, items: [...tree.items, { combinator: "all", conditions: [{ field: "", op: "eq", value: "" }] }] });
+  const updItem = (i: number, item: CondItem) => setTree({ ...tree, items: tree.items.map((x, j) => j === i ? item : x) });
+  const delItem = (i: number) => setTree({ ...tree, items: tree.items.filter((_, j) => j !== i) });
+
   async function save(activate: boolean) {
     setError(null);
     if (!name || name.length < 3) { setError("El nombre debe tener al menos 3 caracteres."); return; }
@@ -93,7 +115,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       ...(isEdit ? { id: rule.id } : {}),
       name, description: description || null,
       triggerType, triggerConfig: buildTriggerConfig(triggerType, triggerValue),
-      conditions: buildConditions(combinator, conds),
+      conditions: buildConditionsTree(tree),
       actions: actions.map((a) => ({
         type: a.type,
         config: a.config,
@@ -166,32 +188,42 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
           <h3 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Condiciones</h3>
           <div className="flex items-center gap-2 text-[12px]">
             <span style={{ color: "var(--text-tertiary)" }}>Cumplir</span>
-            <select className="form-input !w-auto text-[12px]" value={combinator} onChange={(e) => setCombinator(e.target.value as "all" | "any")}>
+            <select className="form-input !w-auto text-[12px]" value={tree.combinator} onChange={(e) => setRoot(e.target.value as "all" | "any")}>
               <option value="all">todas</option>
               <option value="any">cualquiera</option>
             </select>
           </div>
         </div>
         <datalist id="field-suggestions">{FIELD_SUGGESTIONS.map((f) => <option key={f} value={f} />)}</datalist>
-        {conds.map((c, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input list="field-suggestions" className="form-input text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
-              onChange={(e) => setConds(conds.map((x, j) => j === i ? { ...x, field: e.target.value } : x))} />
-            <select className="form-input !w-auto text-[13px]" value={c.op}
-              onChange={(e) => setConds(conds.map((x, j) => j === i ? { ...x, op: e.target.value } : x))}>
-              {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            {c.op !== "exists" && (
-              <input className="form-input text-[13px]" placeholder={c.op === "in" || c.op === "nin" ? "a,b,c" : "valor"} value={c.value}
-                onChange={(e) => setConds(conds.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} />
-            )}
-            <button type="button" onClick={() => setConds(conds.filter((_, j) => j !== i))} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+        {tree.items.map((item, i) => isGroup(item) ? (
+          <div key={i} className="rounded-md border p-3" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[12px]">
+                <span style={{ color: "var(--text-tertiary)" }}>Subgrupo — cumplir</span>
+                <select className="form-input !w-auto text-[12px]" value={item.combinator}
+                  onChange={(e) => updItem(i, { ...item, combinator: e.target.value as "all" | "any" })}>
+                  <option value="all">todas</option><option value="any">cualquiera</option>
+                </select>
+              </div>
+              <button type="button" onClick={() => delItem(i)} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+            </div>
+            {item.conditions.map((c, k) => (
+              <CondRowFields key={k} c={c}
+                onChange={(nc) => updItem(i, { ...item, conditions: item.conditions.map((x, m) => m === k ? nc : x) })}
+                onDelete={() => updItem(i, { ...item, conditions: item.conditions.filter((_, m) => m !== k) })} />
+            ))}
+            <button type="button" onClick={() => updItem(i, { ...item, conditions: [...item.conditions, { field: "", op: "eq", value: "" }] })} className="btn-secondary text-[12px] mt-2">
+              <Plus className="h-3.5 w-3.5" /> Condición
+            </button>
           </div>
+        ) : (
+          <CondRowFields key={i} c={item} onChange={(nc) => updItem(i, nc)} onDelete={() => delItem(i)} />
         ))}
-        <button type="button" onClick={() => setConds([...conds, { field: "", op: "eq", value: "" }])} className="btn-secondary text-[12px]">
-          <Plus className="h-3.5 w-3.5" /> Condición
-        </button>
-        {conds.length === 0 && <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>Sin condiciones = la regla aplica siempre que dispare el trigger.</p>}
+        <div className="flex gap-2">
+          <button type="button" onClick={addLeaf} className="btn-secondary text-[12px]"><Plus className="h-3.5 w-3.5" /> Condición</button>
+          <button type="button" onClick={addGroup} className="btn-secondary text-[12px]"><Plus className="h-3.5 w-3.5" /> Grupo</button>
+        </div>
+        {tree.items.length === 0 && <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>Sin condiciones = la regla aplica siempre que dispare el trigger.</p>}
       </div>
 
       {/* Acciones */}

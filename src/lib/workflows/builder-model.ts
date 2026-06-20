@@ -77,4 +77,41 @@ export function nodeToRows(conditions: any): { combinator: Combinator; rows: Con
   return { combinator: "all", rows: [] };
 }
 
+function leafToDsl(c: CondLeaf) {
+  return { field: c.field, op: c.op, value: parseValue(c.op, c.value) };
+}
+
+export function buildConditionsTree(tree: ConditionTree): Record<string, unknown> {
+  const parts: unknown[] = [];
+  for (const item of tree.items) {
+    if (isGroup(item)) {
+      const valid = item.conditions.filter((c) => c.field && c.op);
+      if (valid.length > 0) parts.push({ [item.combinator]: valid.map(leafToDsl) });
+    } else if (item.field && item.op) {
+      parts.push(leafToDsl(item));
+    }
+  }
+  if (parts.length === 0) return {};
+  return { [tree.combinator]: parts };
+}
+
+function dslLeafToRow(n: any): CondLeaf {
+  return { field: n.field, op: n.op, value: Array.isArray(n.value) ? n.value.join(",") : n.value != null ? String(n.value) : "" };
+}
+
+export function parseConditions(conditions: any): ConditionTree {
+  if (conditions && typeof conditions === "object") {
+    const key: Combinator | null = conditions.all ? "all" : conditions.any ? "any" : null;
+    if (key) {
+      const items: CondItem[] = (conditions[key] as any[]).map((n) => {
+        const subKey: Combinator | null = n?.all ? "all" : n?.any ? "any" : null;
+        if (subKey) return { combinator: subKey, conditions: (n[subKey] as any[]).filter((x) => x.field).map(dslLeafToRow) };
+        return dslLeafToRow(n);
+      }).filter((it) => isGroup(it) ? it.conditions.length > 0 : !!it.field);
+      return { combinator: key, items };
+    }
+  }
+  return { combinator: "all", items: [] };
+}
+
 export type { ConditionNode };
