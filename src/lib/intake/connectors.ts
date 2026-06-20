@@ -3,6 +3,7 @@
 import prisma from "@/lib/db";
 import type { LeadConnector, Prisma } from "@prisma/client";
 import { decryptPII, encryptPII } from "@/lib/crypto";
+import { normalizePhoneE164 } from "@/lib/phone";
 import { captureLead } from "./capture-lead";
 
 export function readCredentials<T = Record<string, string>>(connector: LeadConnector): T | null {
@@ -92,8 +93,19 @@ export async function processIncomingLead(
     config.defaultLeadSource ??
     (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? "WEBSITE" : "WEBSITE");
 
+  // Teléfono inválido NO debe tumbar el lead: se descarta el campo (el valor crudo se
+  // conserva en `custom`). Un solo campo malformado no debe perder todo el lead.
+  if (typeof mappedFields.phone === "string" && !normalizePhoneE164(mappedFields.phone)) {
+    delete mappedFields.phone;
+  }
+  // Todos los campos crudos del formulario → Contact.custom (no se pierde nada de info).
+  const custom = rawPayload.external as Record<string, unknown> | undefined;
+
   try {
-    const result = await captureLead({ ...mappedFields, source }, { connectorId });
+    const result = await captureLead(
+      { ...mappedFields, source, ...(custom && Object.keys(custom).length ? { custom } : {}) },
+      { connectorId }
+    );
     const status = result.error ? "ERROR" : result.isNew ? "PROCESSED" : "DUPLICATE";
     await prisma.connectorLeadLog.update({
       where: { id: logId },

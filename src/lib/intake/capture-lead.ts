@@ -1,6 +1,7 @@
 // captureLead — punto único de intake multicanal (Anexo §C.1 / Anexo B §H).
 // Webhook web, conectores Meta/TikTok, WhatsApp desconocido y bots llegan aquí.
 // Dedup por E.164/email → ruteo → SLA → eventos. Devuelve {contactId, isNew}.
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { incomingLeadSchema, type IncomingLead } from "@/lib/validations/rebuild-f1";
 import { normalizePhoneE164 } from "@/lib/phone";
@@ -80,6 +81,8 @@ export async function captureLead(
       tags: [],
       instagramId: instagramId ?? null,
       messengerPsid: messengerPsid ?? null,
+      // Todos los campos crudos del formulario (no se pierde nada de info)
+      ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
     },
   });
 

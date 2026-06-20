@@ -171,6 +171,9 @@ export const incomingLeadSchema = z
     referrer: z.string().optional(),
     instagramId: z.string().min(1).max(120).optional(),
     messengerPsid: z.string().min(1).max(120).optional(),
+    // Todos los campos crudos del formulario (Meta/TikTok/Google/LinkedIn) → Contact.custom.
+    // Preserva preguntas custom (presupuesto, urgencia, etc.) sin perder nada.
+    custom: z.record(z.unknown()).optional(),
   })
   .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {
     message: "Se requiere teléfono, email o identificador social",
