@@ -128,6 +128,13 @@ export async function POST(req: NextRequest) {
         const mapped = mapExternalFields(fieldMap, external);
         mapped.sourceDetail = [lead.campaign_name, lead.ad_name].filter(Boolean).join(" / ") || mapped.sourceDetail;
         mapped.fbclid = leadgenId;
+        // Atribución estructurada → AdAttribution (segmentación por campaña/red en reglas/routing)
+        mapped.campaignName = lead.campaign_name;
+        mapped.adName = lead.ad_name;
+        mapped.adsetName = lead.adset_name;
+        mapped.network = target.provider === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK";
+        mapped.socialLeadId = leadgenId;
+        if (change.value?.form_id) external.form_id = change.value.form_id; // form en custom (segmentación por form)
 
         results.push(await processIncomingLead(target.id, leadgenId, { external, meta: lead }, mapped));
       } catch (err) {

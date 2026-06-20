@@ -40,19 +40,22 @@ export async function buildContext(event: WorkflowEvent): Promise<Record<string,
     event: { type: event.type, payload: event.payload ?? {} },
     context: { isBusinessHours: isBusinessHoursNow() },
   };
+  const withAd = { adAttribution: true } as const;
   if (event.entityType === "contact") {
-    ctx.contact = await prisma.contact.findUnique({ where: { id: event.entityId } });
+    ctx.contact = await prisma.contact.findUnique({ where: { id: event.entityId }, include: withAd });
   } else if (event.entityType === "deal") {
     const deal = await prisma.deal.findUnique({ where: { id: event.entityId } });
     ctx.deal = deal;
-    if (deal) ctx.contact = await prisma.contact.findUnique({ where: { id: deal.contactId } });
+    if (deal) ctx.contact = await prisma.contact.findUnique({ where: { id: deal.contactId }, include: withAd });
   } else if (event.entityType === "conversation") {
     const conv = await prisma.conversation.findUnique({ where: { id: event.entityId } });
-    if (conv) ctx.contact = await prisma.contact.findUnique({ where: { id: conv.contactId } });
+    if (conv) ctx.contact = await prisma.contact.findUnique({ where: { id: conv.contactId }, include: withAd });
   }
   // Decimal de Prisma no compara con number en el DSL → normalizar score/value usados típicamente
   const c = ctx.contact as { score?: unknown } | null;
   if (c && typeof c === "object") (c as Record<string, unknown>).score = Number((c as { score?: unknown }).score ?? 0);
+  // Exponer atribución en el DSL: reglas pueden condicionar por adAttribution.campaignName/network/...
+  ctx.adAttribution = (ctx.contact as { adAttribution?: unknown } | null)?.adAttribution ?? null;
   return ctx;
 }
 

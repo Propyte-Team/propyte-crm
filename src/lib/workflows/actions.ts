@@ -113,9 +113,24 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
     case "UPDATE_FIELD": {
       if (!contact) return { skipped: true, note: "Sin contacto" };
       const field = String(config.field ?? "");
-      const allowed = ["temperature", "contactStatus", "urgency"]; // whitelist deliberada
+      const value = config.value;
+      // Whitelist deliberada — incluye segmentación (contactType/leadSource) para reglas tipo Zoho.
+      const allowed = ["temperature", "contactStatus", "urgency", "contactType", "leadSource"];
       if (!allowed.includes(field)) return { skipped: true, note: `Campo no permitido: ${field}` };
-      await prisma.contact.update({ where: { id: contact.id }, data: { [field]: config.value } as never });
+      // Validar enums: un valor inválido NO debe romper el update (Prisma lanzaría).
+      const ENUMS: Record<string, string[]> = {
+        contactType: ["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"],
+        leadSource: [
+          "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "PORTAL_INMOBILIARIO",
+          "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP",
+          "MESSENGER", "META_ADS", "BASE_DE_DATOS", "SELF_GEN", "REGISTRO_BROKER", "WEBINAR",
+          "LINKEDIN", "OTRO", "LLAMADA_ENTRANTE",
+        ],
+      };
+      if (ENUMS[field] && !ENUMS[field].includes(String(value))) {
+        return { skipped: true, note: `Valor inválido para ${field}: ${String(value)}` };
+      }
+      await prisma.contact.update({ where: { id: contact.id }, data: { [field]: value } as never });
       return {};
     }
 

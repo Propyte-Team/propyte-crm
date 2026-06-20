@@ -97,7 +97,10 @@ export async function captureLead(
   });
 
   // Atribución publicitaria si viene en el payload (Anexo §B.4)
-  if (lead.utm || lead.gclid || lead.fbclid || lead.ttclid || lead.liFatId || lead.portalLeadId || lead.landingPage) {
+  if (
+    lead.utm || lead.gclid || lead.fbclid || lead.ttclid || lead.liFatId || lead.portalLeadId ||
+    lead.landingPage || lead.campaignName || lead.adName || lead.network || lead.socialLeadId
+  ) {
     await prisma.adAttribution.create({
       data: {
         contactId: contact.id,
@@ -113,6 +116,12 @@ export async function captureLead(
         utmContent: lead.utm?.content ?? null,
         landingPage: lead.landingPage ?? null,
         referrer: lead.referrer ?? null,
+        // Atribución de anuncio (segmentación por campaña/red en reglas/routing)
+        campaignName: lead.campaignName ?? null,
+        adName: lead.adName ?? null,
+        adsetName: lead.adsetName ?? null,
+        network: lead.network ?? null,
+        socialLeadId: lead.socialLeadId ?? null,
         firstTouch: new Date(),
         lastTouch: new Date(),
       },

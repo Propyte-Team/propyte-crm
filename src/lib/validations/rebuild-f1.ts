@@ -169,6 +169,12 @@ export const incomingLeadSchema = z
     portalLeadId: z.string().optional(),
     landingPage: z.string().optional(),
     referrer: z.string().optional(),
+    // Atribución de anuncio estructurada (para segmentar por campaña/red en reglas/routing)
+    campaignName: z.string().max(300).optional(),
+    adName: z.string().max(300).optional(),
+    adsetName: z.string().max(300).optional(),
+    network: z.string().max(40).optional(),
+    socialLeadId: z.string().max(120).optional(),
     instagramId: z.string().min(1).max(120).optional(),
     messengerPsid: z.string().min(1).max(120).optional(),
     // Todos los campos crudos del formulario (Meta/TikTok/Google/LinkedIn) → Contact.custom.

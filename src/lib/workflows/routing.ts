@@ -24,7 +24,7 @@ export async function autoRouteLead(
   contactId: string,
   opts: { reason?: string } = {}
 ): Promise<string | null> {
-  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  const contact = await prisma.contact.findUnique({ where: { id: contactId }, include: { adAttribution: true } });
   if (!contact || contact.deletedAt) return null;
 
   // PRIMERO territorio (speckit Personalización §2.4): si una TerritoryRule matchea,
@@ -49,7 +49,10 @@ export async function autoRouteLead(
 
   let assigneeId: string | null = null;
   for (const rule of rules) {
-    const ctx = { contact: { ...contact, score: Number(contact.score) } };
+    const ctx = {
+      contact: { ...contact, score: Number(contact.score) },
+      adAttribution: (contact as { adAttribution?: unknown }).adAttribution ?? null,
+    };
     if (!evaluateConditions(rule.conditions as never, ctx)) continue;
 
     const targets = (rule.targets ?? {}) as { roles?: string[]; userIds?: string[]; plaza?: string };
