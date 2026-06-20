@@ -29,12 +29,12 @@ export function isGroup(item: CondItem): item is CondGroup {
   return (item as CondGroup).combinator !== undefined;
 }
 
-// NOTA: contiene el bug histórico (STAGE_CHANGE → { stage }). Se arregla en otra task.
+// STAGE_CHANGE escribe `toStage` (motor en engine.ts lee `toStage`). Compat: parseTriggerValue lee `stage` como fallback para reglas antiguas.
 export function buildTriggerConfig(triggerType: string, triggerValue: string): Record<string, unknown> {
   if (!triggerValue) return {};
   switch (triggerType) {
     case "EVENT": return { eventType: triggerValue };
-    case "STAGE_CHANGE": return { stage: triggerValue };
+    case "STAGE_CHANGE": return { toStage: triggerValue };
     case "SCORE_THRESHOLD": return { threshold: Number(triggerValue) || 0 };
     case "INACTIVITY": return { hours: Number(triggerValue) || 0 };
     default: return {};
@@ -43,7 +43,7 @@ export function buildTriggerConfig(triggerType: string, triggerValue: string): R
 
 export function parseTriggerValue(rule: any): string {
   return String(
-    rule?.triggerConfig?.eventType ?? rule?.triggerConfig?.stage ??
+    rule?.triggerConfig?.eventType ?? rule?.triggerConfig?.toStage ?? rule?.triggerConfig?.stage ??
     rule?.triggerConfig?.threshold ?? rule?.triggerConfig?.hours ?? ""
   );
 }

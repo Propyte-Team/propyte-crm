@@ -32,3 +32,25 @@ describe("buildTriggerConfig / parseTriggerValue", () => {
     expect(parseTriggerValue({ triggerConfig: cfg })).toBe("lead.captured");
   });
 });
+
+import { matchesTrigger } from "./engine";
+
+describe("STAGE_CHANGE usa toStage (bug fix)", () => {
+  it("buildTriggerConfig escribe toStage", () => {
+    expect(buildTriggerConfig("STAGE_CHANGE", "RESERVED")).toEqual({ toStage: "RESERVED" });
+  });
+
+  it("parseTriggerValue lee toStage y compat con 'stage' viejo", () => {
+    expect(parseTriggerValue({ triggerConfig: { toStage: "WON" } })).toBe("WON");
+    expect(parseTriggerValue({ triggerConfig: { stage: "LOST" } })).toBe("LOST"); // regla vieja
+  });
+
+  it("round-trip: regla del builder matchea evento deal.stage_changed", () => {
+    const cfg = buildTriggerConfig("STAGE_CHANGE", "RESERVED");
+    const rule = { triggerType: "STAGE_CHANGE" as const, triggerConfig: cfg };
+    const event = { type: "deal.stage_changed", payload: { toStage: "RESERVED" } };
+    expect(matchesTrigger(rule, event as any)).toBe(true);
+    const other = { type: "deal.stage_changed", payload: { toStage: "WON" } };
+    expect(matchesTrigger(rule, other as any)).toBe(false);
+  });
+});
