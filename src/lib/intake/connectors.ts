@@ -93,19 +93,19 @@ export async function processIncomingLead(
     config.defaultLeadSource ??
     (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? "WEBSITE" : "WEBSITE");
 
+  // Copia local: no mutamos el objeto del caller (en sitio/portal es el request body).
+  const fields: Record<string, unknown> = { ...mappedFields, source };
   // Teléfono inválido NO debe tumbar el lead: se descarta el campo (el valor crudo se
   // conserva en `custom`). Un solo campo malformado no debe perder todo el lead.
-  if (typeof mappedFields.phone === "string" && !normalizePhoneE164(mappedFields.phone)) {
-    delete mappedFields.phone;
+  if (typeof fields.phone === "string" && !normalizePhoneE164(fields.phone)) {
+    delete fields.phone;
   }
   // Todos los campos crudos del formulario → Contact.custom (no se pierde nada de info).
   const custom = rawPayload.external as Record<string, unknown> | undefined;
+  if (custom && Object.keys(custom).length) fields.custom = custom;
 
   try {
-    const result = await captureLead(
-      { ...mappedFields, source, ...(custom && Object.keys(custom).length ? { custom } : {}) },
-      { connectorId }
-    );
+    const result = await captureLead(fields, { connectorId });
     const status = result.error ? "ERROR" : result.isNew ? "PROCESSED" : "DUPLICATE";
     await prisma.connectorLeadLog.update({
       where: { id: logId },

@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     const externalId =
       (typeof body.externalId === "string" && body.externalId) ||
       `${body.email ?? body.phone ?? "x"}:${new Date().toISOString().slice(0, 10)}`;
-    const result = await processIncomingLead(connector.id, externalId, body, body);
+    const result = await processIncomingLead(connector.id, externalId, { external: body }, body);
     return NextResponse.json(result, { status: result.status === "ERROR" ? 422 : 200 });
   }
 

@@ -54,6 +54,6 @@ export async function POST(req: NextRequest) {
     (typeof mapped.portalLeadId === "string" && mapped.portalLeadId) ||
     `${mapped.phone ?? mapped.email ?? "x"}:${new Date().toISOString().slice(0, 10)}`;
 
-  const result = await processIncomingLead(connector.id, externalLeadId, body, mapped);
+  const result = await processIncomingLead(connector.id, externalLeadId, { external: body }, mapped);
   return NextResponse.json(result, { status: result.status === "ERROR" ? 422 : 200 });
 }
