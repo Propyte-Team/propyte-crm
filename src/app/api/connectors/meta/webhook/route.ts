@@ -117,7 +117,11 @@ export async function POST(req: NextRequest) {
 
         const defaultMap: Record<string, string> = {
           full_name: "fullName",
+          name: "fullName",
+          first_name: "firstName",
+          last_name: "lastName",
           phone_number: "phone",
+          phone: "phone",
           email: "email",
         };
         const fieldMap = { ...defaultMap, ...((target.fieldMap ?? {}) as Record<string, string>) };
