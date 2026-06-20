@@ -76,7 +76,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const [conds, setConds] = useState<CondLeaf[]>(initCond.rows);
   const [actions, setActions] = useState<ActionRow[]>(
     Array.isArray(rule?.actions) && rule.actions.length
-      ? rule.actions.map((a: any) => ({ type: a.type, config: a.config ?? {} }))
+      ? rule.actions.map((a: any) => ({ type: a.type, config: a.config ?? {}, delayMinutes: a.delayMinutes != null ? String(a.delayMinutes) : "" }))
       : [{ type: "CREATE_TASK", config: {} }]
   );
   const [priority, setPriority] = useState(String(rule?.priority ?? 100));
@@ -94,7 +94,11 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       name, description: description || null,
       triggerType, triggerConfig: buildTriggerConfig(triggerType, triggerValue),
       conditions: buildConditions(combinator, conds),
-      actions: actions.map((a) => ({ type: a.type, config: a.config })),
+      actions: actions.map((a) => ({
+        type: a.type,
+        config: a.config,
+        ...(a.delayMinutes && Number(a.delayMinutes) > 0 ? { delayMinutes: Number(a.delayMinutes) } : {}),
+      })),
       priority: Number(priority) || 100,
       cooldownMinutes: cooldown ? Number(cooldown) : null,
       isActive: activate,
@@ -215,6 +219,12 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
                     onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))} />
                 )
               ))}
+            </div>
+            <div className="mt-2">
+              <label className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Retrasar (min)</label>
+              <input className="form-input max-w-[160px] text-[13px]" type="number" min={0} placeholder="0 = inmediata"
+                value={a.delayMinutes ?? ""}
+                onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, delayMinutes: e.target.value } : x))} />
             </div>
           </div>
         ))}

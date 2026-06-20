@@ -17,7 +17,11 @@ const ruleSchema = z.object({
   triggerConfig: z.record(z.unknown()).default({}),
   conditions: conditionsDslSchema,
   actions: z
-    .array(z.object({ type: z.enum(workflowActionTypes), config: z.record(z.unknown()).default({}) }))
+    .array(z.object({
+      type: z.enum(workflowActionTypes),
+      config: z.record(z.unknown()).default({}),
+      delayMinutes: z.number().int().min(0).optional(),
+    }))
     .min(1, "Agrega al menos una acción"),
   cooldownMinutes: z.number().int().min(0).max(43200).optional().nullable(),
   priority: z.number().int().min(1).max(1000).default(100),
