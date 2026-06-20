@@ -4,6 +4,10 @@
 
 import { useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
+import {
+  buildTriggerConfig, buildConditions, nodeToRows, parseTriggerValue,
+  FIELD_SUGGESTIONS, DEAL_STAGES, type CondLeaf,
+} from "@/lib/workflows/builder-model";
 
 const TRIGGER_TYPES = [
   { value: "EVENT", label: "Evento del sistema" },
@@ -27,17 +31,6 @@ const OPS = [
   { value: "contains", label: "contiene" },
   { value: "exists", label: "existe" },
   { value: "changed_to", label: "cambió a" },
-];
-
-const FIELD_SUGGESTIONS = [
-  "contact.score", "contact.temperature", "contact.contactStatus", "contact.urgency",
-  "contact.budgetMax", "contact.leadSource", "deal.stage", "deal.estimatedValue",
-  "deal.dealType", "event.type",
-];
-
-const DEAL_STAGES = [
-  "NEW_LEAD", "CONTACTED", "DISCOVERY_DONE", "MEETING_SCHEDULED", "MEETING_COMPLETED",
-  "PROPOSAL_SENT", "NEGOTIATION", "RESERVED", "CONTRACT_SIGNED", "CLOSING", "WON", "LOST", "FROZEN",
 ];
 
 const ACTION_TYPES = [
@@ -66,7 +59,6 @@ const ACTION_FIELDS: Record<string, { key: string; label: string; type?: string 
   MAKE_CALL: [{ key: "note", label: "Nota" }],
 };
 
-interface CondRow { field: string; op: string; value: string }
 interface ActionRow { type: string; config: Record<string, string> }
 
 interface Props {
@@ -75,30 +67,15 @@ interface Props {
   onCancel: () => void;
 }
 
-function nodeToRows(conditions: any): { combinator: "all" | "any"; rows: CondRow[] } {
-  if (conditions && typeof conditions === "object") {
-    const key = conditions.all ? "all" : conditions.any ? "any" : null;
-    if (key) {
-      const rows = (conditions[key] as any[])
-        .filter((n) => n.field)
-        .map((n) => ({ field: n.field, op: n.op, value: Array.isArray(n.value) ? n.value.join(",") : n.value != null ? String(n.value) : "" }));
-      return { combinator: key, rows };
-    }
-  }
-  return { combinator: "all", rows: [] };
-}
-
 export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const isEdit = !!rule;
   const [name, setName] = useState(rule?.name ?? "");
   const [description, setDescription] = useState(rule?.description ?? "");
   const [triggerType, setTriggerType] = useState(rule?.triggerType ?? "EVENT");
-  const [triggerValue, setTriggerValue] = useState<string>(
-    rule?.triggerConfig?.eventType ?? rule?.triggerConfig?.stage ?? rule?.triggerConfig?.threshold ?? rule?.triggerConfig?.hours ?? ""
-  );
+  const [triggerValue, setTriggerValue] = useState<string>(parseTriggerValue(rule));
   const initCond = nodeToRows(rule?.conditions);
   const [combinator, setCombinator] = useState<"all" | "any">(initCond.combinator);
-  const [conds, setConds] = useState<CondRow[]>(initCond.rows);
+  const [conds, setConds] = useState<CondLeaf[]>(initCond.rows);
   const [actions, setActions] = useState<ActionRow[]>(
     Array.isArray(rule?.actions) && rule.actions.length
       ? rule.actions.map((a: any) => ({ type: a.type, config: a.config ?? {} }))
@@ -109,30 +86,6 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function buildTriggerConfig(): Record<string, unknown> {
-    if (!triggerValue) return {};
-    switch (triggerType) {
-      case "EVENT": return { eventType: triggerValue };
-      case "STAGE_CHANGE": return { stage: triggerValue };
-      case "SCORE_THRESHOLD": return { threshold: Number(triggerValue) || 0 };
-      case "INACTIVITY": return { hours: Number(triggerValue) || 0 };
-      default: return {};
-    }
-  }
-
-  function parseValue(op: string, raw: string): unknown {
-    if (op === "exists") return true;
-    if (op === "in" || op === "nin") return raw.split(",").map((s) => s.trim()).filter(Boolean);
-    if (/^-?\d+(\.\d+)?$/.test(raw.trim())) return Number(raw.trim());
-    return raw;
-  }
-
-  function buildConditions(): Record<string, unknown> {
-    const valid = conds.filter((c) => c.field && c.op);
-    if (valid.length === 0) return {};
-    return { [combinator]: valid.map((c) => ({ field: c.field, op: c.op, value: parseValue(c.op, c.value) })) };
-  }
-
   async function save(activate: boolean) {
     setError(null);
     if (!name || name.length < 3) { setError("El nombre debe tener al menos 3 caracteres."); return; }
@@ -141,8 +94,8 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
     const payload = {
       ...(isEdit ? { id: rule.id } : {}),
       name, description: description || null,
-      triggerType, triggerConfig: buildTriggerConfig(),
-      conditions: buildConditions(),
+      triggerType, triggerConfig: buildTriggerConfig(triggerType, triggerValue),
+      conditions: buildConditions(combinator, conds),
       actions: actions.map((a) => ({ type: a.type, config: a.config })),
       priority: Number(priority) || 100,
       cooldownMinutes: cooldown ? Number(cooldown) : null,
