@@ -174,6 +174,16 @@ export const incomingLeadSchema = z
     // Todos los campos crudos del formulario (Meta/TikTok/Google/LinkedIn) → Contact.custom.
     // Preserva preguntas custom (presupuesto, urgencia, etc.) sin perder nada.
     custom: z.record(z.unknown()).optional(),
+    // Perfil de Inversión derivado del formulario (normalizado a los enums del CRM).
+    investmentProfile: z.enum(["END_USER", "INVESTOR_RENTAL", "INVESTOR_FLIP", "INVESTOR_LAND", "MIXED"]).optional(),
+    propertyType: z.enum(["DEPARTAMENTO", "CASA", "TERRENO", "MACROLOTE", "LOCAL_COMERCIAL", "OTRO"]).optional(),
+    purchaseTimeline: z.enum(["IMMEDIATE", "ONE_TO_THREE_MONTHS", "THREE_TO_SIX_MONTHS", "SIX_PLUS_MONTHS"]).optional(),
+    budgetMin: z.number().nonnegative().optional(),
+    budgetMax: z.number().nonnegative().optional(),
+    paymentMethod: z.enum(["CONTADO", "CREDITO_HIPOTECARIO", "FINANCIAMIENTO_DIRECTO", "MIXTO"]).optional(),
+    purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional(),
+    rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional(),
+    preferredZone: z.string().max(200).optional(),
   })
   .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {
     message: "Se requiere teléfono, email o identificador social",

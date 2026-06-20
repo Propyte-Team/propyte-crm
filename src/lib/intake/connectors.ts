@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import type { LeadConnector, Prisma } from "@prisma/client";
 import { decryptPII, encryptPII } from "@/lib/crypto";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { deriveInvestmentProfile } from "./profile-mapping";
 import { captureLead } from "./capture-lead";
 
 export function readCredentials<T = Record<string, string>>(connector: LeadConnector): T | null {
@@ -102,7 +103,12 @@ export async function processIncomingLead(
   }
   // Todos los campos crudos del formulario → Contact.custom (no se pierde nada de info).
   const custom = rawPayload.external as Record<string, unknown> | undefined;
-  if (custom && Object.keys(custom).length) fields.custom = custom;
+  // Perfil de Inversión: normaliza respuestas del form a los enums del CRM (camino A).
+  const { budgetCurrency, ...profileFields } = custom ? deriveInvestmentProfile(custom) : {};
+  Object.assign(fields, profileFields);
+  if (custom && Object.keys(custom).length) {
+    fields.custom = budgetCurrency ? { ...custom, budget_currency: budgetCurrency } : custom;
+  }
 
   try {
     const result = await captureLead(fields, { connectorId });

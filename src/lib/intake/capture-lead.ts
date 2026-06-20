@@ -81,6 +81,16 @@ export async function captureLead(
       tags: [],
       instagramId: instagramId ?? null,
       messengerPsid: messengerPsid ?? null,
+      // Perfil de Inversión derivado del formulario (normalizado a enums del CRM)
+      investmentProfile: lead.investmentProfile ?? null,
+      propertyType: lead.propertyType ?? null,
+      purchaseTimeline: lead.purchaseTimeline ?? null,
+      budgetMin: lead.budgetMin ?? null,
+      budgetMax: lead.budgetMax ?? null,
+      paymentMethod: lead.paymentMethod ?? null,
+      purchaseModality: lead.purchaseModality ?? null,
+      rentalStrategy: lead.rentalStrategy ?? null,
+      preferredZone: lead.preferredZone ?? null,
       // Todos los campos crudos del formulario (no se pierde nada de info)
       ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
     },
