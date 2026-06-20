@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import {
   buildTriggerConfig, buildConditions, nodeToRows, parseTriggerValue,
-  FIELD_SUGGESTIONS, DEAL_STAGES, type CondLeaf,
+  FIELD_SUGGESTIONS, DEAL_STAGES, type CondLeaf, type ActionRow,
 } from "@/lib/workflows/builder-model";
 
 const TRIGGER_TYPES = [
@@ -58,8 +58,6 @@ const ACTION_FIELDS: Record<string, { key: string; label: string; type?: string 
   WEBHOOK: [{ key: "url", label: "URL" }],
   MAKE_CALL: [{ key: "note", label: "Nota" }],
 };
-
-interface ActionRow { type: string; config: Record<string, string> }
 
 interface Props {
   rule?: any;
