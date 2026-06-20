@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTriggerConfig, parseValue, buildConditions, nodeToRows, parseTriggerValue } from "./builder-model";
+import { buildTriggerConfig, parseValue, buildConditions, nodeToRows, parseTriggerValue, FIELD_SUGGESTIONS } from "./builder-model";
 
 describe("parseValue", () => {
   it("exists → true", () => expect(parseValue("exists", "")).toBe(true));
@@ -52,5 +52,13 @@ describe("STAGE_CHANGE usa toStage (bug fix)", () => {
     expect(matchesTrigger(rule, event as any)).toBe(true);
     const other = { type: "deal.stage_changed", payload: { toStage: "WON" } };
     expect(matchesTrigger(rule, other as any)).toBe(false);
+  });
+});
+
+describe("FIELD_SUGGESTIONS incluye campos de segmentación", () => {
+  it("tiene contactType y adAttribution.*", () => {
+    for (const f of ["contact.contactType", "adAttribution.campaignName", "adAttribution.adName", "adAttribution.adsetName", "adAttribution.network", "contact.custom."]) {
+      expect(FIELD_SUGGESTIONS).toContain(f);
+    }
   });
 });

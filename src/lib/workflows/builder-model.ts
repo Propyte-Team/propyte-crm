@@ -20,9 +20,11 @@ export const DEAL_STAGES = [
 ] as const;
 
 export const FIELD_SUGGESTIONS = [
-  "contact.score", "contact.temperature", "contact.contactStatus", "contact.urgency",
-  "contact.budgetMax", "contact.leadSource", "deal.stage", "deal.estimatedValue",
-  "deal.dealType", "event.type",
+  "contact.score", "contact.temperature", "contact.contactStatus", "contact.contactType",
+  "contact.urgency", "contact.budgetMax", "contact.leadSource",
+  "adAttribution.campaignName", "adAttribution.adName", "adAttribution.adsetName", "adAttribution.network",
+  "contact.custom.",
+  "deal.stage", "deal.estimatedValue", "deal.dealType", "event.type",
 ];
 
 export function isGroup(item: CondItem): item is CondGroup {
