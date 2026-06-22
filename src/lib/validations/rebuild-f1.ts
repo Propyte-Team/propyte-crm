@@ -103,6 +103,12 @@ export const connectorCredentialsMetaSchema = z.object({
   verifyToken: z.string().min(1),
 });
 
+export const connectorCredentialsWhatsAppSchema = z.object({
+  accessToken: z.string().min(1),
+  verifyToken: z.string().min(1),
+  appSecret: z.string().min(1),
+});
+
 export const connectorCredentialsTikTokSchema = z.object({
   advertiserId: z.string().min(1),
   accessToken: z.string().min(1),
