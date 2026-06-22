@@ -119,7 +119,7 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       if (!allowed.includes(field)) return { skipped: true, note: `Campo no permitido: ${field}` };
       // Validar enums: un valor inválido NO debe romper el update (Prisma lanzaría).
       const ENUMS: Record<string, string[]> = {
-        contactType: ["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"],
+        contactType: ["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "EMPLEO"],
         leadSource: [
           "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "PORTAL_INMOBILIARIO",
           "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP",
