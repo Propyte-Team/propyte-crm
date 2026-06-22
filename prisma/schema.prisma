@@ -64,6 +64,7 @@ enum ContactType {
   INVERSIONISTA
   BROKER_EXTERNO
   REFERIDO
+  EMPLEO
 
   @@schema("propyte_crm")
 }
