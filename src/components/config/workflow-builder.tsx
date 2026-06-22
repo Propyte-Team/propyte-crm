@@ -9,6 +9,7 @@ import {
   isGroup, FIELD_SUGGESTIONS, DEAL_STAGES,
   type CondLeaf, type CondItem, type CondGroup, type ConditionTree, type ActionRow,
 } from "@/lib/workflows/builder-model";
+import { RULE_TEMPLATES } from "@/lib/workflows/builder-templates";
 
 const TRIGGER_TYPES = [
   { value: "EVENT", label: "Evento del sistema" },
@@ -106,6 +107,17 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const updItem = (i: number, item: CondItem) => setTree({ ...tree, items: tree.items.map((x, j) => j === i ? item : x) });
   const delItem = (i: number) => setTree({ ...tree, items: tree.items.filter((_, j) => j !== i) });
 
+  function applyTemplate(key: string) {
+    const t = RULE_TEMPLATES.find((x) => x.key === key);
+    if (!t) return;
+    setName(t.rule.name);
+    setDescription(t.rule.description);
+    setTriggerType(t.rule.triggerType);
+    setTriggerValue(String(t.rule.triggerConfig.eventType ?? ""));
+    setTree(parseConditions(t.rule.conditions));
+    setActions(t.rule.actions.map((a) => ({ type: a.type, config: a.config as Record<string, string>, delayMinutes: a.delayMinutes != null ? String(a.delayMinutes) : "" })));
+  }
+
   async function save(activate: boolean) {
     setError(null);
     if (!name || name.length < 3) { setError("El nombre debe tener al menos 3 caracteres."); return; }
@@ -148,6 +160,17 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   return (
     <div className="space-y-5">
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {/* Plantilla */}
+      {!isEdit && (
+        <Field label="Empezar desde plantilla (opcional)">
+          <select className="form-input text-[13px] max-w-[280px]" defaultValue=""
+            onChange={(e) => { if (e.target.value) applyTemplate(e.target.value); }}>
+            <option value="">Sin plantilla (desde cero)</option>
+            {RULE_TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.label} — {t.description}</option>)}
+          </select>
+        </Field>
+      )}
 
       {/* Identidad */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
