@@ -690,7 +690,7 @@ model Contact {
   email             String?
   phone             String
   secondaryPhone    String?
-  contactType       ContactType       @default(LEAD)
+  contactType       ContactType       @default(COMPRADOR)
   leadSource        LeadSource
   leadSourceDetail  String?
   residenceCity     String?
