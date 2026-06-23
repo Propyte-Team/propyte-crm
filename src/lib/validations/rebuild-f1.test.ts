@@ -42,6 +42,11 @@ describe("action spec", () => {
   it("rechaza tipo desconocido", () => {
     expect(actionSpecSchema.safeParse({ type: "EXPLODE", config: {} }).success).toBe(false);
   });
+  it("acepta SET_LIFECYCLE con toStage válido (regresión C1)", () => {
+    expect(
+      actionSpecSchema.safeParse({ type: "SET_LIFECYCLE", config: { toStage: "MQL" } }).success
+    ).toBe(true);
+  });
 });
 
 describe("credenciales conectores", () => {

@@ -37,7 +37,7 @@ export const conditionsDslSchema: z.ZodType<ConditionNode | Record<string, never
 export const workflowActionTypes = [
   "CREATE_TASK", "SEND_WHATSAPP", "SEND_EMAIL", "MAKE_CALL", "ASSIGN", "REASSIGN",
   "NOTIFY", "UPDATE_FIELD", "ADD_TAG", "CHANGE_STAGE", "ENROLL_PLAN", "ESCALATE",
-  "AI_DRAFT", "AI_REPLY", "AI_CALL_SUMMARY", "WEBHOOK",
+  "AI_DRAFT", "AI_REPLY", "AI_CALL_SUMMARY", "WEBHOOK", "SET_LIFECYCLE",
 ] as const;
 
 export const actionSpecSchema = z.object({
