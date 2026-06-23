@@ -3,7 +3,7 @@ import type { ConditionNode } from "@/lib/validations/rebuild-f1";
 
 export type TriggerType =
   | "EVENT" | "STAGE_CHANGE" | "SCORE_THRESHOLD" | "INACTIVITY"
-  | "SLA_BREACH" | "TIME" | "BEHAVIORAL";
+  | "SLA_BREACH" | "TIME" | "BEHAVIORAL" | "LIFECYCLE_CHANGE";
 
 export type Combinator = "all" | "any";
 
@@ -14,6 +14,10 @@ export interface ConditionTree { combinator: Combinator; items: CondItem[] }
 
 export interface ActionRow { type: string; config: Record<string, string>; delayMinutes?: string }
 
+export const LIFECYCLE_STAGES = [
+  "SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR",
+] as const;
+
 export const DEAL_STAGES = [
   "NEW_LEAD", "CONTACTED", "DISCOVERY_DONE", "MEETING_SCHEDULED", "MEETING_COMPLETED",
   "PROPOSAL_SENT", "NEGOTIATION", "RESERVED", "CONTRACT_SIGNED", "CLOSING", "WON", "LOST", "FROZEN",
@@ -21,6 +25,7 @@ export const DEAL_STAGES = [
 
 export const FIELD_SUGGESTIONS = [
   "contact.score", "contact.temperature", "contact.contactStatus", "contact.contactType",
+  "contact.lifecycleStage",
   "contact.urgency", "contact.budgetMax", "contact.leadSource",
   "adAttribution.campaignName", "adAttribution.adName", "adAttribution.adsetName", "adAttribution.network",
   "contact.custom.",
@@ -37,6 +42,7 @@ export function buildTriggerConfig(triggerType: string, triggerValue: string): R
   switch (triggerType) {
     case "EVENT": return { eventType: triggerValue };
     case "STAGE_CHANGE": return { toStage: triggerValue };
+    case "LIFECYCLE_CHANGE": return { toStage: triggerValue };
     case "SCORE_THRESHOLD": return { threshold: Number(triggerValue) || 0 };
     case "INACTIVITY": return { hours: Number(triggerValue) || 0 };
     default: return {};

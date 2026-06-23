@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTriggerConfig, parseValue, buildConditions, nodeToRows, parseTriggerValue, FIELD_SUGGESTIONS } from "./builder-model";
+import { buildTriggerConfig, parseValue, buildConditions, nodeToRows, parseTriggerValue, FIELD_SUGGESTIONS, LIFECYCLE_STAGES } from "./builder-model";
 import { buildConditionsTree, parseConditions, type ConditionTree } from "./builder-model";
 
 describe("parseValue", () => {
@@ -100,5 +100,20 @@ describe("FIELD_SUGGESTIONS incluye campos de segmentación", () => {
     for (const f of ["contact.contactType", "adAttribution.campaignName", "adAttribution.adName", "adAttribution.adsetName", "adAttribution.network", "contact.custom."]) {
       expect(FIELD_SUGGESTIONS).toContain(f);
     }
+  });
+});
+
+describe("LIFECYCLE_CHANGE trigger + LIFECYCLE_STAGES", () => {
+  it("LIFECYCLE_CHANGE escribe toStage", () => {
+    expect(buildTriggerConfig("LIFECYCLE_CHANGE", "MQL")).toEqual({ toStage: "MQL" });
+  });
+  it("parseTriggerValue lee toStage de LIFECYCLE_CHANGE", () => {
+    expect(parseTriggerValue({ triggerType: "LIFECYCLE_CHANGE", triggerConfig: { toStage: "MQL" } })).toBe("MQL");
+  });
+  it("contact.lifecycleStage está en FIELD_SUGGESTIONS", () => {
+    expect(FIELD_SUGGESTIONS).toContain("contact.lifecycleStage");
+  });
+  it("LIFECYCLE_STAGES expone las 7 etapas", () => {
+    expect(LIFECYCLE_STAGES).toHaveLength(7);
   });
 });
