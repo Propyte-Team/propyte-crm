@@ -65,6 +65,8 @@ enum ContactType {
   BROKER_EXTERNO
   REFERIDO
   EMPLEO
+  COMPRADOR
+  REFERIDOR
 
   @@schema("propyte_crm")
 }
@@ -407,6 +409,19 @@ enum ContactStatus {
   @@schema("propyte_crm")
 }
 
+// Embudo de ciclo de vida del comprador/inversionista (Fase 3 sub-A, tipo HubSpot)
+enum LifecycleStage {
+  SUSCRIPTOR
+  LEAD
+  MQL
+  SQL
+  OPORTUNIDAD
+  CLIENTE
+  EMBAJADOR
+
+  @@schema("propyte_crm")
+}
+
 enum Urgency {
   ALTA
   MEDIA
@@ -451,6 +466,7 @@ enum TriggerType {
   STAGE_CHANGE
   SLA_BREACH
   SCORE_THRESHOLD
+  LIFECYCLE_CHANGE
 
   @@schema("propyte_crm")
 }
@@ -466,6 +482,7 @@ enum WorkflowActionType {
   UPDATE_FIELD
   ADD_TAG
   CHANGE_STAGE
+  SET_LIFECYCLE
   ENROLL_PLAN
   ESCALATE
   AI_DRAFT
@@ -704,6 +721,7 @@ model Contact {
 
   // Ciclo de contacto y cumplimiento (Anexo Técnico §B.2)
   contactStatus     ContactStatus @default(NUEVO)
+  lifecycleStage    LifecycleStage?
   urgency           Urgency?
   lastActivityAt    DateTime?
   originalCreatedAt DateTime?
