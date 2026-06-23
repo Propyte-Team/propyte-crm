@@ -46,7 +46,7 @@ import {
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
 import { SavedViewsBar } from "@/components/views/saved-views-bar";
-import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER } from "@/lib/constants";
+import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER } from "@/lib/constants";
 
 // --- Tipos ---
 interface ContactData {
@@ -59,6 +59,7 @@ interface ContactData {
   temperature: string;
   contactType: string;
   contactStatus: string;
+  lifecycleStage: string | null;
   createdAt: string;
   assignedTo: { id: string; name: string; email: string } | null;
   _count: { deals: number; activities: number };
@@ -136,6 +137,7 @@ export function ContactsList({
   const [filterTemp, setFilterTemp] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
   const [filterStatus, setFilterStatus] = useState("ALL");
+  const [lifecycleFilter, setLifecycleFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -151,7 +153,8 @@ export function ContactsList({
       tempVal: string,
       typeVal: string,
       statusVal: string,
-      pageVal: number
+      pageVal: number,
+      lifecycleVal: string = ""
     ) => {
       setLoading(true);
       try {
@@ -163,6 +166,7 @@ export function ContactsList({
         if (tempVal !== "ALL") params.set("temperature", tempVal);
         if (typeVal !== "ALL") params.set("type", typeVal);
         if (statusVal !== "ALL") params.set("status", statusVal);
+        if (lifecycleVal) params.set("lifecycle", lifecycleVal);
 
         const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("Error al cargar contactos");
@@ -186,7 +190,7 @@ export function ContactsList({
     setSearch(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchContacts(value, filterSource, filterTemp, filterType, filterStatus, 1);
+      fetchContacts(value, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
     }, 300);
   };
 
@@ -203,7 +207,7 @@ export function ContactsList({
     if (type === "temp") setFilterTemp(value);
     if (type === "type") setFilterType(value);
     if (type === "status") setFilterStatus(value);
-    fetchContacts(search, newSource, newTemp, newType, newStatus, 1);
+    fetchContacts(search, newSource, newTemp, newType, newStatus, 1, lifecycleFilter);
   };
 
   // Limpiar todos los filtros
@@ -213,13 +217,14 @@ export function ContactsList({
     setFilterTemp("ALL");
     setFilterType("ALL");
     setFilterStatus("ALL");
-    fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1);
+    setLifecycleFilter("");
+    fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1, "");
   };
 
   // Cambio de página
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, newPage);
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, newPage, lifecycleFilter);
   };
 
   // Aplicar una vista guardada (Fase 5): re-hidrata los filtros y recarga.
@@ -229,8 +234,9 @@ export function ContactsList({
     const tmp = (f.temperature as string) ?? "ALL";
     const typ = (f.type as string) ?? "ALL";
     const st = (f.status as string) ?? "ALL";
-    setSearch(s); setFilterSource(src); setFilterTemp(tmp); setFilterType(typ); setFilterStatus(st);
-    fetchContacts(s, src, tmp, typ, st, 1);
+    const lc = (f.lifecycle as string) ?? "";
+    setSearch(s); setFilterSource(src); setFilterTemp(tmp); setFilterType(typ); setFilterStatus(st); setLifecycleFilter(lc);
+    fetchContacts(s, src, tmp, typ, st, 1, lc);
   };
 
   // Cambio rápido de estado de contacto desde la lista (edición inline)
@@ -254,7 +260,7 @@ export function ContactsList({
     setCreateOpen(false);
     setEditOpen(false);
     setEditContact(null);
-    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page, lifecycleFilter);
   };
 
   // Eliminar contacto
@@ -264,7 +270,7 @@ export function ContactsList({
     try {
       const res = await fetch(`/api/contacts?id=${id}`, { method: "DELETE" });
       if (res.ok) {
-        fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
+        fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page, lifecycleFilter);
       }
     } catch (err) {
       console.error("Error al eliminar contacto:", err);
@@ -273,7 +279,7 @@ export function ContactsList({
 
   // Verificar si hay filtros activos
   const hasActiveFilters =
-    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL";
+    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "";
 
   // Calcular rango visible
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -427,6 +433,16 @@ export function ContactsList({
               </SelectContent>
             </Select>
 
+            {/* Filtro por lifecycle */}
+            <select
+              value={lifecycleFilter}
+              onChange={(e) => { setLifecycleFilter(e.target.value); fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, e.target.value); }}
+              className="rounded-md border px-2 py-1 text-sm"
+            >
+              <option value="">Todas las etapas</option>
+              {LIFECYCLE_ORDER.map((s) => <option key={s} value={s}>{LIFECYCLE_LABELS[s]}</option>)}
+            </select>
+
             {/* Botón para limpiar filtros */}
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -518,6 +534,13 @@ export function ContactsList({
                             ))}
                           </select>
                         </div>
+                        {contact.lifecycleStage && (
+                          <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium"
+                                style={{ color: LIFECYCLE_COLORS[contact.lifecycleStage] }}>
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: LIFECYCLE_COLORS[contact.lifecycleStage] }} />
+                            {LIFECYCLE_LABELS[contact.lifecycleStage] ?? contact.lifecycleStage}
+                          </span>
+                        )}
                       </td>
                       {/* Teléfono */}
                       <td className="py-3">{contact.phone}</td>
