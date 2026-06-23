@@ -265,6 +265,32 @@ export const CONTACT_STATUS_ORDER = [
   "DESCARTADO",
 ] as const;
 
+// --- Lifecycle del contacto (embudo del comprador/inversionista, tipo HubSpot) ---
+export const LIFECYCLE_ORDER = [
+  "SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR",
+] as const;
+
+export const LIFECYCLE_LABELS: Record<string, string> = {
+  SUSCRIPTOR: "Suscriptor",
+  LEAD: "Lead",
+  MQL: "MQL",
+  SQL: "Prospecto (SQL)",
+  OPORTUNIDAD: "Oportunidad",
+  CLIENTE: "Cliente",
+  EMBAJADOR: "Embajador",
+};
+
+// Espectro funnel frío→cierre (coherente con el rediseño B/N: color solo en etiqueta de etapa).
+export const LIFECYCLE_COLORS: Record<string, string> = {
+  SUSCRIPTOR: "#94A3B8",
+  LEAD: "#3B82F6",
+  MQL: "#6366F1",
+  SQL: "#8B5CF6",
+  OPORTUNIDAD: "#D97706",
+  CLIENTE: "#0D9488",
+  EMBAJADOR: "#059669",
+};
+
 // --- Urgencia del contacto ---
 export const URGENCY_LABELS: Record<string, string> = {
   ALTA: "Alta",
@@ -286,6 +312,9 @@ export const CONTACT_TYPE_LABELS: Record<string, string> = {
   INVERSIONISTA: "Inversionista",
   BROKER_EXTERNO: "Broker externo",
   REFERIDO: "Referido",
+  EMPLEO: "Empleo",
+  COMPRADOR: "Comprador",
+  REFERIDOR: "Referidor",
 } as const;
 
 // --- Estados de desarrollo ---
