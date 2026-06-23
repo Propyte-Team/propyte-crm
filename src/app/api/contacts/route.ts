@@ -13,6 +13,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
+import { LIFECYCLE_ORDER } from "@/lib/constants";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -32,7 +33,7 @@ const createContactSchema = z.object({
   email: z.string().email("Email inválido").toLowerCase().trim().optional().or(z.literal("")),
   phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
+  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
   contactStatus: z.enum(["NUEVO", "SIN_RESPUESTA", "CONTACTADO", "EN_SEGUIMIENTO", "DESCARTADO"]).optional(),
   lifecycleStage: z.enum(["SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR"]).nullable().optional(),
   urgency: z.enum(["ALTA", "MEDIA", "BAJA"]).optional().nullable(),
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
     if (contactStatus) {
       where.contactStatus = contactStatus as any;
     }
-    if (lifecycleStage) {
+    if (lifecycleStage && (LIFECYCLE_ORDER as readonly string[]).includes(lifecycleStage)) {
       where.lifecycleStage = lifecycleStage as never;
     }
     if (assignedToId) {
@@ -283,7 +284,7 @@ export async function POST(request: NextRequest) {
         email: data.email || null,
         phone: data.phone,
         secondaryPhone: data.secondaryPhone || null,
-        contactType: data.contactType || "LEAD",
+        contactType: data.contactType || "COMPRADOR",
         leadSource: data.leadSource,
         leadSourceDetail: data.leadSourceDetail || null,
         temperature: data.temperature || "COLD",

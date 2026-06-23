@@ -34,7 +34,7 @@ const contactFormSchema = z.object({
   phone: phoneField,
   secondaryPhone: phoneField.optional().or(z.literal("")),
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
+  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
   leadSource: z.enum([
     "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
     "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
@@ -75,13 +75,15 @@ interface ContactFormProps {
 }
 
 // --- Opciones de selects con etiquetas en español ---
+// Solo los tipos nuevos se ofrecen al crear/editar; los viejos (LEAD/PROSPECTO/CLIENTE/REFERIDO)
+// no aparecen en el selector pero CONTACT_TYPE_LABELS (de constants) los sigue resolviendo
+// para mostrar correctamente contactos existentes con valores legacy.
 const CONTACT_TYPE_OPTIONS = [
-  { value: "LEAD", label: "Lead" },
-  { value: "PROSPECTO", label: "Prospecto" },
-  { value: "CLIENTE", label: "Cliente" },
+  { value: "COMPRADOR", label: "Comprador" },
   { value: "INVERSIONISTA", label: "Inversionista" },
   { value: "BROKER_EXTERNO", label: "Broker externo" },
-  { value: "REFERIDO", label: "Referido" },
+  { value: "REFERIDOR", label: "Referidor" },
+  { value: "EMPLEO", label: "Empleo" },
 ];
 
 const LEAD_SOURCE_OPTIONS = [
@@ -165,7 +167,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
     phone: initialData?.phone || "",
     secondaryPhone: initialData?.secondaryPhone || "",
     preferredLanguage: initialData?.preferredLanguage || "ES",
-    contactType: initialData?.contactType || "LEAD",
+    contactType: initialData?.contactType || "COMPRADOR",
     leadSource: initialData?.leadSource || "OTRO",
     leadSourceDetail: initialData?.leadSourceDetail || "",
     residenceCity: initialData?.residenceCity || "",
@@ -390,13 +392,19 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
           <div className="space-y-2">
             <Label htmlFor="contactType">Tipo de contacto</Label>
             <Select
-              value={formData.contactType || "LEAD"}
+              value={formData.contactType || "COMPRADOR"}
               onValueChange={(v) => updateField("contactType", v)}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                {/* Valores legacy: solo visibles si el contacto ya los tiene (no se crean a mano) */}
+                {["LEAD", "PROSPECTO", "CLIENTE", "REFERIDO"].includes(formData.contactType ?? "") && (
+                  <SelectItem key={formData.contactType} value={formData.contactType!}>
+                    {formData.contactType} (legacy)
+                  </SelectItem>
+                )}
                 {CONTACT_TYPE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}

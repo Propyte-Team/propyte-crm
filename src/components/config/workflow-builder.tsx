@@ -6,14 +6,16 @@ import { useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import {
   buildTriggerConfig, buildConditionsTree, parseConditions, parseTriggerValue,
-  isGroup, FIELD_SUGGESTIONS, DEAL_STAGES,
+  isGroup, FIELD_SUGGESTIONS, DEAL_STAGES, LIFECYCLE_STAGES,
   type CondLeaf, type CondItem, type CondGroup, type ConditionTree, type ActionRow,
 } from "@/lib/workflows/builder-model";
+import { LIFECYCLE_LABELS } from "@/lib/constants";
 import { RULE_TEMPLATES } from "@/lib/workflows/builder-templates";
 
 const TRIGGER_TYPES = [
   { value: "EVENT", label: "Evento del sistema" },
   { value: "STAGE_CHANGE", label: "Cambio de etapa" },
+  { value: "LIFECYCLE_CHANGE", label: "Cambio de ciclo de vida" },
   { value: "SCORE_THRESHOLD", label: "Umbral de score" },
   { value: "INACTIVITY", label: "Inactividad" },
   { value: "SLA_BREACH", label: "Incumplimiento de SLA" },
@@ -37,7 +39,7 @@ const OPS = [
 
 const ACTION_TYPES = [
   "CREATE_TASK", "SEND_WHATSAPP", "SEND_EMAIL", "MAKE_CALL", "ASSIGN", "REASSIGN",
-  "NOTIFY", "UPDATE_FIELD", "ADD_TAG", "CHANGE_STAGE", "ENROLL_PLAN", "ESCALATE",
+  "NOTIFY", "UPDATE_FIELD", "ADD_TAG", "CHANGE_STAGE", "SET_LIFECYCLE", "ENROLL_PLAN", "ESCALATE",
   "AI_DRAFT", "AI_REPLY", "AI_CALL_SUMMARY", "WEBHOOK",
 ];
 
@@ -49,6 +51,7 @@ const ACTION_FIELDS: Record<string, { key: string; label: string; type?: string 
   NOTIFY: [{ key: "message", label: "Mensaje" }],
   ADD_TAG: [{ key: "tag", label: "Etiqueta" }],
   CHANGE_STAGE: [{ key: "stage", label: "Etapa destino" }],
+  SET_LIFECYCLE: [{ key: "toStage", label: "Ciclo de vida destino", type: "lifecycle" }, { key: "allowBackward", label: "Permitir retroceso", type: "boolean" }],
   UPDATE_FIELD: [{ key: "field", label: "Campo" }, { key: "value", label: "Valor" }],
   ASSIGN: [{ key: "strategy", label: "Estrategia (round_robin/territory)" }],
   REASSIGN: [{ key: "strategy", label: "Estrategia" }],
@@ -150,10 +153,11 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
     }
   }
 
-  const showTriggerValue = ["EVENT", "STAGE_CHANGE", "SCORE_THRESHOLD", "INACTIVITY"].includes(triggerType);
+  const showTriggerValue = ["EVENT", "STAGE_CHANGE", "LIFECYCLE_CHANGE", "SCORE_THRESHOLD", "INACTIVITY"].includes(triggerType);
   const triggerValuePlaceholder =
     triggerType === "EVENT" ? "ej. lead.captured, deal.stage_changed"
     : triggerType === "STAGE_CHANGE" ? "etapa (ej. RESERVED)"
+    : triggerType === "LIFECYCLE_CHANGE" ? "etapa del ciclo de vida"
     : triggerType === "SCORE_THRESHOLD" ? "score mínimo (ej. 70)"
     : triggerType === "INACTIVITY" ? "horas sin actividad (ej. 48)" : "";
 
@@ -197,6 +201,11 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
               <select className="form-input text-[13px]" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)}>
                 <option value="">Selecciona etapa…</option>
                 {DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : triggerType === "LIFECYCLE_CHANGE" ? (
+              <select className="form-input text-[13px]" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)}>
+                <option value="">Selecciona ciclo de vida…</option>
+                {LIFECYCLE_STAGES.map((s) => <option key={s} value={s}>{LIFECYCLE_LABELS[s] ?? s}</option>)}
               </select>
             ) : (
               <input className="form-input text-[13px]" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)} placeholder={triggerValuePlaceholder} />
@@ -268,6 +277,18 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
                     onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))}>
                     <option value="">{f.label}…</option>
                     {DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                ) : f.type === "lifecycle" ? (
+                  <select key={f.key} className="form-input text-[13px]" value={a.config[f.key] ?? ""}
+                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))}>
+                    <option value="">{f.label}…</option>
+                    {LIFECYCLE_STAGES.map((s) => <option key={s} value={s}>{LIFECYCLE_LABELS[s] ?? s}</option>)}
+                  </select>
+                ) : f.type === "boolean" ? (
+                  <select key={f.key} className="form-input text-[13px]" value={a.config[f.key] ?? "false"}
+                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))}>
+                    <option value="false">No</option>
+                    <option value="true">Sí</option>
                   </select>
                 ) : (
                   <input key={f.key} className="form-input text-[13px]" type={f.type ?? "text"} placeholder={f.label} value={a.config[f.key] ?? ""}
