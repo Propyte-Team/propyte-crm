@@ -1,7 +1,7 @@
 import prisma from "@/lib/db";
 import type { LifecycleStage } from "@prisma/client";
 import { emitEvent } from "@/lib/workflows/events";
-import { isForward, candidateStageForSignal, stageIndex } from "./transitions";
+import { isForward, candidateStageForSignal } from "./transitions";
 
 export interface ApplyArgs {
   contactId: string;
@@ -39,9 +39,6 @@ export async function applyLifecycleTransition(args: ApplyArgs): Promise<ApplyRe
 
   return { applied: true };
 }
-
-// Silence unused import warning
-void stageIndex;
 
 /** Engancha auto-avance a un evento de dominio. Devuelve la etapa nueva si avanzó. */
 export async function maybeAdvanceLifecycleFromEvent(
