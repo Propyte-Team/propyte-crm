@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { LifecycleStepper } from "@/components/contacts/lifecycle-stepper";
 import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { CallIndicator } from "@/components/contacts/call-indicator";
@@ -394,6 +395,20 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             {gSelect("purchaseModality", "Modalidad", [{ value: "", label: "—" }, ...Object.entries(MODALITY_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
             {gSelect("rentalStrategy", "Estrategia de renta", [{ value: "", label: "—" }, ...Object.entries(RENTAL_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
           </Section>
+
+          {["COMPRADOR","INVERSIONISTA"].includes(contact.contactType) && (
+            <Section title="Ciclo de vida">
+              <div className="space-y-1 py-1">
+                <label className="text-xs text-[color:var(--text-tertiary)]">Etapa</label>
+                <LifecycleStepper
+                  value={contact.lifecycleStage ?? null}
+                  loading={busy === "lifecycleStage"}
+                  readOnly={acc("lifecycleStage") === "HIDDEN" || acc("lifecycleStage") === "READ"}
+                  onChange={(v) => changeField("lifecycleStage", v)}
+                />
+              </div>
+            </Section>
+          )}
 
           <Section title="Asignación">
             <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
