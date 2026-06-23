@@ -119,7 +119,7 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       if (!allowed.includes(field)) return { skipped: true, note: `Campo no permitido: ${field}` };
       // Validar enums: un valor inválido NO debe romper el update (Prisma lanzaría).
       const ENUMS: Record<string, string[]> = {
-        contactType: ["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "EMPLEO"],
+        contactType: ["LEAD","PROSPECTO","CLIENTE","INVERSIONISTA","BROKER_EXTERNO","REFERIDO","EMPLEO","COMPRADOR","REFERIDOR"],
         leadSource: [
           "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "PORTAL_INMOBILIARIO",
           "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP",
@@ -148,6 +148,20 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       if (!toStage) return { skipped: true, note: "Sin toStage" };
       await prisma.deal.update({ where: { id: item.entityId }, data: { stage: toStage as never } });
       return {};
+    }
+
+    case "SET_LIFECYCLE": {
+      if (!contact) return { skipped: true, note: "Sin contacto" };
+      const toStage = String(config.toStage ?? "");
+      const STAGES = ["SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR"];
+      if (!STAGES.includes(toStage)) return { skipped: true, note: `Etapa inválida: ${toStage}` };
+      const { applyLifecycleTransition } = await import("@/lib/lifecycle/apply");
+      const res = await applyLifecycleTransition({
+        contactId: contact.id, from: contact.lifecycleStage, to: toStage as never,
+        auto: config.allowBackward === true ? false : true,
+        actorUserId: contact.assignedToId ?? null,
+      });
+      return res.applied ? {} : { skipped: true, note: res.note };
     }
 
     case "ENROLL_PLAN": {
