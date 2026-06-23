@@ -18,6 +18,11 @@ export function matchesTrigger(rule: Pick<AutomationRule, "triggerType" | "trigg
         event.type === "deal.stage_changed" &&
         (cfg.toStage === undefined || payload.toStage === cfg.toStage)
       );
+    case "LIFECYCLE_CHANGE":
+      return (
+        event.type === "contact.lifecycle_changed" &&
+        (cfg.toStage === undefined || (payload as { toStage?: string }).toStage === cfg.toStage)
+      );
     case "SLA_BREACH":
       return event.type === "sla.breach";
     case "SCORE_THRESHOLD":
@@ -79,6 +84,15 @@ export async function processEvent(eventId: string): Promise<void> {
   const applicable = rules.filter((r) => matchesTrigger(r, event));
   if (applicable.length > 0) {
     const ctx = await buildContext(event);
+
+    // Auto-avance del lifecycle del contacto (forward-only) según la señal del evento.
+    const c = ctx.contact as { id: string; score: number; contactType: string; lifecycleStage: import("@prisma/client").LifecycleStage | null } | null;
+    if (c?.id && event.type !== "contact.lifecycle_changed") {
+      const { maybeAdvanceLifecycleFromEvent } = await import("@/lib/lifecycle/apply");
+      const { getQualifiedThreshold } = await import("@/lib/lifecycle/threshold");
+      await maybeAdvanceLifecycleFromEvent(event.type, c, await getQualifiedThreshold()).catch((e) =>
+        console.error("[lifecycle] auto-advance:", e));
+    }
     for (const rule of applicable) {
       // Cooldown por regla+entidad: si ya se encoló algo de esta regla para esta
       // entidad dentro de la ventana, se salta (evita loops de eventos, §D.7)
