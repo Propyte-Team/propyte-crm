@@ -34,6 +34,7 @@ const createContactSchema = z.object({
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
   contactStatus: z.enum(["NUEVO", "SIN_RESPUESTA", "CONTACTADO", "EN_SEGUIMIENTO", "DESCARTADO"]).optional(),
+  lifecycleStage: z.enum(["SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR"]).nullable().optional(),
   urgency: z.enum(["ALTA", "MEDIA", "BAJA"]).optional().nullable(),
   leadSource: z.enum([
     "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
@@ -85,6 +86,7 @@ export async function GET(request: NextRequest) {
     const temperature = searchParams.get("temperature") || undefined;
     const contactType = searchParams.get("type") || undefined;
     const contactStatus = searchParams.get("status") || undefined;
+    const lifecycleStage = searchParams.get("lifecycle") || undefined;
     const assignedToId = searchParams.get("assignedTo") || undefined;
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
@@ -162,6 +164,9 @@ export async function GET(request: NextRequest) {
     }
     if (contactStatus) {
       where.contactStatus = contactStatus as any;
+    }
+    if (lifecycleStage) {
+      where.lifecycleStage = lifecycleStage as never;
     }
     if (assignedToId) {
       where.assignedToId = assignedToId;
@@ -423,6 +428,20 @@ export async function PUT(request: NextRequest) {
       updateData.assignedTo = data.assignedToId
         ? { connect: { id: data.assignedToId } }
         : { disconnect: true };
+    }
+
+    // Override manual de lifecycle: enruta por el helper para emitir evento + Activity.
+    // No se agrega lifecycleStage a updateData (el helper lo persiste directamente).
+    if (data.lifecycleStage !== undefined && data.lifecycleStage !== null) {
+      const current = await prisma.contact.findUnique({ where: { id }, select: { lifecycleStage: true } });
+      const { applyLifecycleTransition } = await import("@/lib/lifecycle/apply");
+      await applyLifecycleTransition({
+        contactId: id,
+        from: current?.lifecycleStage ?? null,
+        to: data.lifecycleStage,
+        actorUserId: session.user.id,
+        auto: false, // manual: cualquier dirección permitida
+      });
     }
 
     const contact = await prisma.contact.update({
