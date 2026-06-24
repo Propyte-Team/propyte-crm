@@ -39,29 +39,38 @@ export function matchesTrigger(rule: Pick<AutomationRule, "triggerType" | "trigg
   }
 }
 
+// Carga el contexto de un entity (sin requerir un WorkflowEvent). Compartido por
+// buildContext (motor) y el scheduler (exitConditions de cadencias).
+export async function loadEntityContext(
+  entityType: string,
+  entityId: string,
+): Promise<Record<string, unknown>> {
+  const ctx: Record<string, unknown> = {};
+  const withAd = { adAttribution: true } as const;
+  if (entityType === "contact") {
+    ctx.contact = await prisma.contact.findUnique({ where: { id: entityId }, include: withAd });
+  } else if (entityType === "deal") {
+    const deal = await prisma.deal.findUnique({ where: { id: entityId } });
+    ctx.deal = deal;
+    if (deal) ctx.contact = await prisma.contact.findUnique({ where: { id: deal.contactId }, include: withAd });
+  } else if (entityType === "conversation") {
+    const conv = await prisma.conversation.findUnique({ where: { id: entityId } });
+    if (conv) ctx.contact = await prisma.contact.findUnique({ where: { id: conv.contactId }, include: withAd });
+  }
+  const c = ctx.contact as { score?: unknown } | null;
+  if (c && typeof c === "object") (c as Record<string, unknown>).score = Number((c as { score?: unknown }).score ?? 0);
+  ctx.adAttribution = (ctx.contact as { adAttribution?: unknown } | null)?.adAttribution ?? null;
+  return ctx;
+}
+
 // Contexto para el DSL: { contact, deal, event, context }
 export async function buildContext(event: WorkflowEvent): Promise<Record<string, unknown>> {
-  const ctx: Record<string, unknown> = {
+  const entityCtx = await loadEntityContext(event.entityType, event.entityId);
+  return {
+    ...entityCtx,
     event: { type: event.type, payload: event.payload ?? {} },
     context: { isBusinessHours: isBusinessHoursNow() },
   };
-  const withAd = { adAttribution: true } as const;
-  if (event.entityType === "contact") {
-    ctx.contact = await prisma.contact.findUnique({ where: { id: event.entityId }, include: withAd });
-  } else if (event.entityType === "deal") {
-    const deal = await prisma.deal.findUnique({ where: { id: event.entityId } });
-    ctx.deal = deal;
-    if (deal) ctx.contact = await prisma.contact.findUnique({ where: { id: deal.contactId }, include: withAd });
-  } else if (event.entityType === "conversation") {
-    const conv = await prisma.conversation.findUnique({ where: { id: event.entityId } });
-    if (conv) ctx.contact = await prisma.contact.findUnique({ where: { id: conv.contactId }, include: withAd });
-  }
-  // Decimal de Prisma no compara con number en el DSL → normalizar score/value usados típicamente
-  const c = ctx.contact as { score?: unknown } | null;
-  if (c && typeof c === "object") (c as Record<string, unknown>).score = Number((c as { score?: unknown }).score ?? 0);
-  // Exponer atribución en el DSL: reglas pueden condicionar por adAttribution.campaignName/network/...
-  ctx.adAttribution = (ctx.contact as { adAttribution?: unknown } | null)?.adAttribution ?? null;
-  return ctx;
 }
 
 // Horario laboral simple 09-18 hora Cancún (afinable por SlaPolicy.businessHours en F2.1)
