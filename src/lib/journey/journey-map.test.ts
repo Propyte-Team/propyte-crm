@@ -82,3 +82,27 @@ describe("buildTargetedView", () => {
     expect(view.flows).toHaveLength(1);
   });
 });
+
+describe("robustez ante datos corruptos", () => {
+  // Regla con actions no-array y conditions null (dato corrupto) no debe lanzar.
+  const corrupt = rule({ id: "rCorrupt", actions: {} as unknown as RuleLite["actions"], conditions: null });
+
+  it("ruleStage degrada a GENERAL", () => {
+    expect(() => ruleStage(corrupt)).not.toThrow();
+    expect(ruleStage(corrupt)).toBe("GENERAL");
+  });
+  it("buildGeneralView no lanza y deja la regla en GENERAL", () => {
+    let view!: ReturnType<typeof buildGeneralView>;
+    expect(() => { view = buildGeneralView([corrupt], []); }).not.toThrow();
+    expect(view.lanes.map((l) => l.stage)).toEqual(["GENERAL"]);
+  });
+  it("buildTargetedView no lanza y no produce flujos", () => {
+    let view!: ReturnType<typeof buildTargetedView>;
+    expect(() => { view = buildTargetedView([corrupt], [], { campaign: "BROKERS" }); }).not.toThrow();
+    expect(view.flows).toHaveLength(0);
+  });
+  it("extractCampaigns no lanza con conditions null", () => {
+    expect(() => extractCampaigns([corrupt])).not.toThrow();
+    expect(extractCampaigns([corrupt])).toEqual([]);
+  });
+});

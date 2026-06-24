@@ -19,12 +19,17 @@ export interface GeneralView { lanes: { stage: Lane; rules: RuleNode[]; cadences
 
 const STAGES: string[] = LIFECYCLE_ORDER as unknown as string[];
 
+/** Devuelve rule.actions solo si es array; degrada a [] ante dato corrupto (objeto/null). */
+function safeActions(rule: RuleLite): ActionLite[] {
+  return Array.isArray(rule.actions) ? rule.actions : [];
+}
+
 /** Etapa de lifecycle a la que pertenece una regla, o "GENERAL" si no hay señal. */
 export function ruleStage(rule: RuleLite): Lane {
   const t = rule.triggerConfig?.toStage;
   if (rule.triggerType === "LIFECYCLE_CHANGE" && typeof t === "string" && STAGES.includes(t)) return t;
   let fromAction: Lane = "GENERAL";
-  for (const a of rule.actions ?? []) {
+  for (const a of safeActions(rule)) {
     if (a.type === "SET_LIFECYCLE") {
       const s = a.config?.toStage;
       if (typeof s === "string" && STAGES.includes(s)) fromAction = s; // última gana
@@ -34,7 +39,7 @@ export function ruleStage(rule: RuleLite): Lane {
 }
 
 function planIdsEnrolledBy(rule: RuleLite): string[] {
-  return (rule.actions ?? [])
+  return safeActions(rule)
     .filter((a) => a.type === "ENROLL_PLAN" && typeof a.config?.planId === "string")
     .map((a) => a.config!.planId as string);
 }
@@ -124,7 +129,7 @@ export function buildTargetedView(rules: RuleLite[], plans: PlanLite[], filter: 
       r.triggerType === "LIFECYCLE_CHANGE" && typeof r.triggerConfig?.toStage === "string"
         ? (r.triggerConfig.toStage as string) : null;
 
-    for (const a of r.actions ?? []) {
+    for (const a of safeActions(r)) {
       if (a.type === "ENROLL_PLAN") {
         const p = planById.get(String(a.config?.planId));
         flow.push({ kind: "cadence", label: `⟳ ${p ? p.name : "cadencia"}${p ? ` (${p.steps.length} pasos)` : ""}` });

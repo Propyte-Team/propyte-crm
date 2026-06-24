@@ -18,7 +18,7 @@ export async function GET() {
       orderBy: { priority: "asc" },
       select: {
         id: true, name: true, description: true, isActive: true, priority: true,
-        triggerType: true, triggerConfig: true, actions: true, cooldownMinutes: true,
+        triggerType: true, triggerConfig: true, conditions: true, actions: true, cooldownMinutes: true,
         lastFiredAt: true,
       },
     }),
