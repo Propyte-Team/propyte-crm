@@ -2456,3 +2456,16 @@ model Goal {
   @@map("goals")
   @@schema("propyte_crm")
 }
+
+// =====================================================================
+// JOURNEY CANVAS LAYOUT — §C.2-i1
+// =====================================================================
+
+model JourneyLayout {
+  id        String   @id            // scope: "general" | "targeted:<CAMPAIGN>"
+  positions Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@map("journey_layouts")
+  @@schema("propyte_crm")
+}
