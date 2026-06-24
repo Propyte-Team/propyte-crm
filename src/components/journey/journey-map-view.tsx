@@ -73,6 +73,9 @@ export function JourneyMapView() {
     saveTimer.current = setTimeout(() => setNodes((nds) => { persist(nds); return nds; }), 600);
   }, [persist, setNodes]);
 
+  // limpiar debounce pendiente al desmontar (evita setNodes/PUT huérfano)
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+
   const typedNodes = useMemo(() => nodes.map((n) => ({
     ...n, data: { label: (n.data as { label?: string }).label }, style: nodeStyle(n.type ?? "action", n.data as Record<string, unknown>),
   })), [nodes]);
@@ -102,7 +105,7 @@ export function JourneyMapView() {
           nodes={typedNodes} edges={edges}
           onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
-          nodesConnectable={false} fitView proOptions={{ hideAttribution: true }}
+          nodesConnectable={false} deleteKeyCode={null} fitView proOptions={{ hideAttribution: true }}
         >
           <Background />
           <Controls />
