@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { enqueueAction, dayBucket } from "./queue";
 import { evaluateConditions } from "./evaluate-conditions";
+import { loadEntityContext } from "./engine";
 
 export async function enrollInPlan(
   planId: string,
@@ -51,6 +52,19 @@ export async function runEnrollments(limit = 50): Promise<number> {
         data: { status: step ? "EXITED" : "COMPLETED", exitedAt: new Date(), nextRunAt: null },
       });
       continue;
+    }
+
+    // Condiciones de salida del plan (sub-B): si matchean, salir antes de encolar.
+    const exitCond = enr.plan.exitConditions as Record<string, unknown> | null;
+    if (step && enr.plan.isActive && exitCond && Object.keys(exitCond).length > 0) {
+      const ctx = await loadEntityContext(enr.entityType, enr.entityId);
+      if (evaluateConditions(exitCond as never, ctx as never)) {
+        await prisma.actionPlanEnrollment.update({
+          where: { id: enr.id },
+          data: { status: "EXITED", exitedAt: new Date(), nextRunAt: null },
+        });
+        continue;
+      }
     }
 
     await enqueueAction({
