@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Save, Plus, Pencil } from "lucide-react";
 import { WorkflowBuilder } from "./workflow-builder";
+import { CadenceEditor } from "./cadence-editor";
 
 interface Rule {
   id: string;
@@ -17,9 +18,11 @@ interface Rule {
 interface Plan {
   id: string;
   name: string;
+  description: string | null;
   isActive: boolean;
   ownerUserId: string | null;
-  steps: Array<{ order: number; actionType: string; delayMinutes: number }>;
+  exitConditions: unknown;
+  steps: Array<{ order: number; actionType: string; delayMinutes: number; config: Record<string, string>; autonomyLevel: string }>;
   _count: { enrollments: number };
 }
 interface Sla {
@@ -59,6 +62,7 @@ export function AutomationSection({ userRole }: { userRole: string }) {
   const [msg, setMsg] = useState("");
   const [obs, setObs] = useState<{ recentErrors: any[]; eventsPending: number; eventsDone24h: number }>({ recentErrors: [], eventsPending: 0, eventsDone24h: 0 });
   const [builderRule, setBuilderRule] = useState<"new" | any | null>(null);
+  const [editingPlan, setEditingPlan] = useState<"new" | Plan | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/automation");
@@ -217,23 +221,78 @@ export function AutomationSection({ userRole }: { userRole: string }) {
 
       {/* Cadencias */}
       <div className="crm-card !p-0 overflow-hidden">
-        <div className="px-4 py-3 hairline-b">
-          <p className="text-[13px] font-semibold">Cadencias (action plans)</p>
+        <div className="flex items-center justify-between px-4 py-3 hairline-b">
+          <div>
+            <p className="text-[13px] font-semibold">Cadencias (action plans)</p>
+            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+              Secuencias de acciones programadas con condiciones de salida
+            </p>
+          </div>
+          {canEdit && (
+            <button
+              className="btn-primary shrink-0 text-[12px]"
+              onClick={() => setEditingPlan("new")}
+            >
+              <Plus className="h-3.5 w-3.5" /> Nueva cadencia
+            </button>
+          )}
         </div>
-        {plans.length === 0 && (
+
+        {editingPlan && (
+          <div className="px-4 py-4 hairline-b">
+            <CadenceEditor
+              initial={
+                editingPlan === "new"
+                  ? undefined
+                  : {
+                      id: editingPlan.id,
+                      name: editingPlan.name,
+                      description: editingPlan.description ?? "",
+                      exitConditions: editingPlan.exitConditions,
+                      steps: [...editingPlan.steps]
+                        .sort((a, b) => a.order - b.order)
+                        .map((s) => ({
+                          actionType: s.actionType,
+                          delayMinutes: s.delayMinutes,
+                          config: s.config ?? {},
+                          autonomyLevel: s.autonomyLevel ?? "L0",
+                        })),
+                    }
+              }
+              onSaved={() => { setEditingPlan(null); load(); }}
+              onCancel={() => setEditingPlan(null)}
+            />
+          </div>
+        )}
+
+        {plans.length === 0 && !editingPlan && (
           <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-            Sin cadencias. Se crean desde la API o el builder (próxima fase).
+            Sin cadencias. Crea la primera con "Nueva cadencia".
           </p>
         )}
         {plans.map((p) => (
           <div key={p.id} className="flex items-center justify-between gap-3 px-4 py-3 hairline-b">
             <div className="min-w-0">
-              <p className="text-[13px] font-medium">{p.name} {p.ownerUserId && <span className="badge badge-neutral ml-1">personal</span>}</p>
+              <p className="text-[13px] font-medium">
+                {p.name}
+                {p.ownerUserId && <span className="badge badge-neutral ml-1">personal</span>}
+              </p>
               <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
                 {p.steps.length} pasos · {p._count.enrollments} enrolados
               </p>
             </div>
-            <Switch on={p.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "plan", id: p.id, isActive: v })} />
+            <div className="flex shrink-0 items-center gap-2">
+              {canEdit && (
+                <button
+                  onClick={() => setEditingPlan(p)}
+                  className="text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]"
+                  title="Editar cadencia"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              <Switch on={p.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "plan", id: p.id, isActive: v })} />
+            </div>
           </div>
         ))}
       </div>
