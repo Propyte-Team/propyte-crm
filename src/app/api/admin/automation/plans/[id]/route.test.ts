@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const session = { user: { id: "u1", role: "ADMIN" } };
 vi.mock("@/lib/auth/session", () => ({ getServerSession: () => Promise.resolve(session) }));
-const txn = { actionPlanStep: { deleteMany: vi.fn(), createMany: vi.fn() }, actionPlan: { update: vi.fn().mockResolvedValue({ id: "p1" }) } };
+const txn = {
+  actionPlanStep: { deleteMany: vi.fn(), createMany: vi.fn() },
+  actionPlan: { update: vi.fn().mockResolvedValue({ id: "p1" }), findFirst: vi.fn().mockResolvedValue({ id: "p1" }) },
+};
 const planUpdate = vi.fn().mockResolvedValue({ id: "p1" });
 vi.mock("@/lib/db", () => ({
   default: {
@@ -16,7 +19,13 @@ import { PUT, DELETE } from "./route";
 
 const ctx = { params: Promise.resolve({ id: "p1" }) };
 function req(body: unknown) { return new Request("http://t", { method: "PUT", body: JSON.stringify(body) }) as never; }
-beforeEach(() => { Object.values(txn.actionPlanStep).forEach((f) => f.mockClear()); txn.actionPlan.update.mockClear(); session.user.role = "ADMIN"; });
+beforeEach(() => {
+  Object.values(txn.actionPlanStep).forEach((f) => f.mockClear());
+  txn.actionPlan.update.mockClear();
+  txn.actionPlan.findFirst.mockReset().mockResolvedValue({ id: "p1" });
+  planUpdate.mockReset().mockResolvedValue({ id: "p1" });
+  session.user.role = "ADMIN";
+});
 
 describe("PUT/DELETE /plans/[id]", () => {
   it("PUT reemplaza pasos (deleteMany + createMany con order 0..n)", async () => {
@@ -42,5 +51,17 @@ describe("PUT/DELETE /plans/[id]", () => {
     session.user.role = "ASESOR_SR";
     const res = await PUT(req({ name: "X", steps: [] }), ctx);
     expect(res.status).toBe(403);
+  });
+
+  it("PUT con nombre duplicado (P2002) → 409", async () => {
+    txn.actionPlan.update.mockRejectedValueOnce({ code: "P2002" });
+    const res = await PUT(req({ name: "Dup", steps: [] }), ctx);
+    expect(res.status).toBe(409);
+  });
+
+  it("DELETE sobre id inexistente (P2025) → 404", async () => {
+    planUpdate.mockRejectedValueOnce({ code: "P2025" });
+    const res = await DELETE(new Request("http://t", { method: "DELETE" }) as never, ctx);
+    expect(res.status).toBe(404);
   });
 });

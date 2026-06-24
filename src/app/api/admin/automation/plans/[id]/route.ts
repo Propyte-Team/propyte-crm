@@ -16,19 +16,29 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const { name, description, exitConditions, steps } = parsed.data;
   const ordered = normalizeStepsOrder(steps);
 
-  const plan = await prisma.$transaction(async (tx) => {
-    await tx.actionPlanStep.deleteMany({ where: { planId: id } });
-    await tx.actionPlanStep.createMany({
-      data: ordered.map((s) => ({
-        planId: id, order: s.order, actionType: s.actionType, delayMinutes: s.delayMinutes,
-        config: s.config as object, autonomyLevel: s.autonomyLevel,
-      })),
+  let plan;
+  try {
+    plan = await prisma.$transaction(async (tx) => {
+      const exists = await tx.actionPlan.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+      if (!exists) throw { code: "P2025" };
+      await tx.actionPlanStep.deleteMany({ where: { planId: id } });
+      await tx.actionPlanStep.createMany({
+        data: ordered.map((s) => ({
+          planId: id, order: s.order, actionType: s.actionType, delayMinutes: s.delayMinutes,
+          config: s.config as object, autonomyLevel: s.autonomyLevel,
+        })),
+      });
+      return tx.actionPlan.update({
+        where: { id },
+        data: { name, description: description ?? null, exitConditions: (exitConditions ?? {}) as object },
+      });
     });
-    return tx.actionPlan.update({
-      where: { id },
-      data: { name, description: description ?? null, exitConditions: (exitConditions ?? {}) as object },
-    });
-  });
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === "P2002") return NextResponse.json({ error: "Ya existe una cadencia con ese nombre" }, { status: 409 });
+    if (code === "P2025") return NextResponse.json({ error: "Cadencia no encontrada" }, { status: 404 });
+    throw e;
+  }
 
   await prisma.auditLog.create({
     data: { userId: session.user.id, action: "UPDATE", entity: "ActionPlan", entityId: id,
@@ -43,7 +53,14 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ error: "Solo Dirección/Admin" }, { status: 403 });
   }
   const { id } = await ctx.params;
-  await prisma.actionPlan.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+  try {
+    await prisma.actionPlan.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2025") {
+      return NextResponse.json({ error: "Cadencia no encontrada" }, { status: 404 });
+    }
+    throw e;
+  }
   await prisma.auditLog.create({
     data: { userId: session.user.id, action: "DELETE", entity: "ActionPlan", entityId: id, changes: {} },
   });
