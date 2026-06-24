@@ -9,8 +9,8 @@ DO $$ BEGIN
     ('SUSCRIPTOR','LEAD','MQL','SQL','OPORTUNIDAD','CLIENTE','EMBAJADOR');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- 2) Columna nullable en Contact
-ALTER TABLE propyte_crm."Contact"
+-- 2) Columna nullable en contacts (tabla = snake plural; columnas = camelCase; enums = PascalCase)
+ALTER TABLE propyte_crm."contacts"
   ADD COLUMN IF NOT EXISTS "lifecycleStage" propyte_crm."LifecycleStage";
 
 -- 3) Nuevos valores de ContactType (cada ADD VALUE en su propio statement; idempotente)
@@ -25,27 +25,26 @@ ALTER TYPE propyte_crm."WorkflowActionType" ADD VALUE IF NOT EXISTS 'SET_LIFECYC
 -- Backfill idempotente: solo toca filas aún en el esquema viejo.
 
 -- Compradores con deal ganado → CLIENTE; el resto según su contactType viejo.
-UPDATE propyte_crm."Contact" c SET "lifecycleStage" = 'CLIENTE'
-  WHERE c."contactType" IN ('CLIENTE')
-    AND c."lifecycleStage" IS NULL;
+UPDATE propyte_crm."contacts" SET "lifecycleStage" = 'CLIENTE'
+  WHERE "contactType" = 'CLIENTE' AND "lifecycleStage" IS NULL;
 
-UPDATE propyte_crm."Contact" c SET "lifecycleStage" = 'SQL'
-  WHERE c."contactType" = 'PROSPECTO' AND c."lifecycleStage" IS NULL;
+UPDATE propyte_crm."contacts" SET "lifecycleStage" = 'SQL'
+  WHERE "contactType" = 'PROSPECTO' AND "lifecycleStage" IS NULL;
 
-UPDATE propyte_crm."Contact" c SET "lifecycleStage" = 'LEAD'
-  WHERE c."contactType" = 'LEAD' AND c."lifecycleStage" IS NULL;
+UPDATE propyte_crm."contacts" SET "lifecycleStage" = 'LEAD'
+  WHERE "contactType" = 'LEAD' AND "lifecycleStage" IS NULL;
 
--- Inversionistas: CLIENTE si tienen deal ganado, si no LEAD.
-UPDATE propyte_crm."Contact" c SET "lifecycleStage" =
-  CASE WHEN EXISTS (
-    SELECT 1 FROM propyte_crm."Deal" d
+-- Inversionistas: CLIENTE si tienen deal ganado, si no LEAD. (CASE → cast explícito al enum.)
+UPDATE propyte_crm."contacts" c SET "lifecycleStage" =
+  (CASE WHEN EXISTS (
+    SELECT 1 FROM propyte_crm."deals" d
     WHERE d."contactId" = c.id AND d."actualCloseDate" IS NOT NULL
-  ) THEN 'CLIENTE' ELSE 'LEAD' END
+  ) THEN 'CLIENTE' ELSE 'LEAD' END)::propyte_crm."LifecycleStage"
   WHERE c."contactType" = 'INVERSIONISTA' AND c."lifecycleStage" IS NULL;
 
 -- Recategorizar: LEAD/PROSPECTO/CLIENTE → COMPRADOR; REFERIDO → REFERIDOR.
-UPDATE propyte_crm."Contact" SET "contactType" = 'COMPRADOR'
+UPDATE propyte_crm."contacts" SET "contactType" = 'COMPRADOR'
   WHERE "contactType" IN ('LEAD','PROSPECTO','CLIENTE');
-UPDATE propyte_crm."Contact" SET "contactType" = 'REFERIDOR'
+UPDATE propyte_crm."contacts" SET "contactType" = 'REFERIDOR'
   WHERE "contactType" = 'REFERIDO';
 -- BROKER_EXTERNO, EMPLEO, INVERSIONISTA se quedan igual; su lifecycle queda NULL salvo INVERSIONISTA.
