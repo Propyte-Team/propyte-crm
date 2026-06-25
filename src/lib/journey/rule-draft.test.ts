@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ruleToDraft, draftToRulePayload, draftToFlow, type RuleRow } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, type RuleRow, addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta } from "./rule-draft";
 
 const ROW: RuleRow = {
   id: "r1",
@@ -72,5 +72,66 @@ describe("draftToFlow", () => {
     const flow = draftToFlow(ruleToDraft(ROW));
     const a0 = flow.nodes.find((n) => n.id === "a0")!;
     expect(a0.data).toMatchObject({ actionType: "SEND_WHATSAPP", config: { template: "bienvenida" } });
+  });
+});
+
+describe("ops puras", () => {
+  const base = ruleToDraft(ROW);
+
+  it("addAction inserta al final con nodeId reindexado y config vacío", () => {
+    const d = addAction(base, "NOTIFY");
+    expect(d.actions.length).toBe(4);
+    expect(d.actions[3]).toMatchObject({ nodeId: "a3", type: "NOTIFY", config: {} });
+    expect(base.actions.length).toBe(3); // inmutable
+  });
+
+  it("removeAction quita y reindexa nodeIds", () => {
+    const d = removeAction(base, "a1");
+    expect(d.actions.map((a) => a.type)).toEqual(["SEND_WHATSAPP", "CHANGE_STAGE"]);
+    expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1"]);
+  });
+
+  it("reorderAction up mueve y reindexa", () => {
+    const d = reorderAction(base, "a1", "up");
+    expect(d.actions.map((a) => a.type)).toEqual(["ASSIGN", "SEND_WHATSAPP", "CHANGE_STAGE"]);
+    expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1", "a2"]);
+  });
+
+  it("reorderAction en el borde es no-op", () => {
+    expect(reorderAction(base, "a0", "up").actions.map((a) => a.type)).toEqual(base.actions.map((a) => a.type));
+  });
+
+  it("setActionConfig hace merge superficial del config", () => {
+    const d = setActionConfig(base, "a0", { template: "promo" });
+    expect(d.actions[0].config).toEqual({ template: "promo" });
+  });
+
+  it("setActionType cambia el tipo y limpia el config (evita config huérfano)", () => {
+    const d = setActionType(base, "a0", "MAKE_CALL");
+    expect(d.actions[0]).toMatchObject({ nodeId: "a0", type: "MAKE_CALL", config: {} });
+  });
+
+  it("setActionDelay fija delayMinutes en la acción (no en config)", () => {
+    const d = setActionDelay(base, "a0", 15);
+    expect(d.actions[0].delayMinutes).toBe(15);
+    expect(d.actions[0].config).toEqual({ template: "bienvenida" });
+  });
+
+  it("setTrigger reemplaza tipo y config", () => {
+    const d = setTrigger(base, { triggerType: "STAGE_CHANGE", triggerConfig: { toStage: "SQL" } });
+    expect(d.triggerType).toBe("STAGE_CHANGE");
+    expect(d.triggerConfig).toEqual({ toStage: "SQL" });
+  });
+
+  it("setConditions reemplaza el árbol", () => {
+    const c = { any: [{ field: "x", op: "eq", value: 1 }] };
+    expect(setConditions(base, c as never).conditions).toEqual(c);
+  });
+
+  it("setMeta hace merge de campos de regla", () => {
+    const d = setMeta(base, { isActive: false, priority: 50 });
+    expect(d.isActive).toBe(false);
+    expect(d.priority).toBe(50);
+    expect(d.name).toBe(base.name);
   });
 });

@@ -104,6 +104,89 @@ export function draftToFlow(draft: RuleDraft): Flow {
   return { nodes, edges };
 }
 
+// ─── Pure edit ops ───────────────────────────────────────────────────────────
+
+function reindex(actions: ActionDraft[]): ActionDraft[] {
+  return actions.map((a, i) => ({ ...a, nodeId: `a${i}` }));
+}
+
+export function addAction(draft: RuleDraft, type: string): RuleDraft {
+  return { ...draft, actions: reindex([...draft.actions, { nodeId: "", type, config: {} }]) };
+}
+
+export function removeAction(draft: RuleDraft, nodeId: string): RuleDraft {
+  return { ...draft, actions: reindex(draft.actions.filter((a) => a.nodeId !== nodeId)) };
+}
+
+export function reorderAction(draft: RuleDraft, nodeId: string, dir: "up" | "down"): RuleDraft {
+  const i = draft.actions.findIndex((a) => a.nodeId === nodeId);
+  if (i < 0) return draft;
+  const j = dir === "up" ? i - 1 : i + 1;
+  if (j < 0 || j >= draft.actions.length) return draft;
+  const next = [...draft.actions];
+  [next[i], next[j]] = [next[j], next[i]];
+  return { ...draft, actions: reindex(next) };
+}
+
+export function setActionConfig(draft: RuleDraft, nodeId: string, patch: Record<string, unknown>): RuleDraft {
+  return {
+    ...draft,
+    actions: draft.actions.map((a) =>
+      a.nodeId === nodeId ? { ...a, config: { ...a.config, ...patch } } : a,
+    ),
+  };
+}
+
+export function setActionType(draft: RuleDraft, nodeId: string, type: string): RuleDraft {
+  return {
+    ...draft,
+    actions: draft.actions.map((a) => (a.nodeId === nodeId ? { ...a, type, config: {} } : a)),
+  };
+}
+
+export function setActionDelay(draft: RuleDraft, nodeId: string, minutes: number): RuleDraft {
+  return {
+    ...draft,
+    actions: draft.actions.map((a) => (a.nodeId === nodeId ? { ...a, delayMinutes: minutes } : a)),
+  };
+}
+
+export function setTrigger(
+  draft: RuleDraft,
+  t: { triggerType: string; triggerConfig: Record<string, unknown> },
+): RuleDraft {
+  return { ...draft, triggerType: t.triggerType, triggerConfig: t.triggerConfig };
+}
+
+export function setConditions(draft: RuleDraft, conditions: Conditions): RuleDraft {
+  return { ...draft, conditions };
+}
+
+export function setMeta(
+  draft: RuleDraft,
+  patch: Partial<Pick<RuleDraft, "name" | "description" | "priority" | "cooldownMinutes" | "isActive">>,
+): RuleDraft {
+  return { ...draft, ...patch };
+}
+
+/** Draft mínimo válido para una regla nueva (trigger + 1 acción CHANGE_STAGE). */
+export function newRuleDraft(): RuleDraft {
+  return {
+    id: undefined,
+    name: "",
+    description: null,
+    triggerType: "EVENT",
+    triggerConfig: {},
+    conditions: {} as Conditions,
+    actions: [{ nodeId: "a0", type: "CHANGE_STAGE", config: {} }],
+    cooldownMinutes: null,
+    priority: 100,
+    isActive: false,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function draftToRulePayload(draft: RuleDraft): RulePayload {
   const payload: RulePayload = {
     name: draft.name,
