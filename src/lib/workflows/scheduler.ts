@@ -1,9 +1,10 @@
 // Scheduler — corre por tiempo (cron): enrollments de action plans y reglas INACTIVITY.
 import prisma from "@/lib/db";
-import type { Prisma } from "@prisma/client";
 import { enqueueAction, dayBucket } from "./queue";
 import { evaluateConditions } from "./evaluate-conditions";
 import { loadEntityContext } from "./engine";
+import { workflowActionsSchema } from "@/lib/validations/rebuild-f1";
+import { walkNodes } from "./walk-nodes";
 
 export async function enrollInPlan(
   planId: string,
@@ -114,24 +115,23 @@ export async function runInactivityRules(limit = 200): Promise<number> {
       const ctx = { contact: { ...contact, score: Number(contact.score) }, context: {} };
       if (!evaluateConditions(rule.conditions as never, ctx)) continue;
 
-      const actions = Array.isArray(rule.actions) ? (rule.actions as Prisma.JsonArray) : [];
-      let idx = 0;
-      for (const raw of actions) {
-        const spec = raw as { type?: string; config?: Record<string, unknown>; autonomyLevel?: string; delayMinutes?: number };
-        if (!spec.type) continue;
+      const parsedActions = workflowActionsSchema.safeParse(rule.actions);
+      if (!parsedActions.success) continue;
+      const specs = walkNodes(parsedActions.data, ctx);
+      let any = false;
+      for (const spec of specs) {
         const enqueued = await enqueueAction({
           ruleId: rule.id,
-          actionType: spec.type as never,
+          actionType: spec.actionType as never,
           entityType: "contact",
           entityId: contact.id,
-          config: { ...(spec.config ?? {}), autonomyLevel: spec.autonomyLevel },
-          // bucket por ventana de cooldown (default diario) para no repetir cada minuto
-          dedupeKey: `${rule.id}:${contact.id}:${spec.type}:${idx}:${dayBucket(new Date())}`,
+          config: { ...spec.config, autonomyLevel: spec.autonomyLevel },
+          dedupeKey: `${rule.id}:${contact.id}:${spec.actionType}:${spec.path}:${dayBucket(new Date())}`,
           runAfter: new Date(Date.now() + (spec.delayMinutes ?? 0) * 60_000),
         });
-        if (enqueued) fired++;
-        idx++;
+        if (enqueued) any = true;
       }
+      if (any) fired++;
     }
   }
   return fired;
