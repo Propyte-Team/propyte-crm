@@ -4,11 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { conditionsDslSchema, workflowActionTypes } from "@/lib/validations/rebuild-f1";
+import { conditionsDslSchema, workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
-
-const TRIGGER_TYPES = ["EVENT", "TIME", "BEHAVIORAL", "INACTIVITY", "STAGE_CHANGE", "SLA_BREACH", "SCORE_THRESHOLD"] as const;
 
 const ruleSchema = z.object({
   name: z.string().min(3).max(120).trim(),
