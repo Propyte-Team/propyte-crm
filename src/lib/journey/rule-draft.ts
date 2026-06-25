@@ -114,6 +114,13 @@ export function addAction(draft: RuleDraft, type: string): RuleDraft {
   return { ...draft, actions: reindex([...draft.actions, { nodeId: "", type, config: {} }]) };
 }
 
+export function insertAction(draft: RuleDraft, type: string, atIndex: number): RuleDraft {
+  const i = Math.max(0, Math.min(atIndex, draft.actions.length));
+  const next = [...draft.actions];
+  next.splice(i, 0, { nodeId: "", type, config: {} });
+  return { ...draft, actions: reindex(next) };
+}
+
 export function removeAction(draft: RuleDraft, nodeId: string): RuleDraft {
   return { ...draft, actions: reindex(draft.actions.filter((a) => a.nodeId !== nodeId)) };
 }

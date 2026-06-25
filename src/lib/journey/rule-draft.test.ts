@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction } from "./rule-draft";
 
 const ROW: RuleRow = {
   id: "r1",
@@ -140,5 +140,22 @@ describe("save payload selection", () => {
   it("regla existente → payload incluye id; nueva → sin id", () => {
     expect("id" in draftToRulePayload(ruleToDraft(ROW))).toBe(true);
     expect("id" in draftToRulePayload(newRuleDraft())).toBe(false);
+  });
+});
+
+describe("insertAction", () => {
+  const base = ruleToDraft(ROW); // 3 acciones: SEND_WHATSAPP, ASSIGN, CHANGE_STAGE
+
+  it("inserta en el medio y reindexa nodeIds", () => {
+    const d = insertAction(base, "NOTIFY", 1);
+    expect(d.actions.map((a) => a.type)).toEqual(["SEND_WHATSAPP", "NOTIFY", "ASSIGN", "CHANGE_STAGE"]);
+    expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1", "a2", "a3"]);
+    expect(d.actions[1].config).toEqual({});
+    expect(base.actions.length).toBe(3); // inmutable
+  });
+
+  it("atIndex=0 inserta al inicio; atIndex>=length inserta al final (clamp)", () => {
+    expect(insertAction(base, "ADD_TAG", 0).actions[0].type).toBe("ADD_TAG");
+    expect(insertAction(base, "ADD_TAG", 99).actions.at(-1)!.type).toBe("ADD_TAG");
   });
 });
