@@ -3,7 +3,8 @@
 import prisma from "@/lib/db";
 import type { AutomationRule, WorkflowEvent } from "@prisma/client";
 import { evaluateConditions } from "./evaluate-conditions";
-import { actionSpecSchema } from "@/lib/validations/rebuild-f1";
+import { workflowActionsSchema } from "@/lib/validations/rebuild-f1";
+import { walkNodes } from "./walk-nodes";
 import { enqueueAction, dayBucket } from "./queue";
 
 // ¿El trigger de la regla aplica a este evento? (INACTIVITY/TIME corren por scheduler, no aquí)
@@ -122,27 +123,23 @@ export async function processEvent(eventId: string): Promise<void> {
 
       if (!evaluateConditions(rule.conditions as never, ctx)) continue;
 
-      const actions = Array.isArray(rule.actions) ? rule.actions : [];
-      let idx = 0;
-      for (const raw of actions) {
-        const parsed = actionSpecSchema.safeParse(raw);
-        if (!parsed.success) {
-          console.error(`[workflows] acción inválida en regla "${rule.name}" idx ${idx}`);
-          idx++;
-          continue;
-        }
-        const spec = parsed.data;
+      const parsedActions = workflowActionsSchema.safeParse(rule.actions);
+      if (!parsedActions.success) {
+        console.error(`[workflows] árbol de acciones inválido en regla "${rule.name}"`);
+        continue;
+      }
+      const specs = walkNodes(parsedActions.data, ctx);
+      for (const spec of specs) {
         const runAfter = new Date(Date.now() + (spec.delayMinutes ?? 0) * 60_000);
         await enqueueAction({
           ruleId: rule.id,
-          actionType: spec.type,
+          actionType: spec.actionType as never,
           entityType: event.entityType,
           entityId: event.entityId,
           config: { ...spec.config, autonomyLevel: spec.autonomyLevel },
-          dedupeKey: `${rule.id}:${event.entityId}:${spec.type}:${idx}:${dayBucket(runAfter)}`,
+          dedupeKey: `${rule.id}:${event.entityId}:${spec.actionType}:${spec.path}:${dayBucket(runAfter)}`,
           runAfter,
         });
-        idx++;
       }
       await prisma.automationRule.update({ where: { id: rule.id }, data: { lastFiredAt: new Date() } });
     }
