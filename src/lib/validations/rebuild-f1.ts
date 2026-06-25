@@ -52,6 +52,48 @@ export const actionSpecSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Árbol de nodos de workflow (ramas) — AutomationRule.actions
+//   Nodo = acción (ActionSpec + kind opcional) | decisión (recursiva).
+//   Compat: una lista plana de ActionSpec parsea como árbol de puros nodos-acción.
+// ---------------------------------------------------------------------------
+export const actionNodeSchema = actionSpecSchema.extend({
+  kind: z.literal("action").optional(),
+});
+
+export type WorkflowNode =
+  | z.infer<typeof actionNodeSchema>
+  | {
+      kind: "decision";
+      label?: string;
+      branches: { label?: string; conditions: ConditionNode | Record<string, never>; steps: WorkflowNode[] }[];
+      else?: WorkflowNode[];
+    };
+
+const branchSchema: z.ZodType<{ label?: string; conditions: ConditionNode | Record<string, never>; steps: WorkflowNode[] }> =
+  z.lazy(() =>
+    z.object({
+      label: z.string().max(120).optional(),
+      conditions: conditionsDslSchema,
+      steps: z.array(workflowNodeSchema),
+    }),
+  ) as never;
+
+const decisionNodeSchema: z.ZodType<Extract<WorkflowNode, { kind: "decision" }>> = z.lazy(() =>
+  z.object({
+    kind: z.literal("decision"),
+    label: z.string().max(120).optional(),
+    branches: z.array(branchSchema).min(1, "Una decisión necesita al menos una rama"),
+    else: z.array(workflowNodeSchema).optional(),
+  }),
+) as never;
+
+export const workflowNodeSchema: z.ZodType<WorkflowNode> = z.lazy(() =>
+  z.union([decisionNodeSchema, actionNodeSchema]),
+) as never;
+
+export const workflowActionsSchema = z.array(workflowNodeSchema);
+
+// ---------------------------------------------------------------------------
 // Credenciales de conectores (se guardan CIFRADAS con lib/crypto)
 // ---------------------------------------------------------------------------
 export const connectorCredentialsMetaSchema = z.object({

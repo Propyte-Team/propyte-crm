@@ -7,6 +7,7 @@ import {
   userProfileSchema,
   userTemplateSchema,
   incomingLeadSchema,
+  workflowActionsSchema,
 } from "./rebuild-f1";
 
 describe("conditions DSL (§D.4)", () => {
@@ -104,6 +105,62 @@ describe("incomingLeadSchema — identidad social", () => {
   it("rechaza si no hay phone, email, instagramId ni messengerPsid", () => {
     const r = incomingLeadSchema.safeParse({ source: "INSTAGRAM", firstName: "Sin Id" });
     expect(r.success).toBe(false);
+  });
+});
+
+describe("workflowActionsSchema", () => {
+  it("acepta lista plana de acciones (compat hacia atrás)", () => {
+    const r = workflowActionsSchema.safeParse([
+      { type: "ADD_TAG", config: { tag: "x" } },
+      { type: "ASSIGN", config: {}, delayMinutes: 10 },
+    ]);
+    expect(r.success).toBe(true);
+  });
+
+  it("acepta un nodo de decisión con ramas y else", () => {
+    const r = workflowActionsSchema.safeParse([
+      {
+        kind: "decision",
+        label: "Por origen",
+        branches: [
+          { label: "META", conditions: { field: "adAttribution.network", op: "eq", value: "meta" }, steps: [{ type: "ASSIGN", config: {} }] },
+          { label: "WEB", conditions: {}, steps: [] },
+        ],
+        else: [{ type: "ADD_TAG", config: { tag: "otro" } }],
+      },
+    ]);
+    expect(r.success).toBe(true);
+  });
+
+  it("acepta decisión anidada dentro de una rama", () => {
+    const r = workflowActionsSchema.safeParse([
+      {
+        kind: "decision",
+        branches: [
+          {
+            conditions: { field: "contact.contactType", op: "eq", value: "COMPRADOR" },
+            steps: [
+              { kind: "decision", branches: [{ conditions: { all: [{ field: "contact.score", op: "gte", value: 70 }] }, steps: [{ type: "ESCALATE", config: {} }] }] },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(r.success).toBe(true);
+  });
+
+  it("rechaza decisión sin ramas", () => {
+    expect(workflowActionsSchema.safeParse([{ kind: "decision", branches: [] }]).success).toBe(false);
+  });
+
+  it("rechaza rama sin conditions", () => {
+    expect(
+      workflowActionsSchema.safeParse([{ kind: "decision", branches: [{ steps: [] }] }]).success,
+    ).toBe(false);
+  });
+
+  it("rechaza tipo de acción desconocido", () => {
+    expect(workflowActionsSchema.safeParse([{ type: "NOPE", config: {} }]).success).toBe(false);
   });
 });
 
