@@ -6,7 +6,7 @@ import {
   type Node, type Edge, type EdgeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
+import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
 import { buildGeneralView, buildTargetedView, extractCampaigns, type RuleLite, type PlanLite } from "@/lib/journey/journey-map";
 import { generalToFlow, targetedToFlow, applyPositions, type Positions } from "@/lib/journey/flow-adapter";
 import { draftToFlow, type RuleRow } from "@/lib/journey/rule-draft";
@@ -25,8 +25,10 @@ function nodeStyle(type: string, data: Record<string, unknown>, selected: boolea
   const dim = data.isActive === false ? 0.5 : 1;
   const sel = selected ? { outline: "2px solid #0a0a0a", outlineOffset: 2 } : {};
   if (type === "stage") {
-    const stageCode = String((data.config as Record<string, unknown> | undefined)?.toStage ?? "");
-    const bg = STAGE_COLORS[stageCode] ?? "#6B7280";
+    // General: data.stage (lifecycle). Edición CHANGE_STAGE: config.toStage (pipeline).
+    const lifecycle = String((data.stage as string | undefined) ?? "");
+    const pipeline = String((data.config as Record<string, unknown> | undefined)?.toStage ?? "");
+    const bg = LIFECYCLE_COLORS[lifecycle] ?? STAGE_COLORS[pipeline] ?? "#6B7280";
     return { background: bg, color: "#fff", border: "none", borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, opacity: dim, ...sel };
   }
   if (type === "trigger") return { background: "#2563eb", color: "#fff", borderRadius: 8, padding: 8, fontSize: 12, opacity: dim, ...sel };
@@ -37,6 +39,8 @@ function nodeStyle(type: string, data: Record<string, unknown>, selected: boolea
 
 function nodeLabel(type: string, data: Record<string, unknown>): string {
   if (type === "stage") {
+    // Vista General: el carril ya trae su label (etapa de lifecycle). Edición: deriva de config.toStage (pipeline).
+    if (typeof data.label === "string" && data.label) return data.label;
     const s = String((data.config as Record<string, unknown> | undefined)?.toStage ?? "");
     return s ? `Etapa → ${STAGE_LABELS[s] ?? s}` : "Etapa";
   }
@@ -208,6 +212,7 @@ export function JourneyMapView() {
             nodes={typedNodes} edges={edges}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
             onNodeDragStop={onNodeDragStop} onNodeClick={onNodeClick}
+            onPaneClick={() => setSelectedId(null)}
             nodesConnectable={false} deleteKeyCode={null} fitView proOptions={{ hideAttribution: true }}
             edgeTypes={EDGE_TYPES}
           >
