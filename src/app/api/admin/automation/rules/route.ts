@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { conditionsDslSchema, workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
+import { conditionsDslSchema, workflowActionsSchema, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
 
@@ -14,13 +14,7 @@ const ruleSchema = z.object({
   triggerType: z.enum(TRIGGER_TYPES),
   triggerConfig: z.record(z.unknown()).default({}),
   conditions: conditionsDslSchema,
-  actions: z
-    .array(z.object({
-      type: z.enum(workflowActionTypes),
-      config: z.record(z.unknown()).default({}),
-      delayMinutes: z.number().int().min(0).optional(),
-    }))
-    .min(1, "Agrega al menos una acción"),
+  actions: workflowActionsSchema.min(1, "Agrega al menos un nodo"),
   cooldownMinutes: z.number().int().min(0).max(43200).optional().nullable(),
   priority: z.number().int().min(1).max(1000).default(100),
   isActive: z.boolean().default(false),
