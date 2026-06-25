@@ -3,22 +3,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState,
-  type Node, type Edge,
+  type Node, type Edge, type EdgeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { LIFECYCLE_COLORS } from "@/lib/constants";
+import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
 import { buildGeneralView, buildTargetedView, extractCampaigns, type RuleLite, type PlanLite } from "@/lib/journey/journey-map";
 import { generalToFlow, targetedToFlow, applyPositions, type Positions } from "@/lib/journey/flow-adapter";
 import { draftToFlow, type RuleRow } from "@/lib/journey/rule-draft";
+import { labelFor, summaryFor } from "@/lib/journey/node-catalog";
 import { useRuleDraft } from "./use-rule-draft";
 import { RuleInspectorPanel } from "./rule-inspector-panel";
+import { NodePalette } from "./node-palette";
+import { InsertEdge } from "./insert-edge";
 
 type Mode = "general" | "targeted";
+
+// Stable module-scope reference so ReactFlow doesn't remount on render
+const EDGE_TYPES: EdgeTypes = { insert: InsertEdge as EdgeTypes[string] };
 
 function nodeStyle(type: string, data: Record<string, unknown>, selected: boolean): React.CSSProperties {
   const dim = data.isActive === false ? 0.5 : 1;
   const sel = selected ? { outline: "2px solid #0a0a0a", outlineOffset: 2 } : {};
-  if (type === "stage") return { background: (LIFECYCLE_COLORS[String(data.stage)] ?? "#6B7280"), color: "#fff", border: "none", borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, opacity: dim, ...sel };
+  if (type === "stage") {
+    const stageCode = String((data.config as Record<string, unknown> | undefined)?.toStage ?? "");
+    const bg = STAGE_COLORS[stageCode] ?? "#6B7280";
+    return { background: bg, color: "#fff", border: "none", borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, opacity: dim, ...sel };
+  }
   if (type === "trigger") return { background: "#2563eb", color: "#fff", borderRadius: 8, padding: 8, fontSize: 12, opacity: dim, ...sel };
   if (type === "cadence") return { border: "1px dashed #9ca3af", borderRadius: 8, padding: 8, fontSize: 12, background: "#fff", opacity: dim, ...sel };
   if (type === "condition") return { border: "1px dashed #9ca3af", borderRadius: 8, padding: 8, fontSize: 12, opacity: dim, ...sel };
@@ -26,10 +36,15 @@ function nodeStyle(type: string, data: Record<string, unknown>, selected: boolea
 }
 
 function nodeLabel(type: string, data: Record<string, unknown>): string {
+  if (type === "stage") {
+    const s = String((data.config as Record<string, unknown> | undefined)?.toStage ?? "");
+    return s ? `Etapa → ${STAGE_LABELS[s] ?? s}` : "Etapa";
+  }
+  if (data.actionType) {
+    return summaryFor(String(data.actionType), (data.config ?? {}) as Record<string, unknown>);
+  }
   if (typeof data.label === "string" && data.label) return data.label;
-  if (type === "stage") return `Etapa → ${String((data.config as Record<string, unknown> | undefined)?.toStage ?? "?")}`;
-  if (typeof data.actionType === "string") return data.actionType;
-  return type;
+  return labelFor(type) || type;
 }
 
 export function JourneyMapView() {
@@ -45,6 +60,7 @@ export function JourneyMapView() {
 
   const { draft, isDirty, saving, error, load, startNew, ops, save, discard } = useRuleDraft();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [paletteAt, setPaletteAt] = useState<number | null>(null);
   const editing = draft !== null;
 
   const scope = mode === "general" ? "general" : `targeted:${campaign}`;
@@ -81,12 +97,18 @@ export function JourneyMapView() {
       });
   }, [rules, plans, mode, campaign, scope, editing, setNodes, setEdges]);
 
-  // EDICIÓN: el lienzo se deriva del draft (auto-layout; la persistencia de posiciones por regla se difiere a i3).
+  // EDICIÓN: el lienzo se deriva del draft (auto-layout; con ⊕ insert edges).
   useEffect(() => {
     if (!draft) return;
     const flow = draftToFlow(draft);
+    const editEdges = flow.edges.map((e) => {
+      const m = /^a(\d+)$/.exec(e.target);
+      return m
+        ? { ...e, type: "insert", data: { onInsert: () => setPaletteAt(Number(m[1])) } }
+        : e;
+    });
     setNodes(flow.nodes as unknown as Node[]);
-    setEdges(flow.edges as unknown as Edge[]);
+    setEdges(editEdges as unknown as Edge[]);
   }, [draft, setNodes, setEdges]);
 
   const persist = useCallback((current: Node[]) => {
@@ -99,7 +121,7 @@ export function JourneyMapView() {
   }, [scope]);
 
   const onNodeDragStop = useCallback(() => {
-    if (editing) return; // en edición no persistimos layout (i2)
+    if (editing) return; // en edición no persistimos layout
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => setNodes((nds) => { persist(nds); return nds; }), 600);
   }, [persist, setNodes, editing]);
@@ -162,6 +184,20 @@ export function JourneyMapView() {
               {error && <span className="text-xs text-red-600">{error}</span>}
               <button onClick={onSave} disabled={!isDirty || saving} className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-40">{saving ? "Guardando…" : "Guardar"}</button>
               <button onClick={onDiscard} className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium">Descartar</button>
+              <div className="relative">
+                <button
+                  onClick={() => draft && setPaletteAt(draft.actions.length)}
+                  className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium"
+                >
+                  + Añadir
+                </button>
+                {paletteAt !== null && (
+                  <NodePalette
+                    onPick={(type) => { ops.insertAction(type, paletteAt); setPaletteAt(null); }}
+                    onClose={() => setPaletteAt(null)}
+                  />
+                )}
+              </div>
             </>
           )}
         </div>
@@ -173,6 +209,7 @@ export function JourneyMapView() {
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
             onNodeDragStop={onNodeDragStop} onNodeClick={onNodeClick}
             nodesConnectable={false} deleteKeyCode={null} fitView proOptions={{ hideAttribution: true }}
+            edgeTypes={EDGE_TYPES}
           >
             <Background />
             <Controls />
@@ -187,7 +224,7 @@ export function JourneyMapView() {
       </div>
       <p className="border-t border-neutral-200 px-6 py-1.5 text-xs text-neutral-400 dark:border-neutral-800">
         {editing
-          ? "Edición de regla: selecciona un nodo para ver sus campos. Guardar escribe al motor."
+          ? "Edición de regla: selecciona un nodo para ver sus campos. Usa ⊕ para insertar acciones. Guardar escribe al motor."
           : "Solo lectura. Mueve los nodos para acomodar; el acomodo se guarda. En Dirigida puedes editar una regla. Cadencias se editan en Configuración → Automatización."}
       </p>
     </div>

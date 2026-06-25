@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   type RuleDraft, type RuleRow, ruleToDraft, draftToRulePayload, newRuleDraft,
-  addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta,
+  addAction, insertAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta,
   type Conditions,
 } from "@/lib/journey/rule-draft";
 
@@ -33,6 +33,7 @@ export function useRuleDraft() {
 
   const ops = useMemo(() => ({
     addAction: (type: string) => setDraft((d) => (d ? addAction(d, type) : d)),
+    insertAction: (type: string, at: number) => setDraft((d) => (d ? insertAction(d, type, at) : d)),
     removeAction: (nodeId: string) => setDraft((d) => (d ? removeAction(d, nodeId) : d)),
     reorderAction: (nodeId: string, dir: "up" | "down") => setDraft((d) => (d ? reorderAction(d, nodeId, dir) : d)),
     setActionConfig: (nodeId: string, patch: Record<string, unknown>) => setDraft((d) => (d ? setActionConfig(d, nodeId, patch) : d)),
