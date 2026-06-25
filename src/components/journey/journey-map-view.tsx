@@ -6,7 +6,7 @@ import {
   type Node, type Edge, type EdgeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
+import { STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
 import { buildGeneralView, buildTargetedView, extractCampaigns, type RuleLite, type PlanLite } from "@/lib/journey/journey-map";
 import { generalToFlow, targetedToFlow, applyPositions, type Positions } from "@/lib/journey/flow-adapter";
 import { draftToFlow, type RuleRow } from "@/lib/journey/rule-draft";
