@@ -1,6 +1,7 @@
 "use client";
-// Inspector lateral del canvas editable (C.2-i2).
+// Inspector lateral del canvas editable (C.2-i3).
 // Renderiza los campos del nodo seleccionado y emite ediciones a través de los ops de useRuleDraft.
+// i3: campos amables del catálogo + JSON fallback + re-sync de JsonField.
 //
 // NOTA DE ADAPTACIÓN:
 //   ConditionTreeEditor (condition-tree.tsx) usa { tree: ConditionTree; onChange }
@@ -10,24 +11,18 @@
 
 import { useState } from "react";
 import type { RuleDraft, Conditions } from "@/lib/journey/rule-draft";
-import { workflowActionTypes } from "@/lib/validations/rebuild-f1";
-import { LIFECYCLE_ORDER, LIFECYCLE_LABELS } from "@/lib/constants";
+import { workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 import { ConditionTreeEditor } from "@/components/config/condition-tree";
 import {
   parseConditions,
   buildConditionsTree,
   type ConditionTree,
 } from "@/lib/workflows/builder-model";
-
-const TRIGGER_TYPES = [
-  "EVENT",
-  "TIME",
-  "BEHAVIORAL",
-  "INACTIVITY",
-  "STAGE_CHANGE",
-  "SLA_BREACH",
-  "SCORE_THRESHOLD",
-];
+import {
+  fieldDefsFor,
+  triggerFieldsFor,
+  type FieldDef,
+} from "@/lib/journey/node-catalog";
 
 interface Ops {
   addAction: (type: string) => void;
@@ -67,6 +62,82 @@ function treeToConditions(tree: ConditionTree): Conditions {
   return buildConditionsTree(tree) as Conditions;
 }
 
+// ─── FriendlyField sub-component ─────────────────────────────────────────────
+
+function FriendlyField({
+  def,
+  config,
+  onChange,
+}: {
+  def: FieldDef;
+  config: Record<string, unknown>;
+  onChange: (patch: Record<string, unknown>) => void;
+}) {
+  const raw = config[def.configKey];
+  if (def.kind === "checkbox") {
+    return (
+      <label className="label flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={raw === true}
+          onChange={(e) => onChange({ [def.configKey]: e.target.checked })}
+        />
+        {def.label}
+      </label>
+    );
+  }
+  if (def.kind === "select") {
+    return (
+      <div>
+        <label className="label">{def.label}</label>
+        <select
+          className="form-input"
+          value={String(raw ?? "")}
+          onChange={(e) => onChange({ [def.configKey]: e.target.value })}
+        >
+          <option value="">—</option>
+          {def.options?.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  if (def.kind === "textarea") {
+    return (
+      <div>
+        <label className="label">{def.label}</label>
+        <textarea
+          className="form-input"
+          rows={3}
+          value={String(raw ?? "")}
+          placeholder={def.placeholder}
+          onChange={(e) => onChange({ [def.configKey]: e.target.value })}
+        />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <label className="label">{def.label}</label>
+      <input
+        className="form-input"
+        type={def.kind === "number" ? "number" : "text"}
+        value={String(raw ?? "")}
+        placeholder={def.placeholder}
+        onChange={(e) =>
+          onChange({
+            [def.configKey]:
+              def.kind === "number" ? Number(e.target.value) : e.target.value,
+          })
+        }
+      />
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function RuleInspectorPanel({
@@ -99,17 +170,53 @@ export function RuleInspectorPanel({
             </option>
           ))}
         </select>
-        <JsonField
-          key="trigger-config"
-          label="triggerConfig"
-          value={draft.triggerConfig}
-          onChange={(v) =>
-            ops.setTrigger({
-              triggerType: draft.triggerType,
-              triggerConfig: v,
-            })
-          }
-        />
+
+        {(() => {
+          const defs = triggerFieldsFor(draft.triggerType);
+          return defs.length > 0 ? (
+            <>
+              {defs.map((d) => (
+                <FriendlyField
+                  key={d.configKey}
+                  def={d}
+                  config={draft.triggerConfig}
+                  onChange={(patch) =>
+                    ops.setTrigger({
+                      triggerType: draft.triggerType,
+                      triggerConfig: { ...draft.triggerConfig, ...patch },
+                    })
+                  }
+                />
+              ))}
+              <details className="mt-2">
+                <summary className="label cursor-pointer">Ver JSON</summary>
+                <JsonField
+                  key={`trigger:${JSON.stringify(draft.triggerConfig)}`}
+                  label="triggerConfig"
+                  value={draft.triggerConfig}
+                  onChange={(v) =>
+                    ops.setTrigger({
+                      triggerType: draft.triggerType,
+                      triggerConfig: v,
+                    })
+                  }
+                />
+              </details>
+            </>
+          ) : (
+            <JsonField
+              key={`trigger:${JSON.stringify(draft.triggerConfig)}`}
+              label="triggerConfig"
+              value={draft.triggerConfig}
+              onChange={(v) =>
+                ops.setTrigger({
+                  triggerType: draft.triggerType,
+                  triggerConfig: v,
+                })
+              }
+            />
+          );
+        })()}
       </aside>
     );
   }
@@ -129,7 +236,6 @@ export function RuleInspectorPanel({
 
   // ── Action node ──────────────────────────────────────────────────────────────
   if (action) {
-    const config = action.config as Record<string, unknown>;
     return (
       <aside className="journey-inspector">
         <h3 className="label">Acción</h3>
@@ -145,29 +251,37 @@ export function RuleInspectorPanel({
           ))}
         </select>
 
-        {action.type === "CHANGE_STAGE" && (
-          <select
-            className="form-input"
-            value={String(config.toStage ?? "")}
-            onChange={(e) =>
-              ops.setActionConfig(action.nodeId, { toStage: e.target.value })
-            }
-          >
-            <option value="">— etapa —</option>
-            {LIFECYCLE_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {LIFECYCLE_LABELS[s] ?? s}
-              </option>
-            ))}
-          </select>
-        )}
-
-        <JsonField
-          key={action.nodeId}
-          label="config"
-          value={action.config}
-          onChange={(v) => ops.setActionConfig(action.nodeId, v)}
-        />
+        {(() => {
+          const defs = fieldDefsFor(action.type);
+          return defs.length > 0 ? (
+            <>
+              {defs.map((d) => (
+                <FriendlyField
+                  key={d.configKey}
+                  def={d}
+                  config={action.config as Record<string, unknown>}
+                  onChange={(patch) => ops.setActionConfig(action.nodeId, patch)}
+                />
+              ))}
+              <details className="mt-2">
+                <summary className="label cursor-pointer">Ver JSON</summary>
+                <JsonField
+                  key={`${action.nodeId}:${JSON.stringify(action.config)}`}
+                  label="config"
+                  value={action.config as Record<string, unknown>}
+                  onChange={(v) => ops.setActionConfig(action.nodeId, v)}
+                />
+              </details>
+            </>
+          ) : (
+            <JsonField
+              key={`${action.nodeId}:${JSON.stringify(action.config)}`}
+              label="config"
+              value={action.config as Record<string, unknown>}
+              onChange={(v) => ops.setActionConfig(action.nodeId, v)}
+            />
+          );
+        })()}
 
         <label className="label">Retraso (min)</label>
         <input
@@ -248,6 +362,7 @@ export function RuleInspectorPanel({
 
 // ─── JsonField helper ─────────────────────────────────────────────────────────
 // Mantiene texto local para permitir JSON parcialmente inválido mientras el usuario escribe.
+// Re-mounts via key when external value changes (i3 re-sync fix).
 
 function JsonField({
   label,
