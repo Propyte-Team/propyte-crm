@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ruleToDraft, draftToRulePayload, draftToFlow, type RuleRow, addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta } from "./rule-draft";
 
 const ROW: RuleRow = {
   id: "r1",
@@ -133,5 +133,12 @@ describe("ops puras", () => {
     expect(d.isActive).toBe(false);
     expect(d.priority).toBe(50);
     expect(d.name).toBe(base.name);
+  });
+});
+
+describe("save payload selection", () => {
+  it("regla existente → payload incluye id; nueva → sin id", () => {
+    expect("id" in draftToRulePayload(ruleToDraft(ROW))).toBe(true);
+    expect("id" in draftToRulePayload(newRuleDraft())).toBe(false);
   });
 });
