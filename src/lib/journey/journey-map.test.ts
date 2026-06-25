@@ -83,6 +83,73 @@ describe("buildTargetedView", () => {
   });
 });
 
+describe("nodos de decisión (árbol de acciones)", () => {
+  // Un decision node tiene kind:"decision" y no tiene type, por eso el acceso plano
+  // falla silenciosamente o crashea si el código asume ActionLite[] plano.
+  const decisionRule = rule({
+    id: "rDecision",
+    actions: [
+      {
+        kind: "decision",
+        branches: [
+          {
+            conditions: {},
+            steps: [
+              { type: "SET_LIFECYCLE", config: { toStage: "MQL" } },
+              { type: "ENROLL_PLAN", config: { planId: "pl1" } },
+            ],
+          },
+        ],
+        else: [{ type: "SEND_WHATSAPP", config: {} }],
+      } as unknown as import("./journey-map").ActionLite,
+    ],
+  });
+
+  it("ruleStage no se rompe con decision node y ve SET_LIFECYCLE dentro de la rama", () => {
+    expect(() => ruleStage(decisionRule)).not.toThrow();
+    // La acción SET_LIFECYCLE está dentro de una rama — debe verse igual que si fuera top-level
+    expect(ruleStage(decisionRule)).toBe("MQL");
+  });
+
+  it("buildGeneralView no se rompe y coloca la regla en MQL (via SET_LIFECYCLE en rama)", () => {
+    let view!: ReturnType<typeof buildGeneralView>;
+    expect(() => { view = buildGeneralView([decisionRule], [plan]); }).not.toThrow();
+    const stages = view.lanes.map((l) => l.stage);
+    expect(stages).toContain("MQL");
+    const mqlLane = view.lanes.find((l) => l.stage === "MQL")!;
+    expect(mqlLane.rules.map((r) => r.id)).toContain("rDecision");
+    // ENROLL_PLAN dentro de la rama también debe enrolar la cadencia
+    expect(mqlLane.cadences.map((c) => c.id)).toContain("pl1");
+  });
+
+  it("buildTargetedView no se rompe y renderiza ENROLL_PLAN y SET_LIFECYCLE de la rama", () => {
+    const rWithFilter = rule({
+      id: "rDF",
+      conditions: { all: [{ field: "adAttribution.campaignName", op: "contains", value: "TEST" }] },
+      actions: [
+        {
+          kind: "decision",
+          branches: [
+            {
+              conditions: {},
+              steps: [
+                { type: "ENROLL_PLAN", config: { planId: "pl1" } },
+                { type: "SET_LIFECYCLE", config: { toStage: "SQL" } },
+              ],
+            },
+          ],
+        } as unknown as import("./journey-map").ActionLite,
+      ],
+    });
+    let view!: ReturnType<typeof buildTargetedView>;
+    expect(() => { view = buildTargetedView([rWithFilter], [plan], { campaign: "TEST" }); }).not.toThrow();
+    expect(view.flows).toHaveLength(1);
+    const flow = view.flows[0];
+    expect(flow.some((n) => n.kind === "cadence")).toBe(true);
+    expect(flow[flow.length - 1]).toMatchObject({ kind: "stage", label: "SQL" });
+  });
+});
+
 describe("robustez ante datos corruptos", () => {
   // Regla con actions no-array y conditions null (dato corrupto) no debe lanzar.
   const corrupt = rule({ id: "rCorrupt", actions: {} as unknown as RuleLite["actions"], conditions: null });

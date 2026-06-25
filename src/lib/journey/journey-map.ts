@@ -24,12 +24,33 @@ function safeActions(rule: RuleLite): ActionLite[] {
   return Array.isArray(rule.actions) ? rule.actions : [];
 }
 
+/**
+ * Recorre el árbol de acciones (nodos planos + decision nodes anidados) y devuelve
+ * una lista plana de todos los ActionLite con `type` definido.
+ * Un decision node tiene `kind:"decision"` y no tiene `type`; sus ramas están en
+ * `branches[].steps` y en `else` (ambos arrays recursivos).
+ */
+function collectActionNodes(nodes: unknown): ActionLite[] {
+  if (!Array.isArray(nodes)) return [];
+  const out: ActionLite[] = [];
+  for (const n of nodes) {
+    if (n && typeof n === "object" && (n as { kind?: string }).kind === "decision") {
+      const d = n as { branches?: { steps?: unknown }[]; else?: unknown };
+      for (const b of d.branches ?? []) out.push(...collectActionNodes(b.steps));
+      out.push(...collectActionNodes(d.else));
+    } else if (n && typeof n === "object" && typeof (n as { type?: string }).type === "string") {
+      out.push(n as ActionLite);
+    }
+  }
+  return out;
+}
+
 /** Etapa de lifecycle a la que pertenece una regla, o "GENERAL" si no hay señal. */
 export function ruleStage(rule: RuleLite): Lane {
   const t = rule.triggerConfig?.toStage;
   if (rule.triggerType === "LIFECYCLE_CHANGE" && typeof t === "string" && STAGES.includes(t)) return t;
   let fromAction: Lane = "GENERAL";
-  for (const a of safeActions(rule)) {
+  for (const a of collectActionNodes(safeActions(rule))) {
     if (a.type === "SET_LIFECYCLE") {
       const s = a.config?.toStage;
       if (typeof s === "string" && STAGES.includes(s)) fromAction = s; // última gana
@@ -39,7 +60,7 @@ export function ruleStage(rule: RuleLite): Lane {
 }
 
 function planIdsEnrolledBy(rule: RuleLite): string[] {
-  return safeActions(rule)
+  return collectActionNodes(safeActions(rule))
     .filter((a) => a.type === "ENROLL_PLAN" && typeof a.config?.planId === "string")
     .map((a) => a.config!.planId as string);
 }
@@ -129,7 +150,7 @@ export function buildTargetedView(rules: RuleLite[], plans: PlanLite[], filter: 
       r.triggerType === "LIFECYCLE_CHANGE" && typeof r.triggerConfig?.toStage === "string"
         ? (r.triggerConfig.toStage as string) : null;
 
-    for (const a of safeActions(r)) {
+    for (const a of collectActionNodes(safeActions(r))) {
       if (a.type === "ENROLL_PLAN") {
         const p = planById.get(String(a.config?.planId));
         flow.push({ kind: "cadence", label: `⟳ ${p ? p.name : "cadencia"}${p ? ` (${p.steps.length} pasos)` : ""}` });
