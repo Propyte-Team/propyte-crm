@@ -28,7 +28,7 @@ const TYPE_ICON: Record<string, LucideIcon> = {
   EMAIL_SENT: Mail, EMAIL_RECEIVED: Mail,
   MEETING_VIRTUAL: Users, MEETING_PRESENTIAL: Users, MEETING_SHOWROOM: Users,
   DISCOVERY_CALL: ClipboardCheck, PROPOSAL_DELIVERY: FileText,
-  FOLLOW_UP: Bell, WALK_IN: MapPin, NOTE: StickyNote, TASK: CheckSquare,
+  FOLLOW_UP: Bell, WALK_IN: MapPin, NOTE: StickyNote, TASK: CheckSquare, CALL_TASK: Phone,
   CONTRACT_REVIEW: FileSignature, CLOSING_ACTIVITY: Trophy,
 }
 
@@ -279,7 +279,7 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
         <ol className="relative space-y-4 border-l pl-5" style={{ borderColor: "var(--border-subtle)" }}>
           {activities.map((a) => {
             const Icon = TYPE_ICON[a.activityType] ?? StickyNote
-            const isPendingTask = a.activityType === "TASK" && a.status === "PENDIENTE"
+            const isPendingTask = (a.activityType === "TASK" || a.activityType === "CALL_TASK") && a.status === "PENDIENTE"
             const busy = busyId === a.id
             return (
               <li key={a.id} className="group relative">
@@ -330,6 +330,9 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
                       <button className="flex items-center gap-1 text-[11px] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]" onClick={() => completeTask(a.id)} disabled={busy}>
                         <Check className="h-3 w-3" /> Completar
                       </button>
+                    )}
+                    {a.activityType === "CALL_TASK" && a.status === "PENDIENTE" && contactPhone && currentUserId && (
+                      <CallButton phone={contactPhone} contactId={contactId} userId={currentUserId} doNotContact={doNotContact} />
                     )}
                     <button className="flex items-center gap-1 text-[11px] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]" onClick={() => openEdit(a)} disabled={busy}>
                       <Pencil className="h-3 w-3" /> Editar

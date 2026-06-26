@@ -219,6 +219,7 @@ export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   WALK_IN: "Walk-in",
   NOTE: "Nota",
   TASK: "Tarea",
+  CALL_TASK: "Llamada pendiente",
   CONTRACT_REVIEW: "Revisión de contrato",
   CLOSING_ACTIVITY: "Actividad de cierre",
 } as const;
