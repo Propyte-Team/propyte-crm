@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction, type NodeDraft, type ActionNodeDraft } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction, type NodeDraft, type ActionNodeDraft, setElseEnabled, addActionToElse, addActionToBranch } from "./rule-draft";
 
 const asAction = (n: NodeDraft) => n as ActionNodeDraft;
 
@@ -241,6 +241,33 @@ describe("rule-draft ops de �rbol", () => {
     dec = d.actions.at(-1) as { nodeId: string; branches: { branchId: string }[] };
     d = removeBranch(d, dec.branches[0].branchId);
     expect((d.actions.at(-1) as { branches: unknown[] }).branches).toHaveLength(1);
+  });
+});
+
+describe("rule-draft else + acciones por rama", () => {
+  it("setElseEnabled(true) crea else vacío; (false) lo quita", () => {
+    let d = addDecision(newRuleDraft());
+    const decId = (d.actions.at(-1) as { nodeId: string }).nodeId;
+    d = setElseEnabled(d, decId, true);
+    expect(Array.isArray((d.actions.at(-1) as { else?: unknown[] }).else)).toBe(true);
+    d = setElseEnabled(d, decId, false);
+    expect((d.actions.at(-1) as { else?: unknown[] }).else).toBeUndefined();
+  });
+
+  it("addActionToElse agrega una acción al camino por defecto", () => {
+    let d = addDecision(newRuleDraft());
+    const decId = (d.actions.at(-1) as { nodeId: string }).nodeId;
+    d = addActionToElse(d, decId, "NOTIFY");
+    const dec = d.actions.at(-1) as { else?: { type: string }[] };
+    expect(dec.else?.[0]?.type).toBe("NOTIFY");
+  });
+
+  it("addActionToBranch agrega una acción a la rama por branchId", () => {
+    let d = addDecision(newRuleDraft());
+    const bid = (d.actions.at(-1) as { branches: { branchId: string }[] }).branches[0].branchId;
+    d = addActionToBranch(d, bid, "ASSIGN");
+    const b = (d.actions.at(-1) as { branches: { branchId: string; steps: { type: string }[] }[] }).branches[0];
+    expect(b.steps[0]?.type).toBe("ASSIGN");
   });
 });
 

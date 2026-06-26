@@ -9,6 +9,9 @@ interface DecisionOps {
   removeBranch: (branchId: string) => void;
   setBranchLabel: (branchId: string, label: string) => void;
   setBranchConditions: (branchId: string, c: Conditions) => void;
+  addActionToBranch: (branchId: string, type: string) => void;
+  addActionToElse: (decisionNodeId: string, type: string) => void;
+  setElseEnabled: (decisionNodeId: string, enabled: boolean) => void;
 }
 
 export function DecisionInspector({ decision, ops }: { decision: DecisionNodeDraft; ops: DecisionOps }) {
@@ -40,9 +43,43 @@ export function DecisionInspector({ decision, ops }: { decision: DecisionNodeDra
           <p className="label" style={{ marginTop: 6 }}>
             {b.steps.length} acción(es) en esta rama — edítalas seleccionando sus nodos en el lienzo.
           </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ marginTop: 4 }}
+            onClick={() => ops.addActionToBranch(b.branchId, "NOTIFY")}
+          >
+            + Acción en rama
+          </button>
         </div>
       ))}
       <button type="button" className="btn-secondary" style={{ marginTop: 12 }} onClick={() => ops.addBranch(decision.nodeId)}>+ Añadir rama</button>
+
+      {/* Camino por defecto (else) */}
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e5e5)" }}>
+        <label className="label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={decision.else !== undefined}
+            onChange={(e) => ops.setElseEnabled(decision.nodeId, e.target.checked)}
+          />
+          Camino por defecto (si ninguna rama cumple)
+        </label>
+        {decision.else !== undefined && (
+          <div style={{ marginTop: 8 }}>
+            <p className="label" style={{ marginBottom: 4 }}>
+              {decision.else.length} acción(es) en el camino por defecto — edítalas seleccionando sus nodos en el lienzo.
+            </p>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => ops.addActionToElse(decision.nodeId, "NOTIFY")}
+            >
+              + Acción en por defecto
+            </button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

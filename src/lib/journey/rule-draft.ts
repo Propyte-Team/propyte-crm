@@ -337,6 +337,21 @@ export function setBranchLabel(draft: RuleDraft, branchId: string, label: string
 export function addActionToBranch(draft: RuleDraft, branchId: string, type: string): RuleDraft {
   return { ...draft, actions: rebuildBranchIds(mapBranchById(draft.actions, branchId, (b) => ({ ...b, steps: [...b.steps, { nodeId: "", type, config: {} }] }))) };
 }
+export function setElseEnabled(draft: RuleDraft, decisionNodeId: string, enabled: boolean): RuleDraft {
+  const next = mapNodeById(draft.actions, decisionNodeId, (n) => {
+    if (!isDecisionDraft(n)) return n;
+    if (enabled) return n.else ? n : { ...n, else: [] };
+    const { else: _drop, ...rest } = n;
+    return rest as DecisionNodeDraft;
+  });
+  return { ...draft, actions: rebuildBranchIds(next) };
+}
+export function addActionToElse(draft: RuleDraft, decisionNodeId: string, type: string): RuleDraft {
+  const next = mapNodeById(draft.actions, decisionNodeId, (n) =>
+    isDecisionDraft(n) ? { ...n, else: [...(n.else ?? []), { nodeId: "", type, config: {} }] } : n,
+  );
+  return { ...draft, actions: rebuildBranchIds(next) };
+}
 /** @deprecated Use removeNode instead. Kept for backward compat with use-rule-draft.ts. */
 export const removeAction = removeNode;
 

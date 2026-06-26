@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   type RuleDraft, type RuleRow, ruleToDraft, draftToRulePayload, newRuleDraft,
   addAction, insertAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta,
-  addDecision, removeNode, setDecisionLabel, addBranch, removeBranch, setBranchLabel, setBranchConditions, addActionToBranch,
+  addDecision, removeNode, setDecisionLabel, addBranch, removeBranch, setBranchLabel, setBranchConditions, addActionToBranch, setElseEnabled, addActionToElse,
   type Conditions,
 } from "@/lib/journey/rule-draft";
 
@@ -52,6 +52,8 @@ export function useRuleDraft() {
     setBranchLabel: (branchId: string, label: string) => setDraft((d) => (d ? setBranchLabel(d, branchId, label) : d)),
     setBranchConditions: (branchId: string, c: Conditions) => setDraft((d) => (d ? setBranchConditions(d, branchId, c) : d)),
     addActionToBranch: (branchId: string, type: string) => setDraft((d) => (d ? addActionToBranch(d, branchId, type) : d)),
+    setElseEnabled: (decisionNodeId: string, enabled: boolean) => setDraft((d) => (d ? setElseEnabled(d, decisionNodeId, enabled) : d)),
+    addActionToElse: (decisionNodeId: string, type: string) => setDraft((d) => (d ? addActionToElse(d, decisionNodeId, type) : d)),
   }), []);
 
   const save = useCallback(async (): Promise<boolean> => {

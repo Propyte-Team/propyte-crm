@@ -54,6 +54,9 @@ interface Ops {
   removeBranch: (branchId: string) => void;
   setBranchLabel: (branchId: string, label: string) => void;
   setBranchConditions: (branchId: string, c: RuleDraft["conditions"]) => void;
+  addActionToBranch: (branchId: string, type: string) => void;
+  addActionToElse: (decisionNodeId: string, type: string) => void;
+  setElseEnabled: (decisionNodeId: string, enabled: boolean) => void;
 }
 
 interface RuleInspectorPanelProps {
@@ -265,6 +268,9 @@ export function RuleInspectorPanel({
       removeBranch: ops.removeBranch,
       setBranchLabel: ops.setBranchLabel,
       setBranchConditions: ops.setBranchConditions,
+      addActionToBranch: ops.addActionToBranch,
+      addActionToElse: ops.addActionToElse,
+      setElseEnabled: ops.setElseEnabled,
     };
     return <DecisionInspector decision={decision} ops={decisionOps} />;
   }

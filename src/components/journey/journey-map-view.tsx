@@ -23,25 +23,34 @@ type Mode = "general" | "targeted";
 const EDGE_TYPES: EdgeTypes = { insert: InsertEdge as EdgeTypes[string] };
 
 // ─── Decision (diamond) node ──────────────────────────────────────────────────
-function DecisionNode({ data, selected }: NodeProps) {
+function DecisionNode({ data }: NodeProps) {
   const label = (data as Record<string, unknown>).label as string | undefined;
-  const sel = selected ? { outline: "2px solid #0a0a0a", outlineOffset: 2 } : {};
   return (
+    // Outer wrapper: provides a solid background so the canvas grid doesn't bleed
+    // through the diamond's bounding-box corners. Selection outline is applied by
+    // nodeStyle() via the React Flow node's `style` prop — single source of truth.
     <div
       style={{
         width: 80, height: 80,
-        transform: "rotate(45deg)",
-        background: "#7c3aed",
-        borderRadius: 6,
+        background: "var(--card, #fff)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        ...sel,
       }}
     >
-      <Handle type="target" position={Position.Top} style={{ transform: "rotate(-45deg)", background: "#555" }} />
-      <span style={{ transform: "rotate(-45deg)", color: "#fff", fontSize: 10, fontWeight: 600, textAlign: "center", padding: "0 4px", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {label ?? "Decisión"}
-      </span>
-      <Handle type="source" position={Position.Bottom} style={{ transform: "rotate(-45deg)", background: "#555" }} />
+      <div
+        style={{
+          width: 80, height: 80,
+          transform: "rotate(45deg)",
+          background: "#7c3aed",
+          borderRadius: 6,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        <Handle type="target" position={Position.Top} style={{ transform: "rotate(-45deg)", background: "#555" }} />
+        <span style={{ transform: "rotate(-45deg)", color: "#fff", fontSize: 10, fontWeight: 600, textAlign: "center", padding: "0 4px", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label ?? "Decisión"}
+        </span>
+        <Handle type="source" position={Position.Bottom} style={{ transform: "rotate(-45deg)", background: "#555" }} />
+      </div>
     </div>
   );
 }
