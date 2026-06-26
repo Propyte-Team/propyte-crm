@@ -37,6 +37,10 @@ describe("computeNodeMetrics", () => {
     expect(m.branchSplits["a1.b0"]).toEqual({ count: 96, pct: 68 });
     expect(m.branchSplits["a1.b1"]).toEqual({ count: 36, pct: 25 });
   });
+  it("la rama else también entra en branchSplits", () => {
+    const m = computeNodeMetrics(draft, raw);
+    expect(m.branchSplits["a1.else"]).toEqual({ count: 10, pct: 7 }); // 10/142 = 7.04 → 7
+  });
   it("rama sin pasos → {count:0, pct:0} y sin división por cero", () => {
     const d2 = ruleToDraft({
       id: "r2", name: "y", description: null, triggerType: "EVENT", triggerConfig: {}, conditions: {},

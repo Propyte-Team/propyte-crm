@@ -36,6 +36,9 @@ export function computeNodeMetrics(draft: RuleDraft, raw: RawMetrics): NodeMetri
     for (const bc of branchCounts) {
       branchSplits[bc.branchId] = { count: bc.count, pct: denom > 0 ? Math.round((bc.count / denom) * 100) : 0 };
     }
+    if (node.else && node.else.length > 0) {
+      branchSplits[`${node.nodeId}.else`] = { count: elseCount, pct: denom > 0 ? Math.round((elseCount / denom) * 100) : 0 };
+    }
     nodeVolumes[node.nodeId] = denom;
     return denom;
   }

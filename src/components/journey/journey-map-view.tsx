@@ -176,7 +176,10 @@ export function JourneyMapView() {
       const eData = e.data as { label?: string; branchId?: string } | undefined;
       const branchLabel = eData?.label;
       const split = metricsOn && metrics && eData?.branchId ? metrics.branchSplits[eData.branchId] : undefined;
-      const finalLabel = split ? `${branchLabel ?? ""} · ${split.pct}% · ${split.count}`.trimStart() : branchLabel;
+      const metricText = split ? `${split.pct}% · ${split.count}` : undefined;
+      const finalLabel = metricText
+        ? (branchLabel ? `${branchLabel} · ${metricText}` : metricText)
+        : branchLabel;
       const m = /^a(\d+)$/.exec(e.target);
       return m
         ? { ...e, type: "insert", label: finalLabel, data: { onInsert: () => setPaletteAt(Number(m[1])), label: finalLabel } }
