@@ -74,4 +74,18 @@ describe("MAKE_CALL runner", () => {
     } as never);
     expect(r.skipped).toBe(true);
   });
+
+  it("skip si no hay usuario destino (sin asignado ni admin)", async () => {
+    (prisma.contact.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ...contact, assignedToId: null });
+    (prisma.user.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const r = await executeAction({
+      id: "q4",
+      actionType: "MAKE_CALL",
+      entityType: "contact",
+      entityId: "c1",
+      config: {},
+    } as never);
+    expect(r.skipped).toBe(true);
+    expect(prisma.activity.create).not.toHaveBeenCalled();
+  });
 });
