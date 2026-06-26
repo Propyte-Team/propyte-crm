@@ -189,73 +189,135 @@ export function draftToFlow(draft: RuleDraft): Flow {
   return { nodes, edges };
 }
 
-// ─── Pure edit ops ────────────────────────────────────────────────────────────
-// NOTE: These ops currently only handle flat ActionNodeDraft lists.
-// They will be rewritten in T8/T9 to handle the full tree.
+// Pure edit ops (tree-aware, T8)
 
-function reindex(actions: ActionNodeDraft[]): ActionNodeDraft[] {
-  return actions.map((a, i) => ({ ...a, nodeId: `a${i}` }));
+// Reasigna TODOS los ids de forma estable, igual que ruleToDraft.
+function rebuildBranchIds(nodes: NodeDraft[], prefix = ""): NodeDraft[] {
+  return nodes.map((n, i) => {
+    const path = prefix ? `${prefix}.${i}` : `a${i}`;
+    if (isDecisionDraft(n)) {
+      return {
+        ...n, nodeId: path,
+        branches: n.branches.map((b, bi) => ({ ...b, branchId: `${path}.b${bi}`, steps: rebuildBranchIds(b.steps, `${path}.b${bi}`) })),
+        ...(n.else ? { else: rebuildBranchIds(n.else, `${path}.else`) } : {}),
+      };
+    }
+    return { ...n, nodeId: path };
+  });
 }
 
-function asActionNodes(actions: NodeDraft[]): ActionNodeDraft[] {
-  return actions.filter((n): n is ActionNodeDraft => !isDecisionDraft(n));
+// Aplica fn al nodo con nodeId == id en cualquier nivel.
+function mapNodeById(nodes: NodeDraft[], id: string, fn: (n: NodeDraft) => NodeDraft): NodeDraft[] {
+  return nodes.map((n) => {
+    if (n.nodeId === id) return fn(n);
+    if (isDecisionDraft(n)) {
+      return {
+        ...n,
+        branches: n.branches.map((b) => ({ ...b, steps: mapNodeById(b.steps, id, fn) })),
+        ...(n.else ? { else: mapNodeById(n.else, id, fn) } : {}),
+      };
+    }
+    return n;
+  });
+}
+
+// Aplica fn a la rama con branchId == bid en cualquier decision del arbol.
+function mapBranchById(nodes: NodeDraft[], bid: string, fn: (b: BranchDraft) => BranchDraft): NodeDraft[] {
+  return nodes.map((n) => {
+    if (isDecisionDraft(n)) {
+      return {
+        ...n,
+        branches: n.branches.map((b) => (b.branchId === bid ? fn(b) : { ...b, steps: mapBranchById(b.steps, bid, fn) })),
+        ...(n.else ? { else: mapBranchById(n.else, bid, fn) } : {}),
+      };
+    }
+    return n;
+  });
+}
+
+// Elimina el nodo con nodeId == id en cualquier nivel.
+function filterNodeById(nodes: NodeDraft[], id: string): NodeDraft[] {
+  return nodes
+    .filter((n) => n.nodeId !== id)
+    .map((n) =>
+      isDecisionDraft(n)
+        ? {
+            ...n,
+            branches: n.branches.map((b) => ({ ...b, steps: filterNodeById(b.steps, id) })),
+            ...(n.else ? { else: filterNodeById(n.else, id) } : {}),
+          }
+        : n,
+    );
 }
 
 export function addAction(draft: RuleDraft, type: string): RuleDraft {
-  const flat = asActionNodes(draft.actions);
-  return { ...draft, actions: reindex([...flat, { nodeId: "", type, config: {} }]) };
+  return { ...draft, actions: rebuildBranchIds([...draft.actions, { nodeId: "", type, config: {} }]) };
 }
-
 export function insertAction(draft: RuleDraft, type: string, atIndex: number): RuleDraft {
-  const flat = asActionNodes(draft.actions);
-  const i = Math.max(0, Math.min(atIndex, flat.length));
-  const next = [...flat];
+  const i = Math.max(0, Math.min(atIndex, draft.actions.length));
+  const next = [...draft.actions];
   next.splice(i, 0, { nodeId: "", type, config: {} });
-  return { ...draft, actions: reindex(next) };
+  return { ...draft, actions: rebuildBranchIds(next) };
 }
-
-export function removeAction(draft: RuleDraft, nodeId: string): RuleDraft {
-  const flat = asActionNodes(draft.actions);
-  return { ...draft, actions: reindex(flat.filter((a) => a.nodeId !== nodeId)) };
+export function addDecision(draft: RuleDraft): RuleDraft {
+  const dec: DecisionNodeDraft = { nodeId: "", kind: "decision", branches: [{ branchId: "", conditions: {} as Conditions, steps: [] }] };
+  return { ...draft, actions: rebuildBranchIds([...draft.actions, dec]) };
 }
-
+export function removeNode(draft: RuleDraft, nodeId: string): RuleDraft {
+  return { ...draft, actions: rebuildBranchIds(filterNodeById(draft.actions, nodeId)) };
+}
 export function reorderAction(draft: RuleDraft, nodeId: string, dir: "up" | "down"): RuleDraft {
-  const flat = asActionNodes(draft.actions);
-  const i = flat.findIndex((a) => a.nodeId === nodeId);
+  const i = draft.actions.findIndex((a) => a.nodeId === nodeId);
   if (i < 0) return draft;
   const j = dir === "up" ? i - 1 : i + 1;
-  if (j < 0 || j >= flat.length) return draft;
-  const next = [...flat];
+  if (j < 0 || j >= draft.actions.length) return draft;
+  const next = [...draft.actions];
   [next[i], next[j]] = [next[j], next[i]];
-  return { ...draft, actions: reindex(next) };
+  return { ...draft, actions: rebuildBranchIds(next) };
 }
-
 export function setActionConfig(draft: RuleDraft, nodeId: string, patch: Record<string, unknown>): RuleDraft {
-  return {
-    ...draft,
-    actions: draft.actions.map((n) =>
-      !isDecisionDraft(n) && n.nodeId === nodeId ? { ...n, config: { ...n.config, ...patch } } : n,
-    ),
-  };
+  return { ...draft, actions: mapNodeById(draft.actions, nodeId, (n) => (isDecisionDraft(n) ? n : { ...n, config: { ...n.config, ...patch } })) };
 }
-
 export function setActionType(draft: RuleDraft, nodeId: string, type: string): RuleDraft {
-  return {
-    ...draft,
-    actions: draft.actions.map((n) =>
-      !isDecisionDraft(n) && n.nodeId === nodeId ? { ...n, type, config: {} } : n,
-    ),
-  };
+  return { ...draft, actions: mapNodeById(draft.actions, nodeId, (n) => (isDecisionDraft(n) ? n : { ...n, type, config: {} })) };
 }
-
 export function setActionDelay(draft: RuleDraft, nodeId: string, minutes: number): RuleDraft {
+  return { ...draft, actions: mapNodeById(draft.actions, nodeId, (n) => (isDecisionDraft(n) ? n : { ...n, delayMinutes: minutes })) };
+}
+export function setDecisionLabel(draft: RuleDraft, nodeId: string, label: string): RuleDraft {
+  return { ...draft, actions: mapNodeById(draft.actions, nodeId, (n) => (isDecisionDraft(n) ? { ...n, label } : n)) };
+}
+export function addBranch(draft: RuleDraft, decisionNodeId: string): RuleDraft {
   return {
     ...draft,
-    actions: draft.actions.map((n) =>
-      !isDecisionDraft(n) && n.nodeId === nodeId ? { ...n, delayMinutes: minutes } : n,
-    ),
+    actions: rebuildBranchIds(mapNodeById(draft.actions, decisionNodeId, (n) =>
+      isDecisionDraft(n) ? { ...n, branches: [...n.branches, { branchId: "", conditions: {} as Conditions, steps: [] }] } : n,
+    )),
   };
 }
+export function removeBranch(draft: RuleDraft, branchId: string): RuleDraft {
+  const drop = (nodes: NodeDraft[]): NodeDraft[] =>
+    nodes.map((n) => {
+      if (isDecisionDraft(n)) {
+        const kept = n.branches.filter((b) => b.branchId !== branchId);
+        const branches = kept.length > 0 ? kept.map((b) => ({ ...b, steps: drop(b.steps) })) : [{ branchId: "", conditions: {} as Conditions, steps: [] }];
+        return { ...n, branches, ...(n.else ? { else: drop(n.else) } : {}) };
+      }
+      return n;
+    });
+  return { ...draft, actions: rebuildBranchIds(drop(draft.actions)) };
+}
+export function setBranchConditions(draft: RuleDraft, branchId: string, conditions: Conditions): RuleDraft {
+  return { ...draft, actions: mapBranchById(draft.actions, branchId, (b) => ({ ...b, conditions })) };
+}
+export function setBranchLabel(draft: RuleDraft, branchId: string, label: string): RuleDraft {
+  return { ...draft, actions: mapBranchById(draft.actions, branchId, (b) => ({ ...b, label })) };
+}
+export function addActionToBranch(draft: RuleDraft, branchId: string, type: string): RuleDraft {
+  return { ...draft, actions: rebuildBranchIds(mapBranchById(draft.actions, branchId, (b) => ({ ...b, steps: [...b.steps, { nodeId: "", type, config: {} }] }))) };
+}
+/** @deprecated Use removeNode instead. Kept for backward compat with use-rule-draft.ts. */
+export const removeAction = removeNode;
 
 export function setTrigger(
   draft: RuleDraft,

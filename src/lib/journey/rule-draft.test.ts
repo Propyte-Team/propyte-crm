@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction } from "./rule-draft";
 
 const ROW: RuleRow = {
   id: "r1",
@@ -182,5 +182,62 @@ describe("rule-draft Ã¡rbol round-trip", () => {
     const draft = ruleToDraft(rowConDecision as never);
     expect(draft.actions[0].nodeId).toBe("a0");
     expect(draft.actions[1].nodeId).toBe("a1");
+  });
+});
+
+describe("rule-draft ops de árbol", () => {
+  it("addAction agrega al nivel raíz", () => {
+    const d = addAction(newRuleDraft(), "ADD_TAG");
+    expect(d.actions.at(-1)).toMatchObject({ type: "ADD_TAG" });
+  });
+
+  it("addAction NO tira nodos de decisión existentes", () => {
+    let d = addDecision(newRuleDraft());      // raíz: [a0 acción, a1 decisión]
+    const before = d.actions.filter((n) => n.kind === "decision").length;
+    d = addAction(d, "NOTIFY");
+    const after = d.actions.filter((n) => n.kind === "decision").length;
+    expect(after).toBe(before);               // la decisión sobrevive
+    expect(before).toBe(1);
+  });
+
+  it("addDecision agrega un nodo decisión con una rama vacía", () => {
+    const d = addDecision(newRuleDraft());
+    const dec = d.actions.at(-1) as { kind: string; branches: unknown[] };
+    expect(dec.kind).toBe("decision");
+    expect(dec.branches).toHaveLength(1);
+  });
+
+  it("addBranch agrega rama a una decisión por nodeId", () => {
+    let d = addDecision(newRuleDraft());
+    const decId = (d.actions.at(-1) as { nodeId: string }).nodeId;
+    d = addBranch(d, decId);
+    expect((d.actions.at(-1) as { branches: unknown[] }).branches).toHaveLength(2);
+  });
+
+  it("setBranchConditions / setBranchLabel mutan la rama correcta", () => {
+    let d = addDecision(newRuleDraft());
+    const dec = d.actions.at(-1) as { branches: { branchId: string }[] };
+    const bid = dec.branches[0].branchId;
+    d = setBranchLabel(d, bid, "META");
+    d = setBranchConditions(d, bid, { field: "adAttribution.network", op: "eq", value: "meta" } as never);
+    const b = (d.actions.at(-1) as { branches: { branchId: string; label?: string; conditions: unknown }[] }).branches[0];
+    expect(b.label).toBe("META");
+    expect(b.conditions).toMatchObject({ field: "adAttribution.network" });
+  });
+
+  it("removeNode elimina un nodo en cualquier nivel y reindexa raíz", () => {
+    let d = addAction(newRuleDraft(), "NOTIFY"); // a0 (CHANGE_STAGE), a1 (NOTIFY)
+    d = removeNode(d, "a0");
+    expect(d.actions).toHaveLength(1);
+    expect(d.actions[0].nodeId).toBe("a0"); // reindexado
+  });
+
+  it("removeBranch quita una rama; si queda 0, deja la decisión con 1 rama vacía", () => {
+    let d = addDecision(newRuleDraft());
+    let dec = d.actions.at(-1) as { nodeId: string; branches: { branchId: string }[] };
+    d = addBranch(d, dec.nodeId);
+    dec = d.actions.at(-1) as { nodeId: string; branches: { branchId: string }[] };
+    d = removeBranch(d, dec.branches[0].branchId);
+    expect((d.actions.at(-1) as { branches: unknown[] }).branches).toHaveLength(1);
   });
 });
