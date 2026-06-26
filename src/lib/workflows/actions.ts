@@ -5,6 +5,10 @@ import prisma from "@/lib/db";
 import type { ActionQueue, Contact } from "@prisma/client";
 import { sendWhatsAppMessage } from "@/lib/twilio/whatsapp";
 import { autoRouteLead } from "./routing";
+import { resolveEmailContent, resolveEmailSender, plainToHtml } from "@/lib/email/compose";
+import { sendSmtpEmail } from "@/lib/email/mailer";
+import { sendGmail } from "@/lib/google/gmail";
+import { getConnectionStatus } from "@/lib/google/workspace.service";
 
 export interface ActionResult {
   skipped?: boolean;
@@ -223,8 +227,77 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
     case "SEND_EMAIL": {
       if (!contact?.email) return { skipped: true, note: "Contacto sin email" };
       if (contact.doNotContact) return { skipped: true, note: "Opt-out" };
-      // El envío real de email de cadencia llega con Perfiles (F5: firma + From alias).
-      return { skipped: true, note: "SEND_EMAIL se habilita con F5 (firma/alias)" };
+
+      const templateRef = typeof config.template === "string" ? config.template : undefined;
+      const tpl = templateRef
+        ? await prisma.userTemplate.findFirst({
+            where: {
+              isActive: true,
+              deletedAt: null,
+              channel: "EMAIL",
+              OR: [{ id: templateRef }, { name: templateRef }],
+              language: contact.preferredLanguage === "EN" ? "EN" : "ES",
+            },
+            select: { subject: true, body: true },
+          })
+        : null;
+
+      const vars: Record<string, string> = {
+        "contact.firstName": contact.firstName ?? "",
+        "contact.lastName": contact.lastName ?? "",
+      };
+      const content = resolveEmailContent({
+        template: tpl,
+        configSubject: config.subject,
+        configBody: config.body,
+        vars,
+      });
+      if (!content) return { skipped: true, note: "SEND_EMAIL sin contenido (plantilla o subject/body)" };
+
+      const owner = await ownerUserId(contact);
+      const sender = await resolveEmailSender(owner, async (uid) => {
+        const st = await getConnectionStatus(uid).catch(() => null);
+        return Boolean(st?.connected);
+      });
+
+      let body = content.body;
+      if (sender.userId) {
+        const profile = await prisma.userProfile
+          .findUnique({ where: { userId: sender.userId }, select: { emailSignatureHtml: true } })
+          .catch(() => null);
+        const sig = profile?.emailSignatureHtml?.trim();
+        if (sig) body = `${body}\n\n${sig}`;
+      }
+      const html = plainToHtml(body);
+
+      if (sender.kind === "gmail" && sender.userId) {
+        await sendGmail({ userId: sender.userId, to: contact.email, subject: content.subject, html });
+        return {}; // sendGmail logs the outbound to the contact's thread
+      }
+
+      const ownerName = sender.userId
+        ? (
+            await prisma.user
+              .findUnique({ where: { id: sender.userId }, select: { name: true } })
+              .catch(() => null)
+          )?.name ?? undefined
+        : undefined;
+      await sendSmtpEmail({ to: contact.email, subject: content.subject, html, fromName: ownerName });
+      if (sender.userId) {
+        await prisma.activity
+          .create({
+            data: {
+              contactId: contact.id,
+              userId: sender.userId,
+              activityType: "EMAIL_SENT",
+              subject: content.subject,
+              description: body,
+              status: "PENDIENTE",
+            },
+          })
+          .catch(() => null);
+      }
+      return {};
     }
 
     case "AI_REPLY":
