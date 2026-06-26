@@ -308,8 +308,38 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       return runAiAction(item.actionType, contact, config);
     }
 
-    case "MAKE_CALL":
-      return { skipped: true, note: "Dialer disponible en fase posterior (voz)" };
+    case "MAKE_CALL": {
+      if (!contact) return { skipped: true, note: "Sin contacto" };
+      if (!contact.phone) return { skipped: true, note: "Contacto sin teléfono" };
+      if (contact.doNotContact) return { skipped: true, note: "Opt-out" };
+      const userId = await ownerUserId(contact);
+      if (!userId) return { skipped: true, note: "Sin usuario destino" };
+
+      const subject = String(config.subject ?? `Llamar a ${contact.firstName ?? "contacto"}`);
+      const dueInMinutes = typeof config.dueInMinutes === "number" ? config.dueInMinutes : 60;
+      await prisma.activity.create({
+        data: {
+          contactId: contact.id,
+          dealId: item.entityType === "deal" ? item.entityId : undefined,
+          userId,
+          activityType: "CALL_TASK",
+          subject,
+          description: config.reason ? String(config.reason) : (config.description ? String(config.description) : null),
+          dueDate: new Date(Date.now() + dueInMinutes * 60_000),
+          status: "PENDIENTE",
+        },
+      });
+      await prisma.notification.create({
+        data: {
+          userId,
+          title: "Llamada pendiente",
+          message: subject,
+          type: "call_task",
+          link: `/contacts/${contact.id}`,
+        },
+      });
+      return {};
+    }
 
     case "GW_GMAIL_LOG_INBOUND": {
       // Disparado por webhook Pub/Sub o cron: corre el delta sync del buzón del asesor.
