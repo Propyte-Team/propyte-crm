@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { cutoffFromWindow } from "./route-helpers";
+import { cutoffFromWindow, parseMetricsQuery } from "./route-helpers";
+
+describe("parseMetricsQuery", () => {
+  it("válido", () => {
+    const r = parseMetricsQuery(new URLSearchParams("ruleId=abc&window=90"));
+    expect(r).toEqual({ ok: true, ruleId: "abc", window: "90" });
+  });
+  it("falta ruleId → no ok (400)", () => {
+    expect(parseMetricsQuery(new URLSearchParams("window=30")).ok).toBe(false);
+  });
+  it("window inválido → no ok (400)", () => {
+    expect(parseMetricsQuery(new URLSearchParams("ruleId=abc&window=zzz")).ok).toBe(false);
+  });
+  it("window ausente → default 30", () => {
+    const r = parseMetricsQuery(new URLSearchParams("ruleId=abc"));
+    expect(r).toMatchObject({ ok: true, window: "30" });
+  });
+});
 
 describe("cutoffFromWindow", () => {
   it("'all' → null", () => {

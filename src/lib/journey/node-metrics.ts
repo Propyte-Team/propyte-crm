@@ -29,6 +29,8 @@ export function computeNodeMetrics(draft: RuleDraft, raw: RawMetrics): NodeMetri
     const branchEntry = (steps: NodeDraft[]): number => (steps.length > 0 ? volumeOf(steps[0]) : 0);
     const branchCounts = node.branches.map((b) => ({ branchId: b.branchId, count: branchEntry(b.steps) }));
     const elseCount = node.else && node.else.length > 0 ? branchEntry(node.else) : 0;
+    // Recorre TODOS los pasos (no solo el primero) para que los nodos-acción intermedios
+    // de cada rama/else también queden poblados en nodeVolumes.
     for (const b of node.branches) for (const s of b.steps) volumeOf(s);
     if (node.else) for (const s of node.else) volumeOf(s);
 

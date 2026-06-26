@@ -130,7 +130,7 @@ export function JourneyMapView() {
       .then((raw: RawMetrics | null) => {
         if (cancel || !raw) return;
         setMetricsTotal(raw.total ?? 0);
-        setMetrics(computeNodeMetrics(draft, raw));
+        setMetrics(computeNodeMetrics(draft!, raw)); // draft no-null: garantizado por el guard `ruleId`
       })
       .catch(() => { if (!cancel) setMetrics(null); });
     return () => { cancel = true; };
