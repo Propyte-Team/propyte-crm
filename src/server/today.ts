@@ -13,6 +13,12 @@ export interface TodayMini {
   subtitle?: string;
   href?: string;
   meta?: string;
+  /** Presente solo en tareas: "TASK" | "CALL_TASK" */
+  activityType?: string;
+  /** Presente solo en CALL_TASK: teléfono del contacto */
+  contactPhone?: string | null;
+  /** Presente solo en CALL_TASK: id del contacto para CallButton */
+  contactId?: string;
 }
 
 export interface TodayView {
@@ -84,13 +90,13 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
         select: { id: true, dueAt: true, type: true, contact: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { dueAt: "asc" }, take: 6,
       }),
-      // 3. Tareas vencidas o de hoy
+      // 3. Tareas vencidas o de hoy (TASK + CALL_TASK)
       prisma.activity.count({
-        where: { deletedAt: null, activityType: "TASK" as never, status: "PENDIENTE" as never, dueDate: { lte: endToday }, ...activityUserScope },
+        where: { deletedAt: null, activityType: { in: ["TASK", "CALL_TASK"] as never }, status: "PENDIENTE" as never, dueDate: { lte: endToday }, ...activityUserScope },
       }),
       prisma.activity.findMany({
-        where: { deletedAt: null, activityType: "TASK" as never, status: "PENDIENTE" as never, dueDate: { lte: endToday }, ...activityUserScope },
-        select: { id: true, subject: true, dueDate: true, contact: { select: { id: true, firstName: true, lastName: true } } },
+        where: { deletedAt: null, activityType: { in: ["TASK", "CALL_TASK"] as never }, status: "PENDIENTE" as never, dueDate: { lte: endToday }, ...activityUserScope },
+        select: { id: true, subject: true, dueDate: true, activityType: true, contact: { select: { id: true, firstName: true, lastName: true, phone: true } } },
         orderBy: { dueDate: "asc" }, take: 6,
       }),
       // 4. Conversaciones sin responder
@@ -138,7 +144,16 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
       },
       tasks: {
         count: tasksCount,
-        items: tasks.map((t) => ({ id: t.id, title: t.subject, subtitle: name(t.contact), meta: t.dueDate?.toISOString(), href: t.contact ? `/contacts/${t.contact.id}` : undefined })),
+        items: tasks.map((t) => ({
+          id: t.id,
+          title: t.subject,
+          subtitle: name(t.contact),
+          meta: t.dueDate?.toISOString(),
+          href: t.contact ? `/contacts/${t.contact.id}` : undefined,
+          activityType: t.activityType as string,
+          contactPhone: t.contact?.phone ?? null,
+          contactId: t.contact?.id,
+        })),
       },
       conversations: {
         count: convCount,

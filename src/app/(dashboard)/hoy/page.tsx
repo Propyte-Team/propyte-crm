@@ -13,5 +13,5 @@ export default async function HoyPage() {
   const data = await getTodayView(session.user.id, session.user.role);
   const firstName = (session.user.name ?? "").split(" ")[0] || "asesor";
 
-  return <TodayView data={JSON.parse(JSON.stringify(data))} firstName={firstName} />;
+  return <TodayView data={JSON.parse(JSON.stringify(data))} firstName={firstName} userId={session.user.id} />;
 }

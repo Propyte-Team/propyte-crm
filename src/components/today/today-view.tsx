@@ -2,6 +2,7 @@
 // Minimalista: tarjetas con conteo + lista accionable. Color solo como señal de prioridad.
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import {
   Sparkles, AlarmClock, CheckSquare, MessageSquare, CalendarDays, Flame, FileText, ArrowRight,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import type { TodayView as TodayData, TodayMini } from "@/server/today";
 import { MiAvanceWidget } from "@/components/goals/mi-avance-widget";
+import { CallButton } from "@/components/voice/call-button";
 
 function relTime(iso?: string): string {
   if (!iso) return "";
@@ -28,9 +30,10 @@ interface SectionProps {
   accent?: string;
   emptyText: string;
   viewAllHref?: string;
+  renderAction?: (item: TodayMini) => React.ReactNode;
 }
 
-function Section({ title, icon: Icon, count, items = [], accent, emptyText, viewAllHref }: SectionProps) {
+function Section({ title, icon: Icon, count, items = [], accent, emptyText, viewAllHref, renderAction }: SectionProps) {
   return (
     <div className="crm-card !p-0 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
@@ -51,18 +54,29 @@ function Section({ title, icon: Icon, count, items = [], accent, emptyText, view
       {items.length > 0 ? (
         <ul className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
           {items.map((it) => {
-            const row = (
-              <div className="flex items-center justify-between gap-2 px-4 py-2 hover:bg-[color:var(--bg-row-hover)]">
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] text-[color:var(--text-primary)]">{it.title}</p>
-                  {it.subtitle && <p className="truncate text-[11px] text-[color:var(--text-tertiary)]">{it.subtitle}</p>}
-                </div>
-                <span className="shrink-0 text-[11px] text-[color:var(--text-tertiary)]">
-                  {it.meta && /\d{4}-\d{2}-\d{2}T/.test(it.meta) ? relTime(it.meta) : it.meta}
-                </span>
+            const action = renderAction?.(it);
+            const content = (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] text-[color:var(--text-primary)]">{it.title}</p>
+                {it.subtitle && <p className="truncate text-[11px] text-[color:var(--text-tertiary)]">{it.subtitle}</p>}
               </div>
             );
-            return it.href ? <li key={it.id}><Link href={it.href}>{row}</Link></li> : <li key={it.id}>{row}</li>;
+            const metaEl = (
+              <span className="shrink-0 text-[11px] text-[color:var(--text-tertiary)]">
+                {it.meta && /\d{4}-\d{2}-\d{2}T/.test(it.meta) ? relTime(it.meta) : it.meta}
+              </span>
+            );
+            return (
+              <li key={it.id}>
+                <div className="flex items-center gap-2 px-4 py-2 hover:bg-[color:var(--bg-row-hover)]">
+                  {it.href
+                    ? <Link href={it.href} className="flex min-w-0 flex-1 items-center gap-2">{content}{metaEl}</Link>
+                    : <>{content}{metaEl}</>
+                  }
+                  {action && <div className="shrink-0">{action}</div>}
+                </div>
+              </li>
+            );
           })}
         </ul>
       ) : (
@@ -77,7 +91,7 @@ function Section({ title, icon: Icon, count, items = [], accent, emptyText, view
   );
 }
 
-export function TodayView({ data, firstName }: { data: TodayData; firstName: string }) {
+export function TodayView({ data, firstName, userId }: { data: TodayData; firstName: string; userId: string }) {
   const total =
     data.newLeads.count + data.slaAtRisk.count + data.tasks.count +
     data.conversations.count + data.visits.count;
@@ -102,7 +116,13 @@ export function TodayView({ data, firstName }: { data: TodayData; firstName: str
         <Section title="Conversaciones sin responder" icon={MessageSquare} count={data.conversations.count} items={data.conversations.items}
           accent="#0D9488" emptyText="Bandeja al día." viewAllHref="/inbox" />
         <Section title="Tareas de hoy y vencidas" icon={CheckSquare} count={data.tasks.count} items={data.tasks.items}
-          accent="#D97706" emptyText="Sin tareas pendientes." />
+          accent="#D97706" emptyText="Sin tareas pendientes."
+          renderAction={(item) =>
+            item.activityType === "CALL_TASK" && item.contactPhone && item.contactId
+              ? <CallButton phone={item.contactPhone} contactId={item.contactId} userId={userId} />
+              : null
+          }
+        />
         <Section title="Visitas de hoy" icon={CalendarDays} count={data.visits.count} items={data.visits.items}
           accent="#6366F1" emptyText="Sin visitas agendadas hoy." />
         <Section title="Deals calientes" icon={Flame} count={data.hotDeals.count} items={data.hotDeals.items}
