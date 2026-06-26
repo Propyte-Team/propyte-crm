@@ -148,3 +148,19 @@ export async function sendPasswordResetCode(email: string, code: string) {
     throw new Error("No se pudo enviar el código de restablecimiento");
   }
 }
+
+/**
+ * Envío genérico para acciones de workflow (SEND_EMAIL fallback SMTP).
+ * Reusa el transporter. `fromName` solo cambia el display; la dirección es SMTP_USER/SMTP_FROM.
+ */
+export async function sendSmtpEmail(input: {
+  to: string;
+  subject: string;
+  html: string;
+  fromName?: string;
+}): Promise<void> {
+  const transporter = getTransporter();
+  const addr = process.env.SMTP_USER ?? "";
+  const fromHeader = input.fromName ? `${input.fromName} <${addr}>` : from();
+  await transporter.sendMail({ from: fromHeader, to: input.to, subject: input.subject, html: input.html });
+}
