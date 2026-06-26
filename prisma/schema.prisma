@@ -289,6 +289,7 @@ enum CommissionStatus {
 enum ActivityType {
   CALL_OUTBOUND
   CALL_INBOUND
+  CALL_TASK
   WHATSAPP_OUT
   WHATSAPP_IN
   SMS_OUT
