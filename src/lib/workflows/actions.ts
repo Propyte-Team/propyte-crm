@@ -260,15 +260,14 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
         return Boolean(st?.connected);
       });
 
-      let body = content.body;
-      if (sender.userId) {
-        const profile = await prisma.userProfile
-          .findUnique({ where: { userId: sender.userId }, select: { emailSignatureHtml: true } })
-          .catch(() => null);
-        const sig = profile?.emailSignatureHtml?.trim();
-        if (sig) body = `${body}\n\n${sig}`;
-      }
-      const html = plainToHtml(body);
+      // emailSignatureHtml ya es HTML: NO debe pasar por plainToHtml (que escapa). Se concatena crudo.
+      const profile = sender.userId
+        ? await prisma.userProfile
+            .findUnique({ where: { userId: sender.userId }, select: { emailSignatureHtml: true } })
+            .catch(() => null)
+        : null;
+      const sigHtml = profile?.emailSignatureHtml?.trim() || "";
+      const html = plainToHtml(content.body) + (sigHtml ? `<br><br>${sigHtml}` : "");
 
       if (sender.kind === "gmail" && sender.userId) {
         await sendGmail({ userId: sender.userId, to: contact.email, subject: content.subject, html });
@@ -291,7 +290,7 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
               userId: sender.userId,
               activityType: "EMAIL_SENT",
               subject: content.subject,
-              description: body,
+              description: content.body,
               status: "PENDIENTE",
             },
           })

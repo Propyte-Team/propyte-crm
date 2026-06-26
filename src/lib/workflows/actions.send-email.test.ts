@@ -175,10 +175,10 @@ describe("SEND_EMAIL runner", () => {
     expect(sendSmtpEmail).not.toHaveBeenCalled();
   });
 
-  it("appends emailSignatureHtml to body before sending", async () => {
+  it("appends emailSignatureHtml to the sent html (SMTP path)", async () => {
     getConnectionStatus.mockResolvedValue({ connected: false });
     (prisma.userProfile.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-      emailSignatureHtml: "— Firma Corporativa",
+      emailSignatureHtml: '<div class="sig">— Firma Corporativa</div>',
     });
     await executeAction({
       id: "q7",
@@ -187,8 +187,29 @@ describe("SEND_EMAIL runner", () => {
       entityId: "c1",
       config: { subject: "Asunto", body: "Cuerpo sin firma." },
     } as never);
-    const call = (prisma.activity.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(call.data.description).toContain("— Firma Corporativa");
+    const sent = sendSmtpEmail.mock.calls[0][0];
+    expect(sent.html).toContain('<div class="sig">— Firma Corporativa</div>');
+    // Activity.description guarda solo el texto del cuerpo (la firma es boilerplate)
+    const act = (prisma.activity.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(act.data.description).toBe("Cuerpo sin firma.");
+    expect(act.data.description).not.toContain("Firma Corporativa");
+  });
+
+  it("la firma HTML NO se escapa (llega con tags crudos)", async () => {
+    getConnectionStatus.mockResolvedValue({ connected: true });
+    (prisma.userProfile.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      emailSignatureHtml: '<div class="sig">— Ana</div>',
+    });
+    await executeAction({
+      id: "q9",
+      actionType: "SEND_EMAIL",
+      entityType: "contact",
+      entityId: "c1",
+      config: { subject: "S", body: "Cuerpo" },
+    } as never);
+    const arg = sendGmail.mock.calls[0][0];
+    expect(arg.html).toContain('<div class="sig">'); // crudo, no escapado
+    expect(arg.html).not.toContain("&lt;div");
   });
 
   it("does not create Activity when SMTP send has no owner", async () => {
