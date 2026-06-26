@@ -10,7 +10,8 @@
 //   Se usa parseConditions / buildConditionsTree de builder-model para la conversión.
 
 import { useState } from "react";
-import type { RuleDraft, Conditions } from "@/lib/journey/rule-draft";
+import type { RuleDraft, Conditions, NodeDraft, DecisionNodeDraft } from "@/lib/journey/rule-draft";
+import { isDecisionDraft } from "@/lib/journey/rule-draft";
 import { workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 import { ConditionTreeEditor } from "@/components/config/condition-tree";
 import {
@@ -23,10 +24,12 @@ import {
   triggerFieldsFor,
   type FieldDef,
 } from "@/lib/journey/node-catalog";
+import { DecisionInspector } from "./decision-inspector";
 
 interface Ops {
   addAction: (type: string) => void;
   removeAction: (nodeId: string) => void;
+  removeNode?: (nodeId: string) => void;
   reorderAction: (nodeId: string, dir: "up" | "down") => void;
   setActionConfig: (nodeId: string, patch: Record<string, unknown>) => void;
   setActionType: (nodeId: string, type: string) => void;
@@ -44,12 +47,32 @@ interface Ops {
       >
     >
   ) => void;
+  // Decision ops (wired in T12 — optional here so journey-map-view compiles before T12)
+  addDecision?: () => void;
+  setDecisionLabel?: (nodeId: string, label: string) => void;
+  addBranch?: (decisionNodeId: string) => void;
+  removeBranch?: (branchId: string) => void;
+  setBranchLabel?: (branchId: string, label: string) => void;
+  setBranchConditions?: (branchId: string, c: RuleDraft["conditions"]) => void;
 }
 
 interface RuleInspectorPanelProps {
   draft: RuleDraft;
   selectedId: string | null;
   ops: Ops;
+}
+
+// ─── Recursive node finder (tree-aware) ──────────────────────────────────────
+
+function findNode(nodes: NodeDraft[], id: string): NodeDraft | undefined {
+  for (const n of nodes) {
+    if (n.nodeId === id) return n;
+    if (isDecisionDraft(n)) {
+      for (const b of n.branches) { const f = findNode(b.steps, id); if (f) return f; }
+      if (n.else) { const f = findNode(n.else, id); if (f) return f; }
+    }
+  }
+  return undefined;
 }
 
 // ─── Adapter: Conditions (DSL) ↔ ConditionTree (builder-model UI) ────────────
@@ -145,9 +168,9 @@ export function RuleInspectorPanel({
   selectedId,
   ops,
 }: RuleInspectorPanelProps) {
-  const action = selectedId?.startsWith("a")
-    ? draft.actions.find((a) => a.nodeId === selectedId)
-    : undefined;
+  const selected = selectedId ? findNode(draft.actions, selectedId) : undefined;
+  const decision = selected && isDecisionDraft(selected) ? (selected as DecisionNodeDraft) : undefined;
+  const action = selected && !isDecisionDraft(selected) ? selected : undefined;
 
   // ── Trigger node ────────────────────────────────────────────────────────────
   if (selectedId === "trigger") {
@@ -234,6 +257,18 @@ export function RuleInspectorPanel({
     );
   }
 
+  // ── Decision node ────────────────────────────────────────────────────────────
+  if (decision) {
+    const decisionOps = {
+      setDecisionLabel: ops.setDecisionLabel ?? (() => {}),
+      addBranch: ops.addBranch ?? (() => {}),
+      removeBranch: ops.removeBranch ?? (() => {}),
+      setBranchLabel: ops.setBranchLabel ?? (() => {}),
+      setBranchConditions: ops.setBranchConditions ?? (() => {}),
+    };
+    return <DecisionInspector decision={decision} ops={decisionOps} />;
+  }
+
   // ── Action node ──────────────────────────────────────────────────────────────
   if (action) {
     return (
@@ -309,7 +344,7 @@ export function RuleInspectorPanel({
           </button>
           <button
             className="btn-secondary"
-            onClick={() => ops.removeAction(action.nodeId)}
+            onClick={() => (ops.removeNode ?? ops.removeAction)(action.nodeId)}
           >
             Borrar
           </button>
@@ -356,6 +391,11 @@ export function RuleInspectorPanel({
       <button className="btn-secondary" onClick={() => ops.addAction("NOTIFY")}>
         + Añadir acción
       </button>
+      {ops.addDecision && (
+        <button type="button" className="btn-secondary" onClick={() => ops.addDecision!()}>
+          + Añadir decisión
+        </button>
+      )}
     </aside>
   );
 }
