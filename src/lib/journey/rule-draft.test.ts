@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction, type NodeDraft, type ActionNodeDraft } from "./rule-draft";
+
+const asAction = (n: NodeDraft) => n as ActionNodeDraft;
 
 const ROW: RuleRow = {
   id: "r1",
@@ -87,23 +89,23 @@ describe("ops puras", () => {
 
   it("removeAction quita y reindexa nodeIds", () => {
     const d = removeAction(base, "a1");
-    expect(d.actions.map((a) => a.type)).toEqual(["SEND_WHATSAPP", "CHANGE_STAGE"]);
+    expect(d.actions.map((a) => asAction(a).type)).toEqual(["SEND_WHATSAPP", "CHANGE_STAGE"]);
     expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1"]);
   });
 
   it("reorderAction up mueve y reindexa", () => {
     const d = reorderAction(base, "a1", "up");
-    expect(d.actions.map((a) => a.type)).toEqual(["ASSIGN", "SEND_WHATSAPP", "CHANGE_STAGE"]);
+    expect(d.actions.map((a) => asAction(a).type)).toEqual(["ASSIGN", "SEND_WHATSAPP", "CHANGE_STAGE"]);
     expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1", "a2"]);
   });
 
   it("reorderAction en el borde es no-op", () => {
-    expect(reorderAction(base, "a0", "up").actions.map((a) => a.type)).toEqual(base.actions.map((a) => a.type));
+    expect(reorderAction(base, "a0", "up").actions.map((a) => asAction(a).type)).toEqual(base.actions.map((a) => asAction(a).type));
   });
 
   it("setActionConfig hace merge superficial del config", () => {
     const d = setActionConfig(base, "a0", { template: "promo" });
-    expect(d.actions[0].config).toEqual({ template: "promo" });
+    expect(asAction(d.actions[0]).config).toEqual({ template: "promo" });
   });
 
   it("setActionType cambia el tipo y limpia el config (evita config huÃ©rfano)", () => {
@@ -113,8 +115,8 @@ describe("ops puras", () => {
 
   it("setActionDelay fija delayMinutes en la acciÃ³n (no en config)", () => {
     const d = setActionDelay(base, "a0", 15);
-    expect(d.actions[0].delayMinutes).toBe(15);
-    expect(d.actions[0].config).toEqual({ template: "bienvenida" });
+    expect(asAction(d.actions[0]).delayMinutes).toBe(15);
+    expect(asAction(d.actions[0]).config).toEqual({ template: "bienvenida" });
   });
 
   it("setTrigger reemplaza tipo y config", () => {
@@ -148,15 +150,15 @@ describe("insertAction", () => {
 
   it("inserta en el medio y reindexa nodeIds", () => {
     const d = insertAction(base, "NOTIFY", 1);
-    expect(d.actions.map((a) => a.type)).toEqual(["SEND_WHATSAPP", "NOTIFY", "ASSIGN", "CHANGE_STAGE"]);
+    expect(d.actions.map((a) => asAction(a).type)).toEqual(["SEND_WHATSAPP", "NOTIFY", "ASSIGN", "CHANGE_STAGE"]);
     expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1", "a2", "a3"]);
-    expect(d.actions[1].config).toEqual({});
+    expect(asAction(d.actions[1]).config).toEqual({});
     expect(base.actions.length).toBe(3); // inmutable
   });
 
   it("atIndex=0 inserta al inicio; atIndex>=length inserta al final (clamp)", () => {
-    expect(insertAction(base, "ADD_TAG", 0).actions[0].type).toBe("ADD_TAG");
-    expect(insertAction(base, "ADD_TAG", 99).actions.at(-1)!.type).toBe("ADD_TAG");
+    expect(asAction(insertAction(base, "ADD_TAG", 0).actions[0]).type).toBe("ADD_TAG");
+    expect(asAction(insertAction(base, "ADD_TAG", 99).actions.at(-1)!).type).toBe("ADD_TAG");
   });
 });
 
@@ -185,29 +187,29 @@ describe("rule-draft Ã¡rbol round-trip", () => {
   });
 });
 
-describe("rule-draft ops de árbol", () => {
-  it("addAction agrega al nivel raíz", () => {
+describe("rule-draft ops de ï¿½rbol", () => {
+  it("addAction agrega al nivel raï¿½z", () => {
     const d = addAction(newRuleDraft(), "ADD_TAG");
     expect(d.actions.at(-1)).toMatchObject({ type: "ADD_TAG" });
   });
 
-  it("addAction NO tira nodos de decisión existentes", () => {
-    let d = addDecision(newRuleDraft());      // raíz: [a0 acción, a1 decisión]
+  it("addAction NO tira nodos de decisiï¿½n existentes", () => {
+    let d = addDecision(newRuleDraft());      // raï¿½z: [a0 acciï¿½n, a1 decisiï¿½n]
     const before = d.actions.filter((n) => n.kind === "decision").length;
     d = addAction(d, "NOTIFY");
     const after = d.actions.filter((n) => n.kind === "decision").length;
-    expect(after).toBe(before);               // la decisión sobrevive
+    expect(after).toBe(before);               // la decisiï¿½n sobrevive
     expect(before).toBe(1);
   });
 
-  it("addDecision agrega un nodo decisión con una rama vacía", () => {
+  it("addDecision agrega un nodo decisiï¿½n con una rama vacï¿½a", () => {
     const d = addDecision(newRuleDraft());
     const dec = d.actions.at(-1) as { kind: string; branches: unknown[] };
     expect(dec.kind).toBe("decision");
     expect(dec.branches).toHaveLength(1);
   });
 
-  it("addBranch agrega rama a una decisión por nodeId", () => {
+  it("addBranch agrega rama a una decisiï¿½n por nodeId", () => {
     let d = addDecision(newRuleDraft());
     const decId = (d.actions.at(-1) as { nodeId: string }).nodeId;
     d = addBranch(d, decId);
@@ -225,14 +227,14 @@ describe("rule-draft ops de árbol", () => {
     expect(b.conditions).toMatchObject({ field: "adAttribution.network" });
   });
 
-  it("removeNode elimina un nodo en cualquier nivel y reindexa raíz", () => {
+  it("removeNode elimina un nodo en cualquier nivel y reindexa raï¿½z", () => {
     let d = addAction(newRuleDraft(), "NOTIFY"); // a0 (CHANGE_STAGE), a1 (NOTIFY)
     d = removeNode(d, "a0");
     expect(d.actions).toHaveLength(1);
     expect(d.actions[0].nodeId).toBe("a0"); // reindexado
   });
 
-  it("removeBranch quita una rama; si queda 0, deja la decisión con 1 rama vacía", () => {
+  it("removeBranch quita una rama; si queda 0, deja la decisiï¿½n con 1 rama vacï¿½a", () => {
     let d = addDecision(newRuleDraft());
     let dec = d.actions.at(-1) as { nodeId: string; branches: { branchId: string }[] };
     d = addBranch(d, dec.nodeId);
