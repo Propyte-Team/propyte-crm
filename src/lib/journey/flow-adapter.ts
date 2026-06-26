@@ -4,7 +4,7 @@ import type { GeneralView, TargetedView } from "./journey-map";
 import { LIFECYCLE_LABELS } from "@/lib/constants";
 
 export interface RFNode { id: string; type: string; position: { x: number; y: number }; data: Record<string, unknown> }
-export interface RFEdge { id: string; source: string; target: string }
+export interface RFEdge { id: string; source: string; target: string; data?: Record<string, unknown> }
 export interface Flow { nodes: RFNode[]; edges: RFEdge[] }
 export type Positions = Record<string, { x: number; y: number }>;
 

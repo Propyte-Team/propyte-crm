@@ -164,28 +164,49 @@ function conditionsEmpty(c: Conditions): boolean {
 export function draftToFlow(draft: RuleDraft): Flow {
   const nodes: RFNode[] = [];
   const edges: RFEdge[] = [];
-  let x = 0;
-  const push = (id: string, type: string, data: Record<string, unknown>) => {
-    nodes.push({ id, type, position: { x: x * LANE_W, y: 0 }, data });
-    x++;
+  let col = 0;
+  const place = (id: string, type: string, data: Record<string, unknown>, depth: number) => {
+    nodes.push({ id, type, position: { x: col * LANE_W, y: depth * 90 }, data });
+    col++;
   };
-  push("trigger", "trigger", { triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, label: draft.name });
+
+  place("trigger", "trigger", { triggerType: draft.triggerType, triggerConfig: draft.triggerConfig, label: draft.name }, 0);
+  let lastLinear = "trigger";
   if (!conditionsEmpty(draft.conditions)) {
-    push("condition", "condition", { conditions: draft.conditions });
+    place("condition", "condition", { conditions: draft.conditions }, 0);
+    edges.push({ id: `trigger->condition`, source: "trigger", target: "condition" });
+    lastLinear = "condition";
   }
-  for (const n of draft.actions) {
-    if (isDecisionDraft(n)) {
-      // Decision nodes: flat representation for legacy flow (T8 will rewrite)
-      push(n.nodeId, "decision", { label: n.label, branches: n.branches });
-    } else {
-      const a = n as ActionNodeDraft;
-      const isStage = a.type === "CHANGE_STAGE";
-      push(a.nodeId, isStage ? "stage" : "action", { actionType: a.type, config: a.config, delayMinutes: a.delayMinutes });
-    }
+
+  // Encadena `list` a partir de `parentId`. `firstEdgeLabel` etiqueta SOLO la arista
+  // que conecta el primer nodo de la lista (para nombrar la rama de una decisión).
+  function emit(list: NodeDraft[], parentId: string, depth: number, firstEdgeLabel?: string): string {
+    let prev = parentId;
+    list.forEach((n, idx) => {
+      const linkLabel = idx === 0 ? firstEdgeLabel : undefined;
+      const edge = (target: string): RFEdge => ({
+        id: `${prev}->${target}`, source: prev, target,
+        ...(linkLabel ? { data: { label: linkLabel } } : {}),
+      });
+      if (isDecisionDraft(n)) {
+        place(n.nodeId, "decision", { label: n.label ?? "Decisión" }, depth);
+        edges.push(edge(n.nodeId));
+        n.branches.forEach((b) => {
+          if (b.steps.length > 0) emit(b.steps, n.nodeId, depth + 1, b.label ?? "rama");
+        });
+        if (n.else && n.else.length > 0) emit(n.else, n.nodeId, depth + 1, "por defecto");
+        prev = n.nodeId; // tras una decisión, el hermano siguiente cuelga de la decisión
+      } else {
+        const isStage = n.type === "CHANGE_STAGE";
+        place(n.nodeId, isStage ? "stage" : "action", { actionType: n.type, config: n.config, delayMinutes: n.delayMinutes }, depth);
+        edges.push(edge(n.nodeId));
+        prev = n.nodeId;
+      }
+    });
+    return prev;
   }
-  for (let i = 1; i < nodes.length; i++) {
-    edges.push({ id: `${nodes[i - 1].id}->${nodes[i].id}`, source: nodes[i - 1].id, target: nodes[i].id });
-  }
+
+  emit(draft.actions, lastLinear, 1);
   return { nodes, edges };
 }
 

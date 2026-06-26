@@ -243,3 +243,34 @@ describe("rule-draft ops de �rbol", () => {
     expect((d.actions.at(-1) as { branches: unknown[] }).branches).toHaveLength(1);
   });
 });
+
+describe("draftToFlow árbol", () => {
+  it("una decisión produce un nodo 'decision' y una arista por rama", () => {
+    const draft = ruleToDraft({
+      id: "r1", name: "x", description: null, triggerType: "EVENT", triggerConfig: {}, conditions: {},
+      cooldownMinutes: null, priority: 100, isActive: false,
+      actions: [{ kind: "decision", label: "Origen", branches: [
+        { label: "META", conditions: {}, steps: [{ type: "ASSIGN", config: {} }] },
+        { label: "WEB", conditions: {}, steps: [{ type: "NOTIFY", config: {} }] },
+      ] }],
+    } as never);
+    const flow = draftToFlow(draft);
+    expect(flow.nodes.some((n) => n.type === "decision")).toBe(true);
+    const decId = flow.nodes.find((n) => n.type === "decision")!.id;
+    const out = flow.edges.filter((e) => e.source === decId);
+    expect(out.length).toBe(2); // exactamente una arista por rama
+    // las aristas de rama llevan data.label
+    expect(out.every((e) => typeof (e.data as { label?: string })?.label === "string")).toBe(true);
+  });
+
+  it("una regla plana (sin decisión) sigue produciendo trigger + acciones encadenadas", () => {
+    const draft = ruleToDraft({
+      id: "r2", name: "y", description: null, triggerType: "EVENT", triggerConfig: {}, conditions: {},
+      cooldownMinutes: null, priority: 100, isActive: false,
+      actions: [{ type: "ADD_TAG", config: {} }, { type: "ASSIGN", config: {} }],
+    } as never);
+    const flow = draftToFlow(draft);
+    expect(flow.nodes.find((n) => n.id === "trigger")).toBeTruthy();
+    expect(flow.nodes.filter((n) => n.type === "action" || n.type === "stage").length).toBe(2);
+  });
+});
