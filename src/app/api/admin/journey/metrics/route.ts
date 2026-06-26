@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
+import { windowSchema, cutoffFromWindow } from "./route-helpers";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
-const windowSchema = z.enum(["7", "30", "90", "all"]);
-
-// PURA y exportada para test: ventana → fecha de corte (null = todo).
-export function cutoffFromWindow(window: z.infer<typeof windowSchema>, nowMs: number): Date | null {
-  if (window === "all") return null;
-  return new Date(nowMs - Number(window) * 86_400_000);
-}
 
 export async function GET(req: Request) {
   const session = await getServerSession();

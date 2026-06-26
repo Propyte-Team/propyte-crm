@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cutoffFromWindow } from "./route";
+import { cutoffFromWindow } from "./route-helpers";
 
 describe("cutoffFromWindow", () => {
   it("'all' → null", () => {

@@ -11,6 +11,7 @@ import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
 import { buildGeneralView, buildTargetedView, extractCampaigns, type RuleLite, type PlanLite } from "@/lib/journey/journey-map";
 import { generalToFlow, targetedToFlow, applyPositions, type Positions } from "@/lib/journey/flow-adapter";
 import { draftToFlow, type RuleRow } from "@/lib/journey/rule-draft";
+import { computeNodeMetrics, type RawMetrics, type NodeMetrics } from "@/lib/journey/node-metrics";
 import { labelFor, summaryFor } from "@/lib/journey/node-catalog";
 import { useRuleDraft } from "./use-rule-draft";
 import { RuleInspectorPanel } from "./rule-inspector-panel";
@@ -24,7 +25,9 @@ const EDGE_TYPES: EdgeTypes = { insert: InsertEdge as EdgeTypes[string] };
 
 // ─── Decision (diamond) node ──────────────────────────────────────────────────
 function DecisionNode({ data }: NodeProps) {
-  const label = (data as Record<string, unknown>).label as string | undefined;
+  const d = data as Record<string, unknown>;
+  const label = d.label as string | undefined;
+  const metricVolume = d.metricVolume as number | undefined;
   return (
     // Outer wrapper: provides a solid background so the canvas grid doesn't bleed
     // through the diamond's bounding-box corners. Selection outline is applied by
@@ -34,6 +37,7 @@ function DecisionNode({ data }: NodeProps) {
         width: 80, height: 80,
         background: "var(--card, #fff)",
         display: "flex", alignItems: "center", justifyContent: "center",
+        position: "relative",
       }}
     >
       <div
@@ -51,6 +55,11 @@ function DecisionNode({ data }: NodeProps) {
         </span>
         <Handle type="source" position={Position.Bottom} style={{ transform: "rotate(-45deg)", background: "#555" }} />
       </div>
+      {typeof metricVolume === "number" && (
+        <span style={{ position: "absolute", top: -8, right: -8, background: "#0a0a0a", color: "#fff", borderRadius: 10, fontSize: 11, padding: "1px 7px", pointerEvents: "none", zIndex: 10 }}>
+          {metricVolume}
+        </span>
+      )}
     </div>
   );
 }
@@ -103,7 +112,29 @@ export function JourneyMapView() {
   const [paletteAt, setPaletteAt] = useState<number | null>(null);
   const editing = draft !== null;
 
+  // ─── Metrics overlay state ────────────────────────────────────────────────────
+  const [metricsOn, setMetricsOn] = useState(false);
+  const [metricsWindow, setMetricsWindow] = useState<"7" | "30" | "90" | "all">("30");
+  const [metrics, setMetrics] = useState<NodeMetrics | null>(null);
+  const [metricsTotal, setMetricsTotal] = useState(0);
+
   const scope = mode === "general" ? "general" : `targeted:${campaign}`;
+
+  // Fetch metrics when overlay is active and a saved rule is loaded.
+  useEffect(() => {
+    const ruleId = draft?.id;
+    if (!metricsOn || !ruleId) { setMetrics(null); return; }
+    let cancel = false;
+    fetch(`/api/admin/journey/metrics?ruleId=${encodeURIComponent(ruleId)}&window=${metricsWindow}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((raw: RawMetrics | null) => {
+        if (cancel || !raw) return;
+        setMetricsTotal(raw.total ?? 0);
+        setMetrics(computeNodeMetrics(draft, raw));
+      })
+      .catch(() => { if (!cancel) setMetrics(null); });
+    return () => { cancel = true; };
+  }, [metricsOn, metricsWindow, draft?.id, draft]);
 
   const refreshData = useCallback(() => {
     return fetch("/api/admin/automation").then((r) => r.json()).then((j) => {
@@ -142,15 +173,18 @@ export function JourneyMapView() {
     if (!draft) return;
     const flow = draftToFlow(draft);
     const editEdges = flow.edges.map((e) => {
-      const branchLabel = (e.data as { label?: string } | undefined)?.label;
+      const eData = e.data as { label?: string; branchId?: string } | undefined;
+      const branchLabel = eData?.label;
+      const split = metricsOn && metrics && eData?.branchId ? metrics.branchSplits[eData.branchId] : undefined;
+      const finalLabel = split ? `${branchLabel ?? ""} · ${split.pct}% · ${split.count}`.trimStart() : branchLabel;
       const m = /^a(\d+)$/.exec(e.target);
       return m
-        ? { ...e, type: "insert", label: branchLabel, data: { onInsert: () => setPaletteAt(Number(m[1])), label: branchLabel } }
-        : { ...e, label: branchLabel };
+        ? { ...e, type: "insert", label: finalLabel, data: { onInsert: () => setPaletteAt(Number(m[1])), label: finalLabel } }
+        : { ...e, label: finalLabel };
     });
     setNodes(flow.nodes as unknown as Node[]);
     setEdges(editEdges as unknown as Edge[]);
-  }, [draft, setNodes, setEdges]);
+  }, [draft, setNodes, setEdges, metricsOn, metrics]);
 
   const persist = useCallback((current: Node[]) => {
     const positions: Positions = {};
@@ -176,8 +210,13 @@ export function JourneyMapView() {
 
   const typedNodes = useMemo(() => nodes.map((n) => {
     const d = n.data as Record<string, unknown>;
-    return { ...n, data: { label: nodeLabel(n.type ?? "action", d) }, style: nodeStyle(n.type ?? "action", d, n.id === selectedId) };
-  }), [nodes, selectedId]);
+    const baseLabel = nodeLabel(n.type ?? "action", d);
+    const vol = metricsOn && metrics ? (metrics.nodeVolumes[n.id] ?? 0) : undefined;
+    const label = vol !== undefined && n.type !== "decision" ? `${vol} · ${baseLabel}` : baseLabel;
+    const data: Record<string, unknown> = { label };
+    if (n.type === "decision" && vol !== undefined) data.metricVolume = vol;
+    return { ...n, data, style: nodeStyle(n.type ?? "action", d, n.id === selectedId) };
+  }), [nodes, selectedId, metricsOn, metrics]);
 
   const onSelectRule = useCallback((id: string) => {
     const r = rules.find((x) => x.id === id);
@@ -240,6 +279,34 @@ export function JourneyMapView() {
                   />
                 )}
               </div>
+              {draft?.id && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setMetricsOn((v) => !v)}
+                    className={`rounded-md px-3 py-1 text-xs font-medium ${metricsOn ? "bg-neutral-900 text-white" : "border border-neutral-300"}`}
+                  >
+                    ● Métricas
+                  </button>
+                  {metricsOn && (
+                    <>
+                      <select
+                        className="rounded-md border border-neutral-300 px-2 py-1 text-xs bg-transparent"
+                        value={metricsWindow}
+                        onChange={(e) => setMetricsWindow(e.target.value as "7" | "30" | "90" | "all")}
+                      >
+                        <option value="7">7d</option>
+                        <option value="30">30d</option>
+                        <option value="90">90d</option>
+                        <option value="all">Todo</option>
+                      </select>
+                      <span className="text-xs text-neutral-500">
+                        {metricsTotal} contactos · {metricsWindow === "all" ? "histórico" : `${metricsWindow}d`}
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
             </>
           )}
         </div>

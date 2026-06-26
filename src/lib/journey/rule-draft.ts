@@ -180,21 +180,23 @@ export function draftToFlow(draft: RuleDraft): Flow {
 
   // Encadena `list` a partir de `parentId`. `firstEdgeLabel` etiqueta SOLO la arista
   // que conecta el primer nodo de la lista (para nombrar la rama de una decisión).
-  function emit(list: NodeDraft[], parentId: string, depth: number, firstEdgeLabel?: string): string {
+  // `firstEdgeBranchId` se añade al data de esa misma arista para el overlay de métricas.
+  function emit(list: NodeDraft[], parentId: string, depth: number, firstEdgeLabel?: string, firstEdgeBranchId?: string): string {
     let prev = parentId;
     list.forEach((n, idx) => {
       const linkLabel = idx === 0 ? firstEdgeLabel : undefined;
+      const linkBranchId = idx === 0 ? firstEdgeBranchId : undefined;
       const edge = (target: string): RFEdge => ({
         id: `${prev}->${target}`, source: prev, target,
-        ...(linkLabel ? { data: { label: linkLabel } } : {}),
+        ...(linkLabel || linkBranchId ? { data: { ...(linkLabel ? { label: linkLabel } : {}), ...(linkBranchId ? { branchId: linkBranchId } : {}) } } : {}),
       });
       if (isDecisionDraft(n)) {
         place(n.nodeId, "decision", { label: n.label ?? "Decisión" }, depth);
         edges.push(edge(n.nodeId));
-        n.branches.forEach((b) => {
-          if (b.steps.length > 0) emit(b.steps, n.nodeId, depth + 1, b.label ?? "rama");
+        n.branches.forEach((b, bi) => {
+          if (b.steps.length > 0) emit(b.steps, n.nodeId, depth + 1, b.label ?? "rama", `${n.nodeId}.b${bi}`);
         });
-        if (n.else && n.else.length > 0) emit(n.else, n.nodeId, depth + 1, "por defecto");
+        if (n.else && n.else.length > 0) emit(n.else, n.nodeId, depth + 1, "por defecto", `${n.nodeId}.else`);
         prev = n.nodeId; // tras una decisión, el hermano siguiente cuelga de la decisión
       } else {
         const isStage = n.type === "CHANGE_STAGE";
