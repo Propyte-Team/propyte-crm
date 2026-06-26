@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   type RuleDraft, type RuleRow, ruleToDraft, draftToRulePayload, newRuleDraft,
   addAction, insertAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta,
+  addDecision, removeNode, setDecisionLabel, addBranch, removeBranch, setBranchLabel, setBranchConditions, addActionToBranch,
   type Conditions,
 } from "@/lib/journey/rule-draft";
 
@@ -42,6 +43,15 @@ export function useRuleDraft() {
     setTrigger: (t: { triggerType: string; triggerConfig: Record<string, unknown> }) => setDraft((d) => (d ? setTrigger(d, t) : d)),
     setConditions: (c: Conditions) => setDraft((d) => (d ? setConditions(d, c) : d)),
     setMeta: (patch: Parameters<typeof setMeta>[1]) => setDraft((d) => (d ? setMeta(d, patch) : d)),
+    // Decision ops (T12)
+    addDecision: () => setDraft((d) => (d ? addDecision(d) : d)),
+    removeNode: (nodeId: string) => setDraft((d) => (d ? removeNode(d, nodeId) : d)),
+    setDecisionLabel: (nodeId: string, label: string) => setDraft((d) => (d ? setDecisionLabel(d, nodeId, label) : d)),
+    addBranch: (decisionNodeId: string) => setDraft((d) => (d ? addBranch(d, decisionNodeId) : d)),
+    removeBranch: (branchId: string) => setDraft((d) => (d ? removeBranch(d, branchId) : d)),
+    setBranchLabel: (branchId: string, label: string) => setDraft((d) => (d ? setBranchLabel(d, branchId, label) : d)),
+    setBranchConditions: (branchId: string, c: Conditions) => setDraft((d) => (d ? setBranchConditions(d, branchId, c) : d)),
+    addActionToBranch: (branchId: string, type: string) => setDraft((d) => (d ? addActionToBranch(d, branchId, type) : d)),
   }), []);
 
   const save = useCallback(async (): Promise<boolean> => {

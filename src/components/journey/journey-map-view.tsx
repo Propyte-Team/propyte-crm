@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState,
-  type Node, type Edge, type EdgeTypes,
+  Handle, Position,
+  type Node, type Edge, type EdgeTypes, type NodeTypes, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
@@ -20,6 +21,32 @@ type Mode = "general" | "targeted";
 
 // Stable module-scope reference so ReactFlow doesn't remount on render
 const EDGE_TYPES: EdgeTypes = { insert: InsertEdge as EdgeTypes[string] };
+
+// ─── Decision (diamond) node ──────────────────────────────────────────────────
+function DecisionNode({ data, selected }: NodeProps) {
+  const label = (data as Record<string, unknown>).label as string | undefined;
+  const sel = selected ? { outline: "2px solid #0a0a0a", outlineOffset: 2 } : {};
+  return (
+    <div
+      style={{
+        width: 80, height: 80,
+        transform: "rotate(45deg)",
+        background: "#7c3aed",
+        borderRadius: 6,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        ...sel,
+      }}
+    >
+      <Handle type="target" position={Position.Top} style={{ transform: "rotate(-45deg)", background: "#555" }} />
+      <span style={{ transform: "rotate(-45deg)", color: "#fff", fontSize: 10, fontWeight: 600, textAlign: "center", padding: "0 4px", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label ?? "Decisión"}
+      </span>
+      <Handle type="source" position={Position.Bottom} style={{ transform: "rotate(-45deg)", background: "#555" }} />
+    </div>
+  );
+}
+
+const NODE_TYPES: NodeTypes = { decision: DecisionNode as NodeTypes[string] };
 
 function nodeStyle(type: string, data: Record<string, unknown>, selected: boolean): React.CSSProperties {
   const dim = data.isActive === false ? 0.5 : 1;
@@ -106,10 +133,11 @@ export function JourneyMapView() {
     if (!draft) return;
     const flow = draftToFlow(draft);
     const editEdges = flow.edges.map((e) => {
+      const branchLabel = (e.data as { label?: string } | undefined)?.label;
       const m = /^a(\d+)$/.exec(e.target);
       return m
-        ? { ...e, type: "insert", data: { onInsert: () => setPaletteAt(Number(m[1])) } }
-        : e;
+        ? { ...e, type: "insert", label: branchLabel, data: { onInsert: () => setPaletteAt(Number(m[1])), label: branchLabel } }
+        : { ...e, label: branchLabel };
     });
     setNodes(flow.nodes as unknown as Node[]);
     setEdges(editEdges as unknown as Edge[]);
@@ -199,6 +227,7 @@ export function JourneyMapView() {
                   <NodePalette
                     onPick={(type) => { ops.insertAction(type, paletteAt); setPaletteAt(null); }}
                     onClose={() => setPaletteAt(null)}
+                    onAddDecision={() => { ops.addDecision(); setPaletteAt(null); }}
                   />
                 )}
               </div>
@@ -215,6 +244,7 @@ export function JourneyMapView() {
             onPaneClick={() => setSelectedId(null)}
             nodesConnectable={false} deleteKeyCode={null} fitView proOptions={{ hideAttribution: true }}
             edgeTypes={EDGE_TYPES}
+            nodeTypes={NODE_TYPES}
           >
             <Background />
             <Controls />

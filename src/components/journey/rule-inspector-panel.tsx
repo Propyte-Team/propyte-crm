@@ -29,7 +29,6 @@ import { DecisionInspector } from "./decision-inspector";
 interface Ops {
   addAction: (type: string) => void;
   removeAction: (nodeId: string) => void;
-  removeNode?: (nodeId: string) => void;
   reorderAction: (nodeId: string, dir: "up" | "down") => void;
   setActionConfig: (nodeId: string, patch: Record<string, unknown>) => void;
   setActionType: (nodeId: string, type: string) => void;
@@ -47,13 +46,14 @@ interface Ops {
       >
     >
   ) => void;
-  // Decision ops (wired in T12 — optional here so journey-map-view compiles before T12)
-  addDecision?: () => void;
-  setDecisionLabel?: (nodeId: string, label: string) => void;
-  addBranch?: (decisionNodeId: string) => void;
-  removeBranch?: (branchId: string) => void;
-  setBranchLabel?: (branchId: string, label: string) => void;
-  setBranchConditions?: (branchId: string, c: RuleDraft["conditions"]) => void;
+  // Decision ops (wired in T12)
+  addDecision: () => void;
+  removeNode: (nodeId: string) => void;
+  setDecisionLabel: (nodeId: string, label: string) => void;
+  addBranch: (decisionNodeId: string) => void;
+  removeBranch: (branchId: string) => void;
+  setBranchLabel: (branchId: string, label: string) => void;
+  setBranchConditions: (branchId: string, c: RuleDraft["conditions"]) => void;
 }
 
 interface RuleInspectorPanelProps {
@@ -260,11 +260,11 @@ export function RuleInspectorPanel({
   // ── Decision node ────────────────────────────────────────────────────────────
   if (decision) {
     const decisionOps = {
-      setDecisionLabel: ops.setDecisionLabel ?? (() => {}),
-      addBranch: ops.addBranch ?? (() => {}),
-      removeBranch: ops.removeBranch ?? (() => {}),
-      setBranchLabel: ops.setBranchLabel ?? (() => {}),
-      setBranchConditions: ops.setBranchConditions ?? (() => {}),
+      setDecisionLabel: ops.setDecisionLabel,
+      addBranch: ops.addBranch,
+      removeBranch: ops.removeBranch,
+      setBranchLabel: ops.setBranchLabel,
+      setBranchConditions: ops.setBranchConditions,
     };
     return <DecisionInspector decision={decision} ops={decisionOps} />;
   }
@@ -344,7 +344,7 @@ export function RuleInspectorPanel({
           </button>
           <button
             className="btn-secondary"
-            onClick={() => (ops.removeNode ?? ops.removeAction)(action.nodeId)}
+            onClick={() => ops.removeNode(action.nodeId)}
           >
             Borrar
           </button>
@@ -391,11 +391,9 @@ export function RuleInspectorPanel({
       <button className="btn-secondary" onClick={() => ops.addAction("NOTIFY")}>
         + Añadir acción
       </button>
-      {ops.addDecision && (
-        <button type="button" className="btn-secondary" onClick={() => ops.addDecision!()}>
-          + Añadir decisión
-        </button>
-      )}
+      <button type="button" className="btn-secondary" onClick={() => ops.addDecision()}>
+        + Añadir decisión
+      </button>
     </aside>
   );
 }
