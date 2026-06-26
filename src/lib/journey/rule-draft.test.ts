@@ -159,3 +159,28 @@ describe("insertAction", () => {
     expect(insertAction(base, "ADD_TAG", 99).actions.at(-1)!.type).toBe("ADD_TAG");
   });
 });
+
+const rowConDecision = {
+  id: "r1", name: "Ramas", description: null, triggerType: "EVENT", triggerConfig: {},
+  conditions: {}, cooldownMinutes: null, priority: 100, isActive: false,
+  actions: [
+    { type: "ADD_TAG", config: { tag: "nuevo" } },
+    { kind: "decision", label: "Por origen", branches: [
+      { label: "META", conditions: { field: "adAttribution.network", op: "eq", value: "meta" }, steps: [{ type: "ASSIGN", config: {} }] },
+    ], else: [{ type: "NOTIFY", config: {} }] },
+  ],
+};
+
+describe("rule-draft árbol round-trip", () => {
+  it("ruleToDraft → draftToRulePayload preserva el árbol (sin nodeId/branchId)", () => {
+    const draft = ruleToDraft(rowConDecision as never);
+    const payload = draftToRulePayload(draft);
+    expect(payload.actions).toEqual(rowConDecision.actions);
+  });
+
+  it("asigna nodeId estables al nivel raíz (a0, a1)", () => {
+    const draft = ruleToDraft(rowConDecision as never);
+    expect(draft.actions[0].nodeId).toBe("a0");
+    expect(draft.actions[1].nodeId).toBe("a1");
+  });
+});

@@ -1,6 +1,7 @@
 // Núcleo puro del canvas editable (C.2-i2). Sin React, sin React Flow.
 // El draft tiene la MISMA forma que AutomationRule → round-trip exacto.
 import { conditionsDslSchema } from "@/lib/validations/rebuild-f1";
+import type { WorkflowNode } from "@/lib/validations/rebuild-f1";
 import type { z } from "zod";
 import type { Flow, RFNode, RFEdge } from "./flow-adapter";
 
@@ -13,18 +14,46 @@ export interface RuleRow {
   triggerType: string;
   triggerConfig: Record<string, unknown>;
   conditions: Conditions;
-  actions: { type: string; config?: Record<string, unknown>; delayMinutes?: number }[];
+  actions: WorkflowNode[];
   cooldownMinutes: number | null;
   priority: number;
   isActive: boolean;
 }
 
-export interface ActionDraft {
+// ─── Draft tree types ─────────────────────────────────────────────────────────
+
+export interface ActionNodeDraft {
   nodeId: string;
+  kind?: "action";
   type: string;
   config: Record<string, unknown>;
   delayMinutes?: number;
+  autonomyLevel?: string;
 }
+
+export interface BranchDraft {
+  branchId: string;
+  label?: string;
+  conditions: Conditions;
+  steps: NodeDraft[];
+}
+
+export interface DecisionNodeDraft {
+  nodeId: string;
+  kind: "decision";
+  label?: string;
+  branches: BranchDraft[];
+  else?: NodeDraft[];
+}
+
+export type NodeDraft = ActionNodeDraft | DecisionNodeDraft;
+
+export function isDecisionDraft(n: NodeDraft): n is DecisionNodeDraft {
+  return n.kind === "decision";
+}
+
+/** @deprecated Use NodeDraft instead. Kept for backward compat until T8/T9. */
+export type ActionDraft = ActionNodeDraft;
 
 export interface RuleDraft {
   id?: string;
@@ -33,7 +62,7 @@ export interface RuleDraft {
   triggerType: string;
   triggerConfig: Record<string, unknown>;
   conditions: Conditions;
-  actions: ActionDraft[];
+  actions: NodeDraft[];
   cooldownMinutes: number | null;
   priority: number;
   isActive: boolean;
@@ -46,11 +75,64 @@ export interface RulePayload {
   triggerType: string;
   triggerConfig: Record<string, unknown>;
   conditions: Conditions;
-  actions: { type: string; config: Record<string, unknown>; delayMinutes?: number }[];
+  actions: WorkflowNode[];
   cooldownMinutes: number | null;
   priority: number;
   isActive: boolean;
 }
+
+// ─── Recursive helpers ────────────────────────────────────────────────────────
+
+function nodeToDraft(node: WorkflowNode, path: string): NodeDraft {
+  if ((node as { kind?: string }).kind === "decision") {
+    const d = node as Extract<WorkflowNode, { kind: "decision" }>;
+    return {
+      nodeId: path,
+      kind: "decision",
+      ...(d.label !== undefined ? { label: d.label } : {}),
+      branches: d.branches.map((b, bi) => ({
+        branchId: `${path}.b${bi}`,
+        ...(b.label !== undefined ? { label: b.label } : {}),
+        conditions: (b.conditions ?? {}) as Conditions,
+        steps: b.steps.map((s, si) => nodeToDraft(s, `${path}.b${bi}.${si}`)),
+      })),
+      ...(d.else ? { else: d.else.map((s, si) => nodeToDraft(s, `${path}.else.${si}`)) } : {}),
+    };
+  }
+  const a = node as Extract<WorkflowNode, { type: string }>;
+  return {
+    nodeId: path,
+    type: a.type,
+    config: (a.config ?? {}) as Record<string, unknown>,
+    ...(a.delayMinutes !== undefined ? { delayMinutes: a.delayMinutes } : {}),
+    ...((a as { autonomyLevel?: string }).autonomyLevel !== undefined
+      ? { autonomyLevel: (a as { autonomyLevel?: string }).autonomyLevel }
+      : {}),
+  };
+}
+
+function draftToNode(n: NodeDraft): WorkflowNode {
+  if (isDecisionDraft(n)) {
+    return {
+      kind: "decision",
+      ...(n.label !== undefined ? { label: n.label } : {}),
+      branches: n.branches.map((b) => ({
+        ...(b.label !== undefined ? { label: b.label } : {}),
+        conditions: b.conditions,
+        steps: b.steps.map(draftToNode),
+      })),
+      ...(n.else ? { else: n.else.map(draftToNode) } : {}),
+    } as WorkflowNode;
+  }
+  return {
+    type: n.type,
+    config: n.config,
+    ...(n.delayMinutes !== undefined ? { delayMinutes: n.delayMinutes } : {}),
+    ...(n.autonomyLevel !== undefined ? { autonomyLevel: n.autonomyLevel } : {}),
+  } as WorkflowNode;
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 export function ruleToDraft(row: RuleRow): RuleDraft {
   return {
@@ -60,12 +142,9 @@ export function ruleToDraft(row: RuleRow): RuleDraft {
     triggerType: row.triggerType,
     triggerConfig: row.triggerConfig ?? {},
     conditions: row.conditions ?? {},
-    actions: (Array.isArray(row.actions) ? row.actions : []).map((a, i) => ({
-      nodeId: `a${i}`,
-      type: a.type,
-      config: a.config ?? {},
-      ...(a.delayMinutes !== undefined ? { delayMinutes: a.delayMinutes } : {}),
-    })),
+    actions: (Array.isArray(row.actions) ? row.actions : []).map((n, i) =>
+      nodeToDraft(n, `a${i}`),
+    ),
     cooldownMinutes: row.cooldownMinutes,
     priority: row.priority,
     isActive: row.isActive,
@@ -94,9 +173,15 @@ export function draftToFlow(draft: RuleDraft): Flow {
   if (!conditionsEmpty(draft.conditions)) {
     push("condition", "condition", { conditions: draft.conditions });
   }
-  for (const a of draft.actions) {
-    const isStage = a.type === "CHANGE_STAGE";
-    push(a.nodeId, isStage ? "stage" : "action", { actionType: a.type, config: a.config, delayMinutes: a.delayMinutes });
+  for (const n of draft.actions) {
+    if (isDecisionDraft(n)) {
+      // Decision nodes: flat representation for legacy flow (T8 will rewrite)
+      push(n.nodeId, "decision", { label: n.label, branches: n.branches });
+    } else {
+      const a = n as ActionNodeDraft;
+      const isStage = a.type === "CHANGE_STAGE";
+      push(a.nodeId, isStage ? "stage" : "action", { actionType: a.type, config: a.config, delayMinutes: a.delayMinutes });
+    }
   }
   for (let i = 1; i < nodes.length; i++) {
     edges.push({ id: `${nodes[i - 1].id}->${nodes[i].id}`, source: nodes[i - 1].id, target: nodes[i].id });
@@ -104,33 +189,43 @@ export function draftToFlow(draft: RuleDraft): Flow {
   return { nodes, edges };
 }
 
-// ─── Pure edit ops ───────────────────────────────────────────────────────────
+// ─── Pure edit ops ────────────────────────────────────────────────────────────
+// NOTE: These ops currently only handle flat ActionNodeDraft lists.
+// They will be rewritten in T8/T9 to handle the full tree.
 
-function reindex(actions: ActionDraft[]): ActionDraft[] {
+function reindex(actions: ActionNodeDraft[]): ActionNodeDraft[] {
   return actions.map((a, i) => ({ ...a, nodeId: `a${i}` }));
 }
 
+function asActionNodes(actions: NodeDraft[]): ActionNodeDraft[] {
+  return actions.filter((n): n is ActionNodeDraft => !isDecisionDraft(n));
+}
+
 export function addAction(draft: RuleDraft, type: string): RuleDraft {
-  return { ...draft, actions: reindex([...draft.actions, { nodeId: "", type, config: {} }]) };
+  const flat = asActionNodes(draft.actions);
+  return { ...draft, actions: reindex([...flat, { nodeId: "", type, config: {} }]) };
 }
 
 export function insertAction(draft: RuleDraft, type: string, atIndex: number): RuleDraft {
-  const i = Math.max(0, Math.min(atIndex, draft.actions.length));
-  const next = [...draft.actions];
+  const flat = asActionNodes(draft.actions);
+  const i = Math.max(0, Math.min(atIndex, flat.length));
+  const next = [...flat];
   next.splice(i, 0, { nodeId: "", type, config: {} });
   return { ...draft, actions: reindex(next) };
 }
 
 export function removeAction(draft: RuleDraft, nodeId: string): RuleDraft {
-  return { ...draft, actions: reindex(draft.actions.filter((a) => a.nodeId !== nodeId)) };
+  const flat = asActionNodes(draft.actions);
+  return { ...draft, actions: reindex(flat.filter((a) => a.nodeId !== nodeId)) };
 }
 
 export function reorderAction(draft: RuleDraft, nodeId: string, dir: "up" | "down"): RuleDraft {
-  const i = draft.actions.findIndex((a) => a.nodeId === nodeId);
+  const flat = asActionNodes(draft.actions);
+  const i = flat.findIndex((a) => a.nodeId === nodeId);
   if (i < 0) return draft;
   const j = dir === "up" ? i - 1 : i + 1;
-  if (j < 0 || j >= draft.actions.length) return draft;
-  const next = [...draft.actions];
+  if (j < 0 || j >= flat.length) return draft;
+  const next = [...flat];
   [next[i], next[j]] = [next[j], next[i]];
   return { ...draft, actions: reindex(next) };
 }
@@ -138,8 +233,8 @@ export function reorderAction(draft: RuleDraft, nodeId: string, dir: "up" | "dow
 export function setActionConfig(draft: RuleDraft, nodeId: string, patch: Record<string, unknown>): RuleDraft {
   return {
     ...draft,
-    actions: draft.actions.map((a) =>
-      a.nodeId === nodeId ? { ...a, config: { ...a.config, ...patch } } : a,
+    actions: draft.actions.map((n) =>
+      !isDecisionDraft(n) && n.nodeId === nodeId ? { ...n, config: { ...n.config, ...patch } } : n,
     ),
   };
 }
@@ -147,14 +242,18 @@ export function setActionConfig(draft: RuleDraft, nodeId: string, patch: Record<
 export function setActionType(draft: RuleDraft, nodeId: string, type: string): RuleDraft {
   return {
     ...draft,
-    actions: draft.actions.map((a) => (a.nodeId === nodeId ? { ...a, type, config: {} } : a)),
+    actions: draft.actions.map((n) =>
+      !isDecisionDraft(n) && n.nodeId === nodeId ? { ...n, type, config: {} } : n,
+    ),
   };
 }
 
 export function setActionDelay(draft: RuleDraft, nodeId: string, minutes: number): RuleDraft {
   return {
     ...draft,
-    actions: draft.actions.map((a) => (a.nodeId === nodeId ? { ...a, delayMinutes: minutes } : a)),
+    actions: draft.actions.map((n) =>
+      !isDecisionDraft(n) && n.nodeId === nodeId ? { ...n, delayMinutes: minutes } : n,
+    ),
   };
 }
 
@@ -201,11 +300,7 @@ export function draftToRulePayload(draft: RuleDraft): RulePayload {
     triggerType: draft.triggerType,
     triggerConfig: draft.triggerConfig,
     conditions: draft.conditions,
-    actions: draft.actions.map((a) => ({
-      type: a.type,
-      config: a.config,
-      ...(a.delayMinutes !== undefined ? { delayMinutes: a.delayMinutes } : {}),
-    })),
+    actions: draft.actions.map(draftToNode),
     cooldownMinutes: draft.cooldownMinutes,
     priority: draft.priority,
     isActive: draft.isActive,
