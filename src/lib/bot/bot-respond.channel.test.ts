@@ -8,8 +8,9 @@ vi.mock("@/lib/messaging/dispatcher", () => ({
 }));
 
 const contactFindUnique = vi.fn();
+const convFindFirst = vi.fn();
 const convFindUnique = vi.fn();
-const convUpsert = vi.fn();
+const convCreate = vi.fn();
 const convUpdate = vi.fn();
 const msgFindMany = vi.fn();
 const userFindFirst = vi.fn();
@@ -17,8 +18,9 @@ vi.mock("@/lib/db", () => ({
   default: {
     contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
     conversation: {
+      findFirst: (...a: unknown[]) => convFindFirst(...a),
       findUnique: (...a: unknown[]) => convFindUnique(...a),
-      upsert: (...a: unknown[]) => convUpsert(...a),
+      create: (...a: unknown[]) => convCreate(...a),
       update: (...a: unknown[]) => convUpdate(...a),
     },
     message: { findMany: (...a: unknown[]) => msgFindMany(...a) },
@@ -59,12 +61,12 @@ const CONTACT = {
   preferredLanguage: "es",
 };
 
-const CONV = { id: "conv1", status: "BOT", botEnabled: true };
+const CONV = { id: "conv1", status: "BOT", botEnabled: true, connectorId: null };
 
 beforeEach(() => {
   vi.resetAllMocks();
   contactFindUnique.mockResolvedValue(CONTACT);
-  convFindUnique.mockResolvedValue(CONV);
+  convFindFirst.mockResolvedValue(CONV);
   convUpdate.mockResolvedValue({});
   msgFindMany.mockResolvedValue([]);
   sendChannelMessage.mockResolvedValue({ id: "m1" });
@@ -79,7 +81,7 @@ describe("botRespond — canal", () => {
       "c1",
       expect.any(String),
       expect.any(String),
-      { bot: true }
+      { bot: true, connectorId: null }
     );
   });
 
@@ -91,20 +93,21 @@ describe("botRespond — canal", () => {
       "c1",
       expect.any(String),
       expect.any(String),
-      { bot: true }
+      { bot: true, connectorId: null }
     );
   });
 
   it("busca la conversación por el canal correcto", async () => {
     askClaude.mockResolvedValue("Hola Messenger");
     await botRespond("c1", { channel: "MESSENGER" });
-    expect(convFindUnique).toHaveBeenCalledWith({
-      where: { contactId_channel: { contactId: "c1", channel: "MESSENGER" } },
+    expect(convFindFirst).toHaveBeenCalledWith({
+      where: { contactId: "c1", channel: "MESSENGER" },
+      orderBy: { lastMessageAt: "desc" },
     });
   });
 
   it("no envía si no hay conversación BOT activa para ese canal", async () => {
-    convFindUnique.mockResolvedValue(null);
+    convFindFirst.mockResolvedValue(null);
     const result = await botRespond("c1", { channel: "INSTAGRAM" });
     expect(result).toBe(false);
     expect(sendChannelMessage).not.toHaveBeenCalled();

@@ -56,9 +56,8 @@ export async function runAiAction(
 
   // AI_REPLY (L2): responde directo en el hilo — SOLO si la conversación sigue en BOT
   if (actionType === "AI_REPLY") {
-    const conv = await prisma.conversation.findUnique({
-      where: { contactId_channel: { contactId: contact.id, channel: "WHATSAPP" } },
-    });
+    const { findConversationForChannel } = await import("@/lib/messaging/conversations");
+    const conv = await findConversationForChannel(contact.id, "WHATSAPP");
     if (conv && (conv.status !== "BOT" || !conv.botEnabled)) {
       return { skipped: true, note: "Hilo en control humano o bot apagado" };
     }

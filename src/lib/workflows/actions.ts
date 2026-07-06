@@ -209,10 +209,8 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       if (!contact) return { skipped: true, note: "Sin contacto" };
       if (contact.doNotContact || contact.whatsappOptOut) return { skipped: true, note: "Opt-out" };
       // Si el hilo está en manos de un humano, las cadencias L2 no interfieren (§I.7)
-      const conv = await prisma.conversation.findUnique({
-        where: { contactId_channel: { contactId: contact.id, channel: "WHATSAPP" } },
-        select: { status: true },
-      });
+      const { findConversationForChannel } = await import("@/lib/messaging/conversations");
+      const conv = await findConversationForChannel(contact.id, "WHATSAPP");
       if (conv?.status === "HUMAN") return { skipped: true, note: "Conversación en control humano" };
       const body =
         (await renderTemplateBody(config.template as string | undefined, contact, contact.preferredLanguage)) ??

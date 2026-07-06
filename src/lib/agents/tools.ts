@@ -131,10 +131,8 @@ export const AGENT_TOOLS: AgentTool[] = [
       const contact = await prisma.contact.findUnique({ where: { id: String(input.contactId) } });
       if (!contact) return { sent: false, reason: "Contacto no existe" };
       if (contact.doNotContact || contact.whatsappOptOut) return { sent: false, reason: "Opt-out" };
-      const conv = await prisma.conversation.findUnique({
-        where: { contactId_channel: { contactId: contact.id, channel: "WHATSAPP" } },
-        select: { status: true },
-      });
+      const { findConversationForChannel } = await import("@/lib/messaging/conversations");
+      const conv = await findConversationForChannel(contact.id, "WHATSAPP");
       if (conv?.status === "HUMAN") return { sent: false, reason: "Hilo en control humano" };
       const { lintBrandVoice } = await import("@/lib/bot/brand-linter");
       const lint = lintBrandVoice(String(input.body));

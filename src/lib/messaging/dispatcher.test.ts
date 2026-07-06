@@ -6,7 +6,9 @@ const contactFindUnique = vi.fn();
 const connectorFindFirst = vi.fn();
 const msgCreate = vi.fn();
 const msgUpdate = vi.fn();
-const convUpsert = vi.fn();
+const convFindFirst = vi.fn();
+const convCreate = vi.fn();
+const convUpdate = vi.fn();
 
 vi.mock("@/lib/twilio/whatsapp", () => ({ sendWhatsAppMessage: (...a: unknown[]) => sendWhatsAppMessage(...a) }));
 vi.mock("./adapters/instagram", () => ({ sendInstagram: (...a: unknown[]) => sendInstagram(...a) }));
@@ -16,7 +18,11 @@ vi.mock("@/lib/db", () => ({
   default: {
     contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
     leadConnector: { findFirst: (...a: unknown[]) => connectorFindFirst(...a) },
-    conversation: { upsert: (...a: unknown[]) => convUpsert(...a) },
+    conversation: {
+      findFirst: (...a: unknown[]) => convFindFirst(...a),
+      create: (...a: unknown[]) => convCreate(...a),
+      update: (...a: unknown[]) => convUpdate(...a),
+    },
     message: {
       create: (...a: unknown[]) => msgCreate(...a),
       update: (...a: unknown[]) => msgUpdate(...a),
@@ -29,8 +35,9 @@ vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: vi.fn() }));
 import { sendChannelMessage } from "./dispatcher";
 
 beforeEach(() => {
-  [sendWhatsAppMessage, sendInstagram, contactFindUnique, connectorFindFirst, msgCreate, msgUpdate, convUpsert].forEach((m) => m.mockReset());
-  convUpsert.mockResolvedValue({ id: "conv1" });
+  [sendWhatsAppMessage, sendInstagram, contactFindUnique, connectorFindFirst, msgCreate, msgUpdate, convFindFirst, convCreate, convUpdate].forEach((m) => m.mockReset());
+  convFindFirst.mockResolvedValue({ id: "conv1" });
+  convUpdate.mockResolvedValue({ id: "conv1" });
   msgCreate.mockResolvedValue({ id: "m1" });
   msgUpdate.mockResolvedValue({ id: "m1", sender: "BOT", aiGenerated: true, aiAutonomy: "L2" });
 });
@@ -40,7 +47,7 @@ describe("sendChannelMessage", () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: null, messengerPsid: null });
     sendWhatsAppMessage.mockResolvedValue({ id: "wa-msg" });
     await sendChannelMessage("WHATSAPP", "c1", "hola", "u1");
-    expect(sendWhatsAppMessage).toHaveBeenCalledWith("+521999", "hola", "c1", "u1");
+    expect(sendWhatsAppMessage).toHaveBeenCalledWith("+521999", "hola", "c1", "u1", null);
   });
 
   it("INSTAGRAM envía por adapter con el IGSID del contacto y guarda Message OUTBOUND", async () => {

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const contactFindFirst = vi.fn();
-const convUpsert = vi.fn();
+const convFindFirst = vi.fn();
+const convCreate = vi.fn();
+const convUpdate = vi.fn();
 const msgCreate = vi.fn();
 const msgFindUnique = vi.fn();
 const activityCreate = vi.fn();
@@ -12,7 +14,11 @@ const meetSlaTimers = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     contact: { findFirst: (...a: unknown[]) => contactFindFirst(...a), findUnique: vi.fn(async () => ({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" })) },
-    conversation: { upsert: (...a: unknown[]) => convUpsert(...a) },
+    conversation: {
+      findFirst: (...a: unknown[]) => convFindFirst(...a),
+      create: (...a: unknown[]) => convCreate(...a),
+      update: (...a: unknown[]) => convUpdate(...a),
+    },
     message: { create: (...a: unknown[]) => msgCreate(...a), findUnique: (...a: unknown[]) => msgFindUnique(...a) },
     activity: { create: (...a: unknown[]) => activityCreate(...a) },
     notification: { create: vi.fn() },
@@ -27,8 +33,9 @@ vi.mock("@/lib/workflows/events", () => ({ emitEvent: (...a: unknown[]) => emitE
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
-  [contactFindFirst, convUpsert, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers, emitEvent].forEach((m) => m.mockReset());
-  convUpsert.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+  [contactFindFirst, convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers, emitEvent].forEach((m) => m.mockReset());
+  convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+  convUpdate.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
   msgCreate.mockResolvedValue({ id: "m1" });
   activityCreate.mockResolvedValue({});
 });
@@ -43,7 +50,7 @@ describe("handleInboundMessage", () => {
     expect(captureLead).toHaveBeenCalledWith(
       expect.objectContaining({ source: "INSTAGRAM", instagramId: "IG-1", firstName: "Ana" })
     );
-    expect(convUpsert).toHaveBeenCalled();
+    expect(convUpdate).toHaveBeenCalled();
     expect(msgCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ channel: "INSTAGRAM", direction: "INBOUND", externalMessageId: "mid-1" }) })
     );
@@ -78,7 +85,8 @@ const wa = { channel: "WHATSAPP" as const, senderId: "+529991112233", externalMe
 
 describe("handleInboundMessage – regresiones WhatsApp", () => {
   beforeEach(() => {
-    convUpsert.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
     msgCreate.mockResolvedValue({ id: "m1" });
     activityCreate.mockResolvedValue({});
   });
