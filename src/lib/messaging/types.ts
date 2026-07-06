@@ -14,6 +14,8 @@ export interface IncomingMessage {
   mediaUrl?: string | null;
   /** Nombre/usuario del perfil si el adapter lo resolvió (best-effort). */
   profileName?: string | null;
+  /** Id del conector (cuenta WhatsApp / página FB) que recibió el mensaje. */
+  connectorId?: string | null;
 }
 
 /** Resultado de un envío saliente por un adapter. */

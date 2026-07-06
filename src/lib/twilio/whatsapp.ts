@@ -10,7 +10,8 @@ export async function sendWhatsAppMessage(
   to: string,
   body: string,
   contactId: string,
-  userId: string
+  userId: string,
+  connectorId?: string | null
 ) {
   const normalized = normalizePhone(to);
 
@@ -19,11 +20,9 @@ export async function sendWhatsAppMessage(
   const delivery = await deliverWhatsApp(normalized, body);
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
-  const conversation = await prisma.conversation.upsert({
-    where: { contactId_channel: { contactId, channel: "WHATSAPP" } },
-    update: { lastMessageAt: new Date() },
-    create: { contactId, channel: "WHATSAPP", status: "BOT", lastMessageAt: new Date() },
-  });
+  const { ensureConversation } = await import("@/lib/messaging/conversations");
+  const conv0 = await ensureConversation({ contactId, channel: "WHATSAPP", connectorId: connectorId ?? null });
+  const conversation = await prisma.conversation.update({ where: { id: conv0.id }, data: { lastMessageAt: new Date() } });
 
   const message = await prisma.message.create({
     data: {

@@ -15,13 +15,13 @@ export async function sendChannelMessage(
   contactId: string,
   body: string,
   userId: string,
-  opts: { bot?: boolean } = {}
+  opts: { bot?: boolean; connectorId?: string | null } = {}
 ) {
   if (channel === "WHATSAPP") {
     const c = await prisma.contact.findUnique({ where: { id: contactId }, select: { phone: true } });
     if (!c?.phone) throw new Error("Contacto sin teléfono");
     const { sendWhatsAppMessage } = await import("@/lib/twilio/whatsapp");
-    const message = await sendWhatsAppMessage(c.phone, body, contactId, userId);
+    const message = await sendWhatsAppMessage(c.phone, body, contactId, userId, opts.connectorId ?? null);
     if (opts.bot) {
       return prisma.message.update({
         where: { id: message.id },
@@ -51,11 +51,9 @@ export async function sendChannelMessage(
     : (await import("./adapters/messenger")).sendMessenger;
   const result = await send(creds.pageAccessToken, recipientId, body);
 
-  const conversation = await prisma.conversation.upsert({
-    where: { contactId_channel: { contactId, channel } },
-    update: { lastMessageAt: new Date() },
-    create: { contactId, channel, status: "BOT", lastMessageAt: new Date() },
-  });
+  const { ensureConversation } = await import("./conversations");
+  const conv0 = await ensureConversation({ contactId, channel, connectorId: connector.id });
+  const conversation = await prisma.conversation.update({ where: { id: conv0.id }, data: { lastMessageAt: new Date() } });
 
   const message = await prisma.message.create({
     data: {

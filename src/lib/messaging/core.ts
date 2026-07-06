@@ -64,17 +64,11 @@ export async function handleInboundMessage(msg: IncomingMessage) {
     if (!contact) return null;
   }
 
-  const conversation = await prisma.conversation.upsert({
-    where: { contactId_channel: { contactId: contact.id, channel: msg.channel } },
-    update: { lastMessageAt: new Date(), lastInboundAt: new Date(), unreadCount: { increment: 1 } },
-    create: {
-      contactId: contact.id,
-      channel: msg.channel,
-      status: "BOT",
-      lastMessageAt: new Date(),
-      lastInboundAt: new Date(),
-      unreadCount: 1,
-    },
+  const { ensureConversation } = await import("./conversations");
+  const conv = await ensureConversation({ contactId: contact.id, channel: msg.channel, connectorId: msg.connectorId ?? null });
+  const conversation = await prisma.conversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date(), lastInboundAt: new Date(), unreadCount: { increment: 1 } },
   });
 
   let message;

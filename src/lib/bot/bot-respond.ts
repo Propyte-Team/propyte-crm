@@ -10,14 +10,6 @@ import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 
 const ESCALATE_MARKER = "[ESCALAR]";
 
-async function ensureConversation(contactId: string, channel: MessagingChannel) {
-  return prisma.conversation.upsert({
-    where: { contactId_channel: { contactId, channel } },
-    update: {},
-    create: { contactId, channel, status: "BOT" },
-  });
-}
-
 export async function escalateToHuman(conversationId: string, reason: string): Promise<void> {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -68,17 +60,17 @@ export async function escalateToHuman(conversationId: string, reason: string): P
 
 export async function botRespond(
   contactId: string,
-  opts: { goal?: string; createConversation?: boolean; channel?: MessagingChannel } = {}
+  opts: { goal?: string; createConversation?: boolean; channel?: MessagingChannel; connectorId?: string | null } = {}
 ): Promise<boolean> {
   const channel: MessagingChannel = opts.channel ?? "WHATSAPP";
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.doNotContact || (channel === "WHATSAPP" && contact.whatsappOptOut)) return false;
 
+  const { ensureConversation, findConversationForChannel } = await import("@/lib/messaging/conversations");
+  const connectorId = opts.connectorId ?? (await findConversationForChannel(contactId, channel))?.connectorId ?? null;
   const conv = opts.createConversation
-    ? await ensureConversation(contactId, channel)
-    : await prisma.conversation.findUnique({
-        where: { contactId_channel: { contactId, channel } },
-      });
+    ? await ensureConversation({ contactId, channel, connectorId })
+    : await findConversationForChannel(contactId, channel);
   if (!conv || conv.status !== "BOT" || !conv.botEnabled) return false;
 
   // Contexto: hilo + perfil + catálogo del Hub (data-gate: SOLO estas cifras son citables)
@@ -137,7 +129,7 @@ export async function botRespond(
     if (!ownerId) return false;
 
     // sendChannelMessage con opts.bot=true marca sender=BOT, aiGenerated=true, aiAutonomy=L2.
-    await sendChannelMessage(channel, contact.id, clean, ownerId, { bot: true });
+    await sendChannelMessage(channel, contact.id, clean, ownerId, { bot: true, connectorId: conv.connectorId });
     await prisma.conversation.update({
       where: { id: conv.id },
       data: { lastMessageAt: new Date() },
