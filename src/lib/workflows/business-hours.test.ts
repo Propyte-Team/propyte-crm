@@ -40,4 +40,13 @@ describe("computeDueAt", () => {
     const start = at("2026-07-09T15:00");
     expect(computeDueAt(start, 30, allClosed).getTime()).toBe(start.getTime() + 30 * 60000);
   });
+  it("minutos negativos = wall-clock en ambos paths", () => {
+    const start = at("2026-07-09T15:00");
+    expect(computeDueAt(start, -30, {}).getTime()).toBe(start.getTime() - 30 * 60000);
+    expect(computeDueAt(start, -30, BH).getTime()).toBe(start.getTime() - 30 * 60000);
+  });
+  it("acumulación multi-día dentro del cap (240 min = 4h → 2do día)", () => {
+    // jueves 16:00, quedan 2h hoy (hasta 18:00) + 2h viernes desde 09:00 → 11:00
+    expect(wall(computeDueAt(at("2026-07-09T16:00"), 240, BH))).toBe("2026-07-10, 11:00");
+  });
 });
