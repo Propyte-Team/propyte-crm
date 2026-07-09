@@ -236,6 +236,11 @@ export const incomingLeadSchema = z
     purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional(),
     rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional(),
     preferredZone: z.string().max(200).optional(),
+    // Overrides opcionales para mapeo configurable por conector (editor Meta→Contact).
+    contactType: z
+      .enum(["COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "REFERIDOR", "LEAD", "PROSPECTO", "CLIENTE", "REFERIDO"])
+      .optional(),
+    temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   })
   .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {
     message: "Se requiere teléfono, email o identificador social",
