@@ -3,6 +3,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { formatDateTime } from "@/lib/format-date";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -185,7 +186,7 @@ export function ConnectorsSection() {
                 <span className={`badge ${STATUS_BADGE[c.status]}`}>{c.status}</span>
               </div>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                {c._count.leadLogs} leads · último: {c.lastLeadAt ? new Date(c.lastLeadAt).toLocaleString("es-MX") : "—"}
+                {c._count.leadLogs} leads · último: {c.lastLeadAt ? formatDateTime(c.lastLeadAt) : "—"}
                 {c.errorCount > 0 && ` · ${c.errorCount} errores`}
               </p>
               {c.lastError && <p className="truncate text-[11px] text-destructive">{c.lastError}</p>}

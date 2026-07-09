@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatDate } from "@/lib/format-date";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -568,7 +569,7 @@ export function ContactsList({
                       </td>
                       {/* Fecha de registro */}
                       <td className="py-3 text-muted-foreground">
-                        {new Date(contact.createdAt).toLocaleDateString("es-MX", {
+                        {formatDate(contact.createdAt, {
                           day: "2-digit",
                           month: "short",
                           year: "numeric",

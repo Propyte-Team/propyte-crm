@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { PROVIDERS, type ProviderGroup } from "@/lib/connectors/registry";
 import { ConnectWizard } from "./connect-wizard";
+import { formatDate } from "@/lib/format-date";
 
 interface Conn {
   id: string; name: string; provider: string; status: string;
@@ -104,9 +105,7 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                         <span className="flex shrink-0 items-center gap-3">
                           <span className="font-mono text-[11px] text-muted-foreground">
                             {c._count.leadLogs} ·{" "}
-                            {c.lastLeadAt
-                              ? new Date(c.lastLeadAt).toLocaleDateString("es-MX")
-                              : "—"}
+                            {c.lastLeadAt ? formatDate(c.lastLeadAt) : "—"}
                           </span>
                           <button className="text-[11px] underline" onClick={() => toggle(c)}>
                             {c.status === "ACTIVE" ? "Pausar" : "Activar"}
