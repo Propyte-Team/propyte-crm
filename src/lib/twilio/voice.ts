@@ -88,6 +88,18 @@ export async function handleRecording(payload: { CallSid: string; RecordingUrl: 
 }
 
 /**
+ * Indica si Twilio Voice está configurado (env vars presentes). Permite degradar
+ * elegantemente en vez de lanzar/500 cuando la integración aún no se ha activado.
+ */
+export function isVoiceConfigured(): boolean {
+  return !!(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_TWIML_APP_SID &&
+    (process.env.TWILIO_API_KEY_SECRET || process.env.TWILIO_AUTH_TOKEN)
+  );
+}
+
+/**
  * Genera un token de acceso Twilio para el SDK de voz del browser.
  * Requiere TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_TWIML_APP_SID.
  */
