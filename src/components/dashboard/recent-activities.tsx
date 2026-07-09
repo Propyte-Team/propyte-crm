@@ -19,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-const ACTIVITY_CONFIG: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
+export const ACTIVITY_CONFIG: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
   CALL_OUTBOUND:     { icon: Phone,          color: "#60A5FA", bg: "rgba(96, 165, 250, 0.12)" },
   CALL_INBOUND:      { icon: Phone,          color: "#93C5FD", bg: "rgba(147, 197, 253, 0.12)" },
   WHATSAPP_OUT:      { icon: MessageSquare,  color: "#22C55E", bg: "rgba(34, 197, 94, 0.12)" },
