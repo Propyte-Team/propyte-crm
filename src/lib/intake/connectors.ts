@@ -51,6 +51,19 @@ export function mapExternalFields(
   return lead;
 }
 
+// Rellena en `fields` SOLO las claves que vengan undefined/null/"" con el valor heurístico
+// de `profileFields` (deriveInvestmentProfile). El mapeo explícito del conector siempre gana
+// sobre el heurístico — nunca lo pisa. Pura, sin BD, testeable en aislamiento.
+export function mergeProfileDefaults(
+  fields: Record<string, unknown>,
+  profileFields: Record<string, unknown>
+): Record<string, unknown> {
+  for (const [k, v] of Object.entries(profileFields)) {
+    if (fields[k] === undefined || fields[k] === null || fields[k] === "") fields[k] = v;
+  }
+  return fields;
+}
+
 // Punto único de entrada de un lead externo. Idempotente: el UNIQUE
 // (connectorId, externalLeadId) garantiza que un retry no duplica.
 export async function processIncomingLead(
@@ -105,7 +118,7 @@ export async function processIncomingLead(
   const custom = rawPayload.external as Record<string, unknown> | undefined;
   // Perfil de Inversión: normaliza respuestas del form a los enums del CRM (camino A).
   const { budgetCurrency, ...profileFields } = custom ? deriveInvestmentProfile(custom) : {};
-  Object.assign(fields, profileFields);
+  mergeProfileDefaults(fields, profileFields);
   if (custom && Object.keys(custom).length) {
     fields.custom = budgetCurrency ? { ...custom, budget_currency: budgetCurrency } : custom;
   }

@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import prisma from "@/lib/db";
-import { readCredentials, mapExternalFields, processIncomingLead } from "@/lib/intake/connectors";
+import { readCredentials, processIncomingLead } from "@/lib/intake/connectors";
+import { mapLead, parseRules } from "@/lib/intake/map-lead";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -108,24 +109,30 @@ export async function POST(req: NextRequest) {
         const lead = (await detail.json()) as {
           field_data?: Array<{ name: string; values?: string[] }>;
           campaign_name?: string;
+          campaign_id?: string;
           ad_name?: string;
+          ad_id?: string;
           adset_name?: string;
+          adset_id?: string;
         };
 
         const external: Record<string, unknown> = {};
         for (const f of lead.field_data ?? []) external[f.name] = f.values?.[0];
+        if (change.value?.form_id) external.form_id = change.value.form_id; // form en custom (segmentación por form)
 
-        const defaultMap: Record<string, string> = {
-          full_name: "fullName",
-          name: "fullName",
-          first_name: "firstName",
-          last_name: "lastName",
-          phone_number: "phone",
-          phone: "phone",
-          email: "email",
+        // Metadata estructurada de la campaña/anuncio (fuente "metadata" del mapeo configurable)
+        const metadata: Record<string, unknown> = {
+          campaign_name: lead.campaign_name,
+          campaign_id: lead.campaign_id,
+          adset_name: lead.adset_name,
+          adset_id: lead.adset_id,
+          ad_name: lead.ad_name,
+          ad_id: lead.ad_id,
+          form_id: change.value?.form_id,
+          leadgen_id: leadgenId,
         };
-        const fieldMap = { ...defaultMap, ...((target.fieldMap ?? {}) as Record<string, string>) };
-        const mapped = mapExternalFields(fieldMap, external);
+
+        const mapped = mapLead(parseRules(target.fieldMap), { fieldData: external, metadata });
         mapped.sourceDetail = [lead.campaign_name, lead.ad_name].filter(Boolean).join(" / ") || mapped.sourceDetail;
         mapped.fbclid = leadgenId;
         // Atribución estructurada → AdAttribution (segmentación por campaña/red en reglas/routing)
@@ -134,9 +141,8 @@ export async function POST(req: NextRequest) {
         mapped.adsetName = lead.adset_name;
         mapped.network = target.provider === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK";
         mapped.socialLeadId = leadgenId;
-        if (change.value?.form_id) external.form_id = change.value.form_id; // form en custom (segmentación por form)
 
-        results.push(await processIncomingLead(target.id, leadgenId, { external, meta: lead }, mapped));
+        results.push(await processIncomingLead(target.id, leadgenId, { external, meta: { ...lead, ...metadata } }, mapped));
       } catch (err) {
         console.error(`[meta-webhook] lead ${leadgenId}:`, err);
         await prisma.leadConnector.update({
