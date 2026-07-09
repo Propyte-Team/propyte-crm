@@ -4,6 +4,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { writeCredentials } from "@/lib/intake/connectors";
+import { fieldMapSchema } from "@/lib/intake/mapping-model";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
@@ -12,7 +13,7 @@ const patchSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ERROR"]).optional(),
   credentials: z.record(z.string()).optional(),
   config: z.record(z.unknown()).optional(),
-  fieldMap: z.record(z.string()).optional(),
+  fieldMap: fieldMapSchema.optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
