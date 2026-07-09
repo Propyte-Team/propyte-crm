@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import prisma from "@/lib/db";
 import { readCredentials, processIncomingLead } from "@/lib/intake/connectors";
-import { mapLead, parseRules } from "@/lib/intake/map-lead";
+import { mapLead, parseRules, DEFAULT_META_RULES } from "@/lib/intake/map-lead";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
           leadgen_id: leadgenId,
         };
 
-        const mapped = mapLead(parseRules(target.fieldMap), { fieldData: external, metadata });
+        const mapped = mapLead([...DEFAULT_META_RULES, ...parseRules(target.fieldMap)], { fieldData: external, metadata });
         mapped.sourceDetail = [lead.campaign_name, lead.ad_name].filter(Boolean).join(" / ") || mapped.sourceDetail;
         mapped.fbclid = leadgenId;
         // Atribución estructurada → AdAttribution (segmentación por campaña/red en reglas/routing)

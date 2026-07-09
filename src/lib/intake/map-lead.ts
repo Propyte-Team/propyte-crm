@@ -9,6 +9,18 @@ export interface MappingRule {
   fallbackValue?: string;
 }
 
+// Defaults de nombres de campo comunes de Meta Lead Ads (equivalen al viejo defaultMap del webhook).
+// Se anteponen a las reglas del conector; las reglas del conector ganan por-target (van después).
+export const DEFAULT_META_RULES: MappingRule[] = [
+  { source: "question", metaField: "full_name", target: "fullName" },
+  { source: "question", metaField: "name", target: "fullName" },
+  { source: "question", metaField: "first_name", target: "firstName" },
+  { source: "question", metaField: "last_name", target: "lastName" },
+  { source: "question", metaField: "phone_number", target: "phone" },
+  { source: "question", metaField: "phone", target: "phone" },
+  { source: "question", metaField: "email", target: "email" },
+];
+
 // Normaliza el fieldMap almacenado (shape nuevo {rules} | shape viejo Record<string,string>) a reglas.
 export function parseRules(fieldMap: unknown): MappingRule[] {
   if (fieldMap && typeof fieldMap === "object" && Array.isArray((fieldMap as { rules?: unknown }).rules)) {

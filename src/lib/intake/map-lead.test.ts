@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapLead, parseRules, type MappingRule } from "./map-lead";
+import { mapLead, parseRules, DEFAULT_META_RULES, type MappingRule } from "./map-lead";
 
 const input = {
   fieldData: { full_name: "Ana Gómez", email: "a@x.com", "¿presupuesto?": "2mdp", platform_q: "fb" },
@@ -36,6 +36,20 @@ describe("mapLead", () => {
   it("omite vacíos (question), constant siempre", () => {
     const r: MappingRule[] = [{ source: "question", metaField: "ausente", target: "email" }, { source: "constant", value: "x", target: "notes" }];
     expect(mapLead(r, input)).toEqual({ notes: "x" });
+  });
+});
+
+describe("DEFAULT_META_RULES (defaults Meta)", () => {
+  it("fieldMap vacío sigue capturando nombre/tel/email", () => {
+    const fd = { full_name: "Ana Gómez", phone_number: "+52 1 999", email: "a@x.com" };
+    const r = mapLead([...DEFAULT_META_RULES, ...parseRules({})], { fieldData: fd, metadata: {} });
+    expect(r).toEqual({ firstName: "Ana", lastName: "Gómez", phone: "+52 1 999", email: "a@x.com" });
+  });
+  it("regla del conector gana por-target sobre el default", () => {
+    const fd = { full_name: "Ana Gómez", correo_alt: "alt@x.com", email: "a@x.com" };
+    const rules: MappingRule[] = [{ source: "question", metaField: "correo_alt", target: "email" }];
+    const r = mapLead([...DEFAULT_META_RULES, ...rules], { fieldData: fd, metadata: {} });
+    expect(r.email).toBe("alt@x.com"); // la regla del conector (después) gana
   });
 });
 
