@@ -15,7 +15,7 @@ export default async function ConexionesPage() {
     orderBy: { createdAt: "asc" },
     select: {
       id: true, name: true, provider: true, status: true,
-      lastLeadAt: true, errorCount: true, lastError: true,
+      lastLeadAt: true, errorCount: true, lastError: true, fieldMap: true,
       _count: { select: { leadLogs: true } },
     },
   });

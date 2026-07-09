@@ -3,13 +3,17 @@
 import { useState, useCallback } from "react";
 import { PROVIDERS, type ProviderGroup } from "@/lib/connectors/registry";
 import { ConnectWizard } from "./connect-wizard";
+import { MappingEditor } from "./mapping-editor";
 import { formatDate } from "@/lib/format-date";
 
 interface Conn {
   id: string; name: string; provider: string; status: string;
   lastLeadAt: string | null; errorCount: number; lastError: string | null;
+  fieldMap?: unknown;
   _count: { leadLogs: number };
 }
+
+const MAPPING_PROVIDERS = new Set(["META", "INSTAGRAM"]);
 
 const STATUS_DOT: Record<string, string> = { ACTIVE: "bg-green-600", PAUSED: "bg-neutral-300", ERROR: "bg-red-600" };
 const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "pinterest"];
@@ -17,6 +21,7 @@ const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "p
 export function ConnectionsView({ initial }: { initial: Conn[] }) {
   const [connectors, setConnectors] = useState<Conn[]>(initial);
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
+  const [mappingFor, setMappingFor] = useState<Conn | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -110,6 +115,11 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                           <button className="text-[11px] underline" onClick={() => toggle(c)}>
                             {c.status === "ACTIVE" ? "Pausar" : "Activar"}
                           </button>
+                          {MAPPING_PROVIDERS.has(c.provider) && (
+                            <button className="text-[11px] underline" onClick={() => setMappingFor(c)}>
+                              Editar mapeo
+                            </button>
+                          )}
                           <button
                             className="text-[11px] text-destructive underline"
                             onClick={() => remove(c)}
@@ -146,6 +156,17 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
             if (!v) setWizardProvider(null);
           }}
           onConnected={reload}
+        />
+      )}
+
+      {mappingFor && (
+        <MappingEditor
+          key={mappingFor.id}
+          connectorId={mappingFor.id}
+          name={mappingFor.name}
+          fieldMap={mappingFor.fieldMap}
+          onClose={() => setMappingFor(null)}
+          onSaved={reload}
         />
       )}
     </div>
