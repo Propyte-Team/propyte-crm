@@ -1396,6 +1396,8 @@ model SlaPolicy {
   firstTouchMinutes Int     @default(5)
   retryMinutes      Int     @default(30)
   orphanHours       Int     @default(24)
+  conditions        Json    @default("{}")
+  priority          Int     @default(100)
   escalationChain   Json    @default("[]")
   businessHours     Json    @default("{}")
   channelFallback   Json    @default("{}")
