@@ -2,9 +2,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Save, Plus, Pencil } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { WorkflowBuilder } from "./workflow-builder";
 import { CadenceEditor } from "./cadence-editor";
+import { SlaPolicyEditor } from "./sla-policy-editor";
 
 interface Rule {
   id: string;
@@ -28,10 +29,14 @@ interface Plan {
 interface Sla {
   id: string;
   name: string;
+  isActive: boolean;
   isDefault: boolean;
+  priority: number;
+  conditions: unknown;
   firstTouchMinutes: number;
   retryMinutes: number;
   orphanHours: number;
+  businessHours: unknown;
   _count: { timers: number };
 }
 
@@ -58,7 +63,6 @@ export function AutomationSection({ userRole }: { userRole: string }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [slas, setSlas] = useState<Sla[]>([]);
   const [queue, setQueue] = useState<Record<string, number>>({});
-  const [slaDraft, setSlaDraft] = useState<Record<string, Partial<Sla>>>({});
   const [msg, setMsg] = useState("");
   const [obs, setObs] = useState<{ recentErrors: any[]; eventsPending: number; eventsDone24h: number }>({ recentErrors: [], eventsPending: 0, eventsDone24h: 0 });
   const [builderRule, setBuilderRule] = useState<"new" | any | null>(null);
@@ -298,45 +302,7 @@ export function AutomationSection({ userRole }: { userRole: string }) {
       </div>
 
       {/* SLA */}
-      <div className="crm-card !p-0 overflow-hidden">
-        <div className="px-4 py-3 hairline-b">
-          <p className="text-[13px] font-semibold">Políticas SLA (speed-to-lead)</p>
-        </div>
-        {slas.map((s) => {
-          const draft = slaDraft[s.id] ?? {};
-          const dirty = Object.keys(draft).length > 0;
-          return (
-            <div key={s.id} className="flex flex-wrap items-end gap-4 px-4 py-3 hairline-b">
-              <div className="min-w-[140px]">
-                <p className="text-[13px] font-medium">{s.name} {s.isDefault && <span className="badge badge-neutral ml-1">default</span>}</p>
-                <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{s._count.timers} timers históricos</p>
-              </div>
-              {(["firstTouchMinutes", "retryMinutes", "orphanHours"] as const).map((f) => (
-                <label key={f} className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                  {f === "firstTouchMinutes" ? "1er toque (min)" : f === "retryMinutes" ? "Reintento (min)" : "Huérfano (hrs)"}
-                  <input
-                    type="number"
-                    className="form-input mt-1 !w-24 !py-1 num"
-                    disabled={!canEdit}
-                    value={(draft[f] ?? s[f]) as number}
-                    onChange={(e) => setSlaDraft({ ...slaDraft, [s.id]: { ...draft, [f]: Number(e.target.value) } })}
-                  />
-                </label>
-              ))}
-              <button
-                className="btn-primary !py-1.5 !px-3 text-[12px]"
-                disabled={!canEdit || !dirty}
-                onClick={async () => {
-                  await patch({ kind: "sla", id: s.id, ...draft });
-                  setSlaDraft({ ...slaDraft, [s.id]: {} });
-                }}
-              >
-                <Save className="h-3.5 w-3.5" /> Guardar
-              </button>
-            </div>
-          );
-        })}
-      </div>
+      <SlaPolicyEditor policies={slas} canEdit={canEdit} onChanged={load} />
     </div>
   );
 }
