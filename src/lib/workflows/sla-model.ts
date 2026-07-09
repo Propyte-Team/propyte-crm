@@ -8,11 +8,16 @@ const timeTuple = z
   .tuple([z.number().int().min(0).max(1440), z.number().int().min(0).max(1440)])
   .refine(([open, close]) => open < close, { message: "apertura debe ser menor que cierre" });
 
+const tzSchema = z.string().min(1).refine(
+  (tz) => { try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; } },
+  { message: "zona horaria inválida" }
+);
+
 export const businessHoursSchema = z.union([
   z.object({}).strict(),
   z
     .object({
-      tz: z.string().min(1),
+      tz: tzSchema,
       days: z
         .record(z.string(), timeTuple.nullable())
         .refine((days) => Object.keys(days).every((k) => (dayKeys as readonly string[]).includes(k)), {

@@ -41,7 +41,13 @@ export function computeDueAt(startAt: Date, minutes: number, businessHours: Busi
   const wallClock = () => new Date(startAt.getTime() + minutes * 60000);
   if (!hasSchedule) return wallClock();
 
-  const offset = tzOffsetMinutes(startAt, tz!);
+  let offset: number;
+  try {
+    offset = tzOffsetMinutes(startAt, tz!);
+  } catch {
+    console.warn(`[sla] computeDueAt: timezone inválida "${tz}"; fallback wall-clock`);
+    return wallClock();
+  }
   let cur = new Date(startAt.getTime() + offset * 60000);
   let remaining = minutes;
   let safety = 0;

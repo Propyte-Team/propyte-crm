@@ -49,4 +49,10 @@ describe("computeDueAt", () => {
     // jueves 16:00, quedan 2h hoy (hasta 18:00) + 2h viernes desde 09:00 → 11:00
     expect(wall(computeDueAt(at("2026-07-09T16:00"), 240, BH))).toBe("2026-07-10, 11:00");
   });
+  it("timezone inválida cae a wall-clock sin lanzar", () => {
+    const start = new Date("2026-07-09T20:00:00Z");
+    const bad = { tz: "No/Existe", days: { "4": [540, 1080] } } as BusinessHours;
+    expect(() => computeDueAt(start, 30, bad)).not.toThrow();
+    expect(computeDueAt(start, 30, bad).getTime()).toBe(start.getTime() + 30 * 60000);
+  });
 });

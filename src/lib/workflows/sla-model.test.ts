@@ -24,4 +24,10 @@ describe("slaPolicyInputSchema", () => {
   it("rechaza minutos fuera de rango", () => {
     expect(slaPolicyInputSchema.safeParse({ ...ok, firstTouchMinutes: 0 }).success).toBe(false);
   });
+  it("rechaza timezone inválida", () => {
+    expect(slaPolicyInputSchema.safeParse({ ...ok, businessHours: { tz: "No/Existe", days: { "1": [540, 1080] } } }).success).toBe(false);
+  });
+  it("acepta America/Cancun", () => {
+    expect(slaPolicyInputSchema.safeParse({ ...ok, businessHours: { tz: "America/Cancun", days: { "1": [540, 1080] } } }).success).toBe(true);
+  });
 });
