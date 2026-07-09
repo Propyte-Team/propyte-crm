@@ -1,9 +1,20 @@
 // SlaEngine (Anexo Técnico §D.2/§D.7) — timers FIRST_TOUCH/RETRY/ORPHAN.
-// Se cumplen con el primer toque saliente; el cron marca breaches y escala.
+// Política elegida por segmento; vencimiento por minutos hábiles (excepto ORPHAN = wall-clock).
 import prisma from "@/lib/db";
+import { selectSlaPolicy } from "./sla-select";
+import { computeDueAt, type BusinessHours } from "./business-hours";
 
-async function defaultPolicy() {
-  return prisma.slaPolicy.findFirst({ where: { isDefault: true, isActive: true } });
+// Contexto mínimo para el DSL de condiciones (contacto + attribution + plaza del asesor).
+async function loadSlaContext(contactId: string): Promise<Record<string, unknown>> {
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    include: { adAttribution: true, assignedTo: { select: { plaza: true } } },
+  });
+  return {
+    contact,
+    adAttribution: (contact as { adAttribution?: unknown } | null)?.adAttribution ?? null,
+    plaza: (contact as { assignedTo?: { plaza?: unknown } } | null)?.assignedTo?.plaza ?? null,
+  };
 }
 
 export async function createSlaTimer(
@@ -11,12 +22,6 @@ export async function createSlaTimer(
   type: "FIRST_TOUCH" | "RETRY" | "ORPHAN",
   dealId?: string
 ): Promise<void> {
-  const policy = await defaultPolicy();
-  const minutes =
-    type === "FIRST_TOUCH" ? policy?.firstTouchMinutes ?? 5
-    : type === "RETRY" ? policy?.retryMinutes ?? 30
-    : (policy?.orphanHours ?? 24) * 60;
-
   // No duplicar un timer RUNNING del mismo tipo para el mismo contacto
   const existing = await prisma.slaTimer.findFirst({
     where: { contactId, type, status: "RUNNING" },
@@ -24,14 +29,22 @@ export async function createSlaTimer(
   });
   if (existing) return;
 
+  const [ctx, policies] = await Promise.all([
+    loadSlaContext(contactId),
+    prisma.slaPolicy.findMany({ where: { isActive: true } }),
+  ]);
+  const policy = selectSlaPolicy(policies, ctx);
+
+  const minutes =
+    type === "FIRST_TOUCH" ? policy?.firstTouchMinutes ?? 5
+    : type === "RETRY" ? policy?.retryMinutes ?? 30
+    : (policy?.orphanHours ?? 24) * 60;
+
+  const bh = type === "ORPHAN" ? null : ((policy?.businessHours as unknown as BusinessHours) ?? null);
+  const dueAt = computeDueAt(new Date(), minutes, bh);
+
   await prisma.slaTimer.create({
-    data: {
-      contactId,
-      dealId: dealId ?? null,
-      policyId: policy?.id ?? null,
-      type,
-      dueAt: new Date(Date.now() + minutes * 60_000),
-    },
+    data: { contactId, dealId: dealId ?? null, policyId: policy?.id ?? null, type, dueAt },
   });
 }
 
