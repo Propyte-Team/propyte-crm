@@ -5,7 +5,7 @@ interface MetaMessagingEvent {
   sender?: { id?: string };
   message?: { mid?: string; text?: string; is_echo?: boolean; attachments?: Array<{ payload?: { url?: string } }> };
 }
-interface MetaWebhookBody { object?: string; entry?: Array<{ messaging?: MetaMessagingEvent[] }> }
+interface MetaWebhookBody { object?: string; entry?: Array<{ id?: string; messaging?: MetaMessagingEvent[] }> }
 
 /** Normaliza un webhook `object: "page"` (Messenger) a IncomingMessage[]. */
 export function parseMessengerWebhook(body: MetaWebhookBody): IncomingMessage[] {
@@ -20,6 +20,7 @@ export function parseMessengerWebhook(body: MetaWebhookBody): IncomingMessage[] 
         externalMessageId: m.mid,
         text: m.text ?? (m.attachments?.length ? "[Adjunto]" : "[mensaje]"),
         mediaUrl: m.attachments?.[0]?.payload?.url ?? null,
+        accountId: entry.id ?? null,
       });
     }
   }

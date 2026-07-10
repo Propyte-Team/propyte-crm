@@ -8,7 +8,7 @@ describe("parseMessengerWebhook", () => {
       entry: [{ messaging: [{ sender: { id: "PSID-1" }, message: { mid: "mid-9", text: "buenas" } }] }],
     };
     expect(parseMessengerWebhook(payload)).toEqual([
-      { channel: "MESSENGER", senderId: "PSID-1", externalMessageId: "mid-9", text: "buenas", mediaUrl: null },
+      { channel: "MESSENGER", senderId: "PSID-1", externalMessageId: "mid-9", text: "buenas", mediaUrl: null, accountId: null },
     ]);
   });
   it("ignora echoes", () => {

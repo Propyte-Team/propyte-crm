@@ -7,7 +7,7 @@ interface MetaMessagingEvent {
   read?: unknown;
   delivery?: unknown;
 }
-interface MetaEntry { messaging?: MetaMessagingEvent[] }
+interface MetaEntry { id?: string; messaging?: MetaMessagingEvent[] }
 interface MetaWebhookBody { object?: string; entry?: MetaEntry[] }
 
 /** Normaliza un webhook `object: "instagram"` a IncomingMessage[]. */
@@ -23,6 +23,7 @@ export function parseInstagramWebhook(body: MetaWebhookBody): IncomingMessage[] 
         externalMessageId: m.mid,
         text: m.text ?? (m.attachments?.length ? "[Adjunto]" : "[mensaje]"),
         mediaUrl: m.attachments?.[0]?.payload?.url ?? null,
+        accountId: entry.id ?? null,
       });
     }
   }

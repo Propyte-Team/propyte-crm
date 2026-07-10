@@ -16,6 +16,8 @@ export interface IncomingMessage {
   profileName?: string | null;
   /** Id del conector (cuenta WhatsApp / página FB) que recibió el mensaje. */
   connectorId?: string | null;
+  /** Id de la cuenta receptora del webhook: IG Business ID (objeto instagram) o Page ID (objeto page). */
+  accountId?: string | null;
 }
 
 /** Resultado de un envío saliente por un adapter. */
