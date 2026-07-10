@@ -2,14 +2,12 @@
 // Contexto → RAG catálogo Hub (data-gate) → Claude (voz Sage) → brand linter →
 // envía o ESCALA a humano (intención fuerte / sin confianza).
 import prisma from "@/lib/db";
-import { askClaude, buildSystemPrompt, type BotMessage } from "./claude";
+import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage } from "./claude";
 import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
 import { findMatchingDevelopments } from "./hub-catalog";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
-
-const ESCALATE_MARKER = "[ESCALAR]";
 
 export function shouldBotRespondForChannel(config: BotConfigResolved, channel: string): boolean {
   return config.botEnabled && config.enabledChannels.includes(channel);
@@ -18,12 +16,14 @@ export function shouldBotRespondForChannel(config: BotConfigResolved, channel: s
 export function buildOpener(
   config: BotConfigResolved,
   contact: { firstName: string; preferredZone?: string | null },
+  goal?: string,
 ): string {
   const interes = contact.preferredZone ? contact.preferredZone : "lo que busca";
+  const goalLine = goal ? ` El objetivo de este primer mensaje es: ${goal}.` : "";
   if (config.openerStyle === "DIRECT") {
-    return `Este es el primer mensaje. Preséntate breve y haz UNA pregunta para empezar a calificar (${interes}). No suenes a script.`;
+    return `Este es el primer mensaje. Preséntate breve y haz UNA pregunta para empezar a calificar (${interes}).${goalLine} No suenes a script.`;
   }
-  return `Este es el primer mensaje. Saluda a ${contact.firstName} por su nombre de forma cálida y natural, menciona brevemente su interés (${interes}) si lo conoces, y haz UNA pregunta para empezar a calificar. No suenes a script.`;
+  return `Este es el primer mensaje. Saluda a ${contact.firstName} por su nombre de forma cálida y natural, menciona brevemente su interés (${interes}) si lo conoces, y haz UNA pregunta para empezar a calificar.${goalLine} No suenes a script.`;
 }
 
 export async function escalateToHuman(conversationId: string, reason: string): Promise<void> {
@@ -112,7 +112,7 @@ export async function botRespond(
     }, []);
 
   if (history.length === 0) {
-    history.push({ role: "user", content: opts.goal ?? "(nuevo lead entrante)" });
+    history.push({ role: "user", content: "(nuevo lead entrante)" });
   }
 
   const catalog = await findMatchingDevelopments({
@@ -121,9 +121,11 @@ export async function botRespond(
     zone: contact.preferredZone,
   });
 
-  const objective =
-    history.length === 1 && history[0].role === "user" && !opts.goal
-      ? buildOpener(config, { firstName: contact.firstName, preferredZone: contact.preferredZone })
+  const firstTouch = history.length === 1 && history[0].role === "user";
+  const objective = firstTouch
+    ? buildOpener(config, { firstName: contact.firstName, preferredZone: contact.preferredZone }, opts.goal)
+    : opts.goal
+      ? `Objetivo de este mensaje: ${opts.goal}. Continúa la conversación con naturalidad.`
       : undefined;
 
   const system = buildSystemPrompt({
@@ -136,8 +138,8 @@ export async function botRespond(
   const reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model });
   if (!reply) return false; // sin API key
 
-  const shouldEscalate = reply.includes(ESCALATE_MARKER);
-  const clean = reply.replaceAll(ESCALATE_MARKER, "").trim();
+  const shouldEscalate = reply.includes(ESCALATE_TOKEN);
+  const clean = reply.replaceAll(ESCALATE_TOKEN, "").trim();
 
   // Brand linter: si bloquea, NO se envía y se escala (mejor humano que hype)
   const lint = lintBrandVoice(clean);

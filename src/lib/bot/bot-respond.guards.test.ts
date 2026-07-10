@@ -22,4 +22,8 @@ describe("buildOpener", () => {
     const o = buildOpener({ ...DEFAULT_BOT_CONFIG, openerStyle: "DIRECT" }, { firstName: "Ana", preferredZone: null });
     expect(o.length).toBeGreaterThan(0);
   });
+  it("incluye el goal cuando se pasa", () => {
+    const o = buildOpener({ ...DEFAULT_BOT_CONFIG, openerStyle: "WARM_NAME" }, { firstName: "Ana", preferredZone: "Tulum" }, "reactivacion");
+    expect(o).toContain("reactivacion");
+  });
 });

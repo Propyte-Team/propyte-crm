@@ -32,6 +32,7 @@ const askClaude = vi.fn();
 vi.mock("./claude", () => ({
   askClaude: (...a: unknown[]) => askClaude(...a),
   buildSystemPrompt: () => "SYSTEM",
+  ESCALATE_TOKEN: "[ESCALAR]",
 }));
 
 // getBotConfig toca prisma.botConfig (no mockeado arriba): se mockea aparte con los

@@ -18,7 +18,12 @@ async function requireAdminRole() {
 
 export async function getBotConfigForAdmin(): Promise<BotConfigResolved> {
   await requireAdminRole();
-  const row = (await prisma.botConfig.findFirst()) as Record<string, unknown> | null;
+  let row: Record<string, unknown> | null = null;
+  try {
+    row = (await prisma.botConfig.findFirst()) as Record<string, unknown> | null;
+  } catch {
+    row = null; // tabla aún no migrada → defaults seguros
+  }
   return resolveBotConfig(row);
 }
 
