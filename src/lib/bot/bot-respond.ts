@@ -2,13 +2,29 @@
 // Contexto → RAG catálogo Hub (data-gate) → Claude (voz Sage) → brand linter →
 // envía o ESCALA a humano (intención fuerte / sin confianza).
 import prisma from "@/lib/db";
-import { askClaude, SAGE_SYSTEM_PROMPT, type BotMessage } from "./claude";
+import { askClaude, buildSystemPrompt, type BotMessage } from "./claude";
+import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
-import { findMatchingDevelopments, catalogBrief } from "./hub-catalog";
+import { findMatchingDevelopments } from "./hub-catalog";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 
 const ESCALATE_MARKER = "[ESCALAR]";
+
+export function shouldBotRespondForChannel(config: BotConfigResolved, channel: string): boolean {
+  return config.botEnabled && config.enabledChannels.includes(channel);
+}
+
+export function buildOpener(
+  config: BotConfigResolved,
+  contact: { firstName: string; preferredZone?: string | null },
+): string {
+  const interes = contact.preferredZone ? contact.preferredZone : "lo que busca";
+  if (config.openerStyle === "DIRECT") {
+    return `Este es el primer mensaje. Preséntate breve y haz UNA pregunta para empezar a calificar (${interes}). No suenes a script.`;
+  }
+  return `Este es el primer mensaje. Saluda a ${contact.firstName} por su nombre de forma cálida y natural, menciona brevemente su interés (${interes}) si lo conoces, y haz UNA pregunta para empezar a calificar. No suenes a script.`;
+}
 
 export async function escalateToHuman(conversationId: string, reason: string): Promise<void> {
   const conv = await prisma.conversation.findUnique({
@@ -63,6 +79,9 @@ export async function botRespond(
   opts: { goal?: string; createConversation?: boolean; channel?: MessagingChannel; connectorId?: string | null } = {}
 ): Promise<boolean> {
   const channel: MessagingChannel = opts.channel ?? "WHATSAPP";
+  const config = await getBotConfig();
+  if (!shouldBotRespondForChannel(config, channel)) return false;
+
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.doNotContact || (channel === "WHATSAPP" && contact.whatsappOptOut)) return false;
 
@@ -93,7 +112,7 @@ export async function botRespond(
     }, []);
 
   if (history.length === 0) {
-    history.push({ role: "user", content: `(inicia la conversación: ${opts.goal ?? "saludo y calificación"})` });
+    history.push({ role: "user", content: opts.goal ?? "(nuevo lead entrante)" });
   }
 
   const catalog = await findMatchingDevelopments({
@@ -102,14 +121,19 @@ export async function botRespond(
     zone: contact.preferredZone,
   });
 
-  const system =
-    SAGE_SYSTEM_PROMPT +
-    `\n\nCliente: ${contact.firstName} · Idioma: ${contact.preferredLanguage}` +
-    (catalog.length > 0 ? `\n\n${catalogBrief(catalog)}` : "\n\n(No tienes catálogo en contexto: NO cites precios.)") +
-    `\n\nSi detectas intención fuerte (quiere apartar/visitar YA, negocia precio, queja, tema legal/fiscal) ` +
-    `o no puedes ayudar, responde un mensaje breve de transición y termina con el token ${ESCALATE_MARKER}.`;
+  const objective =
+    history.length === 1 && history[0].role === "user" && !opts.goal
+      ? buildOpener(config, { firstName: contact.firstName, preferredZone: contact.preferredZone })
+      : undefined;
 
-  const reply = await askClaude({ system, messages: history, maxTokens: 300 });
+  const system = buildSystemPrompt({
+    config,
+    contact: { firstName: contact.firstName, preferredLanguage: contact.preferredLanguage },
+    catalog,
+    objective,
+  });
+
+  const reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model });
   if (!reply) return false; // sin API key
 
   const shouldEscalate = reply.includes(ESCALATE_MARKER);

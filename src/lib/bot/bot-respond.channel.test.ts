@@ -31,7 +31,24 @@ vi.mock("@/lib/db", () => ({
 const askClaude = vi.fn();
 vi.mock("./claude", () => ({
   askClaude: (...a: unknown[]) => askClaude(...a),
-  SAGE_SYSTEM_PROMPT: "SYSTEM",
+  buildSystemPrompt: () => "SYSTEM",
+}));
+
+// getBotConfig toca prisma.botConfig (no mockeado arriba): se mockea aparte con los
+// 3 canales habilitados para no interferir con las pruebas de enrutamiento por canal
+// (el guard de canales habilitados se prueba por separado en bot-respond.guards.test.ts).
+vi.mock("./config", () => ({
+  getBotConfig: async () => ({
+    botEnabled: true,
+    tonePreset: "PROFESIONAL_CALIDO",
+    autonomyLevel: "L2",
+    model: "claude-sonnet-5",
+    openerStyle: "WARM_NAME",
+    maxLines: 4,
+    dataGateStrict: true,
+    escalationTriggers: ["apartar", "queja", "legal_fiscal", "negociacion"],
+    enabledChannels: ["WHATSAPP", "INSTAGRAM", "MESSENGER"],
+  }),
 }));
 
 vi.mock("./brand-linter", () => ({
