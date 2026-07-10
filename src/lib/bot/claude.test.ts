@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSystemPrompt } from "./claude";
+import { buildSystemPrompt, buildClaudeRequestBody, thinkingFieldFor } from "./claude";
 import { DEFAULT_BOT_CONFIG } from "./config";
 import { TONE_PRESETS } from "./tone-presets";
 
@@ -43,5 +43,30 @@ describe("buildSystemPrompt (4 capas)", () => {
   it("sin catálogo instruye a no citar precios", () => {
     const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
     expect(s.toLowerCase()).toContain("no cites precios");
+  });
+});
+
+describe("buildClaudeRequestBody", () => {
+  it("Sonnet 5 lleva thinking:disabled y el modelo dado", () => {
+    const body = buildClaudeRequestBody({
+      model: "claude-sonnet-5",
+      system: "S",
+      messages: [{ role: "user", content: "hola" }],
+      maxTokens: 300,
+    }) as any;
+    expect(body.model).toBe("claude-sonnet-5");
+    expect(body.max_tokens).toBe(300);
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("Haiku 4.5 NO manda thinking (no pertenece a la familia 4.6+)", () => {
+    expect(thinkingFieldFor("claude-haiku-4-5")).toEqual({});
+    const body = buildClaudeRequestBody({
+      model: "claude-haiku-4-5",
+      system: "S",
+      messages: [{ role: "user", content: "hola" }],
+      maxTokens: 300,
+    }) as any;
+    expect(body.thinking).toBeUndefined();
   });
 });

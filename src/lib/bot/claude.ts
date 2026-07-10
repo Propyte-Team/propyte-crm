@@ -25,13 +25,45 @@ Reglas inquebrantables (data-gate):
 - Responde en el idioma del cliente (ES/EN). Mensajes cortos, estilo WhatsApp (máx ~3 líneas).
 - Nunca digas que eres una IA salvo pregunta directa; entonces sé honesto.`;
 
+// Familia 4.6+ acepta thinking:{type:"disabled"}. Modelos previos (Haiku 4.5)
+// no lo usan: se omite (su default es sin thinking).
+export function thinkingFieldFor(model: string): { thinking?: { type: "disabled" } } {
+  const adaptiveFamily = /sonnet-5|sonnet-4-6|opus-4-(6|7|8)|fable-5/.test(model);
+  return adaptiveFamily ? { thinking: { type: "disabled" } } : {};
+}
+
+export function buildClaudeRequestBody(opts: {
+  model: string;
+  system: string;
+  messages: BotMessage[];
+  maxTokens: number;
+}) {
+  return {
+    model: opts.model,
+    max_tokens: opts.maxTokens,
+    system: opts.system,
+    ...thinkingFieldFor(opts.model),
+    messages: opts.messages,
+  };
+}
+
 export async function askClaude(opts: {
   system?: string;
   messages: BotMessage[];
   maxTokens?: number;
+  model?: string;
 }): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return null; // sin llave → quien llama decide el fallback
+
+  const model = opts.model?.trim() || process.env.BOT_MODEL?.trim() || "claude-sonnet-5";
+  const system = opts.system ?? SAGE_SYSTEM_PROMPT;
+  const body = buildClaudeRequestBody({
+    model,
+    system,
+    messages: opts.messages,
+    maxTokens: opts.maxTokens ?? 400,
+  });
 
   const res = await fetch(API_URL, {
     method: "POST",
@@ -40,12 +72,7 @@ export async function askClaude(opts: {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      model: process.env.BOT_MODEL ?? "claude-sonnet-4-6",
-      max_tokens: opts.maxTokens ?? 400,
-      system: opts.system ?? SAGE_SYSTEM_PROMPT,
-      messages: opts.messages,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
