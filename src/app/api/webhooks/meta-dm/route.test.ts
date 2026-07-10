@@ -1,12 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const handleInboundMessage = vi.fn();
+const resolveByIg = vi.fn();
+const resolveByPage = vi.fn();
 vi.mock("@/lib/messaging/core", () => ({ handleInboundMessage: (...a: unknown[]) => handleInboundMessage(...a) }));
+vi.mock("@/lib/messaging/social-accounts", () => ({
+  resolveConnectorByIgBusinessId: (...a: unknown[]) => resolveByIg(...a),
+  resolveConnectorByPageId: (...a: unknown[]) => resolveByPage(...a),
+}));
 
 import { GET, POST } from "./route";
 
 beforeEach(() => {
   handleInboundMessage.mockReset();
+  resolveByIg.mockReset();
+  resolveByPage.mockReset();
   process.env.META_DM_VERIFY_TOKEN = "verifyme";
   delete process.env.META_DM_APP_SECRET;
 });
@@ -33,5 +41,25 @@ describe("meta-dm webhook", () => {
     expect(handleInboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({ channel: "INSTAGRAM", senderId: "IGSID-1", externalMessageId: "mid-1" })
     );
+  });
+
+  it("resuelve el conector IG por igBusinessId y setea connectorId en el mensaje", async () => {
+    resolveByIg.mockResolvedValue({ id: "conn_ig" });
+    const body = JSON.stringify({ object: "instagram", entry: [{ id: "17841", messaging: [
+      { sender: { id: "IGSID" }, message: { mid: "m1", text: "hi" } },
+    ] }] });
+    await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(resolveByIg).toHaveBeenCalledWith("17841");
+    expect(handleInboundMessage.mock.calls[0][0].connectorId).toBe("conn_ig");
+  });
+
+  it("procesa igual (connectorId null) si no hay conector para la cuenta", async () => {
+    resolveByIg.mockResolvedValue(null);
+    const body = JSON.stringify({ object: "instagram", entry: [{ id: "999", messaging: [
+      { sender: { id: "IGSID" }, message: { mid: "m2", text: "hi" } },
+    ] }] });
+    await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    expect(handleInboundMessage.mock.calls[0][0].connectorId ?? null).toBeNull();
   });
 });

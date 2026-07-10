@@ -7,6 +7,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { handleInboundMessage } from "@/lib/messaging/core";
 import { parseInstagramWebhook } from "@/lib/messaging/adapters/instagram";
 import { parseMessengerWebhook } from "@/lib/messaging/adapters/messenger";
+import { resolveConnectorByIgBusinessId, resolveConnectorByPageId } from "@/lib/messaging/social-accounts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -63,6 +64,13 @@ export async function POST(req: NextRequest) {
   let processed = 0;
   for (const msg of messages) {
     try {
+      if (msg.accountId) {
+        const connector = msg.channel === "INSTAGRAM"
+          ? await resolveConnectorByIgBusinessId(msg.accountId)
+          : await resolveConnectorByPageId(msg.accountId);
+        if (connector) msg.connectorId = connector.id;
+        else console.warn(`[meta-dm] sin conector activo para ${msg.channel} accountId=${msg.accountId}`);
+      }
       await handleInboundMessage(msg);
       processed++;
     } catch (err) {
