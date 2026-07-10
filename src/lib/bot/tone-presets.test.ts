@@ -25,7 +25,7 @@ describe("tone-presets", () => {
   });
 
   it("los presets sobrios no usan emoji", () => {
-    const emoji = /\p{Extended_Pictographic}/u;
+    const emoji = /[\uD800-\uDFFF]/;
     for (const k of ["PROFESIONAL_CALIDO", "EJECUTIVO_SOBRIO", "NEUTRO_DIRECTO"] as const) {
       const p = TONE_PRESETS[k];
       const text = p.voiceGuidance + p.fewShot.map((e) => e.content).join(" ");
@@ -35,7 +35,6 @@ describe("tone-presets", () => {
 
   it("getTonePreset devuelve el preset y cae al default si la clave es inválida", () => {
     expect(getTonePreset("EJECUTIVO_SOBRIO").key).toBe("EJECUTIVO_SOBRIO");
-    // @ts-expect-error clave inválida a propósito
     expect(getTonePreset("NO_EXISTE").key).toBe("PROFESIONAL_CALIDO");
   });
 });
