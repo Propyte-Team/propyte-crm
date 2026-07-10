@@ -38,11 +38,9 @@ export async function sendChannelMessage(
   const recipientId = channel === "INSTAGRAM" ? contact?.instagramId : contact?.messengerPsid;
   if (!recipientId) throw new Error(`Contacto sin id ${channel}`);
 
-  const provider = channel; // ConnectorProvider tiene INSTAGRAM / MESSENGER
-  const connector = await prisma.leadConnector.findFirst({
-    where: { provider, status: "ACTIVE" },
-  });
-  if (!connector) throw new Error(`Sin conector activo ${channel}`);
+  if (!opts.connectorId) throw new Error(`Falta connectorId para enviar ${channel} (conversación sin cuenta resuelta)`);
+  const connector = await prisma.leadConnector.findUnique({ where: { id: opts.connectorId } });
+  if (!connector || connector.status !== "ACTIVE") throw new Error(`Conector ${channel} inválido o inactivo`);
   const creds = readCredentials<{ pageAccessToken: string }>(connector);
   if (!creds?.pageAccessToken) throw new Error(`Conector ${channel} sin pageAccessToken`);
 

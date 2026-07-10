@@ -4,6 +4,7 @@ const sendWhatsAppMessage = vi.fn();
 const sendInstagram = vi.fn();
 const contactFindUnique = vi.fn();
 const connectorFindFirst = vi.fn();
+const connectorFindUnique = vi.fn();
 const msgCreate = vi.fn();
 const msgUpdate = vi.fn();
 const convFindFirst = vi.fn();
@@ -17,7 +18,10 @@ vi.mock("@/lib/intake/connectors", () => ({ readCredentials: () => ({ pageAccess
 vi.mock("@/lib/db", () => ({
   default: {
     contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
-    leadConnector: { findFirst: (...a: unknown[]) => connectorFindFirst(...a) },
+    leadConnector: {
+      findFirst: (...a: unknown[]) => connectorFindFirst(...a),
+      findUnique: (...a: unknown[]) => connectorFindUnique(...a),
+    },
     conversation: {
       findFirst: (...a: unknown[]) => convFindFirst(...a),
       create: (...a: unknown[]) => convCreate(...a),
@@ -35,7 +39,7 @@ vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: vi.fn() }));
 import { sendChannelMessage } from "./dispatcher";
 
 beforeEach(() => {
-  [sendWhatsAppMessage, sendInstagram, contactFindUnique, connectorFindFirst, msgCreate, msgUpdate, convFindFirst, convCreate, convUpdate].forEach((m) => m.mockReset());
+  [sendWhatsAppMessage, sendInstagram, contactFindUnique, connectorFindFirst, connectorFindUnique, msgCreate, msgUpdate, convFindFirst, convCreate, convUpdate].forEach((m) => m.mockReset());
   convFindFirst.mockResolvedValue({ id: "conv1" });
   convUpdate.mockResolvedValue({ id: "conv1" });
   msgCreate.mockResolvedValue({ id: "m1" });
@@ -52,9 +56,10 @@ describe("sendChannelMessage", () => {
 
   it("INSTAGRAM envía por adapter con el IGSID del contacto y guarda Message OUTBOUND", async () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-1", messengerPsid: null });
-    connectorFindFirst.mockResolvedValue({ id: "conn1", credentials: "enc" });
+    connectorFindUnique.mockResolvedValue({ id: "conn1", status: "ACTIVE", credentials: "enc" });
     sendInstagram.mockResolvedValue({ externalMessageId: "mid-out", status: "SENT" });
-    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1");
+    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1", { connectorId: "conn1" });
+    expect(connectorFindUnique).toHaveBeenCalledWith({ where: { id: "conn1" } });
     expect(sendInstagram).toHaveBeenCalledWith("PAGE_TOKEN", "IGSID-1", "hola");
     expect(msgCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ channel: "INSTAGRAM", direction: "OUTBOUND", externalMessageId: "mid-out", sender: "ADVISOR" }) })
@@ -63,9 +68,9 @@ describe("sendChannelMessage", () => {
 
   it("INSTAGRAM con {bot:true} guarda sender BOT y aiGenerated true", async () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-1", messengerPsid: null });
-    connectorFindFirst.mockResolvedValue({ id: "conn1", credentials: "enc" });
+    connectorFindUnique.mockResolvedValue({ id: "conn1", status: "ACTIVE", credentials: "enc" });
     sendInstagram.mockResolvedValue({ externalMessageId: "mid-bot", status: "SENT" });
-    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1", { bot: true });
+    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1", { bot: true, connectorId: "conn1" });
     expect(msgCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ sender: "BOT", aiGenerated: true }),
@@ -75,14 +80,28 @@ describe("sendChannelMessage", () => {
 
   it("INSTAGRAM sin opts bot sigue siendo sender ADVISOR", async () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-2", messengerPsid: null });
-    connectorFindFirst.mockResolvedValue({ id: "conn1", credentials: "enc" });
+    connectorFindUnique.mockResolvedValue({ id: "conn1", status: "ACTIVE", credentials: "enc" });
     sendInstagram.mockResolvedValue({ externalMessageId: "mid-adv", status: "SENT" });
-    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1");
+    await sendChannelMessage("INSTAGRAM", "c1", "hola", "u1", { connectorId: "conn1" });
     expect(msgCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ sender: "ADVISOR", aiGenerated: false }),
       })
     );
+  });
+
+  it("INSTAGRAM sin connectorId rechaza (evita cruce de tokens entre cuentas)", async () => {
+    contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-1", messengerPsid: null });
+    await expect(sendChannelMessage("INSTAGRAM", "c1", "hola", "u1")).rejects.toThrow(/connectorId/i);
+    expect(connectorFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("INSTAGRAM con connectorId de conector inactivo/inexistente rechaza", async () => {
+    contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-1", messengerPsid: null });
+    connectorFindUnique.mockResolvedValue(null);
+    await expect(
+      sendChannelMessage("INSTAGRAM", "c1", "hola", "u1", { connectorId: "conn-missing" })
+    ).rejects.toThrow(/inválido o inactivo/i);
   });
 
   it("WHATSAPP con {bot:true} llama message.update con sender BOT", async () => {
