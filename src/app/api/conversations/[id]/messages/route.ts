@@ -56,7 +56,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       conv.channel as MessagingChannel,
       conv.contact.id,
       parsed.data.body,
-      session.user.id
+      session.user.id,
+      { connectorId: conv.connectorId }
     );
   } catch (err) {
     return NextResponse.json(
