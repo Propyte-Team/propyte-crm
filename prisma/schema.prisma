@@ -618,6 +618,15 @@ enum TemplateChannel {
   @@schema("propyte_crm")
 }
 
+enum BotTonePreset {
+  PROFESIONAL_CALIDO
+  CALIDO_CERCANO_MX
+  EJECUTIVO_SOBRIO
+  NEUTRO_DIRECTO
+
+  @@schema("propyte_crm")
+}
+
 // =====================================================================
 // MODELOS
 // =====================================================================
@@ -663,14 +672,15 @@ model User {
   forecastTerritories  Territory[]       @relation("TerritoryForecast")
 
   // Relaciones rebuild F1/F6
-  quotesCreated           Quote[]        @relation("QuotesCreated")
-  dealDocsUploaded        DealDocument[] @relation("DealDocsUploaded")
+  quotesCreated           Quote[]           @relation("QuotesCreated")
+  dealDocsUploaded        DealDocument[]    @relation("DealDocsUploaded")
   profile                 UserProfile?
   templates               UserTemplate[]
-  ownedActionPlans        ActionPlan[]   @relation("OwnedActionPlans")
-  controlledConversations Conversation[] @relation("ControlledConversations")
+  ownedActionPlans        ActionPlan[]      @relation("OwnedActionPlans")
+  controlledConversations Conversation[]    @relation("ControlledConversations")
   googleOAuthToken        GoogleOAuthToken?
-  shortlistsCreated       Shortlist[]    @relation("ShortlistsCreated")
+  shortlistsCreated       Shortlist[]       @relation("ShortlistsCreated")
+  botConfigUpdates        BotConfig[]       @relation("BotConfigUpdatedBy")
 
   // Metas/Scorecard (§5.14)
   goals        Goal[] @relation("UserGoals")
@@ -722,18 +732,18 @@ model Contact {
   custom Json @default("{}")
 
   // Ciclo de contacto y cumplimiento (Anexo Técnico §B.2)
-  contactStatus     ContactStatus @default(NUEVO)
+  contactStatus     ContactStatus   @default(NUEVO)
   lifecycleStage    LifecycleStage?
   urgency           Urgency?
   lastActivityAt    DateTime?
   originalCreatedAt DateTime?
-  doNotContact      Boolean       @default(false)
-  whatsappOptOut    Boolean       @default(false)
-  recordingConsent  Boolean       @default(false)
-  zohoId            String?       @unique
+  doNotContact      Boolean         @default(false)
+  whatsappOptOut    Boolean         @default(false)
+  recordingConsent  Boolean         @default(false)
+  zohoId            String?         @unique
   hubContactId      String?
-  instagramId       String?       @unique
-  messengerPsid     String?       @unique
+  instagramId       String?         @unique
+  messengerPsid     String?         @unique
 
   // Dedup / merge (confirmación humana salvo phone+email idénticos — Anexo B §K G.6)
   mergedIntoId String?
@@ -932,9 +942,9 @@ model Activity {
   duration_minutes Int?
 
   // Trazabilidad Google Workspace (GW-1 Gmail / GW-2 Calendar). FKs lógicas a Gmail/Calendar — no Prisma relations.
-  gmailThreadId    String?
-  gmailMessageId   String?        @unique  // dedup de mensajes Gmail (un Activity por messageId)
-  googleEventId    String?        @unique  // reservado GW-2 Calendar
+  gmailThreadId  String?
+  gmailMessageId String? @unique // dedup de mensajes Gmail (un Activity por messageId)
+  googleEventId  String? @unique // reservado GW-2 Calendar
 
   // Twilio Voice (click-to-call §5.11). Índice parcial en SQL manual (WHERE callSid IS NOT NULL).
   callSid      String? @unique
@@ -957,11 +967,11 @@ model GmailThread {
   contactId     String
   dealId        String?
   userId        String
-  threadId      String   // Gmail threadId del asesor dueño del token
+  threadId      String // Gmail threadId del asesor dueño del token
   messageCount  Int      @default(1)
   subject       String?
   lastMessageAt DateTime
-  direction     String   // INBOUND | OUTBOUND | MIXED
+  direction     String // INBOUND | OUTBOUND | MIXED
   snippet       String?  @db.Text
 
   createdAt DateTime @default(now())
@@ -1060,15 +1070,15 @@ model SystemConfig {
 
 // Mensajes SMS/WhatsApp via Twilio
 model Message {
-  id            String           @id @default(uuid())
-  contactId     String
-  contact       Contact          @relation(fields: [contactId], references: [id])
-  userId        String?
-  user          User?            @relation(fields: [userId], references: [id])
-  channel       MessageChannel
-  direction     MessageDirection
-  body          String           @db.Text
-  mediaUrl      String?
+  id                String           @id @default(uuid())
+  contactId         String
+  contact           Contact          @relation(fields: [contactId], references: [id])
+  userId            String?
+  user              User?            @relation(fields: [userId], references: [id])
+  channel           MessageChannel
+  direction         MessageDirection
+  body              String           @db.Text
+  mediaUrl          String?
   twilioSid         String?          @unique
   externalMessageId String?          @unique
   templateName      String?
@@ -1513,6 +1523,28 @@ model Conversation {
   @@schema("propyte_crm")
 }
 
+// Configuración global del bot (singleton). Editable desde Admin → Bot.
+model BotConfig {
+  id                 String        @id @default(uuid())
+  singleton          Boolean       @unique @default(true) // fuerza una sola fila
+  botEnabled         Boolean       @default(true) // kill-switch global (≠ Conversation.botEnabled)
+  tonePreset         BotTonePreset @default(PROFESIONAL_CALIDO)
+  autonomyLevel      AutonomyLevel @default(L2)
+  model              String        @default("claude-sonnet-5")
+  openerStyle        String        @default("WARM_NAME") // WARM_NAME | DIRECT
+  maxLines           Int           @default(4)
+  dataGateStrict     Boolean       @default(true)
+  escalationTriggers Json          @default("[\"apartar\",\"queja\",\"legal_fiscal\",\"negociacion\"]")
+  enabledChannels    Json          @default("[\"WHATSAPP\"]")
+  updatedByUserId    String?
+  updatedBy          User?         @relation("BotConfigUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@map("bot_config")
+  @@schema("propyte_crm")
+}
+
 // =====================================================================
 // REBUILD F1 — Perfiles de usuario (Anexo B §J)
 // =====================================================================
@@ -1556,12 +1588,12 @@ model GoogleOAuthToken {
   id             String    @id @default(uuid())
   userId         String    @unique
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken    String    @db.Text   // cifrado AES-256-GCM
-  refreshToken   String    @db.Text   // cifrado AES-256-GCM
+  accessToken    String    @db.Text // cifrado AES-256-GCM
+  refreshToken   String    @db.Text // cifrado AES-256-GCM
   tokenExpiry    DateTime
   scope          String    @db.Text
   googleEmail    String
-  gmailHistoryId String?              // baseline para delta sync (GW-1)
+  gmailHistoryId String? // baseline para delta sync (GW-1)
   isValid        Boolean   @default(true)
   connectedAt    DateTime  @default(now())
   lastUsedAt     DateTime?
@@ -2469,7 +2501,7 @@ model Goal {
 // =====================================================================
 
 model JourneyLayout {
-  id        String   @id            // scope: "general" | "targeted:<CAMPAIGN>"
+  id        String   @id // scope: "general" | "targeted:<CAMPAIGN>"
   positions Json     @default("{}")
   updatedAt DateTime @updatedAt
 
