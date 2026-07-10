@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users, DollarSign, Settings, Plus, Pencil, Trash2, Plug } from "lucide-react";
+import { Users, DollarSign, Settings, Plus, Pencil, Trash2, Plug, Bot } from "lucide-react";
 import {
   ROLE_LABELS,
   DEAL_TYPE_LABELS,
@@ -37,6 +37,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { UserFormDialog } from "./user-form-dialog";
 import { CommissionRuleDialog } from "./commission-rule-dialog";
 import { IntegrationsTab } from "./integrations-tab";
+import { BotConfigTab } from "./bot-config-tab";
+import type { BotTonePreset } from "@prisma/client";
 
 // Configuracion de colores para estados de usuario
 const USER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -91,12 +93,25 @@ interface ApiKeyData {
   createdAt: Date;
 }
 
+interface BotConfigData {
+  botEnabled: boolean;
+  tonePreset: BotTonePreset;
+  autonomyLevel: "L0" | "L1" | "L2";
+  model: string;
+  openerStyle: "WARM_NAME" | "DIRECT";
+  maxLines: number;
+  dataGateStrict: boolean;
+  escalationTriggers: string[];
+  enabledChannels: string[];
+}
+
 interface AdminContentProps {
   initialUsers: UserData[];
   initialCommissionRules: CommissionRuleData[];
   initialSystemConfig: Record<string, unknown>;
   initialWebhooks: WebhookData[];
   initialApiKeys: ApiKeyData[];
+  botConfig: BotConfigData;
 }
 
 export function AdminContent({
@@ -105,6 +120,7 @@ export function AdminContent({
   initialSystemConfig,
   initialWebhooks,
   initialApiKeys,
+  botConfig,
 }: AdminContentProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -278,6 +294,10 @@ export function AdminContent({
           <TabsTrigger value="integrations" className="gap-1">
             <Plug className="h-4 w-4" />
             Integraciones
+          </TabsTrigger>
+          <TabsTrigger value="bot" className="gap-1">
+            <Bot className="h-4 w-4" />
+            Bot
           </TabsTrigger>
         </TabsList>
 
@@ -645,6 +665,11 @@ export function AdminContent({
             initialWebhooks={initialWebhooks}
             initialApiKeys={initialApiKeys}
           />
+        </TabsContent>
+
+        {/* Pestana: Configuracion del Bot (tono, autonomia, modelo) */}
+        <TabsContent value="bot">
+          <BotConfigTab initial={botConfig} />
         </TabsContent>
       </Tabs>
 

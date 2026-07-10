@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { botConfigUpdateSchema } from "./bot-config";
+import { botConfigUpdateSchema } from "./bot-config.schema";
 
 describe("botConfigUpdateSchema", () => {
   it("acepta una config válida", () => {

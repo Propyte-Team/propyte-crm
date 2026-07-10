@@ -1,6 +1,7 @@
 // Pagina de administracion: componente servidor con verificacion de rol
 import { getServerSession } from "@/lib/auth/session";
 import { getUsers, getCommissionRules, getSystemConfig, getWebhookConfigs, getApiKeys } from "@/server/admin";
+import { getBotConfigForAdmin } from "@/server/bot-config";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
 
@@ -15,12 +16,13 @@ export default async function AdminPage() {
   }
 
   // Obtener datos en paralelo
-  const [users, commissionRules, systemConfig, webhooks, apiKeys] = await Promise.all([
+  const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig] = await Promise.all([
     getUsers(),
     getCommissionRules(),
     getSystemConfig(),
     getWebhookConfigs(),
     getApiKeys(),
+    getBotConfigForAdmin(),
   ]);
 
   return (
@@ -40,6 +42,7 @@ export default async function AdminPage() {
         initialSystemConfig={systemConfig}
         initialWebhooks={webhooks}
         initialApiKeys={apiKeys}
+        botConfig={botConfig}
       />
     </div>
   );
