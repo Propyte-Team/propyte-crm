@@ -7,6 +7,8 @@ import { getServerSession } from "@/lib/auth/session";
 import { writeCredentials } from "@/lib/intake/connectors";
 import {
   connectorCredentialsMetaSchema,
+  connectorCredentialsSocialSchema,
+  connectorConfigSocialSchema,
   connectorCredentialsTikTokSchema,
   connectorCredentialsWebsiteSchema,
   connectorCredentialsGoogleAdsSchema,
@@ -27,7 +29,8 @@ const createSchema = z.object({
 });
 
 function credentialsSchemaFor(provider: string) {
-  if (provider === "META" || provider === "INSTAGRAM" || provider === "MESSENGER") return connectorCredentialsMetaSchema;
+  if (provider === "INSTAGRAM" || provider === "MESSENGER") return connectorCredentialsSocialSchema;
+  if (provider === "META") return connectorCredentialsMetaSchema;
   if (provider === "TIKTOK") return connectorCredentialsTikTokSchema;
   if (provider === "WEBSITE") return connectorCredentialsWebsiteSchema;
   if (provider === "GOOGLE_ADS") return connectorCredentialsGoogleAdsSchema;
@@ -80,6 +83,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: credsCheck.error.flatten() }, { status: 400 });
     }
     encrypted = writeCredentials(parsed.data.credentials);
+  }
+
+  if (parsed.data.provider === "INSTAGRAM" || parsed.data.provider === "MESSENGER") {
+    const cfg = connectorConfigSocialSchema.safeParse(parsed.data.config ?? {});
+    if (!cfg.success) return NextResponse.json({ error: cfg.error.flatten() }, { status: 400 });
+    if (parsed.data.provider === "INSTAGRAM" && !cfg.data.igBusinessId) {
+      return NextResponse.json({ error: "igBusinessId requerido para Instagram" }, { status: 400 });
+    }
   }
 
   const connector = await prisma.leadConnector.create({

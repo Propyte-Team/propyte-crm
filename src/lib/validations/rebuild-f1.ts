@@ -103,6 +103,18 @@ export const connectorCredentialsMetaSchema = z.object({
   verifyToken: z.string().min(1),
 });
 
+// Social (IG DM / Messenger): secretos en credentials; identificadores en config.
+export const connectorCredentialsSocialSchema = z.object({
+  pageAccessToken: z.string().min(1),
+  appSecret: z.string().min(1),
+  verifyToken: z.string().min(1),
+});
+export const connectorConfigSocialSchema = z.object({
+  pageId: z.string().min(1),
+  igBusinessId: z.string().optional(),
+  brand: z.string().optional(),
+});
+
 export const connectorCredentialsWhatsAppSchema = z.object({
   accessToken: z.string().min(1),
   verifyToken: z.string().min(1),

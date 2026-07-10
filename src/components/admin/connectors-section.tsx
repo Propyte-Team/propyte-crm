@@ -35,10 +35,21 @@ const META_CRED_FIELDS = [
   { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
 ];
 
+const SOCIAL_CONFIG_FIELDS = [
+  { key: "pageId", label: "Page ID" },
+  { key: "igBusinessId", label: "Instagram Business ID (solo IG)" },
+  { key: "brand", label: "Marca (opcional)" },
+];
+const SOCIAL_CRED_FIELDS = [
+  { key: "pageAccessToken", label: "Page Access Token (long-lived)" },
+  { key: "appSecret", label: "App Secret" },
+  { key: "verifyToken", label: "Verify Token" },
+];
+
 const CRED_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
   META: META_CRED_FIELDS,
-  INSTAGRAM: META_CRED_FIELDS,
-  MESSENGER: META_CRED_FIELDS,
+  INSTAGRAM: SOCIAL_CRED_FIELDS,
+  MESSENGER: SOCIAL_CRED_FIELDS,
   TIKTOK: [
     { key: "advertiserId", label: "Advertiser ID" },
     { key: "accessToken", label: "Access Token" },
@@ -58,7 +69,9 @@ export function ConnectorsSection() {
   const [provider, setProvider] = useState<string>("META");
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
+  const [cfg, setCfg] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const isSocial = provider === "INSTAGRAM" || provider === "MESSENGER";
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/connectors");
@@ -74,15 +87,24 @@ export function ConnectorsSection() {
       setError("Completa nombre y credenciales");
       return;
     }
+    const body: Record<string, unknown> = { name: name.trim(), provider, credentials: creds };
+    if (isSocial) {
+      if (!cfg.pageId?.trim() || (provider === "INSTAGRAM" && !cfg.igBusinessId?.trim())) {
+        setError("Instagram requiere Page ID + Instagram Business ID; Messenger requiere Page ID");
+        return;
+      }
+      body.config = { pageId: cfg.pageId.trim(), igBusinessId: cfg.igBusinessId?.trim() || undefined, brand: cfg.brand?.trim() || undefined };
+    }
     const res = await fetch("/api/admin/connectors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), provider, credentials: creds }),
+      body: JSON.stringify(body),
     });
     if (res.ok) {
       setOpen(false);
       setName("");
       setCreds({});
+      setCfg({});
       load();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -123,7 +145,7 @@ export function ConnectorsSection() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Proveedor</Label>
-                <Select value={provider} onValueChange={(v) => { setProvider(v); setCreds({}); }}>
+                <Select value={provider} onValueChange={(v) => { setProvider(v); setCreds({}); setCfg({}); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="META">Meta Lead Ads</SelectItem>
@@ -138,6 +160,16 @@ export function ConnectorsSection() {
                 <Label>Nombre</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Meta — Página Propyte" />
               </div>
+              {isSocial && SOCIAL_CONFIG_FIELDS.map((f) => (
+                <div key={f.key} className="space-y-1.5">
+                  <Label>{f.label}</Label>
+                  <Input
+                    type="text"
+                    value={cfg[f.key] ?? ""}
+                    onChange={(e) => setCfg({ ...cfg, [f.key]: e.target.value })}
+                  />
+                </div>
+              ))}
               {(CRED_FIELDS[provider] ?? []).map((f) => (
                 <div key={f.key} className="space-y-1.5">
                   <Label>{f.label}</Label>
