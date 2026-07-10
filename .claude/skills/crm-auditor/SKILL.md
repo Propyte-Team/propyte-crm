@@ -26,7 +26,7 @@ Auditor on-demand de la app real. Entra a `crm.propyte.com` como cada rol (usuar
 0. **Prep:** prior-art scan (`gh issue list --repo Propyte-Team/propyte-crm` + recon-notes §7) → provisionar usuarios (`provisioning.md`: bootstrap ADMIN temporal, luego altas de rol vía UI Admin).
 1. **Recorrido por rol (SECUENCIAL — un login/logout por rol; nunca en paralelo sobre el mismo navegador Playwright, es instancia única y da lock de perfil):**
    - Login con el usuario del rol.
-   - Ejecutar `playbooks/<rol>.md` con Playwright, incluyendo la dimensión tipo de contacto donde aplique.
+   - Ejecutar `playbooks/{rol}.md` con Playwright, incluyendo la dimensión tipo de contacto donde aplique.
    - Usar SOLO datos QA (safety-contract). Capturar screenshots en `docs/audit-{fecha}/screenshots/`.
    - Recolectar hallazgos en el formato de `ticket-template.md`.
    - Logout.
