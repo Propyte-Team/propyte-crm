@@ -1,10 +1,10 @@
-# Auditoría CRM — 2026-07-10 (smoke run)
+# Auditoría CRM — 2026-07-10 (smoke Asesor + corrida completa 5 roles)
 
 - **Entorno:** crm.propyte.com (prod)
-- **Roles corridos:** Asesor (`ASESOR_SR`) — smoke de validación del harness `crm-auditor`
+- **Roles corridos:** Asesor (`ASESOR_SR`), Gerente (`GERENTE`), Director (`DIRECTOR`), Marketing (`MARKETING`), Sistemas/QA (`MANTENIMIENTO` + ADMIN)
 - **Datos QA:** email `l.angelflores.23@gmail.com`, tel `+525500000710` (tel de Luis `+525576330809` colisionó con contacto existente — ver Nota de datos)
-- **Alcance:** 1 tipo de contacto (Inversionista), 1 origen (Facebook Ads), journey abreviado (crear lead → detalle → identificar origen). Sin outbound real.
-- **Resumen:** 4 tickets — alta 2 / media 1 / baja 1
+- **Alcance:** Asesor = journey de alta (lead → detalle → origen). Resto = matriz de permisos (positive+negative), acceso a módulos, observabilidad de automatizaciones. Sin outbound real.
+- **Resumen:** 6 tickets — alta 3 / media 2 / baja 1
 - **Residuo QA:** ninguno (verificado en BD: 0 contactos QA, 0 usuarios `qa-*`, `audit-temp` inactivo)
 
 ## Tabla resumen
@@ -13,7 +13,9 @@
 |---|---|---|---|---|
 | AUD-20260710-01 | Sistemas | bug / security | **alta** | Login de prod pre-llena credenciales de ADMIN |
 | AUD-20260710-02 | Asesor | missing-feature | **alta** | El alta de contacto no permite registrar el origen real (12/21 fuentes) |
+| AUD-20260710-05 | Sistemas | permiso-gap | **alta** | Rol `MANTENIMIENTO` con sidebar completamente vacío |
 | AUD-20260710-03 | Asesor | ux / consistencia | media | "Tipo de contacto" incompleto en el alta (5/9) vs detalle (9/9) |
+| AUD-20260710-06 | Sistemas | automation-gap | media | Motor de automatización dormido en prod (8 WF inactivas, 0 procesados 24h) |
 | AUD-20260710-04 | Asesor | mejora | baja | Fuente del lead no editable desde el detalle (a verificar con lead de conector) |
 
 ---
@@ -75,6 +77,51 @@
 - Evidencia: screenshots/AUD-20260710-03-detalle-contacto-origen.png
 - Prior-art: relacionado AUD-20260710-02 + recon-notes §3
 - Estado:    abierto (a verificar)
+
+### [ALTA] Rol `MANTENIMIENTO` con sidebar completamente vacío
+- ID:        AUD-20260710-05
+- Rol:       Sistemas
+- Flujo:     Login → navegación
+- Categoría: permiso-gap / navigation
+- Severidad: alta
+- Ruta:      /dashboard (cualquier ruta)
+- Pasos:     1. Login como usuario rol `MANTENIMIENTO`. 2. Observar el sidebar.
+- Esperado:  El rol ve al menos las secciones que le corresponden.
+- Actual:    El `<nav>` del sidebar sale **vacío** (ningún `navGroup` de `sidebar.tsx` incluye `MANTENIMIENTO`). El usuario entra a `/dashboard` pero no tiene ningún link para navegar. Mismo bug de clase que TEAM_LEADER (corregido en 2026-06-10) — sigue abierto para `MANTENIMIENTO` (rol canónico activo). Nota: por URL directa sí puede entrar a `/duplicados` (está en esa allowlist) pero no lo ve en el menú.
+- Evidencia: screenshots/AUD-20260710-05-mantenimiento-sidebar-vacio.png
+- Prior-art: recon-notes §2 (predicho); clase de bug de docs/audit-2026-06-10 (TEAM_LEADER). Nuevo para MANTENIMIENTO.
+- Estado:    abierto
+
+### [MEDIA] Motor de automatización dormido en producción
+- ID:        AUD-20260710-06
+- Rol:       Sistemas
+- Flujo:     Configuración → Flujos de trabajo y SLA
+- Categoría: automation-gap
+- Severidad: media
+- Ruta:      /configuracion → "Flujos de trabajo y SLA"
+- Pasos:     1. Login ADMIN/DIRECTOR/GERENTE. 2. /configuracion → "Flujos de trabajo y SLA". 3. Ver Observabilidad + reglas.
+- Esperado:  Las automatizaciones núcleo (speed-to-lead SLA 5min, anti-huérfano, pago vencido, etc.) operando.
+- Actual:    Las **8 reglas canónicas WF1–WF8 están INACTIVAS** ("última: nunca"), **Procesados (24h) = 0**, cola vacía. La UI misma advierte "Requiere el cron `/api/cron/workflows` activo en Hostinger". La política SLA "Default Propyte" está activa con 160 timers históricos (el motor corrió antes) pero hoy nada se procesa → o el cron no está agendado (BUG-19) o las reglas nunca se activaron. El valor de automatización del CRM no está vivo en prod. (Puede ser intencional pre-go-live — confirmar con Luis.)
+- Evidencia: screenshots/AUD-20260710-07-automatizaciones-inactivas.png
+- Prior-art: recon-notes §6 + task_manager.md BUG-19 (cron no agendado al 2026-06-15). Confirmado persiste.
+- Estado:    abierto
+
+---
+
+## Matriz de permisos por rol (verificada en vivo)
+
+| Rol | Acceso positivo verificado | Bloqueo (negative) verificado | Notas |
+|---|---|---|---|
+| ASESOR_SR | sidebar poblado; `/contacts` scope "own" (ve solo lo propio) | — | correcto |
+| GERENTE | sidebar amplio; `/pipeline`, `/configuracion`, `/admin` | `/journey` → redirect a /dashboard | botón activar workflow **disabled** (toggle = ADMIN/DIRECTOR) = correcto |
+| DIRECTOR | acceso total: `/journey`, `/reports`, `/configuracion`; puede **activar** workflows / crear reglas/cadencias/políticas | — | correcto |
+| MARKETING | `/conexiones` (conectores Meta/TikTok/Google/LinkedIn/Pinterest), `/reports` | `/admin` → redirect; `/configuracion` → redirect | correcto |
+| MANTENIMIENTO | entra a `/dashboard` | `/admin` → redirect | **BUG AUD-05**: sidebar vacío |
+
+**Conclusión permisos:** las 5 páginas con allowlist server-side (`/admin`, `/configuracion`, `/journey`, `/duplicados`, `/conexiones`) **bloquean correctamente** por URL directa a roles no permitidos. El gating de allowlist funciona; el problema es de **navegación/visibilidad** (MANTENIMIENTO) no de seguridad.
+
+## Pendiente de verificar (no cubierto en esta corrida)
+- **Scoping de datos por rol en `/reports`·`/commissions`·`/cobranza`** (páginas que solo checan sesión, sin allowlist): no se pudo confirmar si un rol de ventas bajo ve datos de otros asesores, porque no había datos visibles y `qa-asesor` se borró tras el smoke. Recomendación: re-correr con un asesor QA + datos sembrados en su plaza.
 
 ---
 
