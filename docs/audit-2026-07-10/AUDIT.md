@@ -4,8 +4,8 @@
 - **Roles corridos:** Asesor (`ASESOR_SR`), Gerente (`GERENTE`), Director (`DIRECTOR`), Marketing (`MARKETING`), Sistemas/QA (`MANTENIMIENTO` + ADMIN)
 - **Datos QA:** email `l.angelflores.23@gmail.com`, tel `+525500000710` (tel de Luis `+525576330809` colisionó con contacto existente — ver Nota de datos)
 - **Alcance:** Asesor = journey de alta (lead → detalle → origen). Resto = matriz de permisos (positive+negative), acceso a módulos, observabilidad de automatizaciones. Sin outbound real.
-- **Resumen:** 6 tickets — alta 3 / media 2 / baja 1
-- **Residuo QA:** ninguno (verificado en BD: 0 contactos QA, 0 usuarios `qa-*`, `audit-temp` inactivo)
+- **Resumen:** 7 tickets — alta 4 / media 2 / baja 1
+- **Residuo QA:** `qa-asesor@propyte.local` quedó **inactivo** (no borrable: 12 actividades de una conversación de WhatsApp de prueba de Luis lo referencian) + lead de prueba de Luis "LUIS FLORES MKT" Sin asignar. Resto limpio (`audit-temp` inactivo; demás usuarios QA borrados). Ver §Incidente.
 
 ## Tabla resumen
 
@@ -14,6 +14,7 @@
 | AUD-20260710-01 | Sistemas | bug / security | **alta** | Login de prod pre-llena credenciales de ADMIN |
 | AUD-20260710-02 | Asesor | missing-feature | **alta** | El alta de contacto no permite registrar el origen real (12/21 fuentes) |
 | AUD-20260710-05 | Sistemas | permiso-gap | **alta** | Rol `MANTENIMIENTO` con sidebar completamente vacío |
+| AUD-20260710-09 | Sistemas | routing / data-safety | **alta** | Round-robin asigna leads reales a asesores recién creados (sin gate anti-test) |
 | AUD-20260710-03 | Asesor | ux / consistencia | media | "Tipo de contacto" incompleto en el alta (5/9) vs detalle (9/9) |
 | AUD-20260710-06 | Sistemas | automation-gap | media | Motor de automatización dormido en prod (8 WF inactivas, 0 procesados 24h) |
 | AUD-20260710-04 | Asesor | mejora | baja | Fuente del lead no editable desde el detalle (a verificar con lead de conector) |
@@ -105,6 +106,35 @@
 - Evidencia: screenshots/AUD-20260710-07-automatizaciones-inactivas.png
 - Prior-art: recon-notes §6 + task_manager.md BUG-19 (cron no agendado al 2026-06-15). Confirmado persiste.
 - Estado:    abierto
+
+### [ALTA] Round-robin asigna leads reales a asesores recién creados (sin gate anti-test)
+- ID:        AUD-20260710-09
+- Rol:       Sistemas
+- Flujo:     Intake / auto-asignación (round-robin)
+- Categoría: routing / data-safety
+- Severidad: alta
+- Pasos:     1. Crear un usuario asesor **activo** (cualquier plaza con inbound). 2. Esperar/generar un lead entrante (ej. WhatsApp). 3. Observar a quién se asigna.
+- Esperado:  Un asesor nuevo/de prueba no debería recibir leads reales sin control; idealmente un flag "excluir de asignación" o validación de que el usuario es operativo.
+- Actual:    El intake asignó un **lead de WhatsApp real y EN VIVO** ("LUIS FLORES MKT", conversación con bot respondiendo) a un `qa-asesor` recién creado, en cuestión de minutos, solo por estar activo. No hay gate anti-test/round-robin exclusion. Riesgo operativo: un asesor mal dado de alta (o de prueba) intercepta clientes reales y la conversación queda en un usuario equivocado. **Nota positiva colateral:** confirma que el intake de WhatsApp + bot + round-robin están VIVOS y funcionando (contrasta con AUD-06).
+- Impacto:   Un lead real terminó en un usuario de prueba; se protegió reasignándolo a "Sin asignar" (no se perdió). Mitigación aplicada por el auditor: asesores QA ahora se crean en plaza sin inbound (MERIDA) + ventana corta + teardown que reasigna.
+- Evidencia: BD (contacts.assignedToId + 12 activities WHATSAPP_IN/OUT en el contacto ff6e39e3)
+- Prior-art: nuevo (descubierto por el propio auditor)
+- Estado:    abierto
+
+---
+
+## Corrida 2 — Pase profundo Asesor (kanban / deal / cotización) — TODO OK
+
+Cubrió los flujos que el smoke omitió. **Sin bugs** (además del incidente de routing AUD-09):
+- **Crear deal en `/pipeline`**: OK. Requiere contacto preexistente (no hay alta inline de contacto — UX menor), + Tipo de Operación (Nativa Contado/Financiamiento/Macrolote/Corretaje/MasterBroker), Valor Estimado y Fecha de cierre.
+- **Actividad auto-logueada** al crear el deal ("Deal creado"). OK.
+- **Cambio de etapa** (`Cambiar Etapa` → seleccionar → Continuar → **Confirmar Cambio**, 2 pasos): **persiste y la vista refresca en vivo** (probabilidad 5%→10%, "Siguiente acción" actualizada) **sin recargar**. La regresión de kanban de 2026-06-10 **NO está presente**. (Nota: el 1er intento "falló" solo porque no completé el 2º paso de confirmación — no es bug.)
+- **Cotización/propuesta express** (`+ Nueva propuesta`): crea borrador "Propuesta de unidades" con búsqueda de unidades del Hub + "Generar y copiar link". OK (requiere unidades del Hub para contenido).
+- **Inbox/WhatsApp**: confirmado VIVO por el incidente AUD-09 (conversación real IN/OUT con bot). No se ejercitó envío manual para no tocar inbound real.
+
+## Incidente de datos (resuelto, sin pérdida)
+
+Al crear `qa-asesor` **activo**, el round-robin le asignó el lead real de WhatsApp de Luis. Acción del auditor: (1) lead **desasignado** (Sin asignar, intacto, 12 msgs de historial preservados); (2) `qa-asesor` **desactivado** (no borrable: FK de esas 12 actividades reales) → queda inactivo; (3) los demás usuarios QA borrados. **No se borró ningún dato real.** Lección incorporada al `safety-contract.md §6` + `provisioning.md` (asesores QA en MERIDA, ventana corta, teardown reasigna leads reales).
 
 ---
 

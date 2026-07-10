@@ -26,6 +26,11 @@ Todo registro QA (Contact, Deal, Quote, Activity, Message) debe ser rastreable a
 3. **Sin acciones irreversibles de negocio** fuera de datos QA: no lanzar campañas, no modificar conectores/credenciales reales en `/conexiones` (sólo lectura de la UI de conectores), no togglear reglas de automatización reales en prod (crear una regla QA aparte si hace falta probar automatización, inactiva por defecto).
 4. **Teardown obligatorio.** Al final se borra TODO lo QA. Si algo no se pudo borrar → reportarlo explícito en el `AUDIT.md` (nunca silenciar el fallo de cleanup).
 5. **Windows:** nunca matar `node.exe` de forma masiva (hay ~39 Chrome + procesos de Luis). Si Playwright se cuelga, cerrar sólo su navegador.
+6. **⚠️ Asesores QA y round-robin (CRÍTICO, aprendido 2026-07-10):** crear un usuario asesor **activo** lo mete al pool de round-robin y el intake le **auto-asigna leads REALES** en minutos (incidente real: un lead de WhatsApp en vivo cayó en el `qa-asesor`). Reglas:
+   - Provisionar el asesor QA en una **plaza sin inbound activo** (usar `MERIDA`; el inbound real es PDC/TULUM) para minimizar captura.
+   - **Ventana corta**: crear → probar → teardown rápido; no dejar el asesor activo esperando.
+   - En el teardown, **antes de borrar/desactivar el usuario**, reasignar (`assignedToId=null`) TODO contacto sin tag `QA_AUDIT` que haya caído en él (son leads reales) y avisar a Luis para que los re-rutee. **Nunca borrar** esos contactos ni sus actividades.
+   - Si el usuario QA acumuló actividades reales (p. ej. conversación de WhatsApp), **no se puede borrar** (FK) → dejarlo **inactivo** y reportarlo como residuo.
 
 ## Checklist de teardown (copiar al final de cada AUDIT.md)
 
@@ -35,6 +40,7 @@ Todo registro QA (Contact, Deal, Quote, Activity, Message) debe ser rastreable a
 - [ ] Activities/tasks QA borradas
 - [ ] Mensajes/hilos QA del inbox borrados o cerrados
 - [ ] Reglas/planes de automatización QA borrados o dejados inactivos
-- [ ] Usuarios efímeros `qa-*@propyte.local` borrados
+- [ ] Leads REALES (sin tag `QA_AUDIT`) que cayeron en un asesor QA → reasignados a `null` y reportados a Luis (NO borrados)
+- [ ] Usuarios efímeros `qa-*@propyte.local` borrados (o inactivos si tienen actividades reales que impiden el DELETE → reportar residuo)
 - [ ] ADMIN temporal (`audit-temp@propyte.local`) devuelto a `isActive=false`
 - [ ] Residuo reportado explícito si algo no se pudo limpiar

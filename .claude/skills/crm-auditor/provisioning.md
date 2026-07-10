@@ -29,9 +29,11 @@
 
 ## Alta de los usuarios de rol (ya logueado como ADMIN)
 
-En `/admin` → crear usuario. Columnas obligatorias (`NOT NULL`): `email`, `name`, `role`, `plaza`, `passwordHash` (`id`/`updatedAt` los pone Prisma; `careerLevel` default `JR`). `Plaza` ∈ `{PDC, TULUM, MERIDA}` — usar `TULUM`.
+En `/admin` → crear usuario. Columnas obligatorias (`NOT NULL`): `email`, `name`, `role`, `plaza`, `passwordHash` (`id`/`updatedAt` los pone Prisma; `careerLevel` default `JR`). `Plaza` ∈ `{PDC, TULUM, MERIDA}`.
 
-- `qa-asesor@propyte.local` → `ASESOR_SR`, plaza `TULUM`
+**⚠️ Regla anti-secuestro (ver `safety-contract.md` §6):** los **asesores** QA deben crearse en **plaza `MERIDA`** (sin inbound real; PDC/TULUM sí reciben leads y el round-robin se los asignaría). Ventana corta + teardown que reasigna leads reales extraviados. Los roles no-asesor (gerente/director/marketing) pueden ir en cualquier plaza (no entran al pool de intake de la misma forma).
+
+- `qa-asesor@propyte.local` → `ASESOR_SR`, plaza **`MERIDA`**
 - `qa-gerente@propyte.local` → `GERENTE`, plaza `TULUM`
 - `qa-director@propyte.local` → `DIRECTOR`, plaza `TULUM`
 - `qa-marketing@propyte.local` → `MARKETING`, plaza `TULUM`
