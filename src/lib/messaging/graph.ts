@@ -1,6 +1,6 @@
 import type { SendResult } from "./types";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+const GRAPH = "https://graph.facebook.com/v24.0";
 
 /** Envía un mensaje de texto a un PSID/IGSID por la Send API de la página. */
 export async function sendGraphMessage(

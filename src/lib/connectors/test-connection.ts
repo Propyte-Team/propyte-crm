@@ -20,7 +20,7 @@ export async function testConnection(
     switch (def.testKind) {
       case "meta": {
         const res = await fetch(
-          `https://graph.facebook.com/v21.0/${encodeURIComponent(creds.pageId)}?fields=name,id`,
+          `https://graph.facebook.com/v24.0/${encodeURIComponent(creds.pageId)}?fields=name,id`,
           { headers: { Authorization: `Bearer ${creds.pageAccessToken}` } }
         );
         const data = (await res.json()) as { name?: string; error?: { message?: string } };
