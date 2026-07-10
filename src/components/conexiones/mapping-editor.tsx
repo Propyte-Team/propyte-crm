@@ -192,7 +192,7 @@ export function MappingEditor({
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ mapped: Record<string, unknown>; usedLastLead: boolean } | null>(null);
+  const [testResult, setTestResult] = useState<{ mapped: Record<string, unknown>; usedLastLead: boolean; warnings?: string[] } | null>(null);
 
   function updateRule(i: number, r: MappingRule) {
     setRules((rs) => rs.map((x, j) => (j === i ? r : x)));
@@ -311,6 +311,16 @@ export function MappingEditor({
               Resultado {testResult.usedLastLead ? "· último lead recibido" : "· sin datos de muestra"}
             </p>
             <pre className="mt-1 overflow-x-auto text-[12px]">{JSON.stringify(testResult.mapped, null, 2)}</pre>
+            {testResult.warnings && testResult.warnings.length > 0 && (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                <p className="font-medium">Valores que se descartarían por no ser válidos para el campo:</p>
+                <ul className="mt-1 list-disc pl-4">
+                  {testResult.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 

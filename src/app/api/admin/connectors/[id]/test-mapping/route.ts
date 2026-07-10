@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { mapLead, parseRules } from "@/lib/intake/map-lead";
 import { mappingRuleSchema } from "@/lib/intake/mapping-model";
+import { sanitizeEnumFields } from "@/lib/intake/connectors";
 import { z } from "zod";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
@@ -33,5 +34,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (last) { fieldData = raw.external ?? {}; metadata = raw.meta ?? {}; usedLastLead = true; }
   }
   const mapped = mapLead(parsed.data.rules, { fieldData, metadata });
-  return NextResponse.json({ data: { mapped, usedLastLead } });
+  // Copia: sanitizeEnumFields muta — no debe alterar el `mapped` que se muestra al usuario.
+  const warnings = sanitizeEnumFields({ ...mapped });
+  return NextResponse.json({ data: { mapped, usedLastLead, warnings } });
 }

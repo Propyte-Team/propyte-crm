@@ -44,7 +44,7 @@ function applyValueMap(rule: MappingRule, value: string): string | undefined {
   const vm = rule.valueMap;
   // GOTCHA: {} es truthy → sin la guarda de length omitiría todo. Mapa vacío = passthrough.
   if (!vm || Object.keys(vm).length === 0) return value;
-  if (value in vm) return vm[value];
+  if (Object.prototype.hasOwnProperty.call(vm, value)) return vm[value];
   switch (rule.fallback) {
     case "passthrough": return value;
     case "fixed": return rule.fallbackValue;

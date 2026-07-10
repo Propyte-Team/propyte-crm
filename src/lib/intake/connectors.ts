@@ -51,6 +51,40 @@ export function mapExternalFields(
   return lead;
 }
 
+// Enums válidos de Contact (deben coincidir EXACTO con incomingLeadSchema en
+// src/lib/validations/rebuild-f1.ts — `source` es un subconjunto documentado ahí).
+export const VALID_ENUMS: Record<string, readonly string[]> = {
+  contactType: ["COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "REFERIDOR", "LEAD", "PROSPECTO", "CLIENTE", "REFERIDO"],
+  temperature: ["HOT", "WARM", "COLD", "DEAD"],
+  language: ["ES", "EN"],
+  source: [
+    "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "LINKEDIN",
+    "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA",
+    "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
+  ],
+  investmentProfile: ["END_USER", "INVESTOR_RENTAL", "INVESTOR_FLIP", "INVESTOR_LAND", "MIXED"],
+  propertyType: ["DEPARTAMENTO", "CASA", "TERRENO", "MACROLOTE", "LOCAL_COMERCIAL", "OTRO"],
+  purchaseTimeline: ["IMMEDIATE", "ONE_TO_THREE_MONTHS", "THREE_TO_SIX_MONTHS", "SIX_PLUS_MONTHS"],
+  paymentMethod: ["CONTADO", "CREDITO_HIPOTECARIO", "FINANCIAMIENTO_DIRECTO", "MIXTO"],
+  purchaseModality: ["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"],
+  rentalStrategy: ["LONG_TERM", "AIRBNB", "BOTH", "NA"],
+};
+
+// Elimina de `fields` los valores de enum inválidos (mutando) y devuelve los descartados
+// como "campo=valor". Un enum malo NO debe tumbar el lead (mismo criterio que el teléfono);
+// el valor crudo ya se preserva en Contact.custom.
+export function sanitizeEnumFields(fields: Record<string, unknown>): string[] {
+  const dropped: string[] = [];
+  for (const [key, valid] of Object.entries(VALID_ENUMS)) {
+    const v = fields[key];
+    if (typeof v === "string" && v !== "" && !valid.includes(v)) {
+      dropped.push(`${key}=${v}`);
+      delete fields[key];
+    }
+  }
+  return dropped;
+}
+
 // Rellena en `fields` SOLO las claves que vengan undefined/null/"" con el valor heurístico
 // de `profileFields` (deriveInvestmentProfile). El mapeo explícito del conector siempre gana
 // sobre el heurístico — nunca lo pisa. Pura, sin BD, testeable en aislamiento.
@@ -102,10 +136,11 @@ export async function processIncomingLead(
     GOOGLE_ADS: "GOOGLE_ADS",
     LINKEDIN: "LINKEDIN",
   };
-  const source =
-    (mappedFields.source as string | undefined) ??
-    config.defaultLeadSource ??
-    (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? "WEBSITE" : "WEBSITE");
+  // Default de `source` si el mapeo no trae uno usable (no depende de mappedFields.source,
+  // así una regla que puso un valor INVÁLIDO puede recaer aquí tras sanitizar más abajo).
+  const sourceDefault =
+    config.defaultLeadSource ?? (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? "WEBSITE" : "WEBSITE");
+  const source = (mappedFields.source as string | undefined) ?? sourceDefault;
 
   // Copia local: no mutamos el objeto del caller (en sitio/portal es el request body).
   const fields: Record<string, unknown> = { ...mappedFields, source };
@@ -113,6 +148,14 @@ export async function processIncomingLead(
   // conserva en `custom`). Un solo campo malformado no debe perder todo el lead.
   if (typeof fields.phone === "string" && !normalizePhoneE164(fields.phone)) {
     delete fields.phone;
+  }
+  // Un enum inválido de una regla de mapeo tampoco debe tumbar el lead (mismo criterio
+  // que el teléfono): se descarta SOLO ese campo. `source` es requerido — si la regla
+  // le puso un valor inválido y se descartó, se recae al default del conector/proveedor
+  // (nunca queda sin valor).
+  sanitizeEnumFields(fields);
+  if (typeof fields.source !== "string" || fields.source === "") {
+    fields.source = sourceDefault;
   }
   // Todos los campos crudos del formulario → Contact.custom (no se pierde nada de info).
   const custom = rawPayload.external as Record<string, unknown> | undefined;
