@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PROVIDERS, providerById, pullProviders } from "./registry";
+import { PROVIDERS, providerById, pullProviders, splitConnectorFields } from "./registry";
 
 describe("registry de proveedores", () => {
   it("tiene los 7 proveedores esperados", () => {
@@ -28,5 +28,23 @@ describe("registry de proveedores", () => {
     for (const p of PROVIDERS.filter((x) => x.pull === "webhook")) {
       expect(p.webhookPath).toBeDefined();
     }
+  });
+});
+
+describe("splitConnectorFields", () => {
+  it("IG: pageId/igBusinessId/brand → config; token/appSecret/verifyToken → credentials", () => {
+    const { config, credentials } = splitConnectorFields("INSTAGRAM", {
+      pageId: "P", igBusinessId: "IG", brand: "Nativa",
+      pageAccessToken: "T", appSecret: "S", verifyToken: "V",
+    });
+    expect(config).toEqual({ pageId: "P", igBusinessId: "IG", brand: "Nativa" });
+    expect(credentials).toEqual({ pageAccessToken: "T", appSecret: "S", verifyToken: "V" });
+  });
+  it("ignora vacíos y recorta espacios", () => {
+    const { config } = splitConnectorFields("MESSENGER", { pageId: " P ", brand: "" });
+    expect(config).toEqual({ pageId: "P" });
+  });
+  it("MESSENGER existe en el registry", () => {
+    expect(providerById("MESSENGER")?.id).toBe("MESSENGER");
   });
 });

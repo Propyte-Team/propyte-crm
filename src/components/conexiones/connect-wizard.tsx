@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { providerById } from "@/lib/connectors/registry";
+import { providerById, splitConnectorFields } from "@/lib/connectors/registry";
 
 export function ConnectWizard({
   provider, open, onOpenChange, onConnected,
@@ -37,9 +37,10 @@ export function ConnectWizard({
   async function guardar() {
     setMsg("");
     const defLabel = def!.label;
+    const { config, credentials } = splitConnectorFields(provider, creds);
     const create = await fetch("/api/admin/connectors", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() || defLabel, provider, credentials: creds }),
+      body: JSON.stringify({ name: name.trim() || defLabel, provider, credentials, config }),
     });
     const created = await create.json().catch(() => null);
     if (!create.ok || !created?.data?.id) {

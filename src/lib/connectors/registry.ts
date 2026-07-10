@@ -9,6 +9,7 @@ export interface CredField {
   label: string;
   help?: string;
   secret?: boolean;
+  config?: boolean; // true = se guarda en LeadConnector.config (no secreto); default = credentials (cifrado)
 }
 export interface WizardStep {
   title: string;
@@ -42,6 +43,28 @@ const META_STEPS: WizardStep[] = [
   { title: "Prueba y guarda", body: "Validamos el token contra la API y guardamos cifrado." },
 ];
 
+const IG_DM_FIELDS: CredField[] = [
+  { key: "pageId", label: "Page ID (de la Página FB vinculada)", config: true },
+  { key: "igBusinessId", label: "Instagram Business ID", config: true },
+  { key: "brand", label: "Marca (opcional)", config: true },
+  { key: "pageAccessToken", label: "Page Access Token (long-lived)", secret: true },
+  { key: "appSecret", label: "App Secret", secret: true },
+  { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
+];
+const MESSENGER_DM_FIELDS: CredField[] = [
+  { key: "pageId", label: "Page ID", config: true },
+  { key: "brand", label: "Marca (opcional)", config: true },
+  { key: "pageAccessToken", label: "Page Access Token (long-lived)", secret: true },
+  { key: "appSecret", label: "App Secret", secret: true },
+  { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
+];
+const DM_STEPS: WizardStep[] = [
+  { title: "Abre tu app de Meta (Propyte CRM)", body: "Selecciona la Página FB vinculada a la cuenta.", link: "https://developers.facebook.com/apps" },
+  { title: "Genera un Page Access Token (System User)", body: "Con permisos de mensajería (instagram_manage_messages / pages_messaging)." },
+  { title: "Pega Page ID, Instagram Business ID, token, App Secret y Verify Token", body: "El Verify Token lo inventas tú; ponlo igual en el webhook /api/webhooks/meta-dm de Meta." },
+  { title: "Prueba y guarda", body: "Validamos el token contra la API y guardamos cifrado (los IDs van en config)." },
+];
+
 export const PROVIDERS: ProviderDef[] = [
   {
     id: "META", label: "Facebook · Lead Ads", group: "meta", groupLabel: "Meta",
@@ -49,9 +72,14 @@ export const PROVIDERS: ProviderDef[] = [
     webhookPath: "/api/connectors/meta/webhook",
   },
   {
-    id: "INSTAGRAM", label: "Instagram · Lead Ads / DM", group: "meta", groupLabel: "Meta",
-    pull: "webhook", testKind: "meta", credFields: META_CRED, wizardSteps: META_STEPS,
-    webhookPath: "/api/connectors/meta/webhook",
+    id: "INSTAGRAM", label: "Instagram · DM", group: "meta", groupLabel: "Meta",
+    pull: "webhook", testKind: "meta", credFields: IG_DM_FIELDS, wizardSteps: DM_STEPS,
+    webhookPath: "/api/webhooks/meta-dm",
+  },
+  {
+    id: "MESSENGER", label: "Messenger · DM", group: "meta", groupLabel: "Meta",
+    pull: "webhook", testKind: "meta", credFields: MESSENGER_DM_FIELDS, wizardSteps: DM_STEPS,
+    webhookPath: "/api/webhooks/meta-dm",
   },
   {
     id: "TIKTOK", label: "TikTok · Lead Gen", group: "tiktok", groupLabel: "TikTok",
@@ -116,4 +144,20 @@ export function providerById(id: string): ProviderDef | undefined {
 }
 export function pullProviders(): ProviderDef[] {
   return PROVIDERS.filter((p) => p.pull !== "none");
+}
+
+/** Separa los valores capturados en config (no secreto) vs credentials (cifrado) según el flag `config` del campo. Ignora vacíos. */
+export function splitConnectorFields(
+  providerId: string,
+  values: Record<string, string>,
+): { config: Record<string, string>; credentials: Record<string, string> } {
+  const def = providerById(providerId);
+  const configKeys = new Set((def?.credFields ?? []).filter((f) => f.config).map((f) => f.key));
+  const config: Record<string, string> = {};
+  const credentials: Record<string, string> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (v == null || !String(v).trim()) continue;
+    (configKeys.has(k) ? config : credentials)[k] = String(v).trim();
+  }
+  return { config, credentials };
 }
