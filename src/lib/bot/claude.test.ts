@@ -69,4 +69,8 @@ describe("buildClaudeRequestBody", () => {
     }) as any;
     expect(body.thinking).toBeUndefined();
   });
+
+  it("Fable 5 omite thinking (rechaza disabled con 400)", () => {
+    expect(thinkingFieldFor("claude-fable-5")).toEqual({});
+  });
 });

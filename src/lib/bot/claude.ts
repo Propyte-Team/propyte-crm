@@ -28,7 +28,7 @@ Reglas inquebrantables (data-gate):
 // Familia 4.6+ acepta thinking:{type:"disabled"}. Modelos previos (Haiku 4.5)
 // no lo usan: se omite (su default es sin thinking).
 export function thinkingFieldFor(model: string): { thinking?: { type: "disabled" } } {
-  const adaptiveFamily = /sonnet-5|sonnet-4-6|opus-4-(6|7|8)|fable-5/.test(model);
+  const adaptiveFamily = /sonnet-5|sonnet-4-6|opus-4-(6|7|8)/.test(model);
   return adaptiveFamily ? { thinking: { type: "disabled" } } : {};
 }
 
