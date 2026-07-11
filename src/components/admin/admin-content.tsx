@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users, DollarSign, Settings, Plus, Pencil, Trash2, Plug, Bot } from "lucide-react";
+import { Users, DollarSign, Settings, Plus, Pencil, Trash2, Plug, Bot, ListChecks } from "lucide-react";
 import {
   ROLE_LABELS,
   DEAL_TYPE_LABELS,
@@ -38,6 +38,7 @@ import { UserFormDialog } from "./user-form-dialog";
 import { CommissionRuleDialog } from "./commission-rule-dialog";
 import { IntegrationsTab } from "./integrations-tab";
 import { BotConfigTab } from "./bot-config-tab";
+import { PlaybookTab, type PlaybookData } from "./playbook-tab";
 import type { BotTonePreset } from "@prisma/client";
 
 // Configuracion de colores para estados de usuario
@@ -112,6 +113,9 @@ interface AdminContentProps {
   initialWebhooks: WebhookData[];
   initialApiKeys: ApiKeyData[];
   botConfig: BotConfigData;
+  playbooks: PlaybookData[];
+  activePlaybookId: string | null;
+  contactCustomFields: string[];
 }
 
 export function AdminContent({
@@ -121,6 +125,9 @@ export function AdminContent({
   initialWebhooks,
   initialApiKeys,
   botConfig,
+  playbooks,
+  activePlaybookId,
+  contactCustomFields,
 }: AdminContentProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -298,6 +305,10 @@ export function AdminContent({
           <TabsTrigger value="bot" className="gap-1">
             <Bot className="h-4 w-4" />
             Bot
+          </TabsTrigger>
+          <TabsTrigger value="playbook" className="gap-1">
+            <ListChecks className="h-4 w-4" />
+            Playbook
           </TabsTrigger>
         </TabsList>
 
@@ -670,6 +681,15 @@ export function AdminContent({
         {/* Pestana: Configuracion del Bot (tono, autonomia, modelo) */}
         <TabsContent value="bot">
           <BotConfigTab initial={botConfig} />
+        </TabsContent>
+
+        {/* Pestana: Playbook (constructor de tareas de calificacion) */}
+        <TabsContent value="playbook">
+          <PlaybookTab
+            initialPlaybooks={playbooks}
+            activePlaybookId={activePlaybookId}
+            customFields={contactCustomFields}
+          />
         </TabsContent>
       </Tabs>
 

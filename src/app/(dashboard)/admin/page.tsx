@@ -2,6 +2,8 @@
 import { getServerSession } from "@/lib/auth/session";
 import { getUsers, getCommissionRules, getSystemConfig, getWebhookConfigs, getApiKeys } from "@/server/admin";
 import { getBotConfigForAdmin } from "@/server/bot-config";
+import { listPlaybooks } from "@/server/bot-playbook";
+import prisma from "@/lib/db";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
 
@@ -15,14 +17,26 @@ export default async function AdminPage() {
     redirect("/dashboard");
   }
 
+  // Custom fields del objeto "contact" disponibles como targetField del bot
+  // (best-effort: si el objeto o la tabla aun no existen, no bloquea el admin).
+  const contactCustomFields = await prisma.customFieldDef
+    .findMany({
+      where: { isActive: true, objectApiName: "contact" },
+      select: { apiName: true },
+      orderBy: { order: "asc" },
+    })
+    .then((defs) => defs.map((d) => `custom.${d.apiName}`))
+    .catch(() => [] as string[]);
+
   // Obtener datos en paralelo
-  const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig] = await Promise.all([
+  const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks] = await Promise.all([
     getUsers(),
     getCommissionRules(),
     getSystemConfig(),
     getWebhookConfigs(),
     getApiKeys(),
     getBotConfigForAdmin(),
+    listPlaybooks(),
   ]);
 
   return (
@@ -43,6 +57,9 @@ export default async function AdminPage() {
         initialWebhooks={webhooks}
         initialApiKeys={apiKeys}
         botConfig={botConfig}
+        playbooks={playbooks}
+        activePlaybookId={botConfig.activePlaybookId}
+        contactCustomFields={contactCustomFields}
       />
     </div>
   );

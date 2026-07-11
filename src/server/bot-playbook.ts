@@ -28,7 +28,10 @@ export async function listPlaybooks() {
   await requireAdminRole();
   return prisma.botPlaybook.findMany({
     where: { deletedAt: null },
-    include: { _count: { select: { tasks: true } } },
+    include: {
+      _count: { select: { tasks: true } },
+      tasks: { orderBy: { order: "asc" } },
+    },
     orderBy: { createdAt: "desc" },
   });
 }
