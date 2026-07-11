@@ -35,15 +35,34 @@ const META_CRED_FIELDS = [
   { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
 ];
 
+// IG DM / Messenger: los secretos van en credentials; los identificadores en config.
+const SOCIAL_CRED_FIELDS = [
+  { key: "pageAccessToken", label: "Page Access Token (long-lived)" },
+  { key: "appSecret", label: "App Secret" },
+  { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
+];
+
 const CRED_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
   META: META_CRED_FIELDS,
-  INSTAGRAM: META_CRED_FIELDS,
-  MESSENGER: META_CRED_FIELDS,
+  INSTAGRAM: SOCIAL_CRED_FIELDS,
+  MESSENGER: SOCIAL_CRED_FIELDS,
   TIKTOK: [
     { key: "advertiserId", label: "Advertiser ID" },
     { key: "accessToken", label: "Access Token" },
   ],
   WEBSITE: [{ key: "webhookSecret", label: "Webhook Secret (mín. 16 caracteres)" }],
+};
+
+// Campos que se guardan en `config` (identificadores públicos, no secretos).
+// El webhook resuelve el conector por config.pageId (Messenger) o config.igBusinessId (Instagram).
+const CONFIG_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
+  MESSENGER: [
+    { key: "pageId", label: "Page ID (numérico de la página de Facebook)" },
+  ],
+  INSTAGRAM: [
+    { key: "pageId", label: "Page ID (de la página de Facebook vinculada)" },
+    { key: "igBusinessId", label: "Instagram Business ID (el que Meta envía en el webhook)" },
+  ],
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -58,6 +77,7 @@ export function ConnectorsSection() {
   const [provider, setProvider] = useState<string>("META");
   const [name, setName] = useState("");
   const [creds, setCreds] = useState<Record<string, string>>({});
+  const [config, setConfig] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -69,20 +89,28 @@ export function ConnectorsSection() {
   async function create() {
     setError("");
     const fields = CRED_FIELDS[provider] ?? [];
+    const cfgFields = CONFIG_FIELDS[provider] ?? [];
     const missing = fields.filter((f) => !creds[f.key]?.trim());
-    if (!name.trim() || missing.length > 0) {
-      setError("Completa nombre y credenciales");
+    const missingCfg = cfgFields.filter((f) => !config[f.key]?.trim());
+    if (!name.trim() || missing.length > 0 || missingCfg.length > 0) {
+      setError("Completa nombre, credenciales e identificadores");
       return;
     }
+    const payload: {
+      name: string; provider: string;
+      credentials: Record<string, string>; config?: Record<string, string>;
+    } = { name: name.trim(), provider, credentials: creds };
+    if (cfgFields.length > 0) payload.config = config;
     const res = await fetch("/api/admin/connectors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), provider, credentials: creds }),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
       setOpen(false);
       setName("");
       setCreds({});
+      setConfig({});
       load();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -123,7 +151,7 @@ export function ConnectorsSection() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Proveedor</Label>
-                <Select value={provider} onValueChange={(v) => { setProvider(v); setCreds({}); }}>
+                <Select value={provider} onValueChange={(v) => { setProvider(v); setCreds({}); setConfig({}); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="META">Meta Lead Ads</SelectItem>
@@ -138,6 +166,15 @@ export function ConnectorsSection() {
                 <Label>Nombre</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Meta — Página Propyte" />
               </div>
+              {(CONFIG_FIELDS[provider] ?? []).map((f) => (
+                <div key={f.key} className="space-y-1.5">
+                  <Label>{f.label}</Label>
+                  <Input
+                    value={config[f.key] ?? ""}
+                    onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
+                  />
+                </div>
+              ))}
               {(CRED_FIELDS[provider] ?? []).map((f) => (
                 <div key={f.key} className="space-y-1.5">
                   <Label>{f.label}</Label>

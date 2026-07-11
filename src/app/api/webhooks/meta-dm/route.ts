@@ -8,6 +8,7 @@ import { handleInboundMessage } from "@/lib/messaging/core";
 import { parseInstagramWebhook } from "@/lib/messaging/adapters/instagram";
 import { parseMessengerWebhook } from "@/lib/messaging/adapters/messenger";
 import { resolveConnectorByIgBusinessId, resolveConnectorByPageId } from "@/lib/messaging/social-accounts";
+import { recordHit } from "@/lib/messaging/webhook-debug"; // [TEMPORAL] diagnóstico
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -43,7 +44,16 @@ interface MetaWebhookBody {
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
-  if (!validSignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+  const sigHeader = req.headers.get("x-hub-signature-256");
+  const appSecret = process.env.META_DM_APP_SECRET?.trim();
+  const sigValid: boolean | "skipped" = !appSecret ? "skipped" : validSignature(rawBody, sigHeader);
+
+  if (sigValid === false) {
+    recordHit({
+      at: new Date().toISOString(), sigHeader: !!sigHeader, sigValid,
+      entryCount: 0, parsed: 0, processed: 0, results: [],
+      note: "firma inválida → 401", rawSnippet: rawBody.slice(0, 500),
+    });
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
@@ -51,6 +61,11 @@ export async function POST(req: NextRequest) {
   try {
     body = JSON.parse(rawBody);
   } catch {
+    recordHit({
+      at: new Date().toISOString(), sigHeader: !!sigHeader, sigValid,
+      entryCount: 0, parsed: 0, processed: 0, results: [],
+      note: "JSON inválido → 400", rawSnippet: rawBody.slice(0, 500),
+    });
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
@@ -61,6 +76,7 @@ export async function POST(req: NextRequest) {
         ? parseMessengerWebhook(body as Parameters<typeof parseMessengerWebhook>[0])
         : [];
 
+  const results: Array<Record<string, unknown>> = [];
   let processed = 0;
   for (const msg of messages) {
     try {
@@ -73,9 +89,20 @@ export async function POST(req: NextRequest) {
       }
       await handleInboundMessage(msg);
       processed++;
+      results.push({ channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId, ok: true });
     } catch (err) {
+      results.push({
+        channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId,
+        ok: false, error: err instanceof Error ? err.message : String(err),
+      });
       console.error("[meta-dm] inbound:", err);
     }
   }
+
+  recordHit({
+    at: new Date().toISOString(), object: body.object, sigHeader: !!sigHeader, sigValid,
+    entryCount: Array.isArray(body.entry) ? body.entry.length : 0,
+    parsed: messages.length, processed, results, rawSnippet: rawBody.slice(0, 500),
+  });
   return NextResponse.json({ ok: true, processed });
 }
