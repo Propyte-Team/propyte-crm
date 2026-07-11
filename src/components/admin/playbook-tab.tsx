@@ -1,9 +1,9 @@
 // Tab de administración del Playbook del bot: constructor de tareas de
 // calificación con reordenamiento por drag & drop (@dnd-kit).
 //
-// v1: un único playbook "global" (B-T9 soporta N playbooks, pero el admin
-// sólo edita el primero que exista — activar/desactivar sigue reflejando
-// BotConfig.activePlaybookId con precisión aunque apunte a otro playbook).
+// Soporta N playbooks (B-T9): un selector elige cuál se edita/activa/borra.
+// Activar/desactivar refleja BotConfig.activePlaybookId con precisión aunque
+// el playbook activo no sea el seleccionado en el editor.
 "use client";
 
 import { useState, useTransition } from "react";
@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
-import { upsertPlaybook, setActivePlaybook } from "@/server/bot-playbook";
+import { upsertPlaybook, setActivePlaybook, deletePlaybook } from "@/server/bot-playbook";
 import { CAPTURE_TYPES } from "@/server/bot-playbook.schema";
 import { NATIVE_TARGET_FIELDS } from "@/lib/bot/playbook/fields";
 import type { CaptureType } from "@prisma/client";
@@ -79,6 +79,7 @@ interface PlaybookTabProps {
 
 interface TaskRowState {
   uid: string; // id estable para dnd-kit (id de BotTask o uuid generado en cliente)
+  key?: string; // key persistida de BotTask; ausente = fila nueva, aún sin key asignada
   objective: string;
   targetField: string;
   captureType: CaptureType;
@@ -158,6 +159,10 @@ function tasksToRows(tasks: PlaybookTaskData[]): TaskRowState[] {
     .sort((a, b) => a.order - b.order)
     .map((t) => ({
       uid: t.id,
+      // Preservar la key persistida: ConversationPlaybookState.completedTaskKeys
+      // referencia tareas por key, no por id. Si se regenerara al guardar,
+      // editar wording o reordenar desincroniza conversaciones en curso.
+      key: t.key,
       objective: t.objective,
       targetField: t.targetField,
       captureType: t.captureType,
@@ -224,7 +229,11 @@ function TaskRowItem({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Campo destino</Label>
-              <Select value={row.targetField || undefined} onValueChange={onTargetFieldChange}>
+              <Select
+                value={row.captureType === "FULL_NAME" ? "firstName" : row.targetField || undefined}
+                onValueChange={onTargetFieldChange}
+                disabled={row.captureType === "FULL_NAME"}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un campo" />
                 </SelectTrigger>
@@ -249,13 +258,28 @@ function TaskRowItem({
                   )}
                 </SelectContent>
               </Select>
+              {row.captureType === "FULL_NAME" && (
+                <p className="text-xs text-muted-foreground">
+                  Nombre completo siempre escribe a firstName (y lastName si aplica).
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
               <Label>Tipo de captura</Label>
               <Select
                 value={row.captureType}
-                onValueChange={(v) => onChange({ captureType: v as CaptureType })}
+                onValueChange={(v) => {
+                  const captureType = v as CaptureType;
+                  // FULL_NAME siempre escribe firstName/lastName (capture.ts lo
+                  // ignora targetField) — bloquear el campo destino evita que el
+                  // admin elija un campo con el que nunca coincidirá el efecto.
+                  onChange(
+                    captureType === "FULL_NAME"
+                      ? { captureType, targetField: "firstName" }
+                      : { captureType },
+                  );
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -317,8 +341,20 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
 
-  const [playbook, setPlaybook] = useState<PlaybookData | null>(initialPlaybooks[0] ?? null);
+  // Lista local de playbooks (v1 ya no edita solo initialPlaybooks[0]: soporta
+  // N playbooks vía selector). Se mantiene sincronizada a mano en cada
+  // create/save/delete para no depender de window.location.reload().
+  const [playbooks, setPlaybooks] = useState<PlaybookData[]>(initialPlaybooks);
   const [activeId, setActiveId] = useState<string | null>(activePlaybookId);
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string | null>(() => {
+    if (activePlaybookId && initialPlaybooks.some((p) => p.id === activePlaybookId)) {
+      return activePlaybookId;
+    }
+    return initialPlaybooks[0]?.id ?? null;
+  });
+
+  const playbook = playbooks.find((p) => p.id === selectedPlaybookId) ?? null;
+
   const [name, setName] = useState(playbook?.name ?? "Calificación");
   const [rows, setRows] = useState<TaskRowState[]>(playbook ? tasksToRows(playbook.tasks) : []);
 
@@ -327,14 +363,46 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
   const isActive = playbook != null && activeId === playbook.id;
   const nativeFieldKeys = Object.keys(NATIVE_TARGET_FIELDS);
 
+  // Cambia el playbook en edición: carga su nombre/tareas en el estado local.
+  function selectPlaybook(id: string) {
+    const next = playbooks.find((p) => p.id === id) ?? null;
+    setSelectedPlaybookId(id);
+    setName(next?.name ?? "Calificación");
+    setRows(next ? tasksToRows(next.tasks) : []);
+  }
+
   function handleCreateBase() {
     startTransition(async () => {
       try {
-        const created = await upsertPlaybook({ name: "Calificación", tasks: [] });
-        setPlaybook(created as unknown as PlaybookData);
+        const created = (await upsertPlaybook({ name: "Calificación", tasks: [] })) as unknown as PlaybookData;
+        setPlaybooks((prev) => [created, ...prev]);
+        setSelectedPlaybookId(created.id);
         setName(created.name);
-        setRows(tasksToRows((created as unknown as PlaybookData).tasks ?? []));
+        setRows(tasksToRows(created.tasks ?? []));
         toast({ title: "Playbook creado" });
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+    });
+  }
+
+  function handleDeletePlaybook() {
+    if (!playbook) return;
+    if (!window.confirm(`¿Eliminar el playbook "${playbook.name}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    const deletedId = playbook.id;
+    startTransition(async () => {
+      try {
+        await deletePlaybook(deletedId);
+        const remaining = playbooks.filter((p) => p.id !== deletedId);
+        setPlaybooks(remaining);
+        if (activeId === deletedId) setActiveId(null);
+        const next = remaining[0] ?? null;
+        setSelectedPlaybookId(next?.id ?? null);
+        setName(next?.name ?? "Calificación");
+        setRows(next ? tasksToRows(next.tasks) : []);
+        toast({ title: "Playbook eliminado" });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -394,22 +462,36 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
   function save() {
     startTransition(async () => {
       try {
-        const usedKeys = new Set<string>();
+        // Keys ya asignadas (filas cargadas de DB) van primero al set para que
+        // las filas nuevas nunca colisionen contra ellas.
+        const usedKeys = new Set<string>(rows.filter((r) => r.key).map((r) => r.key as string));
+
         const tasks = rows.map((r, index) => {
-          const base = slugify(r.objective) || `tarea_${index + 1}`;
-          let key = base;
-          let i = 2;
-          while (usedKeys.has(key)) {
-            key = `${base}_${i}`;
-            i += 1;
+          // Filas existentes conservan su key intacta: completedTaskKeys en
+          // ConversationPlaybookState referencia tareas por key, no por id, así
+          // que regenerarla al editar wording/reordenar desincroniza
+          // conversaciones en curso (el bot re-pregunta o salta mal).
+          let key = r.key;
+          if (!key) {
+            const base = slugify(r.objective) || `tarea_${index + 1}`;
+            let candidate = base;
+            let i = 2;
+            while (usedKeys.has(candidate)) {
+              candidate = `${base}_${i}`;
+              i += 1;
+            }
+            key = candidate;
+            usedKeys.add(key);
           }
-          usedKeys.add(key);
 
           return {
             key,
             order: index,
             objective: r.objective,
-            targetField: r.targetField,
+            // FULL_NAME siempre escribe firstName/lastName (capture.ts ignora
+            // targetField) — normalizar aquí también por si la fila viene de
+            // datos previos a este fix con un targetField desalineado.
+            targetField: r.captureType === "FULL_NAME" ? "firstName" : r.targetField,
             captureType: r.captureType,
             enumOptions: r.captureType === "ENUM" ? parseEnumOptionsText(r.enumOptionsText) : [],
             extractionHint: r.extractionHint ?? undefined,
@@ -425,7 +507,13 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         });
 
         const savedData = saved as unknown as PlaybookData;
-        setPlaybook(savedData);
+        setPlaybooks((prev) => {
+          const exists = prev.some((p) => p.id === savedData.id);
+          return exists
+            ? prev.map((p) => (p.id === savedData.id ? savedData : p))
+            : [savedData, ...prev];
+        });
+        setSelectedPlaybookId(savedData.id);
         setName(savedData.name);
         setRows(tasksToRows(savedData.tasks));
         toast({ title: "Playbook guardado" });
@@ -471,6 +559,35 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
   return (
     <div className="space-y-6">
       <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Playbooks</CardTitle>
+          <CardDescription>Elige cuál playbook editar. Sólo uno puede estar activo a la vez.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[240px] flex-1 space-y-1.5">
+            <Label>Playbook</Label>
+            <Select value={selectedPlaybookId ?? undefined} onValueChange={selectPlaybook}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un playbook" />
+              </SelectTrigger>
+              <SelectContent>
+                {playbooks.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                    {p.id === activeId ? " (activo)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" onClick={handleCreateBase} disabled={pending}>
+            <Plus className="mr-2 h-4 w-4" />
+            Crear playbook base
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-lg">{name || "Playbook"}</CardTitle>
@@ -478,9 +595,15 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
               Secuencia de tareas que el bot ejecuta para calificar a un contacto.
             </CardDescription>
           </div>
-          <Button variant={isActive ? "outline" : "default"} onClick={toggleActive} disabled={pending}>
-            {isActive ? "Desactivar" : "Activar este playbook"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant={isActive ? "outline" : "default"} onClick={toggleActive} disabled={pending}>
+              {isActive ? "Desactivar" : "Activar este playbook"}
+            </Button>
+            <Button variant="ghost" onClick={handleDeletePlaybook} disabled={pending}>
+              <Trash2 className="mr-2 h-3.5 w-3.5 text-red-500" />
+              Eliminar playbook
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           <Label>Nombre</Label>

@@ -82,6 +82,12 @@ export async function extractFields(opts: {
     messages: opts.messages,
   };
 
+  // Timeout defensivo: esta llamada corre secuencial antes de la respuesta del
+  // bot — sin límite, una API lenta puede arrastrar la request completa al
+  // 502 de Hostinger (ver feedback_hostinger_long_anthropic_calls).
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
   try {
     const res = await fetch(API_URL, {
       method: "POST",
@@ -91,6 +97,7 @@ export async function extractFields(opts: {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
 
     if (!res.ok) return {};
@@ -102,5 +109,7 @@ export async function extractFields(opts: {
     return parseExtractionResponse(text);
   } catch {
     return {};
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
