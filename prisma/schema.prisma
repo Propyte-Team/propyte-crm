@@ -627,6 +627,31 @@ enum BotTonePreset {
   @@schema("propyte_crm")
 }
 
+// Tipo de dato que un BotTask intenta capturar del contacto
+enum CaptureType {
+  TEXT
+  FULL_NAME
+  EMAIL
+  PHONE
+  MONEY
+  BUDGET_RANGE
+  ENUM
+  ZONE
+  BOOLEAN
+  NUMBER
+
+  @@schema("propyte_crm")
+}
+
+// Estado de avance de un playbook dentro de una conversación
+enum PlaybookRunStatus {
+  IN_PROGRESS
+  COMPLETED
+  ESCALATED
+
+  @@schema("propyte_crm")
+}
+
 // =====================================================================
 // MODELOS
 // =====================================================================
@@ -1512,7 +1537,8 @@ model Conversation {
   takeoverAt     DateTime?
   snoozedUntil   DateTime?
 
-  messages Message[]
+  messages      Message[]
+  playbookState ConversationPlaybookState?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1536,12 +1562,72 @@ model BotConfig {
   dataGateStrict     Boolean       @default(true)
   escalationTriggers Json          @default("[\"apartar\",\"queja\",\"legal_fiscal\",\"negociacion\"]")
   enabledChannels    Json          @default("[\"WHATSAPP\"]")
+  activePlaybookId   String?
+  activePlaybook     BotPlaybook?  @relation("ActivePlaybook", fields: [activePlaybookId], references: [id], onDelete: SetNull)
   updatedByUserId    String?
   updatedBy          User?         @relation("BotConfigUpdatedBy", fields: [updatedByUserId], references: [id])
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
   @@map("bot_config")
+  @@schema("propyte_crm")
+}
+
+// Playbook de calificación: secuencia de tareas (BotTask) que el bot ejecuta por conversación
+model BotPlaybook {
+  id              String      @id @default(uuid())
+  name            String
+  description     String?
+  isActive        Boolean     @default(false)
+  tasks           BotTask[]
+  activeInConfigs BotConfig[] @relation("ActivePlaybook")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  @@map("bot_playbooks")
+  @@schema("propyte_crm")
+}
+
+// Tarea individual dentro de un playbook (un dato a capturar/objetivo a cumplir)
+model BotTask {
+  id             String      @id @default(uuid())
+  playbookId     String
+  playbook       BotPlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+  order          Int
+  key            String
+  objective      String      @db.Text
+  targetField    String
+  captureType    CaptureType @default(TEXT)
+  enumOptions    Json        @default("[]")
+  extractionHint String?     @db.Text
+  required       Boolean     @default(true)
+  skipIfFilled   Boolean     @default(true)
+  isActive       Boolean     @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([playbookId, order])
+  @@unique([playbookId, key])
+  @@map("bot_tasks")
+  @@schema("propyte_crm")
+}
+
+// Avance de un playbook dentro de una conversación (1:1)
+model ConversationPlaybookState {
+  id                String            @id @default(uuid())
+  conversationId    String            @unique
+  conversation      Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  playbookId        String
+  status            PlaybookRunStatus @default(IN_PROGRESS)
+  currentTaskKey    String?
+  completedTaskKeys Json              @default("[]")
+  startedAt         DateTime          @default(now())
+  completedAt       DateTime?
+  updatedAt         DateTime          @updatedAt
+
+  @@map("conversation_playbook_state")
   @@schema("propyte_crm")
 }
 
