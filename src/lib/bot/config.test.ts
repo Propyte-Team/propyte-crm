@@ -35,3 +35,12 @@ describe("resolveBotConfig", () => {
     expect(r.enabledChannels).toEqual(DEFAULT_BOT_CONFIG.enabledChannels);
   });
 });
+
+describe("resolveBotConfig activePlaybookId", () => {
+  it("default null", () => {
+    expect(resolveBotConfig(null).activePlaybookId).toBeNull();
+  });
+  it("mapea el id de la fila", () => {
+    expect(resolveBotConfig({ activePlaybookId: "pb_1" } as any).activePlaybookId).toBe("pb_1");
+  });
+});

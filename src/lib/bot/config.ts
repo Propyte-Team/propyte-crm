@@ -13,6 +13,7 @@ export interface BotConfigResolved {
   dataGateStrict: boolean;
   escalationTriggers: string[];
   enabledChannels: string[];
+  activePlaybookId: string | null;
 }
 
 export const DEFAULT_BOT_CONFIG: BotConfigResolved = {
@@ -25,6 +26,7 @@ export const DEFAULT_BOT_CONFIG: BotConfigResolved = {
   dataGateStrict: true,
   escalationTriggers: ["apartar", "queja", "legal_fiscal", "negociacion"],
   enabledChannels: ["WHATSAPP"],
+  activePlaybookId: null,
 };
 
 function asStringArray(value: unknown, fallback: string[]): string[] {
@@ -47,6 +49,7 @@ export function resolveBotConfig(row: Record<string, unknown> | null): BotConfig
     dataGateStrict: (row.dataGateStrict as boolean) ?? d.dataGateStrict,
     escalationTriggers: asStringArray(row.escalationTriggers, d.escalationTriggers),
     enabledChannels: asStringArray(row.enabledChannels, d.enabledChannels),
+    activePlaybookId: (row.activePlaybookId as string) ?? null,
   };
 }
 
