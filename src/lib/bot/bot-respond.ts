@@ -6,6 +6,7 @@ import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage } from ".
 import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
 import { findMatchingDevelopments } from "./hub-catalog";
+import { runPlaybookStep } from "./playbook/run";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 
@@ -122,11 +123,38 @@ export async function botRespond(
   });
 
   const firstTouch = history.length === 1 && history[0].role === "user";
-  const objective = firstTouch
+  const fallbackObjective = firstTouch
     ? buildOpener(config, { firstName: contact.firstName, preferredZone: contact.preferredZone }, opts.goal)
     : opts.goal
       ? `Objetivo de este mensaje: ${opts.goal}. Continúa la conversación con naturalidad.`
       : undefined;
+
+  // Playbook configurable (Anexo Técnico §B-Task 8): si hay uno activo, extrae/captura/avanza
+  // y su objective manda sobre el de la ruta A. Cualquier error aquí cae al fallback de arriba
+  // — nunca debe impedir que el bot responda.
+  let playbookObjective: string | undefined;
+  if (config.activePlaybookId) {
+    try {
+      const pb = await prisma.botPlaybook.findFirst({
+        where: { id: config.activePlaybookId, isActive: true, deletedAt: null },
+        include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
+      });
+      if (pb && pb.tasks.length > 0) {
+        const pr = await runPlaybookStep(prisma, {
+          playbook: { id: pb.id, tasks: pb.tasks as any },
+          conversationId: conv.id,
+          contact,
+          messages: history,
+          model: config.model,
+        });
+        if (pr.objective) playbookObjective = pr.objective;
+      }
+    } catch {
+      // defensivo: cae al objective de la ruta A
+    }
+  }
+
+  const objective = playbookObjective ?? fallbackObjective;
 
   const system = buildSystemPrompt({
     config,
