@@ -15,9 +15,16 @@ export async function sendWhatsAppMessage(
 ) {
   const normalized = normalizePhone(to);
 
+  // WhatsApp no renderea markdown: **x** → *x*, # títulos → *negrita* (fix 2026-07-13).
+  // Se convierte AQUÍ (antes de entregar Y de persistir) para que Message.body y
+  // Activity guarden exactamente el texto que recibió el cliente. Cubre a todos los
+  // emisores: dispatcher (bot L2), workflows SEND_WHATSAPP, agent tools y API manual.
+  const { formatForWhatsApp } = await import("@/lib/whatsapp/format");
+  const text = formatForWhatsApp(body);
+
   // Transporte intercambiable (Meta Cloud API default / Twilio alterno) — 2026-06-11
   const { deliverWhatsApp } = await import("@/lib/whatsapp/transport");
-  const delivery = await deliverWhatsApp(normalized, body);
+  const delivery = await deliverWhatsApp(normalized, text);
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
   const { ensureConversation } = await import("@/lib/messaging/conversations");
@@ -30,7 +37,7 @@ export async function sendWhatsAppMessage(
       userId,
       channel: "WHATSAPP",
       direction: "OUTBOUND",
-      body,
+      body: text,
       twilioSid: delivery.externalId, // wamid (Meta) o SID (Twilio)
       status: delivery.status,
       externalPhone: normalized,
@@ -45,7 +52,7 @@ export async function sendWhatsAppMessage(
       userId,
       activityType: "WHATSAPP_OUT",
       subject: `WhatsApp enviado`,
-      description: body.length > 100 ? body.substring(0, 100) + "..." : body,
+      description: text.length > 100 ? text.substring(0, 100) + "..." : text,
       status: "COMPLETADA",
       completedAt: new Date(),
     },

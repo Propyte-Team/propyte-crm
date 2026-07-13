@@ -7,6 +7,8 @@
 // Esta capa SOLO entrega el mensaje a la red; los side-effects (Conversation,
 // Message, Activity, SLA) viven en lib/twilio/whatsapp.ts::sendWhatsAppMessage.
 
+import { formatForWhatsApp } from "./format";
+
 export interface DeliveryResult {
   externalId: string; // wamid (Meta) o SID (Twilio) — se guarda en Message.twilioSid
   status: "SENT" | "QUEUED";
@@ -123,7 +125,11 @@ async function deliverViaTwilio(toE164: string, body: string): Promise<DeliveryR
 }
 
 export async function deliverWhatsApp(toE164: string, body: string): Promise<DeliveryResult> {
+  // Última línea de defensa: WhatsApp no renderea markdown (**x**, # títulos) —
+  // se normaliza a formato nativo (*x*) para TODO emisor, con ambos drivers.
+  // Idempotente: sendWhatsAppMessage ya la aplica antes de persistir el body.
+  const text = formatForWhatsApp(body);
   return activeProvider() === "meta_cloud"
-    ? deliverViaMetaCloud(toE164, body)
-    : deliverViaTwilio(toE164, body);
+    ? deliverViaMetaCloud(toE164, text)
+    : deliverViaTwilio(toE164, text);
 }

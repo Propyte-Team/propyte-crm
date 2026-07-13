@@ -13,6 +13,13 @@ describe("buildSystemPrompt (4 capas)", () => {
     expect(s).toContain("[ESCALAR]");
   });
 
+  it("incluye la regla de formato WhatsApp: negrita con UN asterisco, sin markdown ** ni #", () => {
+    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
+    expect(s).toContain("UN solo asterisco");
+    expect(s).toContain("(**negrita**)");
+    expect(s).toContain("encabezados con #");
+  });
+
   it("incluye la guía de voz del preset activo", () => {
     const s = buildSystemPrompt({
       config: { ...DEFAULT_BOT_CONFIG, tonePreset: "EJECUTIVO_SOBRIO" },

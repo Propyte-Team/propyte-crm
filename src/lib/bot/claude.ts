@@ -108,6 +108,7 @@ export function buildBrandRules(config: BotConfigResolved): string {
     `Si detectas intención fuerte o alguno de estos temas (${triggers}), responde un mensaje breve de transición y termina con el token ${ESCALATE_TOKEN}. No sigas tú.`,
     "Responde en el idioma del cliente (ES/EN).",
     `Mensajes cortos, estilo WhatsApp (máx ~${config.maxLines} líneas).`,
+    "En WhatsApp la negrita se escribe con UN solo asterisco (*así*). NUNCA uses sintaxis markdown: ni doble asterisco (**negrita**) ni encabezados con #.",
     "Nunca digas que eres una IA salvo pregunta directa; entonces sé honesto.",
   ].join("\n");
 }
