@@ -18,6 +18,7 @@ interface ConversationListItem {
   lastMessageAt: string | null;
   aiSummary: string | null;
   channel: string;
+  connector: { name: string; brand: string | null } | null;
   contact: {
     id: string;
     firstName: string;
@@ -25,6 +26,7 @@ interface ConversationListItem {
     phone: string;
     temperature: string;
     score: number;
+    avatarUrl: string | null;
     assignedTo: { id: string; name: string } | null;
   };
   controlledBy: { id: string; name: string } | null;
@@ -76,6 +78,27 @@ const CHANNEL_LABEL: Record<string, string> = {
   INSTAGRAM: "Instagram",
   MESSENGER: "Messenger",
 };
+
+/** "Messenger · Nativa tulum" — canal + cuenta/marca del conector si existe. */
+function channelAccountLabel(channel: string, connector: { name: string; brand: string | null } | null): string {
+  const base = CHANNEL_LABEL[channel] ?? channel;
+  return connector ? `${base} · ${connector.brand ?? connector.name}` : base;
+}
+
+/** Avatar del contacto (se oculta solo si la URL de CDN de Meta ya expiró). */
+function ContactAvatar({ url, size }: { url: string | null; size: number }) {
+  if (!url) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- CDN externo de Meta, fuera de remotePatterns
+    <img
+      src={url}
+      alt=""
+      className="shrink-0 rounded-full object-cover"
+      style={{ width: size, height: size }}
+      onError={(e) => { e.currentTarget.style.display = "none"; }}
+    />
+  );
+}
 
 export function InboxView({ userId }: { userId: string; userRole: string }) {
   const searchParams = useSearchParams();
@@ -218,37 +241,42 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
                 borderBottom: "1px solid var(--border-subtle)",
               }}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span
-                  className="truncate text-[13px] font-semibold"
-                  style={{ color: "var(--text-primary)" }}
-                  title={`${c.contact.firstName} ${c.contact.lastName}`}
-                >
-                  {c.contact.firstName} {c.contact.lastName}
-                </span>
-                <span className="flex items-center gap-1">
-                  {c.status === "BOT" ? (
-                    <Bot className="h-3.5 w-3.5" style={{ color: "var(--text-tertiary)" }} />
-                  ) : (
-                    <User className="h-3.5 w-3.5" style={{ color: "var(--text-primary)" }} />
-                  )}
-                  {c.unreadCount > 0 && (
+              <div className="flex items-center gap-2">
+                <ContactAvatar url={c.contact.avatarUrl} size={28} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
                     <span
-                      className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold"
-                      style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}
+                      className="truncate text-[13px] font-semibold"
+                      style={{ color: "var(--text-primary)" }}
+                      title={`${c.contact.firstName} ${c.contact.lastName}`}
                     >
-                      {c.unreadCount}
+                      {c.contact.firstName} {c.contact.lastName}
                     </span>
-                  )}
-                </span>
-              </div>
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span className="badge badge-neutral !text-[10px] !py-0">
-                  {CHANNEL_LABEL[c.channel] ?? c.channel}
-                </span>
-                <p className="truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-                  {c.messages[0]?.body ?? "—"}
-                </p>
+                    <span className="flex items-center gap-1">
+                      {c.status === "BOT" ? (
+                        <Bot className="h-3.5 w-3.5" style={{ color: "var(--text-tertiary)" }} />
+                      ) : (
+                        <User className="h-3.5 w-3.5" style={{ color: "var(--text-primary)" }} />
+                      )}
+                      {c.unreadCount > 0 && (
+                        <span
+                          className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold"
+                          style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}
+                        >
+                          {c.unreadCount}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className="badge badge-neutral !text-[10px] !py-0 whitespace-nowrap">
+                      {channelAccountLabel(c.channel, c.connector)}
+                    </span>
+                    <p className="truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                      {c.messages[0]?.body ?? "—"}
+                    </p>
+                  </div>
+                </div>
               </div>
             </button>
           ))}
@@ -269,8 +297,12 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               style={{ background: "var(--bg-sidebar)", borderBottom: "1px solid var(--border-subtle)" }}
             >
               <div className="flex items-center gap-2 min-w-0">
+                <ContactAvatar url={thread.contact.avatarUrl} size={24} />
                 <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                   {thread.contact.firstName} {thread.contact.lastName}
+                </span>
+                <span className="badge badge-neutral whitespace-nowrap">
+                  {channelAccountLabel(thread.channel, thread.connector)}
                 </span>
                 <span className={cn("badge", thread.status === "BOT" ? "badge-neutral" : "badge-teal")}>
                   {thread.status === "BOT" ? "🤖 Bot activo" : isHuman && iControl ? "Controlas tú" : `Controla ${thread.controlledBy?.name ?? "—"}`}

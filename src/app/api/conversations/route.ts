@@ -54,10 +54,11 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, status: true, botEnabled: true, unreadCount: true,
       lastMessageAt: true, aiSummary: true, channel: true,
+      connector: { select: { name: true, config: true } },
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, temperature: true,
-          score: true, assignedToId: true,
+          score: true, assignedToId: true, custom: true,
           assignedTo: { select: { id: true, name: true } },
         },
       },
@@ -66,5 +67,18 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ data: conversations });
+  // Cuenta/marca (config del conector es no-secreto) + avatar; custom no viaja al cliente
+  const data = conversations.map(({ connector, contact, ...c }) => ({
+    ...c,
+    connector: connector
+      ? { name: connector.name, brand: ((connector.config as Record<string, unknown> | null)?.brand as string | undefined) ?? null }
+      : null,
+    contact: {
+      ...contact,
+      custom: undefined,
+      avatarUrl: ((contact.custom as Record<string, unknown> | null)?.avatarUrl as string | undefined) ?? null,
+    },
+  }));
+
+  return NextResponse.json({ data });
 }

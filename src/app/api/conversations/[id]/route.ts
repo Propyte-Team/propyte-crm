@@ -14,11 +14,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const conversation = await prisma.conversation.findUnique({
     where: { id: params.id },
     include: {
+      connector: { select: { name: true, config: true } },
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, email: true,
           temperature: true, score: true, preferredLanguage: true, budgetMin: true,
           budgetMax: true, preferredZone: true, purchaseTimeline: true, whatsappOptOut: true,
+          custom: true,
           assignedTo: { select: { id: true, name: true } },
           deals: {
             where: { deletedAt: null, stage: { notIn: ["WON", "LOST"] } },
@@ -45,5 +47,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     });
   }
 
-  return NextResponse.json({ data: conversation });
+  // Cuenta/marca (config del conector es no-secreto) + avatar; custom no viaja al cliente
+  const { connector, contact, ...rest } = conversation;
+  const data = {
+    ...rest,
+    connector: connector
+      ? { name: connector.name, brand: ((connector.config as Record<string, unknown> | null)?.brand as string | undefined) ?? null }
+      : null,
+    contact: {
+      ...contact,
+      custom: undefined,
+      avatarUrl: ((contact.custom as Record<string, unknown> | null)?.avatarUrl as string | undefined) ?? null,
+    },
+  };
+
+  return NextResponse.json({ data });
 }
