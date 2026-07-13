@@ -7,7 +7,11 @@ import prisma from "@/lib/db";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: { tab?: string };
+}) {
   // Obtener sesion y verificar rol
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
@@ -41,16 +45,9 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6">
-      {/* Encabezado */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Administracion</h1>
-        <p className="text-muted-foreground">
-          Gestiona usuarios, comisiones y configuracion del sistema
-        </p>
-      </div>
-
-      {/* Contenido con pestanas (componente cliente) */}
+      {/* Contenido: vista de detalle del hub de Configuración */}
       <AdminContent
+        initialTab={searchParams?.tab}
         initialUsers={users}
         initialCommissionRules={commissionRules}
         initialSystemConfig={systemConfig}

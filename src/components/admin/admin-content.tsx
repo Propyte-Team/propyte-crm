@@ -1,9 +1,12 @@
-// Componente cliente de administracion con 3 pestanas:
-// Usuarios, Comisiones y Configuracion
+// Componente cliente de administracion: vista de detalle del hub de
+// Configuración (/configuracion). Muestra UNA sola sección por visita,
+// determinada por el query param `tab` (leído server-side en page.tsx y
+// pasado aquí como `initialTab`). El chrome de navegación es un link de
+// regreso al hub; la lógica interna de cada sección no cambia.
 "use client";
 
 import { useState, useTransition } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users, DollarSign, Settings, Plus, Pencil, Trash2, Plug, Bot, ListChecks } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import {
   ROLE_LABELS,
   DEAL_TYPE_LABELS,
@@ -106,7 +109,19 @@ interface BotConfigData {
   enabledChannels: string[];
 }
 
+// Tabs soportados por /admin?tab=<valor> y su título de sección activa.
+const ADMIN_TAB_TITLES: Record<string, string> = {
+  users: "Usuarios & Roles",
+  commissions: "Comisiones",
+  settings: "Acuerdo de actividad",
+  integrations: "Integraciones",
+  bot: "Bot",
+  playbook: "Playbook de calificación",
+};
+const DEFAULT_ADMIN_TAB = "users";
+
 interface AdminContentProps {
+  initialTab?: string;
   initialUsers: UserData[];
   initialCommissionRules: CommissionRuleData[];
   initialSystemConfig: Record<string, unknown>;
@@ -119,6 +134,7 @@ interface AdminContentProps {
 }
 
 export function AdminContent({
+  initialTab,
   initialUsers,
   initialCommissionRules,
   initialSystemConfig,
@@ -131,6 +147,13 @@ export function AdminContent({
 }: AdminContentProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+
+  // Sección activa: viene del query param `tab` (server-side). Si es
+  // invalida o no viene, cae al default (Usuarios).
+  const activeTab =
+    initialTab && Object.prototype.hasOwnProperty.call(ADMIN_TAB_TITLES, initialTab)
+      ? initialTab
+      : DEFAULT_ADMIN_TAB;
 
   // Estado local para datos
   const [users, setUsers] = useState<UserData[]>(initialUsers);
@@ -283,37 +306,20 @@ export function AdminContent({
 
   return (
     <>
-      {/* Pestanas principales */}
-      <Tabs defaultValue="users">
-        <TabsList>
-          <TabsTrigger value="users" className="gap-1">
-            <Users className="h-4 w-4" />
-            Usuarios
-          </TabsTrigger>
-          <TabsTrigger value="commissions" className="gap-1">
-            <DollarSign className="h-4 w-4" />
-            Comisiones
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="gap-1">
-            <Settings className="h-4 w-4" />
-            Configuracion
-          </TabsTrigger>
-          <TabsTrigger value="integrations" className="gap-1">
-            <Plug className="h-4 w-4" />
-            Integraciones
-          </TabsTrigger>
-          <TabsTrigger value="bot" className="gap-1">
-            <Bot className="h-4 w-4" />
-            Bot
-          </TabsTrigger>
-          <TabsTrigger value="playbook" className="gap-1">
-            <ListChecks className="h-4 w-4" />
-            Playbook
-          </TabsTrigger>
-        </TabsList>
+      {/* Chrome: volver al hub + título de la sección activa */}
+      <div className="space-y-1">
+        <Link
+          href="/configuracion"
+          className="text-[13px] font-medium hover:underline"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          ← Configuración
+        </Link>
+        <h1 className="text-2xl font-bold tracking-tight">{ADMIN_TAB_TITLES[activeTab]}</h1>
+      </div>
 
-        {/* Pestana: Usuarios */}
-        <TabsContent value="users">
+      {/* Seccion: Usuarios */}
+      {activeTab === "users" && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -446,10 +452,10 @@ export function AdminContent({
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+      )}
 
-        {/* Pestana: Reglas de Comisiones */}
-        <TabsContent value="commissions">
+      {/* Seccion: Reglas de Comisiones */}
+      {activeTab === "commissions" && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -547,10 +553,10 @@ export function AdminContent({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+      )}
 
-        {/* Pestana: Configuracion del acuerdo de actividad */}
-        <TabsContent value="settings">
+      {/* Seccion: Configuracion del acuerdo de actividad */}
+      {activeTab === "settings" && (
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Acuerdo de Actividad</CardTitle>
@@ -669,29 +675,29 @@ export function AdminContent({
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-        {/* Pestana: Integraciones (Twilio + Zapier) */}
-        <TabsContent value="integrations">
+      )}
+
+      {/* Seccion: Integraciones (Twilio + Zapier) */}
+      {activeTab === "integrations" && (
           <IntegrationsTab
             initialWebhooks={initialWebhooks}
             initialApiKeys={initialApiKeys}
           />
-        </TabsContent>
+      )}
 
-        {/* Pestana: Configuracion del Bot (tono, autonomia, modelo) */}
-        <TabsContent value="bot">
+      {/* Seccion: Configuracion del Bot (tono, autonomia, modelo) */}
+      {activeTab === "bot" && (
           <BotConfigTab initial={botConfig} />
-        </TabsContent>
+      )}
 
-        {/* Pestana: Playbook (constructor de tareas de calificacion) */}
-        <TabsContent value="playbook">
+      {/* Seccion: Playbook (constructor de tareas de calificacion) */}
+      {activeTab === "playbook" && (
           <PlaybookTab
             initialPlaybooks={playbooks}
             activePlaybookId={activePlaybookId}
             customFields={contactCustomFields}
           />
-        </TabsContent>
-      </Tabs>
+      )}
 
       {/* Dialog de usuario */}
       <UserFormDialog

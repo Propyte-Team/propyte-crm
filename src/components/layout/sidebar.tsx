@@ -16,7 +16,6 @@ import {
   TrendingUp,
   UserCheck,
   Settings,
-  GitBranch,
   ChevronLeft,
   ChevronRight,
   Moon,
@@ -67,9 +66,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
     title: "Sistema",
     items: [
       { label: "Mi Config", href: "/settings", icon: UserCheck, roles: TODOS },
-      { label: "Configuracion", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
-      { label: "Journey", href: "/journey", icon: GitBranch, roles: ["ADMIN", "DIRECTOR"] },
-      { label: "Admin", href: "/admin", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
+      { label: "Configuración", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
       { label: "Duplicados", href: "/duplicados", icon: CopyCheck, roles: ["ADMIN", "DIRECTOR"] },
       { label: "Conexiones", href: "/conexiones", icon: Plug, roles: ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"] },
     ],

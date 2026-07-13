@@ -28,7 +28,7 @@ const MODULE_LABELS: Record<string, string> = {
   "/career": "Mi Carrera",
   "/settings": "Mi Config",
   "/walk-ins": "Walk-ins",
-  "/admin": "Admin",
+  "/admin": "Configuración",
   "/configuracion": "Configuración",
 }
 
