@@ -62,4 +62,24 @@ describe("meta-dm webhook", () => {
     expect(handleInboundMessage).toHaveBeenCalledTimes(1);
     expect(handleInboundMessage.mock.calls[0][0].connectorId ?? null).toBeNull();
   });
+
+  it("echo de page (message_echoes) fluye al core con isEcho, echoAppId y connectorId", async () => {
+    resolveByPage.mockResolvedValue({ id: "conn_ms" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "103981", messaging: [{
+      sender: { id: "103981" },
+      recipient: { id: "PSID-user" },
+      message: { mid: "mid-echo-r1", text: "respuesta desde Business Suite", is_echo: true, app_id: 263902037430900 },
+    }] }] });
+    const res = await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(res.status).toBe(200);
+    expect(handleInboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "MESSENGER",
+        senderId: "PSID-user",
+        isEcho: true,
+        echoAppId: "263902037430900",
+        connectorId: "conn_ms",
+      })
+    );
+  });
 });

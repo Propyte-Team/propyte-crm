@@ -14,7 +14,14 @@ interface MetaPostback {
 }
 interface MetaMessagingEvent {
   sender?: { id?: string };
-  message?: { mid?: string; text?: string; is_echo?: boolean; attachments?: Array<{ payload?: { url?: string } }> };
+  recipient?: { id?: string };
+  message?: {
+    mid?: string;
+    text?: string;
+    is_echo?: boolean;
+    app_id?: string | number;
+    attachments?: Array<{ payload?: { url?: string } }>;
+  };
   postback?: MetaPostback;
   referral?: MetaReferral;
   timestamp?: number;
@@ -44,7 +51,26 @@ export function parseInstagramWebhook(body: MetaWebhookBody): IncomingMessage[] 
       const referral = mapReferral(ev.referral ?? ev.postback?.referral);
 
       const m = ev.message;
-      if (m && !m.is_echo && m.mid) {
+
+      // Echo (Caso 4): envío de la Página desde otra superficie (Business Suite /
+      // app / el propio CRM). El dueño del hilo es el RECIPIENT (el usuario), no
+      // el sender (la Página) — se normaliza senderId = recipient.id.
+      if (m?.is_echo) {
+        if (!m.mid || !ev.recipient?.id) continue;
+        out.push({
+          channel: "INSTAGRAM",
+          senderId: ev.recipient.id,
+          externalMessageId: m.mid,
+          text: m.text ?? "(adjunto)",
+          mediaUrl: m.attachments?.[0]?.payload?.url ?? null,
+          accountId: entry.id ?? null,
+          isEcho: true,
+          echoAppId: m.app_id != null ? String(m.app_id) : null,
+        });
+        continue;
+      }
+
+      if (m && m.mid) {
         out.push({
           channel: "INSTAGRAM",
           senderId,

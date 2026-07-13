@@ -84,6 +84,8 @@ export async function POST(req: NextRequest) {
         const connector = msg.channel === "INSTAGRAM"
           ? await resolveConnectorByIgBusinessId(msg.accountId)
           : await resolveConnectorByPageId(msg.accountId);
+        // El perfil del remitente se resuelve en el core (profile.ts) solo para
+        // inbound reales; los echoes (isEcho) nunca lo disparan — el emisor es la Página.
         if (connector) msg.connectorId = connector.id;
         else console.warn(`[meta-dm] sin conector activo para ${msg.channel} accountId=${msg.accountId}`);
       }

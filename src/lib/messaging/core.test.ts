@@ -300,6 +300,124 @@ describe("handleInboundMessage — atribución de referral (Caso 2)", () => {
   });
 });
 
+const echo = {
+  channel: "MESSENGER" as const,
+  senderId: "PSID-user", // ya normalizado por el adapter a recipient.id (el usuario)
+  externalMessageId: "mid-echo-1",
+  text: "le respondimos desde Business Suite",
+  isEcho: true,
+  echoAppId: "263902037430900",
+  connectorId: "conn_ms",
+};
+
+describe("handleInboundMessage — echoes (Caso 4)", () => {
+  it("echo cuyo mid ya existe como Message (envío del propio CRM) → skip total, devuelve el existente", async () => {
+    msgFindUnique.mockResolvedValue({ id: "m-own", externalMessageId: "mid-echo-1" });
+    const r = await handleInboundMessage(echo);
+    expect(msgFindUnique).toHaveBeenCalledWith({ where: { externalMessageId: "mid-echo-1" } });
+    expect(r).toEqual({ id: "m-own", externalMessageId: "mid-echo-1" });
+    expect(contactFindFirst).not.toHaveBeenCalled();
+    expect(msgCreate).not.toHaveBeenCalled();
+    expect(convUpdate).not.toHaveBeenCalled();
+  });
+
+  it("echo sin contacto existente → skip (NO crea contacto desde echoes)", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue(null);
+    const r = await handleInboundMessage(echo);
+    expect(r).toBeNull();
+    expect(captureLead).not.toHaveBeenCalled();
+    expect(msgCreate).not.toHaveBeenCalled();
+  });
+
+  it("echo con contacto → registra OUTBOUND sender ADVISOR (humano externo), aiGenerated false", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(echo);
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: "c1",
+          channel: "MESSENGER",
+          direction: "OUTBOUND",
+          sender: "ADVISOR",
+          aiGenerated: false,
+          externalMessageId: "mid-echo-1",
+        }),
+      })
+    );
+  });
+
+  it("echo: actualiza lastMessageAt pero NO lastInboundAt ni unreadCount (es saliente)", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    const data = convUpdate.mock.calls[0][0].data;
+    expect(data.lastMessageAt).toBeInstanceOf(Date);
+    expect(data).not.toHaveProperty("lastInboundAt");
+    expect(data).not.toHaveProperty("unreadCount");
+  });
+
+  it("takeover suave: conversación en BOT → pasa a HUMAN con controlledById del asesor asignado", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    convUpdate.mockResolvedValueOnce({ id: "conv1", status: "BOT", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(convUpdate).toHaveBeenCalledTimes(2);
+    const takeover = convUpdate.mock.calls[1][0];
+    expect(takeover.where).toEqual({ id: "conv1" });
+    expect(takeover.data.status).toBe("HUMAN");
+    expect(takeover.data.controlledById).toBe("u1");
+    expect(takeover.data.takeoverAt).toBeInstanceOf(Date);
+  });
+
+  it("conversación ya en HUMAN → no repite takeover", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(convUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("echo NO dispara side-effects de inbound: sin actividad IN, sin notificación, sin botRespond", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(activityCreate).not.toHaveBeenCalled();
+    expect(notifCreate).not.toHaveBeenCalled();
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("echo SÍ marca SLA de primera respuesta como cumplido (igual que un envío del dispatcher)", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(meetSlaTimers).toHaveBeenCalledWith("c1");
+  });
+
+  it("echo idempotente: carrera P2002 al crear → devuelve el mensaje ya persistido", async () => {
+    msgFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "m-race" });
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    msgCreate.mockRejectedValueOnce({ code: "P2002" });
+    const r = await handleInboundMessage(echo);
+    expect(r).toEqual({ id: "m-race" });
+  });
+
+  it("echo NUNCA dispara el fetch de perfil Graph (el emisor es la Página), ni con contacto placeholder", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Messenger", lastName: "(por identificar)" });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(fetchProfileForMessage).not.toHaveBeenCalled();
+    expect(contactTxUpdate).not.toHaveBeenCalled();
+  });
+});
+
 const wa = { channel: "WHATSAPP" as const, senderId: "+529991112233", externalMessageId: "wamid-1", text: "hola", profileName: "Ana" };
 
 describe("handleInboundMessage – regresiones WhatsApp", () => {

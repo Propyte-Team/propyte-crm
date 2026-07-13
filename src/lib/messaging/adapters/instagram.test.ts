@@ -13,12 +13,59 @@ describe("parseInstagramWebhook", () => {
       { channel: "INSTAGRAM", senderId: "IGSID-1", externalMessageId: "mid-1", text: "hola", mediaUrl: null, accountId: null },
     ]);
   });
-  it("ignora echoes (mensajes salientes propios) y eventos sin message", () => {
+  it("ignora echoes sin recipient (no hay dueño de hilo resoluble) y eventos sin message", () => {
     const payload = {
       object: "instagram",
       entry: [{ messaging: [{ sender: { id: "X" }, message: { mid: "m", text: "x", is_echo: true } }, { sender: { id: "Y" }, read: {} }] }],
     };
     expect(parseInstagramWebhook(payload)).toEqual([]);
+  });
+
+  it("echo con recipient → emite IncomingMessage con isEcho y senderId = recipient.id (usuario)", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ id: "17841453458089530", messaging: [{
+        sender: { id: "17841453458089530" }, // la cuenta IG (Página)
+        recipient: { id: "IGSID-user" },     // el usuario dueño del hilo
+        timestamp: 1700000000000,
+        message: { mid: "mid-echo-1", text: "respondimos desde Business Suite", is_echo: true, app_id: 1517776481860111 },
+      }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      channel: "INSTAGRAM",
+      senderId: "IGSID-user",
+      externalMessageId: "mid-echo-1",
+      text: "respondimos desde Business Suite",
+      isEcho: true,
+      echoAppId: "1517776481860111",
+      accountId: "17841453458089530",
+    });
+  });
+
+  it("echo sin app_id → echoAppId null; echo sin text con adjunto → '(adjunto)'", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ messaging: [{
+        sender: { id: "PAGE" },
+        recipient: { id: "IGSID-user2" },
+        message: { mid: "mid-echo-2", is_echo: true, attachments: [{ payload: { url: "https://cdn/x.jpg" } }] },
+      }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].echoAppId).toBeNull();
+    expect(out[0].text).toBe("(adjunto)");
+    expect(out[0].mediaUrl).toBe("https://cdn/x.jpg");
+    expect(out[0].isEcho).toBe(true);
+  });
+
+  it("mensaje normal NO lleva isEcho", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ messaging: [{ sender: { id: "IGSID-n" }, message: { mid: "mid-n", text: "hola" } }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].isEcho).toBeUndefined();
   });
   it("captura accountId desde entry.id (cuenta IG receptora)", () => {
     const out = parseInstagramWebhook({

@@ -74,10 +74,83 @@ async function findContactByChannel(channel: MessagingChannel, senderId: string)
 }
 
 /**
+ * Echo (Caso 4): envío hecho por la Página desde OTRA superficie (Meta Business
+ * Suite / app de la Página / el propio CRM), recibido con `message.is_echo`.
+ * - Dedup contra envíos propios: el dispatcher persiste el `message_id` de la
+ *   Send API en Message.externalMessageId (@unique) — si el mid del echo ya
+ *   existe, es el eco de algo que el CRM mismo mandó → skip total.
+ * - Sin contacto → skip (NUNCA crear contactos desde echoes; significa que la
+ *   página escribió primero — caso raro).
+ * - Registra OUTBOUND `sender: "ADVISOR"` (humano externo, no BOT) y aplica el
+ *   takeover suave si la conversación estaba en BOT — mismo mecanismo que el
+ *   envío manual del inbox (app/api/conversations/[id]/messages/route.ts).
+ * - NO dispara side-effects de inbound (notificación, botRespond, actividad IN,
+ *   lastInboundAt, unreadCount). SÍ marca los SLA timers como cumplidos, igual
+ *   que el envío saliente del dispatcher (un humano respondió al lead).
+ */
+async function handleEchoMessage(msg: IncomingMessage) {
+  const own = await prisma.message.findUnique({ where: { externalMessageId: msg.externalMessageId } });
+  if (own) return own;
+
+  const contact = await findContactByChannel(msg.channel, msg.senderId);
+  if (!contact) {
+    console.warn(`[messaging] echo sin contacto (${msg.channel}): ${msg.senderId} — la página escribió primero; skip`);
+    return null;
+  }
+
+  const { ensureConversation } = await import("./conversations");
+  const conv = await ensureConversation({ contactId: contact.id, channel: msg.channel, connectorId: msg.connectorId ?? null });
+  const conversation = await prisma.conversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date() },
+  });
+
+  let message;
+  try {
+    message = await prisma.message.create({
+      data: {
+        contactId: contact.id,
+        userId: contact.assignedToId,
+        channel: msg.channel,
+        direction: "OUTBOUND",
+        body: msg.text,
+        externalMessageId: msg.externalMessageId,
+        mediaUrl: msg.mediaUrl ?? null,
+        status: "DELIVERED",
+        conversationId: conversation.id,
+        sender: "ADVISOR",
+        aiGenerated: false,
+      },
+    });
+  } catch (err: unknown) {
+    if (typeof err === "object" && err && (err as { code?: string }).code === "P2002") {
+      return prisma.message.findUnique({ where: { externalMessageId: msg.externalMessageId } });
+    }
+    throw err;
+  }
+
+  // Takeover suave (réplica del envío manual del inbox): alguien del equipo ya
+  // respondió desde otra superficie → el bot suelta el hilo y no habla encima.
+  if (conversation.status === "BOT") {
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { status: "HUMAN", controlledById: contact.assignedToId ?? null, takeoverAt: new Date() },
+    });
+  }
+
+  const { meetSlaTimers } = await import("@/lib/workflows/sla");
+  await meetSlaTimers(contact.id);
+
+  return message;
+}
+
+/**
  * Intake agnóstico de canal: match/captura → conversación → mensaje (idempotente)
  * → actividad → SLA → bot/notify. Reutilizado por WhatsApp e IG/Messenger.
  */
 export async function handleInboundMessage(msg: IncomingMessage) {
+  if (msg.isEcho) return handleEchoMessage(msg);
+
   let contact = await findContactByChannel(msg.channel, msg.senderId);
 
   // Identidad social: perfil Graph SOLO cuando el contacto es nuevo o sigue placeholder
