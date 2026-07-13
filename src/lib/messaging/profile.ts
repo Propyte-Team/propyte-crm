@@ -11,6 +11,8 @@ export interface SocialProfile {
   firstName: string;
   lastName: string | null;
   avatarUrl: string | null;
+  /** @username crudo de IG (persistible como custom.ig_username); Messenger no lo tiene. */
+  username: string | null;
 }
 
 interface GraphProfileResponse {
@@ -50,20 +52,21 @@ export async function fetchSocialProfile(
     if (channel === "MESSENGER") {
       const firstName = data.first_name?.trim();
       if (!firstName) return null;
-      return { firstName, lastName: data.last_name?.trim() || null, avatarUrl };
+      return { firstName, lastName: data.last_name?.trim() || null, avatarUrl, username: null };
     }
 
     const name = data.name?.trim();
-    const username = data.username?.trim();
+    const username = data.username?.trim() || null;
     if (name) {
       const [first, ...rest] = name.split(/\s+/);
       return {
         firstName: first,
         lastName: rest.join(" ") || (username ? `(@${username})` : null),
         avatarUrl,
+        username,
       };
     }
-    if (username) return { firstName: `@${username}`, lastName: null, avatarUrl };
+    if (username) return { firstName: `@${username}`, lastName: null, avatarUrl, username };
     return null;
   } catch {
     return null;

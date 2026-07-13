@@ -18,6 +18,13 @@ export interface IncomingMessage {
   connectorId?: string | null;
   /** Id de la cuenta receptora del webhook: IG Business ID (objeto instagram) o Page ID (objeto page). */
   accountId?: string | null;
+  /** Referral de anuncios/m.me (messaging_referrals o postback.referral) — Caso 2 social↔ads linking. */
+  referral?: {
+    ref?: string;
+    source?: string;
+    type?: string;
+    adId?: string;
+  };
 }
 
 /** Resultado de un envío saliente por un adapter. */

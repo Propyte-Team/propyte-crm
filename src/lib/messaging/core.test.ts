@@ -1,19 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const contactFindFirst = vi.fn();
+const contactFindUnique = vi.fn();
+const contactUpdate = vi.fn();
+const adAttrFindUnique = vi.fn();
+const adAttrCreate = vi.fn();
 const convFindFirst = vi.fn();
 const convCreate = vi.fn();
 const convUpdate = vi.fn();
 const msgCreate = vi.fn();
 const msgFindUnique = vi.fn();
 const activityCreate = vi.fn();
+const notifCreate = vi.fn();
 const captureLead = vi.fn();
 const botRespond = vi.fn();
 const meetSlaTimers = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
-    contact: { findFirst: (...a: unknown[]) => contactFindFirst(...a), findUnique: vi.fn(async () => ({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" })) },
+    contact: {
+      findFirst: (...a: unknown[]) => contactFindFirst(...a),
+      findUnique: (...a: unknown[]) => contactFindUnique(...a),
+      update: (...a: unknown[]) => contactUpdate(...a),
+    },
+    adAttribution: {
+      findUnique: (...a: unknown[]) => adAttrFindUnique(...a),
+      create: (...a: unknown[]) => adAttrCreate(...a),
+    },
     conversation: {
       findFirst: (...a: unknown[]) => convFindFirst(...a),
       create: (...a: unknown[]) => convCreate(...a),
@@ -21,7 +34,7 @@ vi.mock("@/lib/db", () => ({
     },
     message: { create: (...a: unknown[]) => msgCreate(...a), findUnique: (...a: unknown[]) => msgFindUnique(...a) },
     activity: { create: (...a: unknown[]) => activityCreate(...a) },
-    notification: { create: vi.fn() },
+    notification: { create: (...a: unknown[]) => notifCreate(...a) },
   },
 }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
@@ -43,7 +56,22 @@ vi.mock("@/lib/audit/change-context", () => ({
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
-  [contactFindFirst, convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers, emitEvent, fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy].forEach((m) => m.mockReset());
+  [
+    contactFindFirst, contactFindUnique, contactUpdate, adAttrFindUnique, adAttrCreate,
+    convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate,
+    notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
+    fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
+  ].forEach((m) => m.mockReset());
+  contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+  contactUpdate.mockImplementation(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({
+    id: where.id,
+    assignedToId: "u1",
+    firstName: (data.firstName as string) ?? "A",
+    lastName: (data.lastName as string) ?? "B",
+    custom: data.custom ?? {},
+  }));
+  adAttrFindUnique.mockResolvedValue(null);
+  adAttrCreate.mockResolvedValue({});
   convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
   convUpdate.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
   msgCreate.mockResolvedValue({ id: "m1" });
@@ -165,6 +193,110 @@ describe("handleInboundMessage – identidad social (perfil Graph)", () => {
     contactTxUpdate.mockRejectedValue(new Error("db"));
     const r = await handleInboundMessage(msgMs);
     expect(r).toEqual({ id: "m1" });
+  });
+});
+
+describe("handleInboundMessage – username de IG (custom.ig_username)", () => {
+  const msgIg = { channel: "INSTAGRAM" as const, senderId: "IGSID-1", externalMessageId: "mid-u1", text: "hola", connectorId: "conn-ig" };
+
+  it("desconocido IG con username (sin avatar) → guarda custom.ig_username tras captureLead", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    fetchProfileForMessage.mockResolvedValue({ firstName: "Ana", lastName: "(@ana.g)", avatarUrl: null, username: "ana.g" });
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    contactTxUpdate.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Ana", lastName: "(@ana.g)", custom: { ig_username: "ana.g" }, assignedTo: null });
+    await handleInboundMessage(msgIg);
+    expect(contactTxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "c1" },
+        data: expect.objectContaining({ custom: expect.objectContaining({ ig_username: "ana.g" }) }),
+      })
+    );
+    // names:false — captureLead ya puso el nombre; el update extra NO lo pisa
+    const data = contactTxUpdate.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("firstName");
+  });
+
+  it("existente '(por identificar)' IG con username + avatar → custom lleva ambos", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Instagram", lastName: "(por identificar)", custom: { foo: 1 } });
+    fetchProfileForMessage.mockResolvedValue({ firstName: "Ana", lastName: "María García", avatarUrl: "https://cdn/ig.jpg", username: "ana.g" });
+    contactTxUpdate.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Ana", lastName: "María García", custom: { foo: 1, avatarUrl: "https://cdn/ig.jpg", ig_username: "ana.g" }, assignedTo: null });
+    await handleInboundMessage(msgIg);
+    expect(contactTxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          firstName: "Ana",
+          lastName: "María García",
+          custom: expect.objectContaining({ foo: 1, avatarUrl: "https://cdn/ig.jpg", ig_username: "ana.g" }),
+        }),
+      })
+    );
+  });
+});
+
+describe("handleInboundMessage — atribución de referral (Caso 2)", () => {
+  it("referral con adId y contacto sin AdAttribution → crea AdAttribution y guarda custom.meta_referral", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: { foo: "bar" } });
+    adAttrFindUnique.mockResolvedValue(null);
+    const referral = { ref: "campana-1", source: "ADS", type: "OPEN_THREAD", adId: "AD-1" };
+    await handleInboundMessage({ ...base, referral });
+    expect(adAttrFindUnique).toHaveBeenCalledWith({ where: { contactId: "c1" } });
+    expect(adAttrCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: "c1", network: "META_DM", utmSource: "instagram_ctm", utmContent: "AD-1", utmCampaign: "campana-1",
+        }),
+      })
+    );
+    expect(contactUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "c1" },
+        data: expect.objectContaining({ custom: expect.objectContaining({ foo: "bar", meta_referral: referral }) }),
+      })
+    );
+  });
+
+  it("referral con ref pero sin adId → igual crea atribución (utmContent null)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+    adAttrFindUnique.mockResolvedValue(null);
+    await handleInboundMessage({ ...base, referral: { ref: "campana-2", source: "SHORTLINK" } });
+    expect(adAttrCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ utmContent: null, utmCampaign: "campana-2" }) })
+    );
+  });
+
+  it("contacto YA tiene AdAttribution → NO crea otra, solo actualiza custom", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+    adAttrFindUnique.mockResolvedValue({ id: "attr1" });
+    await handleInboundMessage({ ...base, referral: { adId: "AD-3" } });
+    expect(adAttrCreate).not.toHaveBeenCalled();
+    expect(contactUpdate).toHaveBeenCalled();
+  });
+
+  it("referral sin adId ni ref (solo source/type) → no toca AdAttribution ni custom", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+    await handleInboundMessage({ ...base, referral: { source: "ADS", type: "OPEN_THREAD" } });
+    expect(adAttrFindUnique).not.toHaveBeenCalled();
+    expect(adAttrCreate).not.toHaveBeenCalled();
+    expect(contactUpdate).not.toHaveBeenCalled();
+  });
+
+  it("sin referral → no toca AdAttribution (regresión)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+    await handleInboundMessage(base);
+    expect(adAttrFindUnique).not.toHaveBeenCalled();
+    expect(adAttrCreate).not.toHaveBeenCalled();
+  });
+
+  it("channel MESSENGER con referral adId → utmSource messenger_ctm", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c2", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+    adAttrFindUnique.mockResolvedValue(null);
+    await handleInboundMessage({
+      channel: "MESSENGER", senderId: "PSID-1", externalMessageId: "mid-m1", text: "hola",
+      referral: { adId: "AD-4" },
+    });
+    expect(adAttrCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ utmSource: "messenger_ctm" }) })
+    );
   });
 });
 

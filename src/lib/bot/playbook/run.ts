@@ -75,6 +75,18 @@ export async function runPlaybookStep(
         if (res.ok) {
           await applyCapture(db, contact.id, res.writes, { taskKey: t.key, conversationId });
           newlyDone.push(t.key);
+
+          // Caso 1: detección de duplicado al capturar teléfono/email — best
+          // effort, NUNCA debe romper el flujo del bot (regla de oro de este
+          // orquestador).
+          if (t.captureType === "PHONE" || t.captureType === "EMAIL") {
+            try {
+              const { detectDuplicatesForContact } = await import("@/lib/contacts/duplicate-alert");
+              await detectDuplicatesForContact(contact.id);
+            } catch {
+              /* best-effort: nunca romper el flujo del bot */
+            }
+          }
         }
       }
     }

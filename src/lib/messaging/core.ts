@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import type { IncomingMessage, MessagingChannel } from "./types";
 import type { SocialProfile } from "./profile";
@@ -6,7 +7,7 @@ const PLACEHOLDER_LASTNAME = "(por identificar)";
 
 type ContactWithAssigned = NonNullable<Awaited<ReturnType<typeof findContactByChannel>>>;
 
-/** Aplica nombre/avatar del perfil social al contacto (best-effort; null si falla). */
+/** Aplica nombre/avatar/username del perfil social al contacto (best-effort; null si falla). */
 async function applySocialProfile(
   contact: ContactWithAssigned,
   profile: SocialProfile,
@@ -23,7 +24,10 @@ async function applySocialProfile(
       data.firstName = profile.firstName;
       data.lastName = profile.lastName ?? PLACEHOLDER_LASTNAME;
     }
-    if (profile.avatarUrl) data.custom = { ...baseCustom, avatarUrl: profile.avatarUrl };
+    const customUpdates: Record<string, unknown> = {};
+    if (profile.avatarUrl) customUpdates.avatarUrl = profile.avatarUrl;
+    if (profile.username) customUpdates.ig_username = profile.username;
+    if (Object.keys(customUpdates).length > 0) data.custom = { ...baseCustom, ...customUpdates };
     if (Object.keys(data).length === 0) return contact;
     return await withChangeSource({ source: "social_profile" }, (tx) =>
       tx.contact.update({
@@ -107,12 +111,39 @@ export async function handleInboundMessage(msg: IncomingMessage) {
     });
     // include sin select de escalares → whatsappOptOut disponible en ambas ramas
     if (!contact) return null;
-    // el nombre ya lo puso captureLead; solo falta el avatar si vino
-    if (profile?.avatarUrl) {
+    // el nombre ya lo puso captureLead; solo falta custom (avatar/username) si vino
+    if (profile && (profile.avatarUrl || profile.username)) {
       contact = (await applySocialProfile(contact, profile, { names: false })) ?? contact;
     }
   } else if (profile) {
     contact = (await applySocialProfile(contact, profile)) ?? contact;
+  }
+
+  // Atribución de anuncios vía referral (Caso 2): m.me ref / click-to-DM ads.
+  // Solo si el referral trae algo identificable (adId o ref) — si no, no hay
+  // nada útil que atribuir.
+  if (msg.referral && (msg.referral.adId || msg.referral.ref)) {
+    const existingAttribution = await prisma.adAttribution.findUnique({ where: { contactId: contact.id } });
+    if (!existingAttribution) {
+      await prisma.adAttribution
+        .create({
+          data: {
+            contactId: contact.id,
+            network: "META_DM",
+            utmSource: msg.channel === "INSTAGRAM" ? "instagram_ctm" : "messenger_ctm",
+            utmContent: msg.referral.adId ?? null,
+            utmCampaign: msg.referral.ref ?? null,
+            firstTouch: new Date(),
+          },
+        })
+        .catch((err) => console.error("[messaging] adAttribution referral:", err));
+    }
+    const prevCustom = (contact.custom as Record<string, unknown> | null) ?? {};
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: { custom: { ...prevCustom, meta_referral: msg.referral } as Prisma.InputJsonValue },
+      include: { assignedTo: { select: { id: true, name: true } } },
+    });
   }
 
   const { ensureConversation } = await import("./conversations");

@@ -26,7 +26,7 @@ describe("fetchSocialProfile — MESSENGER", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const p = await fetchSocialProfile("MESSENGER", "PSID-1", "TOKEN");
-    expect(p).toEqual({ firstName: "Ana", lastName: "García", avatarUrl: "https://cdn/pic.jpg" });
+    expect(p).toEqual({ firstName: "Ana", lastName: "García", avatarUrl: "https://cdn/pic.jpg", username: null });
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/PSID-1?fields=first_name,last_name,profile_pic");
     expect(url).toContain("access_token=TOKEN");
@@ -46,20 +46,20 @@ describe("fetchSocialProfile — INSTAGRAM", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const p = await fetchSocialProfile("INSTAGRAM", "IGSID-1", "T");
-    expect(p).toEqual({ firstName: "Ana", lastName: "María García", avatarUrl: "https://cdn/ig.jpg" });
+    expect(p).toEqual({ firstName: "Ana", lastName: "María García", avatarUrl: "https://cdn/ig.jpg", username: "ana.g" });
     expect(fetchMock.mock.calls[0][0]).toContain("?fields=name,username,profile_pic");
   });
 
   it("nombre de una sola palabra → apellido (@username)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson({ name: "Ana", username: "ana.g" })));
     const p = await fetchSocialProfile("INSTAGRAM", "IGSID-1", "T");
-    expect(p).toEqual({ firstName: "Ana", lastName: "(@ana.g)", avatarUrl: null });
+    expect(p).toEqual({ firstName: "Ana", lastName: "(@ana.g)", avatarUrl: null, username: "ana.g" });
   });
 
   it("solo username → @username como nombre", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okJson({ username: "ana.g" })));
     const p = await fetchSocialProfile("INSTAGRAM", "IGSID-1", "T");
-    expect(p).toEqual({ firstName: "@ana.g", lastName: null, avatarUrl: null });
+    expect(p).toEqual({ firstName: "@ana.g", lastName: null, avatarUrl: null, username: "ana.g" });
   });
 });
 
@@ -116,7 +116,7 @@ describe("fetchProfileForMessage", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const r = await fetchProfileForMessage({ channel: "MESSENGER", senderId: "PSID-9", connectorId: "c1" });
-    expect(r).toEqual({ firstName: "Luis", lastName: "P", avatarUrl: null });
+    expect(r).toEqual({ firstName: "Luis", lastName: "P", avatarUrl: null, username: null });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "c1" } });
     expect(fetchMock.mock.calls[0][0]).toContain("access_token=PAGE-TOKEN");
   });

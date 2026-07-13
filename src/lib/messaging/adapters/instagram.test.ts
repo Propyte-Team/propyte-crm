@@ -32,6 +32,58 @@ describe("parseInstagramWebhook", () => {
     expect(out[0].channel).toBe("INSTAGRAM");
     expect(out[0].senderId).toBe("IGSID_123");
   });
+
+  it("parsea el referral de anuncios cuando viene junto al mensaje (click-to-IG-DM sin Get Started)", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ messaging: [{
+        sender: { id: "IGSID-ads" },
+        message: { mid: "m-ads", text: "hola, vi el anuncio" },
+        referral: { ref: "campana-verano", source: "ADS", type: "OPEN_THREAD", ad_id: "120210000000000" },
+      }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].referral).toEqual({ ref: "campana-verano", source: "ADS", type: "OPEN_THREAD", adId: "120210000000000" });
+  });
+
+  it("emite un IncomingMessage sintético para un postback sin message (Get Started con referral anidado)", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ id: "17841", messaging: [{
+        sender: { id: "IGSID-gs" },
+        timestamp: 1700000000000,
+        postback: {
+          title: "Get Started",
+          payload: "PASSTHROUGH",
+          referral: { ref: "campana-verano", source: "ADS", type: "OPEN_THREAD", ad_id: "120210000000001" },
+        },
+      }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].text).toBe("Get Started");
+    expect(out[0].referral).toEqual({ ref: "campana-verano", source: "ADS", type: "OPEN_THREAD", adId: "120210000000001" });
+    expect(out[0].accountId).toBe("17841");
+    expect(out[0].mediaUrl).toBeNull();
+    expect(out[0].externalMessageId).toBeTruthy();
+  });
+
+  it("postback sin title usa el payload como texto", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ messaging: [{ sender: { id: "IGSID-p" }, postback: { payload: "SOLO_PAYLOAD" } }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].text).toBe("SOLO_PAYLOAD");
+    expect(out[0].referral).toBeUndefined();
+  });
+
+  it("no emite mensaje para un evento de solo referral sin message ni postback", () => {
+    const out = parseInstagramWebhook({
+      object: "instagram",
+      entry: [{ messaging: [{ sender: { id: "IGSID-r" }, referral: { source: "ADS" } }] }],
+    });
+    expect(out).toEqual([]);
+  });
 });
 
 describe("parseMessengerWebhook", () => {

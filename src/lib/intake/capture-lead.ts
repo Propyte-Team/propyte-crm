@@ -13,6 +13,39 @@ export interface CaptureResult {
   error?: string;
 }
 
+/** true si el lead trae algún dato de atribución publicitaria/tracking. */
+function hasAttributionData(lead: IncomingLead): boolean {
+  return !!(
+    lead.utm || lead.gclid || lead.fbclid || lead.ttclid || lead.liFatId || lead.portalLeadId ||
+    lead.landingPage || lead.campaignName || lead.adName || lead.network || lead.socialLeadId
+  );
+}
+
+/** Payload de AdAttribution.create a partir del lead (sin contactId — lo agrega el caller). */
+function buildAttributionData(lead: IncomingLead) {
+  return {
+    gclid: lead.gclid ?? null,
+    fbclid: lead.fbclid ?? null,
+    ttclid: lead.ttclid ?? null,
+    liFatId: lead.liFatId ?? null,
+    portalLeadId: lead.portalLeadId ?? null,
+    utmSource: lead.utm?.source ?? null,
+    utmMedium: lead.utm?.medium ?? null,
+    utmCampaign: lead.utm?.campaign ?? null,
+    utmTerm: lead.utm?.term ?? null,
+    utmContent: lead.utm?.content ?? null,
+    landingPage: lead.landingPage ?? null,
+    referrer: lead.referrer ?? null,
+    campaignName: lead.campaignName ?? null,
+    adName: lead.adName ?? null,
+    adsetName: lead.adsetName ?? null,
+    network: lead.network ?? null,
+    socialLeadId: lead.socialLeadId ?? null,
+    firstTouch: new Date(),
+    lastTouch: new Date(),
+  };
+}
+
 export async function captureLead(
   input: IncomingLead | Record<string, unknown>,
   opts: { connectorId?: string; skipRouting?: boolean } = {}
@@ -56,6 +89,19 @@ export async function captureLead(
       where: { id: existing.id },
       data: { lastActivityAt: new Date() },
     });
+
+    // Enlace social↔ads (Caso 2 punto 6): si el lead repetido trae datos de
+    // atribución y el contacto aún no tiene AdAttribution, la creamos ahora —
+    // hoy solo se creaba para contactos nuevos y esa info se perdía.
+    if (hasAttributionData(lead)) {
+      const existingAttribution = await prisma.adAttribution.findUnique({ where: { contactId: existing.id } });
+      if (!existingAttribution) {
+        await prisma.adAttribution
+          .create({ data: { contactId: existing.id, ...buildAttributionData(lead) } })
+          .catch((err) => console.error("[captureLead] adAttribution (duplicado):", err));
+      }
+    }
+
     const { emitEvent } = await import("@/lib/workflows/events");
     await emitEvent("lead.captured", "contact", existing.id, {
       leadSource: lead.source,
@@ -99,35 +145,10 @@ export async function captureLead(
   });
 
   // Atribución publicitaria si viene en el payload (Anexo §B.4)
-  if (
-    lead.utm || lead.gclid || lead.fbclid || lead.ttclid || lead.liFatId || lead.portalLeadId ||
-    lead.landingPage || lead.campaignName || lead.adName || lead.network || lead.socialLeadId
-  ) {
-    await prisma.adAttribution.create({
-      data: {
-        contactId: contact.id,
-        gclid: lead.gclid ?? null,
-        fbclid: lead.fbclid ?? null,
-        ttclid: lead.ttclid ?? null,
-        liFatId: lead.liFatId ?? null,
-        portalLeadId: lead.portalLeadId ?? null,
-        utmSource: lead.utm?.source ?? null,
-        utmMedium: lead.utm?.medium ?? null,
-        utmCampaign: lead.utm?.campaign ?? null,
-        utmTerm: lead.utm?.term ?? null,
-        utmContent: lead.utm?.content ?? null,
-        landingPage: lead.landingPage ?? null,
-        referrer: lead.referrer ?? null,
-        // Atribución de anuncio (segmentación por campaña/red en reglas/routing)
-        campaignName: lead.campaignName ?? null,
-        adName: lead.adName ?? null,
-        adsetName: lead.adsetName ?? null,
-        network: lead.network ?? null,
-        socialLeadId: lead.socialLeadId ?? null,
-        firstTouch: new Date(),
-        lastTouch: new Date(),
-      },
-    }).catch((err) => console.error("[captureLead] adAttribution:", err));
+  if (hasAttributionData(lead)) {
+    await prisma.adAttribution
+      .create({ data: { contactId: contact.id, ...buildAttributionData(lead) } })
+      .catch((err) => console.error("[captureLead] adAttribution:", err));
   }
 
   const { emitEvent } = await import("@/lib/workflows/events");

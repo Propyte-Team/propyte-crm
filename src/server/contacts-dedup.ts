@@ -1,28 +1,43 @@
 import prisma from "@/lib/db";
-import { buildDuplicateGroups } from "@/lib/contacts/duplicates";
+import { buildDuplicateGroups, type DuplicateMatchType } from "@/lib/contacts/duplicates";
 import { setChangeSource } from "@/lib/audit/change-context";
 
 export interface DupGroupContact {
   id: string; firstName: string; lastName: string;
   email: string | null; phone: string; createdAt: Date;
   assignedTo: { name: string | null } | null;
+  instagramId: string | null; messengerPsid: string | null;
   _count: { deals: number; activities: number };
 }
 
-export async function findDuplicateGroups(): Promise<DupGroupContact[][]> {
+export interface DupGroupResult {
+  matchType: DuplicateMatchType;
+  contacts: DupGroupContact[];
+}
+
+export async function findDuplicateGroups(): Promise<DupGroupResult[]> {
   const contacts = await prisma.contact.findMany({
     where: { deletedAt: null, mergedIntoId: null },
     select: {
       id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true,
       assignedTo: { select: { name: true } },
+      instagramId: true, messengerPsid: true,
       _count: { select: { deals: true, activities: true } },
     },
   });
   const byId = new Map(contacts.map((c) => [c.id, c as DupGroupContact]));
-  const groups = buildDuplicateGroups(contacts.map((c) => ({ id: c.id, email: c.email, phone: c.phone })));
+  const groups = buildDuplicateGroups(
+    contacts.map((c) => ({ id: c.id, email: c.email, phone: c.phone, firstName: c.firstName, lastName: c.lastName }))
+  );
   return groups
-    .map((ids) => ids.map((id) => byId.get(id)!).filter(Boolean))
-    .sort((a, b) => b.length - a.length);
+    .map((g) => ({
+      matchType: g.matchType,
+      contacts: g.ids.map((id) => byId.get(id)!).filter(Boolean),
+    }))
+    .sort((a, b) => {
+      if (a.matchType !== b.matchType) return a.matchType === "strong" ? -1 : 1;
+      return b.contacts.length - a.contacts.length;
+    });
 }
 
 const N_RELATIONS = ["deal", "activity", "walkIn", "message", "slaTimer", "connectorLeadLog", "conversionEvent", "shortlist"] as const;

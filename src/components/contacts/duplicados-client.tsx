@@ -10,11 +10,37 @@ interface Ct {
   phone: string;
   createdAt: string;
   assignedTo: { name: string | null } | null;
+  instagramId: string | null;
+  messengerPsid: string | null;
   _count: { deals: number; activities: number };
 }
 
+type MatchType = "strong" | "name";
+
+interface DupGroup {
+  matchType: MatchType;
+  contacts: Ct[];
+}
+
+function channelLabel(c: Ct): string {
+  if (c.instagramId) return "IG";
+  if (c.messengerPsid) return "Messenger";
+  return "—";
+}
+
+function MatchBadge({ matchType }: { matchType: MatchType }) {
+  return (
+    <span
+      className="rounded border px-2 py-0.5 text-[11px] font-medium text-[color:var(--text-tertiary)]"
+      style={{ borderColor: "var(--border-subtle)" }}
+    >
+      {matchType === "strong" ? "Coincidencia fuerte (tel/email)" : "Coincidencia débil (nombre)"}
+    </span>
+  );
+}
+
 export function DuplicadosClient() {
-  const [groups, setGroups] = useState<Ct[][]>([]);
+  const [groups, setGroups] = useState<DupGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [survivors, setSurvivors] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
@@ -23,10 +49,10 @@ export function DuplicadosClient() {
     setLoading(true);
     const res = await fetch("/api/contacts/duplicates");
     const json = await res.json();
-    const data: Ct[][] = json.data ?? [];
+    const data: DupGroup[] = json.data ?? [];
     const def: Record<number, string> = {};
     data.forEach((g, idx) => {
-      const best = [...g].sort(
+      const best = [...g.contacts].sort(
         (a, b) =>
           b._count.deals +
           b._count.activities -
@@ -78,7 +104,7 @@ export function DuplicadosClient() {
           Contactos duplicados
         </h1>
         <p className="text-[13px] text-[color:var(--text-tertiary)]">
-          Agrupados por email o teléfono. Elige el sobreviviente y fusiona.
+          Agrupados por email/teléfono (fuerte) o por nombre (débil). Elige el sobreviviente y fusiona.
         </p>
       </div>
 
@@ -99,20 +125,23 @@ export function DuplicadosClient() {
                 background: "var(--bg-card)",
               }}
             >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[13px] font-semibold text-[color:var(--text-secondary)]">
-                  {g.length} posibles duplicados
-                </span>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-semibold text-[color:var(--text-secondary)]">
+                    {g.contacts.length} posibles duplicados
+                  </span>
+                  <MatchBadge matchType={g.matchType} />
+                </div>
                 <button
                   className="btn-primary text-xs disabled:opacity-40"
                   disabled={busy}
-                  onClick={() => mergeGroup(idx, g)}
+                  onClick={() => mergeGroup(idx, g.contacts)}
                 >
                   Fusionar en el seleccionado
                 </button>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {g.map((c) => (
+                {g.contacts.map((c) => (
                   <label
                     key={c.id}
                     className="flex cursor-pointer items-start gap-2 rounded border p-2 text-[13px]"
@@ -130,6 +159,12 @@ export function DuplicadosClient() {
                     <span>
                       <span className="font-medium text-[color:var(--text-primary)]">
                         {c.firstName} {c.lastName}
+                      </span>{" "}
+                      <span
+                        className="rounded border px-1 text-[10px] text-[color:var(--text-tertiary)]"
+                        style={{ borderColor: "var(--border-subtle)" }}
+                      >
+                        {channelLabel(c)}
                       </span>
                       <span className="block text-[color:var(--text-tertiary)]">
                         {c.email ?? "sin email"} · {c.phone}
