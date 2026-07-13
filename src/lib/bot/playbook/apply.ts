@@ -4,6 +4,7 @@
 // hacer con seguridad (contacto inexistente, sin actor para auditar), se omite.
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { isCustomTarget, isNativeTarget } from "./fields";
+import { setChangeSource } from "@/lib/audit/change-context";
 
 export interface FieldWrite {
   field: string;
@@ -94,10 +95,13 @@ export async function applyCapture(
       data.custom = nextCustom as Prisma.InputJsonValue;
     }
 
-    await db.$transaction([
-      db.contact.update({ where: { id: contactId }, data }),
-      ...auditEntries.map((entry) =>
-        db.auditLog.create({
+    // Forma interactiva (en vez de array-batch): permite fijar crm.source/crm.actor_id
+    // ANTES del UPDATE, en la misma transacción, para que el trigger de cronología los vea.
+    await db.$transaction(async (tx) => {
+      await setChangeSource(tx, { source: "bot_playbook", actorId });
+      await tx.contact.update({ where: { id: contactId }, data });
+      for (const entry of auditEntries) {
+        await tx.auditLog.create({
           data: {
             userId: actorId,
             action: "UPDATE",
@@ -112,9 +116,9 @@ export async function applyCapture(
               conversationId: meta.conversationId,
             },
           },
-        }),
-      ),
-    ]);
+        });
+      }
+    });
   } catch {
     // Best-effort: nunca romper el flujo del bot por un fallo de escritura/auditoría.
     return;

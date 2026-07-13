@@ -406,6 +406,10 @@ enum ContactStatus {
   CONTACTADO
   EN_SEGUIMIENTO
   DESCARTADO
+  PERDIDO
+  CONTACTADO_PERDIDO
+  REUNION
+  PROSPECTO
 
   @@schema("propyte_crm")
 }
@@ -1061,6 +1065,28 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@map("audit_logs")
+  @@schema("propyte_crm")
+}
+
+// Cronología por registro: cada cambio de campo en contacts/deals, escrito por trigger
+// de Postgres (propyte_crm.log_field_changes) — NO por la app. Polimórfico (entity_type +
+// entity_id), por eso sin relaciones FK. actor_id/source se enriquecen vía set_config
+// transaccional (ver src/lib/audit/change-context.ts); pueden quedar NULL si el caller no
+// los fijó — el trigger igual audita el cambio.
+model RecordFieldChange {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id")
+  field      String
+  oldValue   Json?     @map("old_value")
+  newValue   Json?     @map("new_value")
+  source     String?
+  actorId    String?   @map("actor_id")
+  changedAt  DateTime  @default(now()) @map("changed_at")
+
+  @@index([entityType, entityId, changedAt(sort: Desc)])
+  @@index([entityType, field, changedAt(sort: Desc)])
+  @@map("record_field_changes")
   @@schema("propyte_crm")
 }
 

@@ -3,6 +3,7 @@
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
 import { createSlaTimer } from "./sla";
+import { withChangeSource } from "@/lib/audit/change-context";
 
 const RR_POINTER_KEY = "workflows.routing.rr_pointer";
 
@@ -114,10 +115,14 @@ export async function autoRouteLead(
   if (!assigneeId) return null;
 
   const previous = contact.assignedToId;
-  await prisma.contact.update({
-    where: { id: contactId },
-    data: { assignedToId: assigneeId, lastActivityAt: new Date() },
-  });
+  await withChangeSource(
+    { source: "routing" },
+    (tx) =>
+      tx.contact.update({
+        where: { id: contactId },
+        data: { assignedToId: assigneeId, lastActivityAt: new Date() },
+      })
+  );
 
   await createSlaTimer(contactId, "FIRST_TOUCH");
 

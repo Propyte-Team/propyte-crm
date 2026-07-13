@@ -1,5 +1,6 @@
 import prisma from "@/lib/db";
 import { buildDuplicateGroups } from "@/lib/contacts/duplicates";
+import { setChangeSource } from "@/lib/audit/change-context";
 
 export interface DupGroupContact {
   id: string; firstName: string; lastName: string;
@@ -27,11 +28,12 @@ export async function findDuplicateGroups(): Promise<DupGroupContact[][]> {
 const N_RELATIONS = ["deal", "activity", "walkIn", "message", "slaTimer", "connectorLeadLog", "conversionEvent", "shortlist"] as const;
 const ONE_TO_ONE = ["contactDossier", "adAttribution", "webBehavior", "conversation"] as const;
 
-export async function mergeContacts(input: { survivorId: string; loserId: string }):
+export async function mergeContacts(input: { survivorId: string; loserId: string; actorId?: string | null }):
   Promise<{ error: string } | { survivorId: string }> {
   if (input.survivorId === input.loserId) return { error: "No se puede fusionar un contacto consigo mismo" };
 
   return prisma.$transaction(async (tx) => {
+    await setChangeSource(tx, { source: "merge", actorId: input.actorId ?? null });
     const survivor = await tx.contact.findFirst({ where: { id: input.survivorId, deletedAt: null, mergedIntoId: null } });
     const loser = await tx.contact.findFirst({ where: { id: input.loserId, deletedAt: null, mergedIntoId: null } });
     if (!survivor || !loser) return { error: "Uno de los contactos no existe o ya fue fusionado/borrado" };

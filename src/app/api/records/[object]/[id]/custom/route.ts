@@ -5,6 +5,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { getActiveFields, visibleFields, buildZodFromRegistry } from "@/lib/metadata/registry";
 import type { UserRole } from "@prisma/client";
+import { withChangeSource } from "@/lib/audit/change-context";
 
 const SUPPORTED: Record<string, "contact" | "deal"> = { contact: "contact", deal: "deal" };
 
@@ -76,11 +77,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { object: st
   }
 
   const merged = { ...((record.custom ?? {}) as object), ...(parsed.data as object) };
-  if (object === "contact") {
-    await prisma.contact.update({ where: { id: params.id }, data: { custom: merged } });
-  } else {
-    await prisma.deal.update({ where: { id: params.id }, data: { custom: merged } });
-  }
+  await withChangeSource({ source: "ui", actorId: session.user.id }, async (tx) => {
+    if (object === "contact") {
+      await tx.contact.update({ where: { id: params.id }, data: { custom: merged } });
+    } else {
+      await tx.deal.update({ where: { id: params.id }, data: { custom: merged } });
+    }
+  });
 
   await prisma.auditLog.create({
     data: {

@@ -13,7 +13,8 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
-import { LIFECYCLE_ORDER } from "@/lib/constants";
+import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER } from "@/lib/constants";
+import { withChangeSource } from "@/lib/audit/change-context";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -34,7 +35,9 @@ const createContactSchema = z.object({
   phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
-  contactStatus: z.enum(["NUEVO", "SIN_RESPUESTA", "CONTACTADO", "EN_SEGUIMIENTO", "DESCARTADO"]).optional(),
+  // Única fuente de verdad = CONTACT_STATUS_ORDER (constants.ts) — evita el bug clásico
+  // "enum Prisma ≠ enum zod" (un valor válido en BD pero ausente aquí se rechaza en silencio).
+  contactStatus: z.enum(CONTACT_STATUS_ORDER).optional(),
   lifecycleStage: z.enum(["SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR"]).nullable().optional(),
   urgency: z.enum(["ALTA", "MEDIA", "BAJA"]).optional().nullable(),
   leadSource: z.enum([
@@ -445,13 +448,17 @@ export async function PUT(request: NextRequest) {
       });
     }
 
-    const contact = await prisma.contact.update({
-      where: { id },
-      data: updateData,
-      include: {
-        assignedTo: { select: { id: true, name: true, email: true } },
-      },
-    });
+    const contact = await withChangeSource(
+      { source: "ui", actorId: session.user.id },
+      (tx) =>
+        tx.contact.update({
+          where: { id },
+          data: updateData,
+          include: {
+            assignedTo: { select: { id: true, name: true, email: true } },
+          },
+        })
+    );
 
     return NextResponse.json({ data: contact });
   } catch (error) {
@@ -495,10 +502,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Soft delete
-    await prisma.contact.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    await withChangeSource(
+      { source: "ui", actorId: session.user.id },
+      (tx) => tx.contact.update({ where: { id }, data: { deletedAt: new Date() } })
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

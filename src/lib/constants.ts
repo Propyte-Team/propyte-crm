@@ -241,10 +241,16 @@ export const TEMPERATURE_COLORS: Record<string, string> = {
 } as const;
 
 // --- Estado del contacto (ciclo de seguimiento, distinto del pipeline del deal) ---
+// Orden = escalera del ciclo de contacto; los legacy (EN_SEGUIMIENTO/DESCARTADO) quedan
+// al final — siguen soportados pero ya no son parte del flujo activo recomendado.
 export const CONTACT_STATUS_LABELS: Record<string, string> = {
   NUEVO: "Nuevo",
   SIN_RESPUESTA: "Sin respuesta",
   CONTACTADO: "Contactado",
+  CONTACTADO_PERDIDO: "Contactado perdido",
+  REUNION: "Reunión",
+  PROSPECTO: "Prospecto",
+  PERDIDO: "Perdido",
   EN_SEGUIMIENTO: "En seguimiento",
   DESCARTADO: "Descartado",
 } as const;
@@ -254,6 +260,10 @@ export const CONTACT_STATUS_COLORS: Record<string, string> = {
   NUEVO: "#3B82F6",
   SIN_RESPUESTA: "#F59E0B",
   CONTACTADO: "#6366F1",
+  CONTACTADO_PERDIDO: "#DC2626",
+  REUNION: "#8B5CF6",
+  PROSPECTO: "#0EA5E9",
+  PERDIDO: "#EF4444",
   EN_SEGUIMIENTO: "#0D9488",
   DESCARTADO: "#9CA3AF",
 } as const;
@@ -262,6 +272,10 @@ export const CONTACT_STATUS_ORDER = [
   "NUEVO",
   "SIN_RESPUESTA",
   "CONTACTADO",
+  "CONTACTADO_PERDIDO",
+  "REUNION",
+  "PROSPECTO",
+  "PERDIDO",
   "EN_SEGUIMIENTO",
   "DESCARTADO",
 ] as const;

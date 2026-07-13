@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { withChangeSource } from "@/lib/audit/change-context";
 
 const zapierContactUpdateSchema = z.object({
   id: z.string().uuid(),
@@ -87,10 +88,10 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    const contact = await prisma.contact.update({
-      where: { id },
-      data,
-    });
+    const contact = await withChangeSource(
+      { source: "zapier" },
+      (tx) => tx.contact.update({ where: { id }, data })
+    );
 
     return NextResponse.json({ id: contact.id, updated: true });
   } catch (error) {

@@ -11,6 +11,7 @@ import { DEAL_STAGE_PROBABILITY, STAGNATION_LIMITS } from "@/lib/constants";
 import { createDealSchema, stageTransitionSchema } from "@/lib/validations/deal";
 import type { Prisma, DealStage, DealType } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
+import { withChangeSource } from "@/lib/audit/change-context";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -544,16 +545,20 @@ export async function transitionDealStage(
   if (toStage === "WON") updateData.deliveredAt = new Date();
 
   // Actualizar el deal
-  const updatedDeal = await prisma.deal.update({
-    where: { id: dealId },
-    data: updateData,
-    include: {
-      contact: { select: { id: true, firstName: true, lastName: true } },
-      assignedTo: { select: { id: true, name: true } },
-      development: { select: { id: true, name: true } },
-      unit: { select: { id: true, unitNumber: true } },
-    },
-  });
+  const updatedDeal = await withChangeSource(
+    { source: "ui", actorId: session.user.id },
+    (tx) =>
+      tx.deal.update({
+        where: { id: dealId },
+        data: updateData,
+        include: {
+          contact: { select: { id: true, firstName: true, lastName: true } },
+          assignedTo: { select: { id: true, name: true } },
+          development: { select: { id: true, name: true } },
+          unit: { select: { id: true, unitNumber: true } },
+        },
+      })
+  );
 
   // Actualizar estado de unidad si corresponde
   if (toStage === "RESERVED" && updatedDeal.unitId) {

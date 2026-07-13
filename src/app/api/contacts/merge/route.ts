@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     if (!body?.survivorId || !body?.loserId) {
       return NextResponse.json({ error: "survivorId y loserId son requeridos" }, { status: 400 });
     }
-    const result = await mergeContacts({ survivorId: body.survivorId, loserId: body.loserId });
+    const result = await mergeContacts({ survivorId: body.survivorId, loserId: body.loserId, actorId: session.user.id });
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json({ data: result });
   } catch (e) {

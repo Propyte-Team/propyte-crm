@@ -9,6 +9,7 @@ import { resolveEmailContent, resolveEmailSender, plainToHtml } from "@/lib/emai
 import { sendSmtpEmail } from "@/lib/email/mailer";
 import { sendGmail } from "@/lib/google/gmail";
 import { getConnectionStatus } from "@/lib/google/workspace.service";
+import { withChangeSource } from "@/lib/audit/change-context";
 
 export interface ActionResult {
   skipped?: boolean;
@@ -66,6 +67,8 @@ async function renderTemplateBody(templateRef: string | undefined, contact: Cont
 export async function executeAction(item: ActionQueue): Promise<ActionResult> {
   const config = (item.config ?? {}) as Record<string, unknown>;
   const contact = await loadContact(item);
+  // Cronología: identifica la regla de origen cuando está disponible (barato — ya viene en item).
+  const workflowSource = item.ruleId ? `workflow:${item.ruleId}` : "workflow";
 
   switch (item.actionType) {
     case "CREATE_TASK": {
@@ -134,7 +137,10 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       if (ENUMS[field] && !ENUMS[field].includes(String(value))) {
         return { skipped: true, note: `Valor inválido para ${field}: ${String(value)}` };
       }
-      await prisma.contact.update({ where: { id: contact.id }, data: { [field]: value } as never });
+      await withChangeSource(
+        { source: workflowSource },
+        (tx) => tx.contact.update({ where: { id: contact.id }, data: { [field]: value } as never })
+      );
       return {};
     }
 
@@ -142,7 +148,10 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
       if (!contact) return { skipped: true, note: "Sin contacto" };
       const tag = String(config.tag ?? "");
       if (!tag || contact.tags.includes(tag)) return { skipped: true, note: "Tag vacío o existente" };
-      await prisma.contact.update({ where: { id: contact.id }, data: { tags: { push: tag } } });
+      await withChangeSource(
+        { source: workflowSource },
+        (tx) => tx.contact.update({ where: { id: contact.id }, data: { tags: { push: tag } } })
+      );
       return {};
     }
 
