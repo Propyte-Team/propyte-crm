@@ -11,7 +11,12 @@ export interface BotMessage {
   content: string;
 }
 
-export const SAGE_SYSTEM_PROMPT = `Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.
+// @deprecated Ya nadie importa este prompt fijo (todos los consumidores — bot-respond,
+// ai-actions AI_DRAFT, agents/runner — migraron a buildSystemPrompt(), que resuelve
+// marca+tono+objetivo+catálogo desde BotConfigResolved). Se deja sin exportar como
+// único fallback interno de askClaude() cuando alguien la llama sin `system` explícito
+// (hoy ningún caller lo hace). No usar en código nuevo: usa buildSystemPrompt().
+const SAGE_SYSTEM_PROMPT = `Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.
 Tu voz es Sage: pedagógica, serena, basada en datos. NUNCA usas hype, urgencia artificial,
 ni prometes retornos ("plusvalía garantizada", "oportunidad única" están PROHIBIDOS).
 
@@ -85,8 +90,8 @@ export async function askClaude(opts: {
 }
 
 // --- Ensamblado de prompt en 4 capas (marca / tono / objetivo / catálogo) ---
-// Reemplaza a SAGE_SYSTEM_PROMPT (fijo) por un prompt construido según BotConfigResolved.
-// SAGE_SYSTEM_PROMPT se mantiene arriba como fallback hasta que T5 reescriba askClaude.
+// Reemplaza a SAGE_SYSTEM_PROMPT (fijo, @deprecated arriba) por un prompt construido
+// según BotConfigResolved.
 
 export const ESCALATE_TOKEN = "[ESCALAR]";
 
@@ -110,10 +115,13 @@ export function buildBrandRules(config: BotConfigResolved): string {
 const DEFAULT_OBJECTIVE =
   "Saluda y avanza en calificar (zona, presupuesto, plazo) con una sola pregunta a la vez.";
 
+// contact/catalog son opcionales: el runner de agentes de fondo (Agent Studio) no
+// habla con UN cliente en una conversación 1:1 — opera cross-contact vía tools — así
+// que arma marca+tono+objetivo sin esos bloques (ver src/lib/agents/runner.ts).
 export function buildSystemPrompt(args: {
   config: BotConfigResolved;
-  contact: { firstName: string; preferredLanguage: string };
-  catalog: Parameters<typeof catalogBrief>[0];
+  contact?: { firstName: string; preferredLanguage: string };
+  catalog?: Parameters<typeof catalogBrief>[0];
   objective?: string;
 }): string {
   const { config, contact, catalog } = args;
@@ -128,12 +136,16 @@ export function buildSystemPrompt(args: {
       ? catalogBrief(catalog)
       : "(No tienes catálogo en contexto: NO cites precios.)";
 
-  return [
+  const parts = [
     buildBrandRules(config),
     `\nTono y estilo:\n${preset.voiceGuidance}`,
     `\nEjemplos de tu estilo (imítalos en registro, no los copies literal):\n${examples}`,
     `\nObjetivo ahora: ${args.objective ?? DEFAULT_OBJECTIVE}`,
-    `\nCliente: ${contact.firstName} · Idioma: ${contact.preferredLanguage}`,
-    `\n${catalogBlock}`,
-  ].join("\n");
+  ];
+  if (contact) {
+    parts.push(`\nCliente: ${contact.firstName} · Idioma: ${contact.preferredLanguage}`);
+  }
+  parts.push(`\n${catalogBlock}`);
+
+  return parts.join("\n");
 }

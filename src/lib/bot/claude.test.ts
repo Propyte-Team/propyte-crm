@@ -44,6 +44,14 @@ describe("buildSystemPrompt (4 capas)", () => {
     const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
     expect(s.toLowerCase()).toContain("no cites precios");
   });
+
+  it("contact y catalog son opcionales (uso del runner de agentes de fondo, sin 1 cliente fijo)", () => {
+    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, objective: "Objetivo del agente" });
+    expect(s).not.toContain("· Idioma:");
+    expect(s).toContain("Objetivo del agente");
+    expect(s).toContain("Propyte");
+    expect(s.toLowerCase()).toContain("no cites precios");
+  });
 });
 
 describe("buildClaudeRequestBody", () => {

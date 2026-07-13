@@ -3,7 +3,8 @@
 // Guardarraíles: tools acotadas por allowedTools∩RBAC, brand linter en send_whatsapp,
 // máx pasos por limits.maxSteps (default 8), escalado registrado.
 import prisma from "@/lib/db";
-import { SAGE_SYSTEM_PROMPT } from "@/lib/bot/claude";
+import { buildSystemPrompt } from "@/lib/bot/claude";
+import { getBotConfig } from "@/lib/bot/config";
 import { toolsForAgent, type AgentTool } from "./tools";
 
 interface ClaudeContentBlock {
@@ -44,13 +45,19 @@ export async function runAgent(
   const limits = (agent.limits ?? {}) as { maxSteps?: number };
   const maxSteps = Math.min(limits.maxSteps ?? 8, 15);
 
-  const system =
-    SAGE_SYSTEM_PROMPT +
-    `\n\n=== TU ROL COMO AGENTE ===\nNombre: ${agent.name}\nObjetivo: ${agent.goal}\n` +
+  // Marca+tono vienen de la config del bot (mismo ensamblado de capas que bot-respond/
+  // ai-actions vía buildSystemPrompt) — así el tono elegible también llega a los agentes
+  // de fondo. El objetivo (capa 3) es la identidad/goal del propio agente: los agentes de
+  // fondo NO califican leads por playbook, eso es exclusivo del flujo conversacional 1:1
+  // (bot-respond/ai-actions), así que aquí NO se toca el motor de playbook.
+  const config = await getBotConfig();
+  const objective =
+    `=== TU ROL COMO AGENTE ===\nNombre: ${agent.name}\nObjetivo: ${agent.goal}\n` +
     `Autonomía: ${agent.autonomyLevel} (L2 = autónomo en tu objetivo, escala ante duda; ` +
     `usa escalate_to_human SIEMPRE que detectes intención fuerte, queja o tema legal/fiscal).\n` +
     `Operas con la identidad de "${agent.systemUser.name}" y SOLO las herramientas listadas. ` +
     `Cuando termines, responde un resumen breve de lo que hiciste.`;
+  const system = buildSystemPrompt({ config, objective });
 
   const messages: Array<Record<string, unknown>> = [
     { role: "user", content: JSON.stringify({ trigger, ...input }) },
