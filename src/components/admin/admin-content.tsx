@@ -249,7 +249,7 @@ export function AdminContent({
       try {
         await createCommissionRule(data as any);
         window.location.reload();
-        toast({ title: "Regla de comision creada" });
+        toast({ title: "Regla de comisión creada" });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -286,7 +286,7 @@ export function AdminContent({
     startTransition(async () => {
       try {
         await updateSystemConfig("activity_agreement", configValues);
-        toast({ title: "Configuracion guardada exitosamente" });
+        toast({ title: "Configuración guardada exitosamente" });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -461,7 +461,7 @@ export function AdminContent({
               <div>
                 <CardTitle className="text-lg">Reglas de Comisiones</CardTitle>
                 <CardDescription>
-                  Configura los porcentajes de comision por tipo de operacion, fuente y rol
+                  Configura los porcentajes de comisión por tipo de operación, fuente y rol
                 </CardDescription>
               </div>
               <Button
@@ -484,7 +484,7 @@ export function AdminContent({
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-2 font-medium">Categoria de Fuente</th>
+                          <th className="pb-2 font-medium">Categoría de Fuente</th>
                           <th className="pb-2 font-medium">Rol</th>
                           <th className="pb-2 font-medium">Porcentaje</th>
                           <th className="pb-2 font-medium">Activa</th>
@@ -514,7 +514,7 @@ export function AdminContent({
                                 variant={rule.isActive ? "default" : "secondary"}
                                 className={rule.isActive ? "bg-green-500" : ""}
                               >
-                                {rule.isActive ? "Si" : "No"}
+                                {rule.isActive ? "Sí" : "No"}
                               </Badge>
                             </td>
                             <td className="py-2">
@@ -548,7 +548,7 @@ export function AdminContent({
               ))}
               {commissionRules.length === 0 && (
                 <p className="py-8 text-center text-muted-foreground">
-                  No hay reglas de comision configuradas
+                  No hay reglas de comisión configuradas
                 </p>
               )}
             </CardContent>
@@ -561,14 +561,14 @@ export function AdminContent({
             <CardHeader>
               <CardTitle className="text-lg">Acuerdo de Actividad</CardTitle>
               <CardDescription>
-                Configura los minimos de actividad esperados por asesor
+                Configura los mínimos de actividad esperados por asesor
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-6 md:grid-cols-2">
                 {/* Llamadas diarias */}
                 <div className="space-y-2">
-                  <Label htmlFor="minCalls">Llamadas diarias minimas</Label>
+                  <Label htmlFor="minCalls">Llamadas diarias mínimas</Label>
                   <Input
                     id="minCalls"
                     type="number"
@@ -584,7 +584,7 @@ export function AdminContent({
 
                 {/* WhatsApps diarios */}
                 <div className="space-y-2">
-                  <Label htmlFor="minWhatsapps">WhatsApps diarios minimos</Label>
+                  <Label htmlFor="minWhatsapps">WhatsApps diarios mínimos</Label>
                   <Input
                     id="minWhatsapps"
                     type="number"
@@ -600,7 +600,7 @@ export function AdminContent({
 
                 {/* Visitas semanales */}
                 <div className="space-y-2">
-                  <Label htmlFor="minVisits">Visitas semanales minimas</Label>
+                  <Label htmlFor="minVisits">Visitas semanales mínimas</Label>
                   <Input
                     id="minVisits"
                     type="number"
@@ -616,7 +616,7 @@ export function AdminContent({
 
                 {/* Seguimientos diarios */}
                 <div className="space-y-2">
-                  <Label htmlFor="minFollowUps">Seguimientos diarios minimos</Label>
+                  <Label htmlFor="minFollowUps">Seguimientos diarios mínimos</Label>
                   <Input
                     id="minFollowUps"
                     type="number"
@@ -633,7 +633,7 @@ export function AdminContent({
                 {/* Tiempo de respuesta */}
                 <div className="space-y-2">
                   <Label htmlFor="maxResponse">
-                    Tiempo maximo de respuesta (minutos)
+                    Tiempo máximo de respuesta (minutos)
                   </Label>
                   <Input
                     id="maxResponse"
@@ -651,7 +651,7 @@ export function AdminContent({
                 {/* Dias de inactividad */}
                 <div className="space-y-2">
                   <Label htmlFor="maxInactivity">
-                    Maximo dias sin actividad
+                    Máximo días sin actividad
                   </Label>
                   <Input
                     id="maxInactivity"
@@ -670,7 +670,7 @@ export function AdminContent({
               {/* Boton de guardar */}
               <div className="mt-6">
                 <Button onClick={handleSaveConfig} disabled={isPending}>
-                  {isPending ? "Guardando..." : "Guardar Configuracion"}
+                  {isPending ? "Guardando..." : "Guardar Configuración"}
                 </Button>
               </div>
             </CardContent>

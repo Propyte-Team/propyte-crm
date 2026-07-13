@@ -42,7 +42,7 @@ import type { ReportType } from "./reports-grid";
 // Titulos de cada tipo de reporte
 const REPORT_TITLES: Record<ReportType, string> = {
   pipeline: "Reporte de Pipeline",
-  absorption: "Reporte de Absorcion",
+  absorption: "Reporte de Absorción",
   commissions: "Reporte de Comisiones",
   activities: "Reporte de Actividades",
   "lead-sources": "Reporte de Fuentes de Leads",
@@ -56,7 +56,7 @@ const REPORT_COLUMNS: Record<ReportType, ReportColumn[]> = {
     { header: "Etapa", key: "stageLabel" },
     { header: "Cantidad", key: "count" },
     { header: "Valor Total", key: "totalValue", isCurrency: true },
-    { header: "Dias Promedio", key: "avgDaysInStage" },
+    { header: "Días Promedio", key: "avgDaysInStage" },
     { header: "Estancados", key: "stagnantCount" },
   ],
   absorption: [
@@ -65,13 +65,13 @@ const REPORT_COLUMNS: Record<ReportType, ReportColumn[]> = {
     { header: "Vendidas", key: "soldUnits" },
     { header: "Reservadas", key: "reservedUnits" },
     { header: "Disponibles", key: "availableUnits" },
-    { header: "Absorcion/Mes", key: "absorptionRate" },
+    { header: "Absorción/Mes", key: "absorptionRate" },
     { header: "Precio Promedio", key: "avgPrice", isCurrency: true },
   ],
   commissions: [
     { header: "Asesor", key: "advisorName" },
     { header: "Deals", key: "dealCount" },
-    { header: "Comision Total", key: "totalCommission", isCurrency: true },
+    { header: "Comisión Total", key: "totalCommission", isCurrency: true },
     { header: "Pendiente", key: "pendingCommission", isCurrency: true },
     { header: "Pagado", key: "paidCommission", isCurrency: true },
   ],
@@ -91,7 +91,7 @@ const REPORT_COLUMNS: Record<ReportType, ReportColumn[]> = {
     { header: "Contactos", key: "totalContacts" },
     { header: "Con Deal", key: "convertedToDeals" },
     { header: "Ganados", key: "wonDeals" },
-    { header: "Conversion", key: "conversionRate", isPercentage: true },
+    { header: "Conversión", key: "conversionRate", isPercentage: true },
     { header: "Valor Promedio", key: "avgDealValue", isCurrency: true },
   ],
   forecast: [
@@ -101,7 +101,7 @@ const REPORT_COLUMNS: Record<ReportType, ReportColumn[]> = {
     { header: "Valor Ponderado", key: "weightedValue", isCurrency: true },
   ],
   "lost-deals": [
-    { header: "Razon de Perdida", key: "lostReasonLabel" },
+    { header: "Razón de Pérdida", key: "lostReasonLabel" },
     { header: "Cantidad", key: "count" },
     { header: "Valor Perdido", key: "totalValueLost", isCurrency: true },
     { header: "Por Etapa", key: "byStage" },

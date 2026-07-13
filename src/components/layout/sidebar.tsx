@@ -53,7 +53,7 @@ const navGroups: Array<{ title: string | null; items: Array<{ label: string; hre
     ],
   },
   {
-    title: "Desempeno",
+    title: "Desempeño",
     items: [
       { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
       { label: "Cobranza", href: "/cobranza", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES] },
@@ -214,7 +214,7 @@ export function Sidebar() {
               style={{ color: "var(--text-tertiary)" }}
               onMouseEnter={(e) => { e.currentTarget.style.color = "#EF4444" }}
               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)" }}
-              title="Cerrar sesion"
+              title="Cerrar sesión"
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>

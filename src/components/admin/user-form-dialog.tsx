@@ -27,8 +27,8 @@ import { z } from "zod";
 // Esquema de validacion del formulario
 const userFormSchema = z.object({
   name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
-  email: z.string().email("Correo electronico invalido"),
-  password: z.string().min(6, "Minimo 6 caracteres").optional(),
+  email: z.string().email("Correo electrónico inválido"),
+  password: z.string().min(6, "Mínimo 6 caracteres").optional(),
   role: z.string().min(1, "Selecciona un rol"),
   plaza: z.string().min(1, "Selecciona una plaza"),
   careerLevel: z.string().optional(),
@@ -211,7 +211,7 @@ export function UserFormDialog({
               id="name"
               value={formData.name}
               onChange={(e) => handleChange("name", e.target.value)}
-              placeholder="Juan Perez"
+              placeholder="Juan Pérez"
             />
             {errors.name && (
               <p className="text-sm text-red-500">{errors.name}</p>
@@ -220,7 +220,7 @@ export function UserFormDialog({
 
           {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="email">Correo electronico</Label>
+            <Label htmlFor="email">Correo electrónico</Label>
             <Input
               id="email"
               type="email"
@@ -236,13 +236,13 @@ export function UserFormDialog({
           {/* Contrasena (solo para crear) */}
           {!isEditing && (
             <div className="space-y-2">
-              <Label htmlFor="password">Contrasena</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleChange("password", e.target.value)}
-                placeholder="Minimo 6 caracteres"
+                placeholder="Mínimo 6 caracteres"
               />
               {errors.password && (
                 <p className="text-sm text-red-500">{errors.password}</p>
@@ -341,7 +341,7 @@ export function UserFormDialog({
 
           {/* Telefono */}
           <div className="space-y-2">
-            <Label htmlFor="phone">Telefono</Label>
+            <Label htmlFor="phone">Teléfono</Label>
             <Input
               id="phone"
               value={formData.phone}
@@ -353,7 +353,7 @@ export function UserFormDialog({
           {/* SEDETUS */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="sedetusNumber">Numero SEDETUS</Label>
+              <Label htmlFor="sedetusNumber">Número SEDETUS</Label>
               <Input
                 id="sedetusNumber"
                 value={formData.sedetusNumber}

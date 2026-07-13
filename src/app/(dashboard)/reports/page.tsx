@@ -14,7 +14,7 @@ export default async function ReportsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Reportes</h1>
         <p className="text-muted-foreground">
-          Genera reportes detallados de tu operacion comercial
+          Genera reportes detallados de tu operación comercial
         </p>
       </div>
 

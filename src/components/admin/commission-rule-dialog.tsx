@@ -30,10 +30,10 @@ import { z } from "zod";
 
 // Esquema de validacion
 const ruleFormSchema = z.object({
-  dealType: z.string().min(1, "Selecciona un tipo de operacion"),
-  leadSourceCategory: z.string().min(1, "Selecciona una categoria de fuente"),
+  dealType: z.string().min(1, "Selecciona un tipo de operación"),
+  leadSourceCategory: z.string().min(1, "Selecciona una categoría de fuente"),
   role: z.string().min(1, "Selecciona un rol"),
-  percentage: z.number().min(0, "Minimo 0%").max(100, "Maximo 100%"),
+  percentage: z.number().min(0, "Mínimo 0%").max(100, "Máximo 100%"),
   isActive: z.boolean(),
 });
 
@@ -141,19 +141,19 @@ export function CommissionRuleDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? "Editar Regla de Comision" : "Nueva Regla de Comision"}
+            {isEditing ? "Editar Regla de Comisión" : "Nueva Regla de Comisión"}
           </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? "Modifica los parametros de la regla seleccionada"
-              : "Configura una nueva regla de comision"}
+              ? "Modifica los parámetros de la regla seleccionada"
+              : "Configura una nueva regla de comisión"}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Tipo de operacion */}
           <div className="space-y-2">
-            <Label>Tipo de Operacion</Label>
+            <Label>Tipo de Operación</Label>
             <Select
               value={formData.dealType}
               onValueChange={(v) => handleChange("dealType", v)}
@@ -176,13 +176,13 @@ export function CommissionRuleDialog({
 
           {/* Categoria de fuente */}
           <div className="space-y-2">
-            <Label>Categoria de Fuente</Label>
+            <Label>Categoría de Fuente</Label>
             <Select
               value={formData.leadSourceCategory}
               onValueChange={(v) => handleChange("leadSourceCategory", v)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar categoria" />
+                <SelectValue placeholder="Seleccionar categoría" />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(LEAD_SOURCE_CATEGORY_LABELS).map(([key, label]) => (
@@ -199,7 +199,7 @@ export function CommissionRuleDialog({
 
           {/* Rol */}
           <div className="space-y-2">
-            <Label>Rol que recibe la comision</Label>
+            <Label>Rol que recibe la comisión</Label>
             <Select
               value={formData.role}
               onValueChange={(v) => handleChange("role", v)}

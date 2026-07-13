@@ -101,7 +101,7 @@ export function CareerContent({ progress, kpis }: CareerContentProps) {
             )}
             {!progress.nextLevelLabel && (
               <Badge className="mt-1 bg-amber-500 text-white">
-                Nivel maximo alcanzado
+                Nivel máximo alcanzado
               </Badge>
             )}
           </div>
@@ -152,7 +152,7 @@ export function CareerContent({ progress, kpis }: CareerContentProps) {
             </div>
             <div>
               <p className="text-2xl font-bold">{kpis.conversionRate}%</p>
-              <p className="text-sm text-muted-foreground">Tasa de Conversion</p>
+              <p className="text-sm text-muted-foreground">Tasa de Conversión</p>
             </div>
           </CardContent>
         </Card>
@@ -247,7 +247,7 @@ export function CareerContent({ progress, kpis }: CareerContentProps) {
             Cierres por Mes
           </CardTitle>
           <CardDescription>
-            Deals cerrados en los ultimos 6 meses
+            Deals cerrados en los últimos 6 meses
           </CardDescription>
         </CardHeader>
         <CardContent>

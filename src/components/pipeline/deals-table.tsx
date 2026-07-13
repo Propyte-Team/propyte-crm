@@ -114,7 +114,7 @@ export function DealsTable({ deals, onDealUpdate }: DealsTableProps) {
                 </th>
                 <th className="pb-3 font-medium">Asesor</th>
                 <th className="pb-3 font-medium">
-                  <SortHeader field="daysInStage">Dias</SortHeader>
+                  <SortHeader field="daysInStage">Días</SortHeader>
                 </th>
                 <th className="pb-3 font-medium">Acciones</th>
               </tr>

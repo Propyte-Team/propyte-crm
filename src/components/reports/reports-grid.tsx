@@ -44,8 +44,8 @@ const REPORTS: Array<{
   },
   {
     id: "absorption",
-    title: "Absorcion",
-    description: "Velocidad de absorcion por desarrollo, unidades vendidas por periodo",
+    title: "Absorción",
+    description: "Velocidad de absorción por desarrollo, unidades vendidas por período",
     icon: TrendingUp,
     iconColor: "text-green-500",
     iconBg: "bg-green-100",
@@ -53,7 +53,7 @@ const REPORTS: Array<{
   {
     id: "commissions",
     title: "Comisiones",
-    description: "Comisiones generadas, pendientes de pago y facturacion por asesor",
+    description: "Comisiones generadas, pendientes de pago y facturación por asesor",
     icon: DollarSign,
     iconColor: "text-yellow-600",
     iconBg: "bg-yellow-100",
@@ -69,7 +69,7 @@ const REPORTS: Array<{
   {
     id: "lead-sources",
     title: "Fuentes de Leads",
-    description: "Rendimiento por fuente de lead: volumen, conversion y costo por lead",
+    description: "Rendimiento por fuente de lead: volumen, conversión y costo por lead",
     icon: Users,
     iconColor: "text-orange-500",
     iconBg: "bg-orange-100",
@@ -77,7 +77,7 @@ const REPORTS: Array<{
   {
     id: "forecast",
     title: "Forecast",
-    description: "Proyeccion de cierres y facturacion para los proximos meses",
+    description: "Proyección de cierres y facturación para los próximos meses",
     icon: Target,
     iconColor: "text-teal-500",
     iconBg: "bg-teal-100",
@@ -85,7 +85,7 @@ const REPORTS: Array<{
   {
     id: "lost-deals",
     title: "Deals Perdidos",
-    description: "Analisis de deals perdidos por motivo, etapa y asesor",
+    description: "Análisis de deals perdidos por motivo, etapa y asesor",
     icon: XCircle,
     iconColor: "text-red-500",
     iconBg: "bg-red-100",

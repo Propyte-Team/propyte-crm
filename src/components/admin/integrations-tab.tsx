@@ -378,7 +378,7 @@ export function IntegrationsTab({
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-2 font-medium">Nombre</th>
                   <th className="pb-2 font-medium">Prefijo</th>
-                  <th className="pb-2 font-medium">Ultimo uso</th>
+                  <th className="pb-2 font-medium">Último uso</th>
                   <th className="pb-2 font-medium">Estado</th>
                   <th className="pb-2 font-medium">Acciones</th>
                 </tr>

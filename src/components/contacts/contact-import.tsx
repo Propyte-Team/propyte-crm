@@ -127,7 +127,7 @@ export function ContactImport({ onSuccess }: ContactImportProps) {
           <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
           <p className="text-sm font-medium">Haz clic para seleccionar un archivo CSV</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Columnas esperadas: nombre, apellido, telefono, email, fuente
+            Columnas esperadas: nombre, apellido, teléfono, email, fuente
           </p>
           <input
             ref={fileInputRef}
