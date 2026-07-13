@@ -26,6 +26,7 @@ import { ContactForm } from "@/components/contacts/contact-form";
 import { LifecycleStepper } from "@/components/contacts/lifecycle-stepper";
 import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
+import { ContactTimeline } from "@/components/contacts/contact-timeline";
 import { CallIndicator } from "@/components/contacts/call-indicator";
 import { QuoteList } from "@/components/quotes/quote-list";
 import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
@@ -553,6 +554,11 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             Abre la conversación para ver el hilo de WhatsApp/SMS de este contacto.
           </p>
         )}
+      </Section>
+
+      {/* ── Cronología ── */}
+      <Section title="Cronología">
+        <ContactTimeline contactId={contact.id} />
       </Section>
 
       {/* Llamada VoIP activa */}

@@ -250,6 +250,61 @@ export async function getContact(id: string) {
   return contact;
 }
 
+// Resultado de la verificación de acceso — discriminado para que el caller (API route)
+// pueda mapear 404 vs 403 sin repetir la lógica de RBAC.
+type ContactAccessResult =
+  | {
+      ok: true;
+      contact: {
+        id: string;
+        assignedToId: string | null;
+        createdAt: Date;
+        leadSource: string;
+        contactStatus: string;
+      };
+    }
+  | { ok: false; reason: "not_found" | "forbidden" };
+
+/**
+ * Verifica acceso RBAC a un contacto SIN cargar las relaciones pesadas de getContact()
+ * (deals/activities/walkIns) — pensado para endpoints ligeros (cronología, status-periods)
+ * que solo necesitan confirmar acceso + un puñado de campos escalares.
+ * Replica exactamente el mismo gate que usa getContact(): mismo buildRbacFilter() + misma
+ * comparación de assignedToId (string exacto o `in` de un array de ids permitidos).
+ */
+export async function getContactAccessInfo(
+  id: string,
+  session: { user: { id: string; role: string; plaza: string } }
+): Promise<ContactAccessResult> {
+  const contact = await prisma.contact.findFirst({
+    where: { id, deletedAt: null },
+    select: {
+      id: true,
+      assignedToId: true,
+      createdAt: true,
+      leadSource: true,
+      contactStatus: true,
+    },
+  });
+  if (!contact) return { ok: false, reason: "not_found" };
+
+  const rbacFilter = await buildRbacFilter(session as any);
+  if (rbacFilter.assignedToId) {
+    if (typeof rbacFilter.assignedToId === "string") {
+      if (contact.assignedToId !== rbacFilter.assignedToId) {
+        return { ok: false, reason: "forbidden" };
+      }
+    } else if (rbacFilter.assignedToId && "in" in rbacFilter.assignedToId) {
+      const allowedIds = rbacFilter.assignedToId.in as string[];
+      if (contact.assignedToId && !allowedIds.includes(contact.assignedToId)) {
+        return { ok: false, reason: "forbidden" };
+      }
+    }
+  }
+
+  return { ok: true, contact };
+}
+
 /**
  * Crea un nuevo contacto con validación Zod.
  * Si no se asigna a un asesor, aplica round-robin dentro del equipo del usuario.
