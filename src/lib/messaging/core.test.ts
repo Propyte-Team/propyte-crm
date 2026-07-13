@@ -29,15 +29,26 @@ vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRe
 vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a) }));
 const emitEvent = vi.fn();
 vi.mock("@/lib/workflows/events", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
+const fetchProfileForMessage = vi.fn();
+vi.mock("./profile", () => ({ fetchProfileForMessage: (...a: unknown[]) => fetchProfileForMessage(...a) }));
+const contactTxUpdate = vi.fn();
+const withChangeSourceSpy = vi.fn();
+vi.mock("@/lib/audit/change-context", () => ({
+  withChangeSource: (opts: unknown, fn: (tx: unknown) => Promise<unknown>) => {
+    withChangeSourceSpy(opts);
+    return fn({ contact: { update: (...a: unknown[]) => contactTxUpdate(...a) } });
+  },
+}));
 
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
-  [contactFindFirst, convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers, emitEvent].forEach((m) => m.mockReset());
+  [contactFindFirst, convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate, captureLead, botRespond, meetSlaTimers, emitEvent, fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy].forEach((m) => m.mockReset());
   convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
   convUpdate.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
   msgCreate.mockResolvedValue({ id: "m1" });
   activityCreate.mockResolvedValue({});
+  fetchProfileForMessage.mockResolvedValue(null);
 });
 
 const base = { channel: "INSTAGRAM" as const, senderId: "IG-1", externalMessageId: "mid-1", text: "hola", profileName: "Ana" };
@@ -81,6 +92,82 @@ describe("handleInboundMessage", () => {
   });
 });
 
+describe("handleInboundMessage – identidad social (perfil Graph)", () => {
+  const msgMs = { channel: "MESSENGER" as const, senderId: "PSID-1", externalMessageId: "mid-9", text: "hola", connectorId: "conn-nativa" };
+
+  it("desconocido con conector → captureLead con nombre real del perfil", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    fetchProfileForMessage.mockResolvedValue({ firstName: "Ana", lastName: "García", avatarUrl: null });
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    await handleInboundMessage(msgMs);
+    expect(fetchProfileForMessage).toHaveBeenCalledWith(msgMs);
+    expect(captureLead).toHaveBeenCalledWith(
+      expect.objectContaining({ firstName: "Ana", lastName: "García", messengerPsid: "PSID-1" })
+    );
+    expect(contactTxUpdate).not.toHaveBeenCalled(); // sin avatar no hay update extra
+  });
+
+  it("desconocido con avatar → guarda custom.avatarUrl tras captureLead", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    fetchProfileForMessage.mockResolvedValue({ firstName: "Ana", lastName: "García", avatarUrl: "https://cdn/p.jpg" });
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    contactTxUpdate.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Ana", lastName: "García", assignedTo: null });
+    await handleInboundMessage(msgMs);
+    expect(withChangeSourceSpy).toHaveBeenCalledWith(expect.objectContaining({ source: "social_profile" }));
+    expect(contactTxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "c1" },
+        data: expect.objectContaining({ custom: expect.objectContaining({ avatarUrl: "https://cdn/p.jpg" }) }),
+      })
+    );
+  });
+
+  it("perfil falla → placeholder actual (regresión cero)", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    fetchProfileForMessage.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    await handleInboundMessage(msgMs);
+    expect(captureLead).toHaveBeenCalledWith(
+      expect.objectContaining({ firstName: "Messenger", lastName: "(por identificar)" })
+    );
+  });
+
+  it("contacto existente '(por identificar)' → se repara vía withChangeSource", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Messenger", lastName: "(por identificar)", custom: { foo: 1 } });
+    fetchProfileForMessage.mockResolvedValue({ firstName: "Ana", lastName: "García", avatarUrl: "https://cdn/p.jpg" });
+    contactTxUpdate.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Ana", lastName: "García", custom: { foo: 1, avatarUrl: "https://cdn/p.jpg" }, assignedTo: null });
+    await handleInboundMessage(msgMs);
+    expect(contactTxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "c1" },
+        data: expect.objectContaining({
+          firstName: "Ana",
+          lastName: "García",
+          custom: expect.objectContaining({ foo: 1, avatarUrl: "https://cdn/p.jpg" }),
+        }),
+      })
+    );
+    // la actividad sale ya con el nombre reparado
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subject: expect.stringContaining("Ana García") }) })
+    );
+  });
+
+  it("contacto existente con nombre real → NO consulta Graph", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(msgMs);
+    expect(fetchProfileForMessage).not.toHaveBeenCalled();
+  });
+
+  it("update del perfil falla → el intake sigue (mensaje se crea)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "Messenger", lastName: "(por identificar)", custom: null });
+    fetchProfileForMessage.mockResolvedValue({ firstName: "Ana", lastName: "García", avatarUrl: null });
+    contactTxUpdate.mockRejectedValue(new Error("db"));
+    const r = await handleInboundMessage(msgMs);
+    expect(r).toEqual({ id: "m1" });
+  });
+});
+
 const wa = { channel: "WHATSAPP" as const, senderId: "+529991112233", externalMessageId: "wamid-1", text: "hola", profileName: "Ana" };
 
 describe("handleInboundMessage – regresiones WhatsApp", () => {
@@ -107,6 +194,13 @@ describe("handleInboundMessage – regresiones WhatsApp", () => {
     contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
     await handleInboundMessage(wa);
     expect(emitEvent).toHaveBeenCalledWith("whatsapp.replied", "conversation", "conv1", expect.objectContaining({ contactId: "c1" }));
+  });
+
+  it("WHATSAPP: nunca consulta el perfil Graph (ni en desconocidos)", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    await handleInboundMessage(wa);
+    expect(fetchProfileForMessage).not.toHaveBeenCalled();
   });
 
   it("WHATSAPP: busca contacto con match flexible (exact OR endsWith last10)", async () => {

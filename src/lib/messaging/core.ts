@@ -1,5 +1,42 @@
 import prisma from "@/lib/db";
 import type { IncomingMessage, MessagingChannel } from "./types";
+import type { SocialProfile } from "./profile";
+
+const PLACEHOLDER_LASTNAME = "(por identificar)";
+
+type ContactWithAssigned = NonNullable<Awaited<ReturnType<typeof findContactByChannel>>>;
+
+/** Aplica nombre/avatar del perfil social al contacto (best-effort; null si falla). */
+async function applySocialProfile(
+  contact: ContactWithAssigned,
+  profile: SocialProfile,
+  opts: { names: boolean } = { names: true }
+): Promise<ContactWithAssigned | null> {
+  try {
+    const { withChangeSource } = await import("@/lib/audit/change-context");
+    const baseCustom =
+      typeof contact.custom === "object" && contact.custom !== null && !Array.isArray(contact.custom)
+        ? (contact.custom as Record<string, unknown>)
+        : {};
+    const data: Record<string, unknown> = {};
+    if (opts.names) {
+      data.firstName = profile.firstName;
+      data.lastName = profile.lastName ?? PLACEHOLDER_LASTNAME;
+    }
+    if (profile.avatarUrl) data.custom = { ...baseCustom, avatarUrl: profile.avatarUrl };
+    if (Object.keys(data).length === 0) return contact;
+    return await withChangeSource({ source: "social_profile" }, (tx) =>
+      tx.contact.update({
+        where: { id: contact.id },
+        data,
+        include: { assignedTo: { select: { id: true, name: true } } },
+      })
+    );
+  } catch (err) {
+    console.warn(`[messaging] applySocialProfile falló (${contact.id}):`, err);
+    return null;
+  }
+}
 
 const IN_ACTIVITY: Record<MessagingChannel, "WHATSAPP_IN" | "INSTAGRAM_IN" | "MESSENGER_IN"> = {
   WHATSAPP: "WHATSAPP_IN",
@@ -39,6 +76,14 @@ async function findContactByChannel(channel: MessagingChannel, senderId: string)
 export async function handleInboundMessage(msg: IncomingMessage) {
   let contact = await findContactByChannel(msg.channel, msg.senderId);
 
+  // Identidad social: perfil Graph SOLO cuando el contacto es nuevo o sigue placeholder
+  // (1 llamada por contacto, no por mensaje). Best-effort: null jamás bloquea el intake.
+  let profile: SocialProfile | null = null;
+  if (msg.channel !== "WHATSAPP" && (!contact || contact.lastName === PLACEHOLDER_LASTNAME)) {
+    const { fetchProfileForMessage } = await import("./profile");
+    profile = await fetchProfileForMessage(msg);
+  }
+
   if (!contact) {
     const { captureLead } = await import("@/lib/intake/capture-lead");
     const idField =
@@ -47,8 +92,8 @@ export async function handleInboundMessage(msg: IncomingMessage) {
       : { phone: msg.senderId };
     const result = await captureLead({
       source: SOURCE[msg.channel],
-      firstName: msg.profileName?.trim() || (msg.channel === "INSTAGRAM" ? "Instagram" : msg.channel === "MESSENGER" ? "Messenger" : "WhatsApp"),
-      lastName: "(por identificar)",
+      firstName: profile?.firstName ?? (msg.profileName?.trim() || (msg.channel === "INSTAGRAM" ? "Instagram" : msg.channel === "MESSENGER" ? "Messenger" : "WhatsApp")),
+      lastName: profile?.lastName ?? PLACEHOLDER_LASTNAME,
       message: msg.text,
       ...idField,
     });
@@ -62,6 +107,12 @@ export async function handleInboundMessage(msg: IncomingMessage) {
     });
     // include sin select de escalares → whatsappOptOut disponible en ambas ramas
     if (!contact) return null;
+    // el nombre ya lo puso captureLead; solo falta el avatar si vino
+    if (profile?.avatarUrl) {
+      contact = (await applySocialProfile(contact, profile, { names: false })) ?? contact;
+    }
+  } else if (profile) {
+    contact = (await applySocialProfile(contact, profile)) ?? contact;
   }
 
   const { ensureConversation } = await import("./conversations");
