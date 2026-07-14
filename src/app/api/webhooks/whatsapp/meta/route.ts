@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import prisma from "@/lib/db";
 import { handleInboundWhatsApp } from "@/lib/twilio/whatsapp";
+import { resolveWaMediaToStorage } from "@/lib/whatsapp/media";
+import { mediaTypeFromWaType } from "@/lib/messaging/media";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -36,16 +38,32 @@ function validSignature(rawBody: string, signature: string | null): boolean {
   }
 }
 
+interface MetaMediaRef { id?: string; caption?: string; filename?: string; mime_type?: string }
+
 interface MetaMessage {
   id: string;
   from: string;
   type: string;
   text?: { body?: string };
-  image?: { id?: string; caption?: string };
-  audio?: { id?: string };
-  document?: { id?: string; filename?: string };
+  image?: MetaMediaRef;
+  audio?: MetaMediaRef;
+  video?: MetaMediaRef;
+  document?: MetaMediaRef;
+  sticker?: MetaMediaRef;
   button?: { text?: string };
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+}
+
+/** Referencia de media del mensaje según su tipo (null si es texto/interactivo). */
+function mediaRefOf(msg: MetaMessage): MetaMediaRef | null {
+  switch (msg.type) {
+    case "image": return msg.image ?? null;
+    case "audio": return msg.audio ?? null;
+    case "video": return msg.video ?? null;
+    case "document": return msg.document ?? null;
+    case "sticker": return msg.sticker ?? null;
+    default: return null;
+  }
 }
 
 interface MetaStatus {
@@ -60,6 +78,8 @@ function extractBody(msg: MetaMessage): string {
   if (msg.interactive?.list_reply?.title) return msg.interactive.list_reply.title;
   if (msg.image) return `[Imagen]${msg.image.caption ? ` ${msg.image.caption}` : ""}`;
   if (msg.audio) return "[Audio]";
+  if (msg.video) return `[Video]${msg.video.caption ? ` ${msg.video.caption}` : ""}`;
+  if (msg.sticker) return "[Sticker]";
   if (msg.document) return `[Documento${msg.document.filename ? `: ${msg.document.filename}` : ""}]`;
   return `[${msg.type}]`;
 }
@@ -114,11 +134,26 @@ export async function POST(req: NextRequest) {
       const profileName = value.contacts?.[0]?.profile?.name;
       for (const msg of value.messages ?? []) {
         try {
+          // Media: resolver el media ID → bucket chat-media (best-effort; si falla queda solo el placeholder)
+          const mediaType = mediaTypeFromWaType(msg.type);
+          const mediaRef = mediaRefOf(msg);
+          let stored: { path: string; mimeType: string | null } | null = null;
+          if (mediaType && mediaRef?.id) {
+            stored = await resolveWaMediaToStorage(mediaRef.id);
+          }
           await handleInboundWhatsApp({
             From: `whatsapp:+${msg.from}`,
             Body: extractBody(msg),
             MessageSid: msg.id, // wamid → idempotencia por UNIQUE
             ProfileName: profileName,
+            ...(stored && mediaType
+              ? {
+                  MediaUrl0: stored.path,
+                  MediaType: mediaType,
+                  MediaMimeType: stored.mimeType ?? mediaRef?.mime_type ?? null,
+                  MediaFilename: mediaRef?.filename ?? null,
+                }
+              : {}),
           });
           processed++;
         } catch (err) {

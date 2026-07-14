@@ -135,6 +135,9 @@ export async function handleInboundWhatsApp(payload: {
   MessageSid: string;
   NumMedia?: string;
   MediaUrl0?: string;
+  MediaType?: string | null;
+  MediaMimeType?: string | null;
+  MediaFilename?: string | null;
   ProfileName?: string;
 }) {
   const rawPhone = payload.From.replace("whatsapp:", "");
@@ -163,6 +166,9 @@ export async function handleInboundWhatsApp(payload: {
     externalMessageId: payload.MessageSid,
     text: payload.Body,
     mediaUrl: payload.MediaUrl0 || null,
+    mediaType: payload.MediaType ?? null,
+    mediaMimeType: payload.MediaMimeType ?? null,
+    mediaFilename: payload.MediaFilename ?? null,
     profileName: payload.ProfileName ?? null,
   });
 }

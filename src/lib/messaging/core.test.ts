@@ -44,6 +44,11 @@ const emitEvent = vi.fn();
 vi.mock("@/lib/workflows/events", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
 const fetchProfileForMessage = vi.fn();
 vi.mock("./profile", () => ({ fetchProfileForMessage: (...a: unknown[]) => fetchProfileForMessage(...a) }));
+const mirrorExternalMedia = vi.fn();
+vi.mock("@/lib/storage/chat-media", () => ({
+  mirrorExternalMedia: (...a: unknown[]) => mirrorExternalMedia(...a),
+  isStoragePath: (v: string) => !/^https?:\/\//i.test(v),
+}));
 const contactTxUpdate = vi.fn();
 const withChangeSourceSpy = vi.fn();
 vi.mock("@/lib/audit/change-context", () => ({
@@ -77,6 +82,8 @@ beforeEach(() => {
   msgCreate.mockResolvedValue({ id: "m1" });
   activityCreate.mockResolvedValue({});
   fetchProfileForMessage.mockResolvedValue(null);
+  mirrorExternalMedia.mockReset();
+  mirrorExternalMedia.mockResolvedValue(null);
 });
 
 const base = { channel: "INSTAGRAM" as const, senderId: "IG-1", externalMessageId: "mid-1", text: "hola", profileName: "Ana" };
@@ -415,6 +422,59 @@ describe("handleInboundMessage — echoes (Caso 4)", () => {
     await handleInboundMessage(echo);
     expect(fetchProfileForMessage).not.toHaveBeenCalled();
     expect(contactTxUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleInboundMessage – media", () => {
+  const known = { id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" };
+
+  it("media IG con URL externa → se espeja al bucket y persiste path + tipo", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    mirrorExternalMedia.mockResolvedValue({ path: "2026-07/a.jpg", mimeType: "image/jpeg" });
+    await handleInboundMessage({
+      channel: "INSTAGRAM", senderId: "IG-1", externalMessageId: "mid-m1",
+      text: "[Imagen]", mediaUrl: "https://cdn.fbsbx.com/x.jpg", mediaType: "image",
+    });
+    expect(mirrorExternalMedia).toHaveBeenCalledWith("https://cdn.fbsbx.com/x.jpg");
+    expect(msgCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ mediaUrl: "2026-07/a.jpg", mediaType: "image", mediaMimeType: "image/jpeg" }),
+    }));
+  });
+
+  it("espejo falla → conserva la URL efímera (renderiza mientras viva)", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    mirrorExternalMedia.mockResolvedValue(null);
+    await handleInboundMessage({
+      channel: "MESSENGER", senderId: "P-1", externalMessageId: "mid-m2",
+      text: "[GIF]", mediaUrl: "https://cdn.fbsbx.com/a.gif", mediaType: "gif",
+    });
+    expect(msgCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ mediaUrl: "https://cdn.fbsbx.com/a.gif", mediaType: "gif" }),
+    }));
+  });
+
+  it("media ya en bucket (WA resuelto en webhook) → NO se re-espeja", async () => {
+    contactFindFirst.mockResolvedValue({ ...known, whatsappOptOut: false });
+    await handleInboundMessage({
+      channel: "WHATSAPP", senderId: "+5299", externalMessageId: "wamid-m3",
+      text: "[Sticker]", mediaUrl: "2026-07/s.webp", mediaType: "sticker", mediaMimeType: "image/webp",
+    });
+    expect(mirrorExternalMedia).not.toHaveBeenCalled();
+    expect(msgCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ mediaUrl: "2026-07/s.webp", mediaType: "sticker", mediaMimeType: "image/webp" }),
+    }));
+  });
+
+  it("sin mediaType → no intenta espejar (comportamiento legacy)", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage({
+      channel: "INSTAGRAM", senderId: "IG-1", externalMessageId: "mid-m4",
+      text: "hola", mediaUrl: null,
+    });
+    expect(mirrorExternalMedia).not.toHaveBeenCalled();
+    expect(msgCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ mediaUrl: null, mediaType: null }),
+    }));
   });
 });
 

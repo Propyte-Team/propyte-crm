@@ -219,6 +219,25 @@ export async function handleInboundMessage(msg: IncomingMessage) {
     });
   }
 
+  // Media IG/Messenger: la URL del CDN de Meta expira → espejar al bucket (best-effort;
+  // si falla se guarda la URL efímera, que renderiza mientras viva)
+  let mediaUrl = msg.mediaUrl ?? null;
+  let mediaMimeType = msg.mediaMimeType ?? null;
+  if (mediaUrl && msg.mediaType) {
+    try {
+      const { isStoragePath, mirrorExternalMedia } = await import("@/lib/storage/chat-media");
+      if (!isStoragePath(mediaUrl)) {
+        const mirrored = await mirrorExternalMedia(mediaUrl);
+        if (mirrored) {
+          mediaUrl = mirrored.path;
+          mediaMimeType = mediaMimeType ?? mirrored.mimeType;
+        }
+      }
+    } catch (err) {
+      console.warn(`[messaging] espejo de media falló (${msg.externalMessageId}):`, err);
+    }
+  }
+
   const { ensureConversation } = await import("./conversations");
   const conv = await ensureConversation({ contactId: contact.id, channel: msg.channel, connectorId: msg.connectorId ?? null });
   const conversation = await prisma.conversation.update({
@@ -236,7 +255,10 @@ export async function handleInboundMessage(msg: IncomingMessage) {
         direction: "INBOUND",
         body: msg.text,
         externalMessageId: msg.externalMessageId,
-        mediaUrl: msg.mediaUrl ?? null,
+        mediaUrl,
+        mediaType: msg.mediaType ?? null,
+        mediaFilename: msg.mediaFilename ?? null,
+        mediaMimeType,
         status: "DELIVERED",
         externalPhone: msg.channel === "WHATSAPP" ? msg.senderId : null,
         conversationId: conversation.id,
