@@ -14,6 +14,7 @@ export interface BotConfigResolved {
   escalationTriggers: string[];
   enabledChannels: string[];
   activePlaybookId: string | null;
+  classifyContacts: boolean;
 }
 
 export const DEFAULT_BOT_CONFIG: BotConfigResolved = {
@@ -27,6 +28,7 @@ export const DEFAULT_BOT_CONFIG: BotConfigResolved = {
   escalationTriggers: ["apartar", "queja", "legal_fiscal", "negociacion"],
   enabledChannels: ["WHATSAPP"],
   activePlaybookId: null,
+  classifyContacts: true,
 };
 
 function asStringArray(value: unknown, fallback: string[]): string[] {
@@ -50,6 +52,7 @@ export function resolveBotConfig(row: Record<string, unknown> | null): BotConfig
     escalationTriggers: asStringArray(row.escalationTriggers, d.escalationTriggers),
     enabledChannels: asStringArray(row.enabledChannels, d.enabledChannels),
     activePlaybookId: (row.activePlaybookId as string) ?? null,
+    classifyContacts: (row.classifyContacts as boolean) ?? d.classifyContacts,
   };
 }
 

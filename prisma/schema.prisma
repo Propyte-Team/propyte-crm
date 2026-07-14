@@ -1074,15 +1074,15 @@ model AuditLog {
 // transaccional (ver src/lib/audit/change-context.ts); pueden quedar NULL si el caller no
 // los fijó — el trigger igual audita el cambio.
 model RecordFieldChange {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  entityType String    @map("entity_type")
-  entityId   String    @map("entity_id")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
   field      String
-  oldValue   Json?     @map("old_value")
-  newValue   Json?     @map("new_value")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
   source     String?
-  actorId    String?   @map("actor_id")
-  changedAt  DateTime  @default(now()) @map("changed_at")
+  actorId    String?  @map("actor_id")
+  changedAt  DateTime @default(now()) @map("changed_at")
 
   @@index([entityType, entityId, changedAt(sort: Desc)])
   @@index([entityType, field, changedAt(sort: Desc)])
@@ -1591,6 +1591,7 @@ model BotConfig {
   dataGateStrict     Boolean       @default(true)
   escalationTriggers Json          @default("[\"apartar\",\"queja\",\"legal_fiscal\",\"negociacion\"]")
   enabledChannels    Json          @default("[\"WHATSAPP\"]")
+  classifyContacts   Boolean       @default(true)
   activePlaybookId   String?
   activePlaybook     BotPlaybook?  @relation("ActivePlaybook", fields: [activePlaybookId], references: [id], onDelete: SetNull)
   updatedByUserId    String?
@@ -1604,14 +1605,15 @@ model BotConfig {
 
 // Playbook de calificación: secuencia de tareas (BotTask) que el bot ejecuta por conversación
 model BotPlaybook {
-  id              String      @id @default(uuid())
+  id              String            @id @default(uuid())
   name            String
   description     String?
-  isActive        Boolean     @default(false)
+  isActive        Boolean           @default(false)
   tasks           BotTask[]
-  activeInConfigs BotConfig[] @relation("ActivePlaybook")
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  activeInConfigs BotConfig[]       @relation("ActivePlaybook")
+  agentProfiles   BotAgentProfile[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
 
   @@map("bot_playbooks")
@@ -1657,6 +1659,27 @@ model ConversationPlaybookState {
   updatedAt         DateTime          @updatedAt
 
   @@map("conversation_playbook_state")
+  @@schema("propyte_crm")
+}
+
+/// Agente del bot por segmento (Frente 4): identidad + playbook + tono por ContactType.
+model BotAgentProfile {
+  id           String         @id @default(uuid())
+  name         String
+  contactTypes ContactType[]  @default([])
+  identity     String         @db.Text
+  playbookId   String?
+  playbook     BotPlaybook?   @relation(fields: [playbookId], references: [id])
+  tonePreset   BotTonePreset?
+  isActive     Boolean        @default(false)
+  priority     Int            @default(100)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  deletedAt DateTime?
+
+  @@index([isActive, deletedAt])
+  @@map("bot_agent_profiles")
   @@schema("propyte_crm")
 }
 
