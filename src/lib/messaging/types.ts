@@ -17,6 +17,10 @@ export interface IncomingMessage {
   externalMessageId: string;
   text: string;
   mediaUrl?: string | null;
+  /** Tipo de media normalizado (image|gif|audio|video|document|sticker) si el mensaje trae adjunto. */
+  mediaType?: string | null;
+  mediaFilename?: string | null;
+  mediaMimeType?: string | null;
   /** Nombre/usuario del perfil si el adapter lo resolvió (best-effort). */
   profileName?: string | null;
   /** Id del conector (cuenta WhatsApp / página FB) que recibió el mensaje. */

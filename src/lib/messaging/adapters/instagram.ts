@@ -1,5 +1,7 @@
 import type { IncomingMessage } from "../types";
 import { sendGraphMessage } from "../graph";
+import { expandMetaMessage, type MetaAttachment } from "./meta-attachments";
+import { mediaTypeFromAttachment } from "../media";
 
 interface MetaReferral {
   ref?: string;
@@ -20,7 +22,7 @@ interface MetaMessagingEvent {
     text?: string;
     is_echo?: boolean;
     app_id?: string | number;
-    attachments?: Array<{ payload?: { url?: string } }>;
+    attachments?: MetaAttachment[];
   };
   postback?: MetaPostback;
   referral?: MetaReferral;
@@ -39,7 +41,7 @@ function mapReferral(r?: MetaReferral): IncomingMessage["referral"] | undefined 
   return mapped;
 }
 
-/** Normaliza un webhook `object: "instagram"` a IncomingMessage[]. */
+/** Normaliza un webhook `object: "instagram"` a IncomingMessage[] (1 por adjunto de media). */
 export function parseInstagramWebhook(body: MetaWebhookBody): IncomingMessage[] {
   const out: IncomingMessage[] = [];
   for (const entry of body.entry ?? []) {
@@ -57,12 +59,14 @@ export function parseInstagramWebhook(body: MetaWebhookBody): IncomingMessage[] 
       // el sender (la Página) — se normaliza senderId = recipient.id.
       if (m?.is_echo) {
         if (!m.mid || !ev.recipient?.id) continue;
+        const att = m.attachments?.[0];
         out.push({
           channel: "INSTAGRAM",
           senderId: ev.recipient.id,
           externalMessageId: m.mid,
           text: m.text ?? "(adjunto)",
-          mediaUrl: m.attachments?.[0]?.payload?.url ?? null,
+          mediaUrl: att?.payload?.url ?? null,
+          ...(att ? { mediaType: mediaTypeFromAttachment(att) } : {}),
           accountId: entry.id ?? null,
           isEcho: true,
           echoAppId: m.app_id != null ? String(m.app_id) : null,
@@ -71,15 +75,13 @@ export function parseInstagramWebhook(body: MetaWebhookBody): IncomingMessage[] 
       }
 
       if (m && m.mid) {
-        out.push({
-          channel: "INSTAGRAM",
-          senderId,
-          externalMessageId: m.mid,
-          text: m.text ?? (m.attachments?.length ? "[Adjunto]" : "[mensaje]"),
-          mediaUrl: m.attachments?.[0]?.payload?.url ?? null,
-          accountId: entry.id ?? null,
-          ...(referral ? { referral } : {}),
-        });
+        const msgs = expandMetaMessage(
+          { channel: "INSTAGRAM", senderId, accountId: entry.id ?? null },
+          { mid: m.mid, text: m.text, attachments: m.attachments }
+        );
+        // el referral (ads/ig.me) es señal de linking del hilo: va en el primer mensaje
+        if (referral && msgs[0]) msgs[0].referral = referral;
+        out.push(...msgs);
         continue;
       }
 
