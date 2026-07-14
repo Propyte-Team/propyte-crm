@@ -47,10 +47,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     });
   }
 
+  // Media del bucket privado → signed URLs de lectura (24h); URLs externas pasan tal cual
+  const { signChatMediaUrls, isStoragePath } = await import("@/lib/storage/chat-media");
+  const paths = conversation.messages.map((m) => m.mediaUrl).filter((u): u is string => !!u && isStoragePath(u));
+  const signed = await signChatMediaUrls(paths);
+  const messages = conversation.messages.map((m) => ({
+    ...m,
+    mediaUrl: m.mediaUrl ? (isStoragePath(m.mediaUrl) ? signed[m.mediaUrl] ?? null : m.mediaUrl) : null,
+  }));
+
   // Cuenta/marca (config del conector es no-secreto) + avatar; custom no viaja al cliente
   const { connector, contact, ...rest } = conversation;
   const data = {
     ...rest,
+    messages,
     connector: connector
       ? { name: connector.name, brand: ((connector.config as Record<string, unknown> | null)?.brand as string | undefined) ?? null }
       : null,

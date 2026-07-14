@@ -29,11 +29,9 @@ export async function sendWhatsAppMessage(
   if (media && text && !mediaSupportsCaption(media.type)) {
     await deliverWhatsApp(normalized, text);
   }
-  const delivery = await deliverWhatsApp(
-    normalized,
-    text,
-    media ? { url: media.url, type: media.type, filename: media.filename } : undefined
-  );
+  const delivery = media
+    ? await deliverWhatsApp(normalized, text, { url: media.url, type: media.type, filename: media.filename })
+    : await deliverWhatsApp(normalized, text);
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
   const { ensureConversation } = await import("@/lib/messaging/conversations");

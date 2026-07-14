@@ -5,10 +5,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign,
+  Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign, Paperclip, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/constants";
+import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/messaging/media";
 
 interface ConversationListItem {
   id: string;
@@ -41,6 +42,17 @@ interface ThreadMessage {
   internalNote: boolean;
   aiGenerated: boolean;
   createdAt: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  mediaFilename: string | null;
+}
+
+interface PendingMedia {
+  path: string;
+  type: ChatMediaType;
+  filename: string;
+  mimeType: string;
+  previewUrl: string | null;
 }
 
 interface ThreadDetail extends Omit<ConversationListItem, "messages"> {
@@ -85,6 +97,45 @@ function channelAccountLabel(channel: string, connector: { name: string; brand: 
   return connector ? `${base} · ${connector.brand ?? connector.name}` : base;
 }
 
+/** Adjunto dentro de la burbuja del mensaje, según su tipo. */
+function MessageMedia({ url, type, filename }: { url: string; type: string | null; filename: string | null }) {
+  if (type === "image" || type === "gif" || type === "sticker") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- signed URL de Supabase / CDN Meta
+      <img
+        src={url}
+        alt={filename ?? type ?? "imagen"}
+        className={cn("mb-1 cursor-pointer rounded-lg object-contain", type === "sticker" ? "max-h-28" : "max-h-60 max-w-full")}
+        onClick={() => window.open(url, "_blank", "noopener")}
+        onError={(e) => { e.currentTarget.style.display = "none"; }}
+      />
+    );
+  }
+  if (type === "audio") return <audio controls src={url} className="mb-1 max-w-full" preload="metadata" />;
+  if (type === "video") return <video controls src={url} className="mb-1 max-h-60 max-w-full rounded-lg" preload="metadata" />;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mb-1 flex items-center gap-1.5 text-[13px] font-medium underline underline-offset-2"
+    >
+      <FileText className="h-4 w-4 shrink-0" /> {filename ?? "Documento"}
+    </a>
+  );
+}
+
+/** true si el body es solo el placeholder del adjunto ("[Imagen]", "[Documento: x]"...) */
+function isMediaPlaceholder(body: string): boolean {
+  return /^\[(Imagen|GIF|Audio|Video|Sticker|Documento[^\]]*|Adjunto)\]$/.test(body.trim());
+}
+
+const ACCEPT_BY_CHANNEL: Record<string, string> = {
+  WHATSAPP: "image/jpeg,image/png,image/webp,audio/*,application/pdf",
+  MESSENGER: "image/*,audio/*,video/mp4,application/pdf",
+  INSTAGRAM: "image/*,audio/*,video/mp4",
+};
+
 /** Avatar del contacto (se oculta solo si la URL de CDN de Meta ya expiró). */
 function ContactAvatar({ url, size }: { url: string | null; size: number }) {
   if (!url) return null;
@@ -111,7 +162,62 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
   const [composer, setComposer] = useState("");
   const [asNote, setAsNote] = useState(false);
   const [sending, setSending] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
+  const [uploading, setUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function clearPendingMedia() {
+    setPendingMedia((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }
+
+  async function attachFile(file: File) {
+    if (!thread) return;
+    const channel = thread.channel;
+    const type = mediaTypeFromMime(file.type || "application/octet-stream", channel);
+    if (!isMediaAllowed(channel, type, file.size)) {
+      alert(`Este canal (${CHANNEL_LABEL[channel] ?? channel}) no acepta ${type} de ${(file.size / 1024 / 1024).toFixed(1)}MB`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const signRes = await fetch("/api/inbox/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType: file.type || "application/octet-stream", sizeBytes: file.size, channel, filename: file.name }),
+      });
+      if (!signRes.ok) {
+        const data = await signRes.json().catch(() => ({}));
+        alert(typeof data.error === "string" ? data.error : "No se pudo preparar la subida");
+        return;
+      }
+      const { data } = await signRes.json();
+      // subida DIRECTA a Supabase Storage (no pasa por el server del CRM)
+      const putRes = await fetch(data.signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!putRes.ok) {
+        alert("Falló la subida del archivo");
+        return;
+      }
+      clearPendingMedia();
+      const isVisual = data.type === "image" || data.type === "gif" || data.type === "sticker";
+      setPendingMedia({
+        path: data.path,
+        type: data.type,
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        previewUrl: isVisual ? URL.createObjectURL(file) : null,
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const loadList = useCallback(async () => {
     try {
@@ -131,7 +237,11 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
   }, []);
 
   useEffect(() => { loadList(); }, [loadList]);
-  useEffect(() => { if (selectedId) loadThread(selectedId); }, [selectedId, loadThread]);
+  useEffect(() => {
+    clearPendingMedia(); // el adjunto pendiente pertenece al hilo anterior
+    if (selectedId) loadThread(selectedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, loadThread]);
 
   // Polling 5s — lista + hilo abierto
   useEffect(() => {
@@ -159,21 +269,27 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
   }
 
   async function sendMessage() {
-    if (!selectedId || !composer.trim() || sending) return;
+    const media = asNote ? null : pendingMedia;
+    if (!selectedId || (!composer.trim() && !media) || sending) return;
     setSending(true);
     try {
       const res = await fetch(`/api/conversations/${selectedId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: composer.trim(), internalNote: asNote }),
+        body: JSON.stringify({
+          body: composer.trim(),
+          internalNote: asNote,
+          ...(media ? { media: { path: media.path, type: media.type, filename: media.filename, mimeType: media.mimeType } } : {}),
+        }),
       });
       if (res.ok) {
         setComposer("");
         setAsNote(false);
+        clearPendingMedia();
         await loadThread(selectedId);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Error al enviar");
+        alert(typeof data.error === "string" ? data.error : "Error al enviar");
       }
     } finally {
       setSending(false);
@@ -360,7 +476,10 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
                           <StickyNote className="h-3 w-3" /> Nota interna
                         </span>
                       )}
-                      <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                      {m.mediaUrl && <MessageMedia url={m.mediaUrl} type={m.mediaType} filename={m.mediaFilename} />}
+                      {!(m.mediaUrl && isMediaPlaceholder(m.body)) && (
+                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                      )}
                       <p className="mt-1 text-[10px] opacity-60">
                         {m.sender === "BOT"
                           ? "🤖 Bot · "
@@ -376,6 +495,24 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               <div ref={bottomRef} />
             </div>
 
+            {/* Adjunto pendiente */}
+            {pendingMedia && !asNote && (
+              <div className="flex items-center gap-2 px-3 py-2" style={{ background: "var(--bg-sidebar)", borderTop: "1px solid var(--border-subtle)" }}>
+                {pendingMedia.previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- object URL local
+                  <img src={pendingMedia.previewUrl} alt="" className="h-12 w-12 rounded-md object-cover" />
+                ) : (
+                  <FileText className="h-6 w-6" style={{ color: "var(--text-tertiary)" }} />
+                )}
+                <span className="min-w-0 flex-1 truncate text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                  {pendingMedia.filename} <span style={{ color: "var(--text-tertiary)" }}>· {pendingMedia.type}</span>
+                </span>
+                <button className="btn-secondary !p-1.5" title="Quitar adjunto" onClick={clearPendingMedia}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Composer */}
             <div className="flex items-end gap-2 p-3" style={{ background: "var(--bg-sidebar)", borderTop: "1px solid var(--border-subtle)" }}>
               <button
@@ -389,6 +526,28 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               >
                 <StickyNote className="h-4 w-4" />
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept={ACCEPT_BY_CHANNEL[thread.channel] ?? "image/*"}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) attachFile(f);
+                  e.target.value = "";
+                }}
+              />
+              {!asNote && ACCEPT_BY_CHANNEL[thread.channel] && (
+                <button
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors"
+                  title="Adjuntar imagen, documento o audio"
+                  disabled={uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ background: "var(--bg-badge-neutral)", color: "var(--text-tertiary)", opacity: uploading ? 0.5 : 1 }}
+                >
+                  <Paperclip className={cn("h-4 w-4", uploading && "animate-pulse")} />
+                </button>
+              )}
               <textarea
                 className="form-input flex-1 resize-none !py-2 text-[13px]"
                 rows={1}
@@ -404,7 +563,7 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
               />
               <button
                 className="btn-primary !py-2 !px-3"
-                disabled={sending || !composer.trim()}
+                disabled={sending || uploading || (!composer.trim() && !(pendingMedia && !asNote))}
                 onClick={sendMessage}
               >
                 <Send className="h-4 w-4" />

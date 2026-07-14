@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const deliverWhatsApp = vi.fn();
 vi.mock("@/lib/whatsapp/transport", () => ({
   deliverWhatsApp: (...a: unknown[]) => deliverWhatsApp(...a),
+  mediaSupportsCaption: (t: string) => ["image", "document", "video", "gif"].includes(t),
 }));
 
 const msgCreate = vi.fn();
@@ -63,5 +64,27 @@ describe("sendWhatsAppMessage — markdown → formato WhatsApp (todos los emiso
     await sendWhatsAppMessage("+5219991112233", "hola, ¿cómo vas?", "c1", "u1");
     expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "hola, ¿cómo vas?");
     expect(msgCreate.mock.calls[0][0].data.body).toBe("hola, ¿cómo vas?");
+  });
+});
+
+describe("sendWhatsAppMessage — media", () => {
+  it("sticker con texto → texto aparte primero, luego media; Message persiste media", async () => {
+    await sendWhatsAppMessage("+5219991112233", "toma", "c1", "u1", null, {
+      path: "2026-07/s.webp", url: "https://sb/s.webp", type: "sticker", mimeType: "image/webp",
+    });
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma");
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(2, expect.any(String), "toma",
+      expect.objectContaining({ url: "https://sb/s.webp", type: "sticker" }));
+    expect(msgCreate.mock.calls[0][0].data).toMatchObject({
+      mediaUrl: "2026-07/s.webp", mediaType: "sticker", mediaMimeType: "image/webp",
+    });
+  });
+
+  it("imagen sin texto → 1 sola entrega y body placeholder", async () => {
+    await sendWhatsAppMessage("+5219991112233", "", "c1", "u1", null, {
+      path: "2026-07/a.jpg", url: "https://sb/a.jpg", type: "image",
+    });
+    expect(deliverWhatsApp).toHaveBeenCalledTimes(1);
+    expect(msgCreate.mock.calls[0][0].data.body).toBe("[Imagen]");
   });
 });
