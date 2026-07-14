@@ -49,18 +49,12 @@ async function renderTemplateBody(templateRef: string | undefined, contact: Cont
     },
   });
   if (!tpl) return null;
-  let body = tpl.body;
-  const vars: Record<string, string> = {
+  // Semántica J.2 compartida con el composer del inbox (src/lib/templates/fill.ts)
+  const { fillTemplate } = await import("@/lib/templates/fill");
+  const body = fillTemplate(tpl.body, {
     "contact.firstName": contact?.firstName ?? "",
     "contact.lastName": contact?.lastName ?? "",
-  };
-  for (const [k, v] of Object.entries(vars)) body = body.replaceAll(`{{${k}}}`, v);
-  // Variable sin resolver → quitar la línea completa (J.2: nunca enviar {{...}} crudo)
-  body = body
-    .split("\n")
-    .filter((line) => !/\{\{[^}]+\}\}/.test(line))
-    .join("\n")
-    .trim();
+  });
   return body || null;
 }
 

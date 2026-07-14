@@ -5,11 +5,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign, Paperclip, FileText,
+  Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign, Paperclip, FileText, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/constants";
 import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/messaging/media";
+import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
 
 interface ConversationListItem {
   id: string;
@@ -53,6 +54,28 @@ interface PendingMedia {
   filename: string;
   mimeType: string;
   previewUrl: string | null;
+}
+
+interface InboxTemplate {
+  id: string;
+  name: string;
+  shortcut: string | null;
+  body: string;
+  channel: string;
+  isActive: boolean;
+  isGlobal: boolean;
+}
+
+/** Normaliza para búsqueda acento-insensible. */
+function norm(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** Token "/algo" inmediatamente antes del caret (para autocomplete de plantillas). */
+function slashTokenBefore(text: string): { query: string; start: number } | null {
+  const m = text.match(/(^|\s)\/([^\s/]*)$/);
+  if (!m) return null;
+  return { query: m[2], start: text.length - m[2].length - 1 };
 }
 
 interface ThreadDetail extends Omit<ConversationListItem, "messages"> {
@@ -164,8 +187,58 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
   const [sending, setSending] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [templates, setTemplates] = useState<InboxTemplate[]>([]);
+  const [tplQuery, setTplQuery] = useState<string | null>(null); // null = dropdown cerrado
+  const [tplIndex, setTplIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  // Plantillas de chat (las WHATSAPP sirven igual en IG/Messenger; EMAIL fuera por subject)
+  useEffect(() => {
+    fetch("/api/profile/templates")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.data) setTemplates((j.data as InboxTemplate[]).filter((t) => t.isActive && t.channel === "WHATSAPP"));
+      })
+      .catch(() => {});
+  }, []);
+
+  const tplMatches =
+    tplQuery === null
+      ? []
+      : templates.filter((t) => {
+          if (!tplQuery) return true;
+          const q = norm(tplQuery);
+          const sc = norm(t.shortcut ?? "").replace(/^\//, "");
+          return sc.startsWith(q) || norm(t.name).includes(q);
+        });
+
+  function insertTemplate(t: InboxTemplate) {
+    const ta = composerRef.current;
+    const caret = ta?.selectionStart ?? composer.length;
+    const before = composer.slice(0, caret);
+    const after = composer.slice(caret);
+    const token = slashTokenBefore(before);
+    const filled = fillTemplate(t.body, contactTemplateVars(thread?.contact ?? {}));
+    const next = (token ? before.slice(0, token.start) : before) + filled + after;
+    setComposer(next);
+    setTplQuery(null);
+    fetch("/api/profile/templates/use", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: t.id }),
+    }).catch(() => {});
+    setTimeout(() => ta?.focus(), 0);
+  }
+
+  function onComposerChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const v = e.target.value;
+    setComposer(v);
+    const token = slashTokenBefore(v.slice(0, e.target.selectionStart ?? v.length));
+    setTplQuery(token ? token.query : null);
+    setTplIndex(0);
+  }
 
   function clearPendingMedia() {
     setPendingMedia((prev) => {
@@ -239,6 +312,7 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => {
     clearPendingMedia(); // el adjunto pendiente pertenece al hilo anterior
+    setTplQuery(null);
     if (selectedId) loadThread(selectedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, loadThread]);
@@ -514,7 +588,43 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
             )}
 
             {/* Composer */}
-            <div className="flex items-end gap-2 p-3" style={{ background: "var(--bg-sidebar)", borderTop: "1px solid var(--border-subtle)" }}>
+            <div className="relative flex items-end gap-2 p-3" style={{ background: "var(--bg-sidebar)", borderTop: "1px solid var(--border-subtle)" }}>
+              {/* Dropdown de plantillas (/atajo o botón ⚡) */}
+              {tplQuery !== null && (
+                <div
+                  className="absolute bottom-full left-3 right-3 z-20 mb-1 max-h-52 overflow-y-auto rounded-lg shadow-lg"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+                >
+                  {tplMatches.length === 0 ? (
+                    <p className="px-3 py-2 text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                      {templates.length === 0
+                        ? "Sin plantillas — créalas en Configuración → Perfil"
+                        : "Sin coincidencias"}
+                    </p>
+                  ) : (
+                    tplMatches.map((t, i) => (
+                      <button
+                        key={t.id}
+                        className="block w-full px-3 py-2 text-left"
+                        style={{ background: i === tplIndex ? "var(--color-teal-light)" : "transparent" }}
+                        onMouseEnter={() => setTplIndex(i)}
+                        onMouseDown={(e) => { e.preventDefault(); insertTemplate(t); }}
+                      >
+                        <span className="flex items-center gap-2">
+                          {t.shortcut && (
+                            <span className="badge badge-neutral !text-[10px] !py-0 shrink-0">/{t.shortcut.replace(/^\//, "")}</span>
+                          )}
+                          <span className="truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{t.name}</span>
+                          {t.isGlobal && <span className="text-[10px] shrink-0" style={{ color: "var(--text-tertiary)" }}>global</span>}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                          {t.body}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
               <button
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors"
                 title={asNote ? "Modo nota interna (no se envía)" : "Cambiar a nota interna"}
@@ -548,13 +658,31 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
                   <Paperclip className={cn("h-4 w-4", uploading && "animate-pulse")} />
                 </button>
               )}
+              <button
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors"
+                title="Respuestas rápidas (o escribe / en el mensaje)"
+                onClick={() => { setTplQuery((q) => (q === null ? "" : null)); setTplIndex(0); composerRef.current?.focus(); }}
+                style={{
+                  background: tplQuery !== null ? "var(--color-teal-light)" : "var(--bg-badge-neutral)",
+                  color: "var(--text-tertiary)",
+                }}
+              >
+                <Zap className="h-4 w-4" />
+              </button>
               <textarea
+                ref={composerRef}
                 className="form-input flex-1 resize-none !py-2 text-[13px]"
                 rows={1}
-                placeholder={asNote ? "Nota interna (solo el equipo la ve)..." : "Escribe un mensaje..."}
+                placeholder={asNote ? "Nota interna (solo el equipo la ve)..." : "Escribe un mensaje o / para plantillas..."}
                 value={composer}
-                onChange={(e) => setComposer(e.target.value)}
+                onChange={onComposerChange}
                 onKeyDown={(e) => {
+                  if (tplQuery !== null) {
+                    if (e.key === "ArrowDown" && tplMatches.length) { e.preventDefault(); setTplIndex((i) => (i + 1) % tplMatches.length); return; }
+                    if (e.key === "ArrowUp" && tplMatches.length) { e.preventDefault(); setTplIndex((i) => (i - 1 + tplMatches.length) % tplMatches.length); return; }
+                    if ((e.key === "Enter" || e.key === "Tab") && tplMatches[tplIndex]) { e.preventDefault(); insertTemplate(tplMatches[tplIndex]); return; }
+                    if (e.key === "Escape") { e.preventDefault(); setTplQuery(null); return; }
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     sendMessage();
