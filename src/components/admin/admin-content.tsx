@@ -42,6 +42,7 @@ import { CommissionRuleDialog } from "./commission-rule-dialog";
 import { IntegrationsTab } from "./integrations-tab";
 import { BotConfigTab } from "./bot-config-tab";
 import { PlaybookTab, type PlaybookData } from "./playbook-tab";
+import { BotAgentsTab, type AgentProfileRow } from "./bot-agents-tab";
 import type { BotTonePreset } from "@prisma/client";
 
 // Configuracion de colores para estados de usuario
@@ -117,6 +118,7 @@ const ADMIN_TAB_TITLES: Record<string, string> = {
   integrations: "Integraciones",
   bot: "Bot",
   playbook: "Playbook de calificación",
+  botAgents: "Agentes del bot",
 };
 const DEFAULT_ADMIN_TAB = "users";
 
@@ -129,6 +131,7 @@ interface AdminContentProps {
   initialApiKeys: ApiKeyData[];
   botConfig: BotConfigData;
   playbooks: PlaybookData[];
+  agentProfiles: AgentProfileRow[];
   activePlaybookId: string | null;
   contactCustomFields: string[];
 }
@@ -142,6 +145,7 @@ export function AdminContent({
   initialApiKeys,
   botConfig,
   playbooks,
+  agentProfiles,
   activePlaybookId,
   contactCustomFields,
 }: AdminContentProps) {
@@ -696,6 +700,14 @@ export function AdminContent({
             initialPlaybooks={playbooks}
             activePlaybookId={activePlaybookId}
             customFields={contactCustomFields}
+          />
+      )}
+
+      {/* Seccion: Agentes del bot por segmento (Frente 4) */}
+      {activeTab === "botAgents" && (
+          <BotAgentsTab
+            initialProfiles={agentProfiles}
+            playbooks={playbooks.map((pb) => ({ id: pb.id, name: pb.name }))}
           />
       )}
 

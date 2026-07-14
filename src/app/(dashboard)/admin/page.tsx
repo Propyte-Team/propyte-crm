@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { getUsers, getCommissionRules, getSystemConfig, getWebhookConfigs, getApiKeys } from "@/server/admin";
 import { getBotConfigForAdmin } from "@/server/bot-config";
 import { listPlaybooks } from "@/server/bot-playbook";
+import { listAgentProfiles } from "@/server/bot-agents";
 import prisma from "@/lib/db";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
@@ -33,7 +34,7 @@ export default async function AdminPage({
     .catch(() => [] as string[]);
 
   // Obtener datos en paralelo
-  const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks] = await Promise.all([
+  const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles] = await Promise.all([
     getUsers(),
     getCommissionRules(),
     getSystemConfig(),
@@ -41,6 +42,8 @@ export default async function AdminPage({
     getApiKeys(),
     getBotConfigForAdmin(),
     listPlaybooks(),
+    // best-effort pre-migración: la pestaña Agentes muestra vacío en vez de romper /admin
+    listAgentProfiles().catch(() => []),
   ]);
 
   return (
@@ -55,6 +58,10 @@ export default async function AdminPage({
         initialApiKeys={apiKeys}
         botConfig={botConfig}
         playbooks={playbooks}
+        agentProfiles={agentProfiles.map((a) => ({
+          id: a.id, name: a.name, contactTypes: a.contactTypes as string[], identity: a.identity,
+          playbookId: a.playbookId, tonePreset: a.tonePreset, isActive: a.isActive, priority: a.priority,
+        }))}
         activePlaybookId={botConfig.activePlaybookId}
         contactCustomFields={contactCustomFields}
       />

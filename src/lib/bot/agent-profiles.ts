@@ -1,21 +1,15 @@
 // Selección del agente del bot por segmento (Frente 4). El perfil aporta:
 // identidad (capa objetivo), playbook propio (opcional) y tono override (opcional).
 // Sin perfil activo para el tipo → null y el bot se comporta como hoy (global).
-import type { BotAgentProfile, BotPlaybook, BotTask, ContactType } from "@prisma/client";
+import type { BotAgentProfile, BotPlaybook, BotTask, ContactType, PrismaClient } from "@prisma/client";
 
 export type AgentProfileWithPlaybook = BotAgentProfile & {
   playbook: (BotPlaybook & { tasks: BotTask[] }) | null;
 };
 
-type Db = {
-  botAgentProfile: {
-    findMany: (args: unknown) => Promise<AgentProfileWithPlaybook[]>;
-  };
-};
-
 /** Perfil activo cuyo contactTypes incluye el tipo; menor priority gana. null = sin agente. */
 export async function selectAgentProfile(
-  db: Db,
+  db: PrismaClient,
   contactType: ContactType
 ): Promise<AgentProfileWithPlaybook | null> {
   try {

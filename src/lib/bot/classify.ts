@@ -1,7 +1,7 @@
 // Clasificador de tipo de conversación (Frente 4): decide qué segmento (ContactType)
 // es quien escribe, para elegir el agente del bot. Mismo patrón defensivo que el
 // extractor del playbook: structured output, timeout 4s, NUNCA lanza ni bloquea.
-import type { ContactType, Prisma } from "@prisma/client";
+import type { ContactType, Prisma, PrismaClient } from "@prisma/client";
 import { thinkingFieldFor } from "./claude";
 import type { BotMessage } from "./claude";
 
@@ -91,13 +91,6 @@ interface ClassifyMarker {
   at?: string;
 }
 
-type Db = {
-  contact: { update: (args: unknown) => Promise<unknown> };
-  auditLog: { create: (args: unknown) => Promise<unknown> };
-  user: { findFirst: (args: unknown) => Promise<{ id: string } | null> };
-  $transaction: <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
-};
-
 /**
  * Clasifica una vez por contacto (marker en custom.bot_classification, máx. 3 intentos).
  * Solo pisa contactType si el valor actual es un default del intake (COMPRADOR/LEAD) —
@@ -105,7 +98,7 @@ type Db = {
  * Devuelve el ContactType efectivo a usar para elegir agente. NUNCA lanza.
  */
 export async function maybeClassifyContact(
-  db: Db,
+  db: PrismaClient,
   contact: { id: string; contactType: ContactType; assignedToId: string | null; custom: unknown },
   messages: BotMessage[],
   model: string
@@ -133,7 +126,7 @@ export async function maybeClassifyContact(
 
     if (!detected || detected === contact.contactType) {
       // sin señal (o coincide): solo persistir el intento
-      await db.contact.update({ where: { id: contact.id }, data: { custom: newCustom } });
+      await db.contact.update({ where: { id: contact.id }, data: { custom: newCustom as unknown as Prisma.InputJsonValue } });
       return contact.contactType;
     }
 
@@ -145,7 +138,7 @@ export async function maybeClassifyContact(
           select: { id: true },
         });
     if (!admin) {
-      await db.contact.update({ where: { id: contact.id }, data: { custom: newCustom } });
+      await db.contact.update({ where: { id: contact.id }, data: { custom: newCustom as unknown as Prisma.InputJsonValue } });
       return contact.contactType;
     }
 
@@ -154,7 +147,7 @@ export async function maybeClassifyContact(
       await setChangeSource(tx, { source: "bot_classifier", actorId: admin.id });
       await tx.contact.update({
         where: { id: contact.id },
-        data: { contactType: detected, custom: newCustom as Prisma.InputJsonValue },
+        data: { contactType: detected, custom: newCustom as unknown as Prisma.InputJsonValue },
       });
       await tx.auditLog.create({
         data: {

@@ -65,6 +65,7 @@ const GROUPS: Array<{ title: string; cards: CardDef[] }> = [
     cards: [
       { href: "/admin?tab=bot", icon: Bot, title: "Bot: tono y comportamiento", items: ["Encendido y canales", "Tono elegible (4 presets)", "Autonomía L0-L2", "Escalamiento"] },
       { href: "/admin?tab=playbook", icon: ListChecks, title: "Playbook de calificación", items: ["Tareas ordenadas", "Auto-llenado del contacto", "Activar/desactivar"] },
+      { href: "/admin?tab=botAgents", icon: Bot, title: "Agentes del bot", items: ["Clasificador por tipo de conversación", "Identidad + playbook por segmento", "Clientes / Brokers / Reclutamiento"] },
     ],
   },
   {
