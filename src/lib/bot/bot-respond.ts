@@ -122,23 +122,44 @@ export async function botRespond(
     zone: contact.preferredZone,
   });
 
+  // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente
+  // (identidad + playbook + tono propios). Solo gasta clasificación si hay agentes activos.
+  // Best-effort: cualquier fallo deja el flujo global de siempre intacto.
+  let agentProfile: import("./agent-profiles").AgentProfileWithPlaybook | null = null;
+  try {
+    const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
+    if (hasAgents) {
+      const { maybeClassifyContact } = await import("./classify");
+      const { selectAgentProfile } = await import("./agent-profiles");
+      const effectiveType = config.classifyContacts
+        ? await maybeClassifyContact(prisma, contact, history, config.model)
+        : contact.contactType;
+      agentProfile = await selectAgentProfile(prisma, effectiveType);
+    }
+  } catch {
+    // defensivo: sin agente → comportamiento global
+  }
+  const effectiveConfig = agentProfile?.tonePreset ? { ...config, tonePreset: agentProfile.tonePreset } : config;
+
   const firstTouch = history.length === 1 && history[0].role === "user";
   const fallbackObjective = firstTouch
-    ? buildOpener(config, { firstName: contact.firstName, preferredZone: contact.preferredZone }, opts.goal)
+    ? buildOpener(effectiveConfig, { firstName: contact.firstName, preferredZone: contact.preferredZone }, opts.goal)
     : opts.goal
       ? `Objetivo de este mensaje: ${opts.goal}. Continúa la conversación con naturalidad.`
       : undefined;
 
-  // Playbook configurable (Anexo Técnico §B-Task 8): si hay uno activo, extrae/captura/avanza
-  // y su objective manda sobre el de la ruta A. Cualquier error aquí cae al fallback de arriba
-  // — nunca debe impedir que el bot responda.
+  // Playbook configurable (Anexo Técnico §B-Task 8): el del agente del segmento manda;
+  // si el agente no trae, el global activo. Su objective gana sobre la ruta A. Cualquier
+  // error aquí cae al fallback de arriba — nunca debe impedir que el bot responda.
+  const agentPlaybook = agentProfile?.playbook && agentProfile.playbook.tasks.length > 0 ? agentProfile.playbook : null;
   let playbookObjective: string | undefined;
-  if (config.activePlaybookId) {
+  if (agentPlaybook || config.activePlaybookId) {
     try {
-      const pb = await prisma.botPlaybook.findFirst({
-        where: { id: config.activePlaybookId, isActive: true, deletedAt: null },
-        include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
-      });
+      const pb = agentPlaybook
+        ?? (await prisma.botPlaybook.findFirst({
+          where: { id: config.activePlaybookId!, isActive: true, deletedAt: null },
+          include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
+        }));
       if (pb && pb.tasks.length > 0) {
         const pr = await runPlaybookStep(prisma, {
           playbook: { id: pb.id, tasks: pb.tasks as any },
@@ -154,10 +175,12 @@ export async function botRespond(
     }
   }
 
-  const objective = playbookObjective ?? fallbackObjective;
+  // La identidad del agente antecede al objetivo del playbook/ruta A en la capa "objetivo"
+  const baseObjective = playbookObjective ?? fallbackObjective;
+  const objective = [agentProfile?.identity, baseObjective].filter(Boolean).join("\n\n") || undefined;
 
   const system = buildSystemPrompt({
-    config,
+    config: effectiveConfig,
     contact: { firstName: contact.firstName, preferredLanguage: contact.preferredLanguage },
     catalog,
     objective,
