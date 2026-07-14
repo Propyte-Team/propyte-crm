@@ -20,8 +20,8 @@ describe("selectAgentProfile", () => {
   it("sin perfil para el tipo → null; error de BD → null (nunca lanza)", async () => {
     findMany.mockResolvedValue([]);
     expect(await selectAgentProfile(db as never, "EMPLEO")).toBeNull();
-    findMany.mockImplementation(() => { throw new Error("db"); });
-    expect(await selectAgentProfile(db as never, "EMPLEO")).toBeNull();
+    const dbBroken = { botAgentProfile: { findMany: async () => { throw new Error("db"); } } };
+    expect(await selectAgentProfile(dbBroken as never, "EMPLEO")).toBeNull();
   });
 
   it("playbook soft-borrado del perfil → se anula (fallback al global)", async () => {
