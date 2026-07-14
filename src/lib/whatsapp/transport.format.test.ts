@@ -45,3 +45,37 @@ describe("deliverWhatsApp — formato WhatsApp en el wire", () => {
     expect(payload.text.body).toBe("Confirmado *mañana* a las 7, _puntual_ 🙂");
   });
 });
+
+describe("deliverWhatsApp — media (Meta Cloud)", () => {
+  it("imagen con caption → payload type image + link + caption", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [{ id: "wamid.MEDIA1" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deliverWhatsApp("+5219991112233", "checa esta", { url: "https://sb/signed.jpg", type: "image" });
+
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(payload.type).toBe("image");
+    expect(payload.image).toEqual({ link: "https://sb/signed.jpg", caption: "checa esta" });
+    expect(payload.text).toBeUndefined();
+  });
+
+  it("documento lleva filename; sticker NO lleva caption", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [{ id: "wamid.MEDIA2" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deliverWhatsApp("+5219991112233", "brochure", { url: "https://sb/d.pdf", type: "document", filename: "brochure.pdf" });
+    let payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(payload.document).toEqual({ link: "https://sb/d.pdf", caption: "brochure", filename: "brochure.pdf" });
+
+    await deliverWhatsApp("+5219991112233", "ignorado", { url: "https://sb/s.webp", type: "sticker" });
+    payload = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(payload.type).toBe("sticker");
+    expect(payload.sticker).toEqual({ link: "https://sb/s.webp" });
+  });
+});

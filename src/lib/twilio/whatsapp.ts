@@ -11,7 +11,8 @@ export async function sendWhatsAppMessage(
   body: string,
   contactId: string,
   userId: string,
-  connectorId?: string | null
+  connectorId?: string | null,
+  media?: { path: string; url: string; type: import("@/lib/messaging/media").ChatMediaType; filename?: string | null; mimeType?: string | null }
 ) {
   const normalized = normalizePhone(to);
 
@@ -23,26 +24,39 @@ export async function sendWhatsAppMessage(
   const text = formatForWhatsApp(body);
 
   // Transporte intercambiable (Meta Cloud API default / Twilio alterno) — 2026-06-11
-  const { deliverWhatsApp } = await import("@/lib/whatsapp/transport");
-  const delivery = await deliverWhatsApp(normalized, text);
+  const { deliverWhatsApp, mediaSupportsCaption } = await import("@/lib/whatsapp/transport");
+  // audio/sticker no aceptan caption → el texto (si hay) viaja como mensaje aparte ANTES
+  if (media && text && !mediaSupportsCaption(media.type)) {
+    await deliverWhatsApp(normalized, text);
+  }
+  const delivery = await deliverWhatsApp(
+    normalized,
+    text,
+    media ? { url: media.url, type: media.type, filename: media.filename } : undefined
+  );
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
   const { ensureConversation } = await import("@/lib/messaging/conversations");
   const conv0 = await ensureConversation({ contactId, channel: "WHATSAPP", connectorId: connectorId ?? null });
   const conversation = await prisma.conversation.update({ where: { id: conv0.id }, data: { lastMessageAt: new Date() } });
 
+  const { mediaPlaceholderBody } = await import("@/lib/messaging/media");
+  const persistedBody = text || (media ? mediaPlaceholderBody(media.type, media.filename) : text);
   const message = await prisma.message.create({
     data: {
       contactId,
       userId,
       channel: "WHATSAPP",
       direction: "OUTBOUND",
-      body: text,
+      body: persistedBody,
       twilioSid: delivery.externalId, // wamid (Meta) o SID (Twilio)
       status: delivery.status,
       externalPhone: normalized,
       conversationId: conversation.id,
       sender: "ADVISOR",
+      ...(media
+        ? { mediaUrl: media.path, mediaType: media.type, mediaFilename: media.filename ?? null, mediaMimeType: media.mimeType ?? null }
+        : {}),
     },
   });
 
@@ -52,7 +66,7 @@ export async function sendWhatsAppMessage(
       userId,
       activityType: "WHATSAPP_OUT",
       subject: `WhatsApp enviado`,
-      description: text.length > 100 ? text.substring(0, 100) + "..." : text,
+      description: persistedBody.length > 100 ? persistedBody.substring(0, 100) + "..." : persistedBody,
       status: "COMPLETADA",
       completedAt: new Date(),
     },

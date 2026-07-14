@@ -8,10 +8,23 @@
 // Message, Activity, SLA) viven en lib/twilio/whatsapp.ts::sendWhatsAppMessage.
 
 import { formatForWhatsApp } from "./format";
+import { waMessageType, type ChatMediaType } from "@/lib/messaging/media";
 
 export interface DeliveryResult {
   externalId: string; // wamid (Meta) o SID (Twilio) — se guarda en Message.twilioSid
   status: "SENT" | "QUEUED";
+}
+
+/** Adjunto saliente: URL pública/firmada que Meta pueda descargar. */
+export interface DeliveryMedia {
+  url: string;
+  type: ChatMediaType;
+  filename?: string | null;
+}
+
+/** image/document/video aceptan caption; audio/sticker no (el texto va en mensaje aparte). */
+export function mediaSupportsCaption(type: ChatMediaType): boolean {
+  return type === "image" || type === "document" || type === "video" || type === "gif";
 }
 
 export type WhatsAppProvider = "meta_cloud" | "twilio";
@@ -30,11 +43,22 @@ export function activeProvider(): WhatsAppProvider {
 // Driver META Cloud API (Graph) — texto libre dentro de la ventana de 24h.
 // Fuera de ventana Meta responde 131047 → error claro (requiere plantilla).
 // ---------------------------------------------------------------------------
-async function deliverViaMetaCloud(toE164: string, body: string): Promise<DeliveryResult> {
+async function deliverViaMetaCloud(toE164: string, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
   const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID?.trim();
   const token = process.env.META_WA_ACCESS_TOKEN?.trim();
   if (!phoneNumberId || !token) {
     throw new Error("META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN no configurados");
+  }
+
+  let content: Record<string, unknown>;
+  if (media) {
+    const waType = waMessageType(media.type);
+    const payload: Record<string, unknown> = { link: media.url };
+    if (mediaSupportsCaption(media.type) && body) payload.caption = body;
+    if (waType === "document" && media.filename) payload.filename = media.filename;
+    content = { type: waType, [waType]: payload };
+  } else {
+    content = { type: "text", text: { preview_url: false, body } };
   }
 
   const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
@@ -44,8 +68,7 @@ async function deliverViaMetaCloud(toE164: string, body: string): Promise<Delive
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to: toE164.replace("+", ""),
-      type: "text",
-      text: { preview_url: false, body },
+      ...content,
     }),
   });
 
@@ -111,7 +134,7 @@ export async function deliverMetaTemplate(
 // ---------------------------------------------------------------------------
 // Driver Twilio (alterno — requiere cuenta)
 // ---------------------------------------------------------------------------
-async function deliverViaTwilio(toE164: string, body: string): Promise<DeliveryResult> {
+async function deliverViaTwilio(toE164: string, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
   const { getTwilioClient } = await import("@/lib/twilio/client");
   const from = process.env.TWILIO_WHATSAPP_NUMBER;
   if (!from) throw new Error("TWILIO_WHATSAPP_NUMBER no configurado");
@@ -120,16 +143,17 @@ async function deliverViaTwilio(toE164: string, body: string): Promise<DeliveryR
     body,
     from: `whatsapp:${from}`,
     to: `whatsapp:${toE164}`,
+    ...(media ? { mediaUrl: [media.url] } : {}),
   });
   return { externalId: msg.sid, status: "SENT" };
 }
 
-export async function deliverWhatsApp(toE164: string, body: string): Promise<DeliveryResult> {
+export async function deliverWhatsApp(toE164: string, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
   // Última línea de defensa: WhatsApp no renderea markdown (**x**, # títulos) —
   // se normaliza a formato nativo (*x*) para TODO emisor, con ambos drivers.
   // Idempotente: sendWhatsAppMessage ya la aplica antes de persistir el body.
   const text = formatForWhatsApp(body);
   return activeProvider() === "meta_cloud"
-    ? deliverViaMetaCloud(toE164, text)
-    : deliverViaTwilio(toE164, text);
+    ? deliverViaMetaCloud(toE164, text, media)
+    : deliverViaTwilio(toE164, text, media);
 }
