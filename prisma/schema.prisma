@@ -1130,6 +1130,9 @@ model Message {
   direction         MessageDirection
   body              String           @db.Text
   mediaUrl          String?
+  mediaType         String?
+  mediaFilename     String?
+  mediaMimeType     String?
   twilioSid         String?          @unique
   externalMessageId String?          @unique
   templateName      String?
