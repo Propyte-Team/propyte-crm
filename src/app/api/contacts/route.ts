@@ -13,7 +13,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
-import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER } from "@/lib/constants";
+import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 
 // Roles que tienen acceso a todos los contactos
@@ -40,10 +40,9 @@ const createContactSchema = z.object({
   contactStatus: z.enum(CONTACT_STATUS_ORDER).optional(),
   lifecycleStage: z.enum(["SUSCRIPTOR","LEAD","MQL","SQL","OPORTUNIDAD","CLIENTE","EMBAJADOR"]).nullable().optional(),
   urgency: z.enum(["ALTA", "MEDIA", "BAJA"]).optional().nullable(),
-  leadSource: z.enum([
-    "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
-    "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
-  ]),
+  // Única fuente de verdad = LEAD_SOURCE_ORDER (constants.ts) — mismo patrón que
+  // contactStatus. AUD-20260710-02: el enum manual dejaba 9/21 fuentes inelegibles.
+  leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   investmentProfile: z.enum(["END_USER", "INVESTOR_RENTAL", "INVESTOR_FLIP", "INVESTOR_LAND", "MIXED"]).optional().nullable(),

@@ -10,6 +10,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
+import { LEAD_SOURCE_ORDER } from "@/lib/constants";
 
 // Roles con acceso total a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -27,11 +28,9 @@ const contactSchema = z.object({
   email: z.string().email("Email inválido").toLowerCase().trim().optional().or(z.literal("")),
   phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
-  leadSource: z.enum([
-    "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
-    "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
-  ]),
+  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
+  // Única fuente de verdad = LEAD_SOURCE_ORDER (constants.ts) — AUD-20260710-02.
+  leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   investmentProfile: z.enum(["END_USER", "INVESTOR_RENTAL", "INVESTOR_FLIP", "INVESTOR_LAND", "MIXED"]).optional().nullable(),
