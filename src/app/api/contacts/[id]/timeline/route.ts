@@ -22,6 +22,8 @@ const SOURCE_LABELS: Record<string, string> = {
   routing: "Ruteo automático",
   merge: "Fusión de duplicados",
   zapier: "Zapier",
+  lifecycle_auto: "Ciclo de vida (auto)",
+  lifecycle_manual: "Ciclo de vida (manual)",
 };
 
 function sourceLabel(source: string | null): string {

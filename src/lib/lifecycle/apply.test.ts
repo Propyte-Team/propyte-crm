@@ -13,10 +13,22 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/workflows/events", () => ({
   emitEvent: (...a: unknown[]) => emitMock(...a),
 }));
+// Cronología: el update debe viajar DENTRO de withChangeSource para que
+// record_field_changes atribuya source/actor (antes salía como "Sistema").
+const changeSourceOpts: unknown[] = [];
+vi.mock("@/lib/audit/change-context", () => ({
+  withChangeSource: (opts: unknown, fn: (tx: unknown) => unknown) => {
+    changeSourceOpts.push(opts);
+    return fn({ contact: { update: (...a: unknown[]) => updateMock(...a) } });
+  },
+}));
 
 import { applyLifecycleTransition } from "./apply";
 
-beforeEach(() => { updateMock.mockReset(); activityCreateMock.mockReset(); emitMock.mockReset(); });
+beforeEach(() => {
+  updateMock.mockReset(); activityCreateMock.mockReset(); emitMock.mockReset();
+  changeSourceOpts.length = 0;
+});
 
 describe("applyLifecycleTransition", () => {
   it("avanza, persiste, emite evento y escribe Activity", async () => {
@@ -51,5 +63,16 @@ describe("applyLifecycleTransition", () => {
     const res = await applyLifecycleTransition({ contactId: "c1", from: "MQL", to: "MQL", auto: false });
     expect(res.applied).toBe(false);
     expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("auto: atribuye la cronología con source=lifecycle_auto", async () => {
+    await applyLifecycleTransition({ contactId: "c1", from: "LEAD", to: "MQL", auto: true });
+    expect(changeSourceOpts).toEqual([{ source: "lifecycle_auto", actorId: null }]);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: "c1" }, data: { lifecycleStage: "MQL" } });
+  });
+
+  it("manual: atribuye source=lifecycle_manual con el actor", async () => {
+    await applyLifecycleTransition({ contactId: "c1", from: "LEAD", to: "MQL", actorUserId: "u1", auto: false });
+    expect(changeSourceOpts).toEqual([{ source: "lifecycle_manual", actorId: "u1" }]);
   });
 });

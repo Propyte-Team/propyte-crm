@@ -1,6 +1,7 @@
 import prisma from "@/lib/db";
 import type { LifecycleStage } from "@prisma/client";
 import { emitEvent } from "@/lib/workflows/events";
+import { withChangeSource } from "@/lib/audit/change-context";
 import { isForward, candidateStageForSignal } from "./transitions";
 
 export interface ApplyArgs {
@@ -18,7 +19,11 @@ export async function applyLifecycleTransition(args: ApplyArgs): Promise<ApplyRe
   if (from === to) return { applied: false, note: "Sin cambio" };
   if (auto && !isForward(from, to)) return { applied: false, note: "Auto no retrocede" };
 
-  await prisma.contact.update({ where: { id: contactId }, data: { lifecycleStage: to } });
+  // Cronología: atribuir el cambio (antes salía como "Sistema" — follow-up 13-jul).
+  await withChangeSource(
+    { source: auto ? "lifecycle_auto" : "lifecycle_manual", actorId: actorUserId ?? null },
+    (tx) => tx.contact.update({ where: { id: contactId }, data: { lifecycleStage: to } })
+  );
 
   if (actorUserId) {
     await prisma.activity.create({
