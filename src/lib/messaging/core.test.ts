@@ -125,6 +125,15 @@ describe("handleInboundMessage", () => {
     await handleInboundMessage(base);
     expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
   });
+
+  // Coalescing por batch (BUG 2026-07-24): los webhooks ingieren todo el batch con
+  // triggerBot:false y disparan el bot una vez al final — el core NO debe dispararlo.
+  it("triggerBot:false NO dispara el bot (el webhook coalescente lo hace al final)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    const r = await handleInboundMessage(base, { triggerBot: false });
+    expect(r).toBeTruthy(); // la ingesta normal sí ocurre
+    expect(botRespond).not.toHaveBeenCalled();
+  });
 });
 
 describe("handleInboundMessage – identidad social (perfil Graph)", () => {

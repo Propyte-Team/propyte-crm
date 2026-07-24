@@ -52,6 +52,16 @@ describe("buildSystemPrompt (4 capas)", () => {
     expect(s.toLowerCase()).toContain("no cites precios");
   });
 
+  // BUG 2026-07-24 (Emily): cliente escribió en inglés y el bot contestó en español —
+  // "Idioma: ES" (preferredLanguage default del intake) sonaba a directiva y le ganaba
+  // a "responde en el idioma del cliente". El idioma del ÚLTIMO mensaje debe mandar.
+  it("el idioma del último mensaje del cliente manda sobre el registrado", () => {
+    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
+    expect(s.toLowerCase()).toContain("último mensaje");
+    expect(s).toContain("Idioma registrado: ES");
+    expect(s).not.toContain("· Idioma: ES"); // formato viejo (directiva absoluta)
+  });
+
   it("contact y catalog son opcionales (uso del runner de agentes de fondo, sin 1 cliente fijo)", () => {
     const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, objective: "Objetivo del agente" });
     expect(s).not.toContain("· Idioma:");

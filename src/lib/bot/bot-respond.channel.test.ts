@@ -13,6 +13,7 @@ const convFindUnique = vi.fn();
 const convCreate = vi.fn();
 const convUpdate = vi.fn();
 const msgFindMany = vi.fn();
+const msgFindFirst = vi.fn();
 const userFindFirst = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
@@ -23,7 +24,10 @@ vi.mock("@/lib/db", () => ({
       create: (...a: unknown[]) => convCreate(...a),
       update: (...a: unknown[]) => convUpdate(...a),
     },
-    message: { findMany: (...a: unknown[]) => msgFindMany(...a) },
+    message: {
+      findMany: (...a: unknown[]) => msgFindMany(...a),
+      findFirst: (...a: unknown[]) => msgFindFirst(...a), // guard anti-burst
+    },
     user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
   },
 }));
@@ -87,6 +91,7 @@ beforeEach(() => {
   convFindFirst.mockResolvedValue(CONV);
   convUpdate.mockResolvedValue({});
   msgFindMany.mockResolvedValue([]);
+  msgFindFirst.mockResolvedValue(null); // sin mensajes nuevos durante la generación
   sendChannelMessage.mockResolvedValue({ id: "m1" });
 });
 

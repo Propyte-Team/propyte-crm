@@ -115,6 +115,11 @@ export async function POST(req: NextRequest) {
   }
 
   let processed = 0;
+  // Coalescing del bot (BUG 2026-07-24): un batch de texto + N adjuntos disparaba N+1
+  // respuestas (y N+1 llamadas a Claude secuenciales dentro de maxDuration=30 → riesgo
+  // de timeout + retry de Meta). Se ingiere TODO el batch con triggerBot:false y el bot
+  // responde UNA vez por contacto al final, ya con el contexto completo.
+  const botTargets = new Set<string>();
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
@@ -130,7 +135,7 @@ export async function POST(req: NextRequest) {
         }).catch(() => {});
       }
 
-      // Mensajes entrantes → mismo pipeline que Twilio (inbox/bot/SLA/opt-out)
+      // Mensajes entrantes → mismo pipeline que Twilio (inbox/SLA/opt-out); bot al final
       const profileName = value.contacts?.[0]?.profile?.name;
       for (const msg of value.messages ?? []) {
         try {
@@ -141,7 +146,7 @@ export async function POST(req: NextRequest) {
           if (mediaType && mediaRef?.id) {
             stored = await resolveWaMediaToStorage(mediaRef.id);
           }
-          await handleInboundWhatsApp({
+          const saved = await handleInboundWhatsApp({
             From: `whatsapp:+${msg.from}`,
             Body: extractBody(msg),
             MessageSid: msg.id, // wamid → idempotencia por UNIQUE
@@ -154,12 +159,24 @@ export async function POST(req: NextRequest) {
                   MediaFilename: mediaRef?.filename ?? null,
                 }
               : {}),
-          });
+          }, { triggerBot: false });
+          if (saved?.contactId) botTargets.add(saved.contactId);
           processed++;
         } catch (err) {
           console.error("[whatsapp-meta] inbound:", err);
         }
       }
+    }
+  }
+
+  // Una respuesta del bot por contacto del batch (los guards internos de botRespond
+  // deciden si procede: status BOT, opt-out, canal habilitado, staleness).
+  for (const contactId of botTargets) {
+    try {
+      const { botRespond } = await import("@/lib/bot/bot-respond");
+      await botRespond(contactId, { channel: "WHATSAPP" });
+    } catch (err) {
+      console.error("[whatsapp-meta] botRespond:", err);
     }
   }
 

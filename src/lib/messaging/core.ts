@@ -148,7 +148,11 @@ async function handleEchoMessage(msg: IncomingMessage) {
  * Intake agnóstico de canal: match/captura → conversación → mensaje (idempotente)
  * → actividad → SLA → bot/notify. Reutilizado por WhatsApp e IG/Messenger.
  */
-export async function handleInboundMessage(msg: IncomingMessage) {
+// opts.triggerBot=false: los webhooks con batch (whatsapp/meta, meta-dm) ingieren TODOS
+// los mensajes primero y disparan el bot UNA vez por conversación al final (BUG 2026-07-24:
+// texto + 2 adjuntos disparaban 3 respuestas). Default true = comportamiento de siempre
+// para el resto de callers (Twilio manda 1 mensaje por webhook).
+export async function handleInboundMessage(msg: IncomingMessage, opts: { triggerBot?: boolean } = {}) {
   if (msg.isEcho) return handleEchoMessage(msg);
 
   let contact = await findContactByChannel(msg.channel, msg.senderId);
@@ -311,6 +315,7 @@ export async function handleInboundMessage(msg: IncomingMessage) {
   } else if (
     conversation.status === "BOT" &&
     conversation.botEnabled &&
+    opts.triggerBot !== false &&
     !(msg.channel === "WHATSAPP" && contact.whatsappOptOut)
   ) {
     try {

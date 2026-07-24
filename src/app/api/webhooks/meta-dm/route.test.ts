@@ -3,11 +3,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const handleInboundMessage = vi.fn();
 const resolveByIg = vi.fn();
 const resolveByPage = vi.fn();
+const botRespond = vi.fn();
 vi.mock("@/lib/messaging/core", () => ({ handleInboundMessage: (...a: unknown[]) => handleInboundMessage(...a) }));
 vi.mock("@/lib/messaging/social-accounts", () => ({
   resolveConnectorByIgBusinessId: (...a: unknown[]) => resolveByIg(...a),
   resolveConnectorByPageId: (...a: unknown[]) => resolveByPage(...a),
 }));
+vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 
 import { GET, POST } from "./route";
 
@@ -15,6 +17,7 @@ beforeEach(() => {
   handleInboundMessage.mockReset();
   resolveByIg.mockReset();
   resolveByPage.mockReset();
+  botRespond.mockReset();
   process.env.META_DM_VERIFY_TOKEN = "verifyme";
   delete process.env.META_DM_APP_SECRET;
 });
@@ -39,7 +42,8 @@ describe("meta-dm webhook", () => {
     const res = await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
     expect(res.status).toBe(200);
     expect(handleInboundMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ channel: "INSTAGRAM", senderId: "IGSID-1", externalMessageId: "mid-1" })
+      expect.objectContaining({ channel: "INSTAGRAM", senderId: "IGSID-1", externalMessageId: "mid-1" }),
+      { triggerBot: false }
     );
   });
 
@@ -79,7 +83,35 @@ describe("meta-dm webhook", () => {
         isEcho: true,
         echoAppId: "263902037430900",
         connectorId: "conn_ms",
-      })
+      }),
+      { triggerBot: false }
     );
+  });
+
+  // BUG 2026-07-24: cada mensaje del batch disparaba una respuesta completa del bot.
+  it("batch de 2 mensajes del mismo usuario → bot UNA sola vez con canal y conector", async () => {
+    resolveByPage.mockResolvedValue({ id: "conn_ms" });
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "103981", messaging: [
+      { sender: { id: "PSID-1" }, message: { mid: "mm1", text: "hola" } },
+      { sender: { id: "PSID-1" }, message: { mid: "mm2", attachments: [{ type: "file", payload: { url: "https://f/x.pdf" } }] } },
+    ] }] });
+    const res = await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(res.status).toBe(200);
+    expect(handleInboundMessage).toHaveBeenCalledTimes(2);
+    expect(botRespond).toHaveBeenCalledTimes(1);
+    expect(botRespond).toHaveBeenCalledWith("c9", { channel: "MESSENGER", connectorId: "conn_ms" });
+  });
+
+  it("echo NO dispara al bot", async () => {
+    resolveByPage.mockResolvedValue({ id: "conn_ms" });
+    handleInboundMessage.mockResolvedValue({ id: "m-echo", contactId: "c9" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "103981", messaging: [{
+      sender: { id: "103981" },
+      recipient: { id: "PSID-user" },
+      message: { mid: "mid-echo-2", text: "respuesta externa", is_echo: true },
+    }] }] });
+    await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(botRespond).not.toHaveBeenCalled();
   });
 });

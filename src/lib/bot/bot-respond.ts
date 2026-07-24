@@ -99,6 +99,10 @@ export async function botRespond(
     orderBy: { createdAt: "desc" },
     take: 20,
   });
+  // Watermark anti-burst: el mensaje más nuevo VISTO al armar el contexto. Si al terminar
+  // de generar ya existe algo más nuevo (ráfaga texto+adjuntos, webhooks concurrentes u
+  // otra generación que ya contestó), esta respuesta se descarta (ver guard abajo).
+  const watermark = msgs[0]?.createdAt ?? null;
   const history: BotMessage[] = msgs
     .reverse()
     .map((m): BotMessage => ({ role: m.direction === "INBOUND" ? "user" : "assistant", content: m.body }))
@@ -188,6 +192,20 @@ export async function botRespond(
 
   const reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model });
   if (!reply) return false; // sin API key
+
+  // Guard anti-burst (BUG 2026-07-24: texto + 2 PDFs → 3 respuestas): si mientras
+  // generábamos llegó CUALQUIER mensaje nuevo (inbound del cliente, respuesta de otra
+  // generación concurrente, o un humano tomando el hilo), se descarta esta respuesta.
+  // El trigger del mensaje más nuevo responde con el contexto completo — nada se pierde.
+  const newer = await prisma.message.findFirst({
+    where: {
+      contactId,
+      internalNote: false,
+      ...(watermark ? { createdAt: { gt: watermark } } : {}),
+    },
+    select: { id: true },
+  });
+  if (newer) return false;
 
   const shouldEscalate = reply.includes(ESCALATE_TOKEN);
   const clean = reply.replaceAll(ESCALATE_TOKEN, "").trim();

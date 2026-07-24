@@ -78,6 +78,10 @@ export async function POST(req: NextRequest) {
 
   const results: Array<Record<string, unknown>> = [];
   let processed = 0;
+  // Coalescing del bot (BUG 2026-07-24): cada mensaje del batch disparaba una respuesta
+  // completa. Se ingiere todo con triggerBot:false y el bot responde UNA vez por
+  // contacto+canal al final. Los echoes jamás disparan al bot.
+  const botTargets = new Map<string, { contactId: string; channel: typeof messages[number]["channel"]; connectorId: string | null }>();
   for (const msg of messages) {
     try {
       if (msg.accountId) {
@@ -89,7 +93,14 @@ export async function POST(req: NextRequest) {
         if (connector) msg.connectorId = connector.id;
         else console.warn(`[meta-dm] sin conector activo para ${msg.channel} accountId=${msg.accountId}`);
       }
-      await handleInboundMessage(msg);
+      const saved = await handleInboundMessage(msg, { triggerBot: false });
+      if (!msg.isEcho && saved?.contactId) {
+        botTargets.set(`${saved.contactId}:${msg.channel}`, {
+          contactId: saved.contactId,
+          channel: msg.channel,
+          connectorId: msg.connectorId ?? null,
+        });
+      }
       processed++;
       results.push({ channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId, ok: true });
     } catch (err) {
@@ -98,6 +109,16 @@ export async function POST(req: NextRequest) {
         ok: false, error: err instanceof Error ? err.message : String(err),
       });
       console.error("[meta-dm] inbound:", err);
+    }
+  }
+
+  // Una respuesta del bot por contacto+canal (guards internos de botRespond deciden).
+  for (const t of botTargets.values()) {
+    try {
+      const { botRespond } = await import("@/lib/bot/bot-respond");
+      await botRespond(t.contactId, { channel: t.channel, connectorId: t.connectorId });
+    } catch (err) {
+      console.error("[meta-dm] botRespond:", err);
     }
   }
 

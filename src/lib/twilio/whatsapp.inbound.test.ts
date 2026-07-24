@@ -25,7 +25,8 @@ describe("handleInboundWhatsApp → core", () => {
         externalMessageId: "wamid.ABC",
         text: "hola",
         profileName: "Ana",
-      })
+      }),
+      {} // opts pass-through (triggerBot del webhook coalescente; default vacío)
     );
   });
 });
