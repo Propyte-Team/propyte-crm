@@ -276,27 +276,49 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     throw err;
   }
 
-  await prisma.activity.create({
-    data: {
-      contactId: contact.id,
-      userId: contact.assignedToId || contact.id,
-      activityType: IN_ACTIVITY[msg.channel],
-      subject: `Mensaje ${msg.channel} de ${contact.firstName} ${contact.lastName}`,
-      description: msg.text.length > 100 ? msg.text.slice(0, 100) + "..." : msg.text,
-      status: "COMPLETADA",
-      completedAt: new Date(),
-    },
-  });
+  // ── Side-effects post-persistencia — NUNCA deben matar la ingesta ni enmudecer
+  // al bot (BUG 2026-07-24: contacto SIN asignar → la actividad se creaba con
+  // userId = contact.id → FK violada → moría TODO: sin actividad, SLA, eventos ni bot).
+  try {
+    // Activity.userId es NOT NULL (FK a users): sin asesor asignado se atribuye a un
+    // ADMIN activo; si tampoco hay, se omite la actividad (el mensaje ya quedó en el hilo).
+    const activityUserId =
+      contact.assignedToId ??
+      (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
+    if (activityUserId) {
+      await prisma.activity.create({
+        data: {
+          contactId: contact.id,
+          userId: activityUserId,
+          activityType: IN_ACTIVITY[msg.channel],
+          subject: `Mensaje ${msg.channel} de ${contact.firstName} ${contact.lastName}`,
+          description: msg.text.length > 100 ? msg.text.slice(0, 100) + "..." : msg.text,
+          status: "COMPLETADA",
+          completedAt: new Date(),
+        },
+      });
+    }
+  } catch (err) {
+    console.error(`[messaging] activity inbound (${msg.channel}) falló:`, err);
+  }
 
-  const { meetSlaTimers } = await import("@/lib/workflows/sla");
-  await meetSlaTimers(contact.id);
+  try {
+    const { meetSlaTimers } = await import("@/lib/workflows/sla");
+    await meetSlaTimers(contact.id);
+  } catch (err) {
+    console.error(`[messaging] meetSlaTimers falló:`, err);
+  }
 
   if (msg.channel === "WHATSAPP") {
-    const { emitEvent } = await import("@/lib/workflows/events");
-    await emitEvent("whatsapp.replied", "conversation", conversation.id, {
-      contactId: contact.id,
-      body: msg.text.slice(0, 500),
-    });
+    try {
+      const { emitEvent } = await import("@/lib/workflows/events");
+      await emitEvent("whatsapp.replied", "conversation", conversation.id, {
+        contactId: contact.id,
+        body: msg.text.slice(0, 500),
+      });
+    } catch (err) {
+      console.error(`[messaging] emitEvent whatsapp.replied falló:`, err);
+    }
   }
 
   if (conversation.status === "HUMAN") {

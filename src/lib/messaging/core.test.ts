@@ -35,6 +35,7 @@ vi.mock("@/lib/db", () => ({
     message: { create: (...a: unknown[]) => msgCreate(...a), findUnique: (...a: unknown[]) => msgFindUnique(...a) },
     activity: { create: (...a: unknown[]) => activityCreate(...a) },
     notification: { create: (...a: unknown[]) => notifCreate(...a) },
+    user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
   },
 }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
@@ -49,6 +50,7 @@ vi.mock("@/lib/storage/chat-media", () => ({
   mirrorExternalMedia: (...a: unknown[]) => mirrorExternalMedia(...a),
   isStoragePath: (v: string) => !/^https?:\/\//i.test(v),
 }));
+const userFindFirst = vi.fn();
 const contactTxUpdate = vi.fn();
 const withChangeSourceSpy = vi.fn();
 vi.mock("@/lib/audit/change-context", () => ({
@@ -133,6 +135,57 @@ describe("handleInboundMessage", () => {
     const r = await handleInboundMessage(base, { triggerBot: false });
     expect(r).toBeTruthy(); // la ingesta normal sí ocurre
     expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  // BUG 2026-07-24 (bot mudo): contacto SIN asignar → la actividad se creaba con
+  // userId = contact.id (¡un contacto como user!) → FK violada → TODO el pipeline
+  // moría tras persistir el mensaje: sin actividad, sin SLA, sin eventos y SIN BOT.
+  describe("contacto sin asignar (assignedToId null)", () => {
+    beforeEach(() => {
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: null, firstName: "A", lastName: "B" });
+      userFindFirst.mockResolvedValue({ id: "u-admin" });
+    });
+
+    it("la actividad se atribuye a un ADMIN activo, jamás a contact.id", async () => {
+      await handleInboundMessage(base);
+      expect(activityCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: "u-admin" }) })
+      );
+    });
+
+    it("sin ADMIN disponible: se salta la actividad pero el bot IGUAL responde", async () => {
+      userFindFirst.mockResolvedValue(null);
+      await handleInboundMessage(base);
+      expect(activityCreate).not.toHaveBeenCalled();
+      expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+    });
+  });
+
+  // Defensa en profundidad: los side-effects post-persistencia (actividad, SLA,
+  // eventos) NUNCA deben matar la ingesta ni enmudecer al bot.
+  describe("side-effects no matan el pipeline", () => {
+    beforeEach(() => {
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    });
+
+    it("activity.create truena → el bot igual responde y la ingesta regresa el mensaje", async () => {
+      activityCreate.mockRejectedValue(new Error("FK violation"));
+      const r = await handleInboundMessage(base);
+      expect(r).toBeTruthy();
+      expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+    });
+
+    it("meetSlaTimers truena → el bot igual responde", async () => {
+      meetSlaTimers.mockRejectedValue(new Error("db down"));
+      await handleInboundMessage(base);
+      expect(botRespond).toHaveBeenCalled();
+    });
+
+    it("emitEvent truena (canal WHATSAPP) → el bot igual responde", async () => {
+      emitEvent.mockRejectedValue(new Error("engine error"));
+      await handleInboundMessage({ ...base, channel: "WHATSAPP" as const, senderId: "+525576330809" });
+      expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP" });
+    });
   });
 });
 
