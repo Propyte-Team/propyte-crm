@@ -13,13 +13,13 @@ export interface HubDevelopmentSummary {
   status: string | null;
 }
 
-// Desarrollos publicados que encajan con el perfil (para data-gate del bot y matching).
+// Desarrollos citables por el bot = con UNIDADES dadas de alta en el sitio web
+// (pedido Luis 2026-07-25): no basta el flag del desarrollo — si no tiene unidades
+// publicadas (Propyte_unidades.ext_publicado) no se ofrece. Los precios salen de esas
+// unidades reales (MIN/MAX de precio_mxn), no del ext_precio_min stale del desarrollo.
+// El presupuesto matchea si el rango de precios de sus unidades web se traslapa con él.
+// (Antes: pipeline_status='Publicado', columna stale — citó un dev no publicado, 25-jul.)
 // Defensivo: cualquier error (permisos/columnas) → lista vacía, nunca rompe al caller.
-// BUG 2026-07-25: se filtraba por pipeline_status='Publicado' — columna STALE
-// desincronizada de la canónica (mismo hallazgo del gate outbound del Hub, 15-jul):
-// el bot citó un desarrollo NO publicado en el sitio. La verdad de "lo que Propyte
-// publica" es ext_publicado (+ soft-delete); y el Hub tiene filas duplicadas por
-// nombre → DISTINCT ON para no citar el mismo desarrollo dos veces.
 export async function findMatchingDevelopments(opts: {
   budgetMin?: number | null;
   budgetMax?: number | null;
@@ -29,25 +29,25 @@ export async function findMatchingDevelopments(opts: {
   const limit = Math.min(opts.limit ?? 3, 10);
   try {
     const rows = await prisma.$queryRawUnsafe<HubDevelopmentSummary[]>(
-      `SELECT t.* FROM (
-         SELECT DISTINCT ON (d.nombre_desarrollo)
-                d.id::text AS id,
-                d.nombre_desarrollo AS nombre,
-                d.zona AS zona,
-                d.ext_precio_min_mxn::float8 AS precio_min,
-                d.ext_precio_max_mxn::float8 AS precio_max,
-                'MXN' AS moneda,
-                d.zoho_pipeline_status AS status
-           FROM real_estate_hub."Propyte_desarrollos" d
-          WHERE d.ext_publicado = true
-            AND d.deleted_at IS NULL
-            AND ($1::float8 IS NULL OR d.ext_precio_max_mxn >= $1)
-            AND ($2::float8 IS NULL OR d.ext_precio_min_mxn <= $2)
-            AND ($3::text IS NULL OR d.zona ILIKE '%' || $3 || '%')
-          ORDER BY d.nombre_desarrollo, d.ext_precio_min_mxn ASC NULLS LAST
-       ) t
-       ORDER BY t.precio_min ASC NULLS LAST
-       LIMIT ${limit}`,
+      `SELECT d.id::text AS id,
+              d.nombre_desarrollo AS nombre,
+              d.zona AS zona,
+              MIN(u.precio_mxn)::float8 AS precio_min,
+              MAX(u.precio_mxn)::float8 AS precio_max,
+              'MXN' AS moneda,
+              d.zoho_pipeline_status AS status
+         FROM real_estate_hub."Propyte_desarrollos" d
+         JOIN real_estate_hub."Propyte_unidades" u ON u.id_desarrollo = d.id
+        WHERE d.ext_publicado = true
+          AND d.deleted_at IS NULL
+          AND u.ext_publicado = true
+          AND u.deleted_at IS NULL
+          AND ($3::text IS NULL OR COALESCE(u.zona, d.zona) ILIKE '%' || $3 || '%')
+        GROUP BY d.id, d.nombre_desarrollo, d.zona, d.zoho_pipeline_status
+       HAVING ($1::float8 IS NULL OR MAX(u.precio_mxn) >= $1)
+          AND ($2::float8 IS NULL OR MIN(u.precio_mxn) <= $2)
+        ORDER BY MIN(u.precio_mxn) ASC NULLS LAST
+        LIMIT ${limit}`,
       opts.budgetMin ?? null,
       opts.budgetMax ?? null,
       opts.zone ?? null

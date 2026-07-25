@@ -18,19 +18,27 @@ beforeEach(() => {
   queryRawUnsafe.mockResolvedValue([]);
 });
 
-describe("findMatchingDevelopments — solo inventario publicado", () => {
-  it("filtra por ext_publicado + soft-delete, NO por pipeline_status stale", async () => {
+describe("findMatchingDevelopments — solo inventario con unidades dadas de alta en el sitio", () => {
+  // Pedido Luis 2026-07-25: un desarrollo es citable SOLO si tiene unidades publicadas
+  // en el sitio web (Propyte_unidades.ext_publicado) — no basta el flag del desarrollo.
+  // Los precios salen de esas unidades reales (no del ext_precio_min stale del dev).
+  it("ancla el filtro en unidades publicadas (ext_publicado en unidad Y desarrollo)", async () => {
     await findMatchingDevelopments({});
     const sql = queryRawUnsafe.mock.calls[0][0] as string;
-    expect(sql).toContain("ext_publicado = true");
-    expect(sql).toContain("deleted_at IS NULL");
+    expect(sql).toContain('"Propyte_unidades"');
+    expect(sql).toContain("u.ext_publicado = true");
+    expect(sql).toContain("d.ext_publicado = true");
+    expect(sql).toContain("u.deleted_at IS NULL");
+    expect(sql).toContain("d.deleted_at IS NULL");
     expect(sql).not.toContain("pipeline_status::text = 'Publicado'");
   });
 
-  it("dedup por nombre de desarrollo (el Hub tiene filas duplicadas)", async () => {
+  it("precios derivados de las unidades web (MIN/MAX de precio_mxn), agrupado por desarrollo", async () => {
     await findMatchingDevelopments({});
     const sql = queryRawUnsafe.mock.calls[0][0] as string;
-    expect(sql).toContain("DISTINCT ON");
+    expect(sql).toContain("MIN(u.precio_mxn)");
+    expect(sql).toContain("MAX(u.precio_mxn)");
+    expect(sql).toContain("GROUP BY d.id");
   });
 
   it("pasa presupuesto/zona como parámetros", async () => {
