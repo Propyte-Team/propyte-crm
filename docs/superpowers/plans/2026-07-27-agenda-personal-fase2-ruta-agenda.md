@@ -397,39 +397,60 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { groupAgenda, type AgendaBuckets, type AgendaItem } from "@/lib/agenda/grouping";
 
-/** Tope de lectura. Una agenda personal por encima de esto ya no se navega, se filtra. */
-const AGENDA_TAKE = 200;
+// Topes SEPARADOS por tipo de pendiente, a propósito. En Postgres el ASC deja los
+// NULL al final, así que un tope global sobre `dueDate asc` truncaría el bucket
+// sin_fecha a cero de forma sistemática en cuanto el asesor acumule 200 pendientes
+// con fecha — y las tareas sin fecha son justo el caso principal de la captura
+// rápida. Con cupo propio, cada bucket sobrevive.
+const AGENDA_TAKE_CON_FECHA = 200;
+const AGENDA_TAKE_SIN_FECHA = 50;
+
+/** Una sola fuente de verdad para las dos lecturas. */
+const SELECT = {
+  id: true,
+  subject: true,
+  activityType: true,
+  status: true,
+  dueDate: true,
+  contactId: true,
+  contact: { select: { id: true, firstName: true, lastName: true } },
+} as const;
 
 export interface MyAgenda {
   buckets: AgendaBuckets;
+  /** Pendientes existentes en base, no los que alcanzó a traer el tope. */
   total: number;
+  /** true si los topes recortaron algo — la UI puede avisar que no se ve todo. */
+  truncated: boolean;
 }
 
 export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
-  const rows = await prisma.activity.findMany({
-    where: {
-      userId: session.user.id,
-      deletedAt: null,
-      status: { in: ["PENDIENTE", "VENCIDA"] },
-    },
-    select: {
-      id: true,
-      subject: true,
-      activityType: true,
-      status: true,
-      dueDate: true,
-      contactId: true,
-      contact: { select: { id: true, firstName: true, lastName: true } },
-    },
-    // En Postgres, ASC deja los NULL al final: los sin fecha caen al fondo.
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-    take: AGENDA_TAKE,
-  });
+  const baseWhere = {
+    userId: session.user.id,
+    deletedAt: null,
+    status: { in: ["PENDIENTE", "VENCIDA"] },
+  };
 
-  const items: AgendaItem[] = rows.map((r) => ({
+  const [conFecha, sinFecha, total] = await Promise.all([
+    prisma.activity.findMany({
+      where: { ...baseWhere, dueDate: { not: null } },
+      select: SELECT,
+      orderBy: { dueDate: "asc" },
+      take: AGENDA_TAKE_CON_FECHA,
+    }),
+    prisma.activity.findMany({
+      where: { ...baseWhere, dueDate: null },
+      select: SELECT,
+      orderBy: { createdAt: "desc" },
+      take: AGENDA_TAKE_SIN_FECHA,
+    }),
+    prisma.activity.count({ where: baseWhere }),
+  ]);
+
+  const items: AgendaItem[] = [...conFecha, ...sinFecha].map((r) => ({
     id: r.id,
     subject: r.subject,
     activityType: r.activityType,
@@ -439,14 +460,16 @@ export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
     contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
   }));
 
-  return { buckets: groupAgenda(items, now), total: items.length };
+  return { buckets: groupAgenda(items, now), total, truncated: items.length < total };
 }
 ```
+
+Los tests deben fijar la **forma de la llamada a Prisma**, no solo el `where`: cada query con su `take` y su `orderBy`, `total` viniendo de `count` y no de `items.length`, y —el que importa— que con la query con-fecha devolviendo 200 filas el bucket `sin_fecha` **siga poblado**. Es la regresión que se está previniendo.
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/server/agenda.test.ts`
-Expected: PASS — 7 tests
+Expected: PASS — 6 tests (11 tras endurecer los topes por bucket)
 
 Si `tsc` se queja del literal de `status` contra el enum generado de Prisma, seguir el patrón que ya usa `src/server/today.ts:96` (`"PENDIENTE" as never`) en vez de inventar un cast nuevo.
 
@@ -652,7 +675,7 @@ export async function POST(request: Request) {
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/app/api/agenda/activities/route.test.ts`
-Expected: PASS — 8 tests
+Expected: PASS — 8 tests (19 tras endurecer asunto y validación de calendario)
 
 - [ ] **Step 5: Commit**
 
@@ -784,7 +807,7 @@ export async function getMyRecentNotes(): Promise<AgendaNote[]> {
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/server/agenda.test.ts`
-Expected: PASS — 9 tests
+Expected: PASS — 14 tests
 
 - [ ] **Step 5: Commit**
 
@@ -991,6 +1014,7 @@ import { QuickCapture } from "./quick-capture";
 interface AgendaViewProps {
   buckets: AgendaBuckets;
   total: number;
+  truncated: boolean;
   notes: AgendaNote[];
   firstName: string;
 }
@@ -1031,7 +1055,7 @@ function ItemRow({ item, onDone, busy }: { item: AgendaItem; onDone: (id: string
   );
 }
 
-export function AgendaView({ buckets, total, notes, firstName }: AgendaViewProps) {
+export function AgendaView({ buckets, total, truncated, notes, firstName }: AgendaViewProps) {
   const router = useRouter();
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -1072,6 +1096,11 @@ export function AgendaView({ buckets, total, notes, firstName }: AgendaViewProps
             ? "Sin pendientes."
             : `${total} pendiente${total === 1 ? "" : "s"}, personales y de CRM.`}
         </p>
+        {truncated && (
+          <p className="pt-1 text-[12px]" style={{ color: "#D97706" }}>
+            Se muestran los más próximos. Tienes más pendientes de los que caben en esta vista.
+          </p>
+        )}
       </header>
 
       <QuickCapture />
@@ -1165,6 +1194,7 @@ export default async function AgendaPage() {
     <AgendaView
       buckets={agenda.buckets}
       total={agenda.total}
+      truncated={agenda.truncated}
       notes={notes}
       firstName={firstName}
     />
@@ -1311,7 +1341,7 @@ El spec §5.3 documenta por qué `tsc` no basta: un componente cliente que consu
 - [ ] **Step 1: Suite completa**
 
 Run: `npx vitest run`
-Expected: PASS — **895 tests** (los 865 verificados el 2026-07-27 más los 30 de este plan: 13 de agrupación, 9 del módulo de servidor, 8 de la ruta). Cero fallos.
+Expected: PASS — **911 tests** (los 865 de partida más 46: 13 de agrupación, 14 del módulo de servidor, 19 de la ruta). Cero fallos.
 
 - [ ] **Step 2: Typecheck — cero errores nuevos**
 
@@ -1370,3 +1400,28 @@ git commit -m "docs(agenda): marcar Fase 2 como ejecutada"
 - **Calendario Google** — GW-2, fuera del spec (§9).
 - **El orden de rolesets de `src/server/activities.ts:113`** — bug preexistente que deja a un ADMIN con vista de equipo. La agenda lo esquiva; arreglarlo toca `getActivities`, `getOverdueTasks` y `/api/activities`, con radio de impacto propio.
 - **Reprogramar y cancelar desde `/agenda`** — `updateActivity` ya lo soporta, pero §6 solo pide completar.
+
+---
+
+## Registro de ejecución — 2026-07-27
+
+Ejecutado con subagentes, revisión de spec y de calidad por task. **911/911 tests**, `tsc` con solo los 2 errores preexistentes de `builder-model.test.ts`, `next build` verde con `/agenda` como ruta dinámica.
+
+### Defectos que el plan original traía y se corrigieron durante la ejecución
+
+1. **`dueDate` sin hora se guardaba un día antes.** El plan usaba `z.coerce.date()`, que lee `"2026-07-30"` del `<input type="date">` como medianoche UTC — las 19:00 del 29 en Cancún. Se ancla explícitamente a medianoche de Cancún, con el offset derivado del identificador IANA en runtime en vez de escrito a mano.
+2. **Fechas de calendario imposibles pasaban con rollover silencioso.** `"2026-02-30"` terminaba en el 2 de marzo. Se valida la parte `YYYY-MM-DD` contra un calendario real, **antes** y con independencia del anclaje de zona — porque "el 30 de febrero no existe" es cierto en toda zona horaria.
+3. **El bucket `sin_fecha` se truncaba sistemáticamente.** El plan leía con un `take` único sobre `orderBy dueDate asc`; en Postgres los NULL van al final, así que un asesor con 200 pendientes con fecha nunca vería sus tareas sin fecha — justo el caso principal de la captura rápida. Se separó en dos queries con cupo propio, más un `count` real para que `total` no sea un número truncado disfrazado.
+4. **`subject` admitía espacios en blanco.** `.min(3).max(200).trim()` validaba antes de recortar: `"   "` pasaba y se guardaba con asunto vacío. Corregido el orden.
+5. **Una fecha ilegible tumbaba toda la agrupación.** `bucketFor` propagaba el `RangeError`; ahora degrada ese ítem a `sin_fecha` sin arrastrar a los demás.
+6. **Un solo `busyId` para todos los completados.** Con dos clics rápidos el spinner mentía y admitía PATCH duplicados. Se rastrea cada petición en vuelo por separado.
+7. **La zona horaria estaba declarada tres veces.** `format-date.ts`, `grouping.ts` y la ruta de captura tenían cada uno su literal. Se consolidó en `CANCUN_TZ`, exportada desde `format-date.ts`.
+
+### Hallazgo abierto, fuera del alcance de esta fase
+
+Otros productores de `Activity.dueDate` **no** anclan a Cancún y ahora quedan expuestos por la agrupación por día:
+
+- `src/app/api/webhooks/zapier/activities/route.ts:30` — `new Date(body.dueDate)` crudo.
+- `src/app/api/activities/route.ts:33` — `z.coerce.date()`.
+
+Si cualquiera de los dos recibe una fecha sin hora, esa actividad aparecerá en `/agenda` un día antes de lo debido. Antes era invisible porque nada agrupaba por día. Arreglarlo toca `/api/activities`, que se evitó a propósito en esta fase porque cambiaría el status por defecto de sus callers — necesita su propio análisis de radio de impacto.
