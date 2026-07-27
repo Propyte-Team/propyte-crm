@@ -25,13 +25,21 @@ export async function sendWhatsAppMessage(
 
   // Transporte intercambiable (Meta Cloud API default / Twilio alterno) — 2026-06-11
   const { deliverWhatsApp, mediaSupportsCaption } = await import("@/lib/whatsapp/transport");
+
+  // Multicuenta: la respuesta sale por la MISMA línea por la que entró el mensaje.
+  // Antes se ignoraba el connector y todo salía por el número global del env, así
+  // que con 2+ marcas activas el cliente recibía la respuesta desde otro número.
+  // `null` = sin connector → número global (correcto con una sola línea).
+  const { resolveWhatsAppSender } = await import("@/lib/whatsapp/accounts");
+  const sender = await resolveWhatsAppSender(connectorId);
+
   // audio/sticker no aceptan caption → el texto (si hay) viaja como mensaje aparte ANTES
   if (media && text && !mediaSupportsCaption(media.type)) {
-    await deliverWhatsApp(normalized, text);
+    await deliverWhatsApp(normalized, text, undefined, sender);
   }
   const delivery = media
-    ? await deliverWhatsApp(normalized, text, { url: media.url, type: media.type, filename: media.filename })
-    : await deliverWhatsApp(normalized, text);
+    ? await deliverWhatsApp(normalized, text, { url: media.url, type: media.type, filename: media.filename }, sender)
+    : await deliverWhatsApp(normalized, text, undefined, sender);
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
   const { ensureConversation } = await import("@/lib/messaging/conversations");

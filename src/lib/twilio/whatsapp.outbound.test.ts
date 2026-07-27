@@ -33,6 +33,11 @@ vi.mock("@/lib/workflows/sla", () => ({
   meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a),
 }));
 
+const resolveWhatsAppSender = vi.fn();
+vi.mock("@/lib/whatsapp/accounts", () => ({
+  resolveWhatsAppSender: (...a: unknown[]) => resolveWhatsAppSender(...a),
+}));
+
 import { sendWhatsAppMessage } from "./whatsapp";
 
 beforeEach(() => {
@@ -43,6 +48,8 @@ beforeEach(() => {
   msgCreate.mockResolvedValue({ id: "m1" });
   actCreate.mockResolvedValue({ id: "a1" });
   meetSlaTimers.mockResolvedValue(undefined);
+  // Sin connector → número global del env (setup de una sola línea).
+  resolveWhatsAppSender.mockResolvedValue(null);
 });
 
 describe("sendWhatsAppMessage — markdown → formato WhatsApp (todos los emisores)", () => {
@@ -55,15 +62,55 @@ describe("sendWhatsAppMessage — markdown → formato WhatsApp (todos los emiso
     );
 
     const expected = "Agendo para *mañana a las 7 AM* — un asesor te contacta.";
-    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), expected);
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), expected, undefined, null);
     expect(msgCreate.mock.calls[0][0].data.body).toBe(expected);
     expect(actCreate.mock.calls[0][0].data.description).toBe(expected);
   });
 
   it("texto sin markdown pasa sin cambios", async () => {
     await sendWhatsAppMessage("+5219991112233", "hola, ¿cómo vas?", "c1", "u1");
-    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "hola, ¿cómo vas?");
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "hola, ¿cómo vas?", undefined, null);
     expect(msgCreate.mock.calls[0][0].data.body).toBe("hola, ¿cómo vas?");
+  });
+});
+
+describe("sendWhatsAppMessage — multicuenta", () => {
+  // El bug: se ignoraba el connector y TODA respuesta salía por el número global
+  // del env, así que con 2+ marcas activas el cliente recibía la contestación
+  // desde otro número.
+  it("responde por la línea del connector con el que entró la conversación", async () => {
+    const sender = { phoneNumberId: "PN_NATIVA", accessToken: "tok_nativa", brand: "Nativa" };
+    resolveWhatsAppSender.mockResolvedValue(sender);
+
+    await sendWhatsAppMessage("+5219991112233", "va", "c1", "u1", "connector-nativa");
+
+    expect(resolveWhatsAppSender).toHaveBeenCalledWith("connector-nativa");
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "va", undefined, sender);
+  });
+
+  it("el texto aparte de un sticker también sale por la misma línea", async () => {
+    const sender = { phoneNumberId: "PN_NATIVA", accessToken: "tok_nativa" };
+    resolveWhatsAppSender.mockResolvedValue(sender);
+
+    await sendWhatsAppMessage("+5219991112233", "toma", "c1", "u1", "connector-nativa", {
+      path: "2026-07/s.webp", url: "https://sb/s.webp", type: "sticker", mimeType: "image/webp",
+    });
+
+    // Las DOS entregas (texto suelto + media) llevan el mismo emisor: si solo una
+    // lo llevara, el cliente vería la conversación partida entre dos números.
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma", undefined, sender);
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(2, expect.any(String), "toma",
+      expect.objectContaining({ url: "https://sb/s.webp" }), sender);
+  });
+
+  it("si el connector está mal configurado NO se envía por el número equivocado", async () => {
+    resolveWhatsAppSender.mockRejectedValue(new Error("no tiene phoneNumberId o accessToken"));
+
+    await expect(
+      sendWhatsAppMessage("+5219991112233", "va", "c1", "u1", "connector-roto"),
+    ).rejects.toThrow(/phoneNumberId/);
+
+    expect(deliverWhatsApp).not.toHaveBeenCalled();
   });
 });
 
@@ -72,9 +119,9 @@ describe("sendWhatsAppMessage — media", () => {
     await sendWhatsAppMessage("+5219991112233", "toma", "c1", "u1", null, {
       path: "2026-07/s.webp", url: "https://sb/s.webp", type: "sticker", mimeType: "image/webp",
     });
-    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma");
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma", undefined, null);
     expect(deliverWhatsApp).toHaveBeenNthCalledWith(2, expect.any(String), "toma",
-      expect.objectContaining({ url: "https://sb/s.webp", type: "sticker" }));
+      expect.objectContaining({ url: "https://sb/s.webp", type: "sticker" }), null);
     expect(msgCreate.mock.calls[0][0].data).toMatchObject({
       mediaUrl: "2026-07/s.webp", mediaType: "sticker", mediaMimeType: "image/webp",
     });
