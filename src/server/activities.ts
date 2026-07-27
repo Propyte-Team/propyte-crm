@@ -8,13 +8,16 @@ import { getServerSession } from "@/lib/auth/session"
 import { ActivityType, ActivityStatus, Prisma } from "@prisma/client"
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher"
 import { canModifyActivity } from "@/lib/activities/permissions"
+import { resolveActivityScope } from "@/lib/activities/scope"
 
-// Roles con acceso total
-const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"]
-// Roles con acceso a su equipo
-const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"]
-// Roles con acceso solo a lo propio
-const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER", "HOSTESS"]
+/** Los userId que un rol TEAM puede ver: él mismo + quienes le reportan. */
+async function teamMemberIds(currentUserId: string): Promise<string[]> {
+  const teamMembers = await prisma.user.findMany({
+    where: { teamLeaderId: currentUserId },
+    select: { id: true },
+  })
+  return [currentUserId, ...teamMembers.map((m) => m.id)]
+}
 
 // Tipos de actividad que se registran como COMPLETADA por defecto
 const AUTO_COMPLETED_TYPES: ActivityType[] = [
@@ -109,17 +112,13 @@ export async function getActivities(filters: ActivityFilters = {}) {
   const userRole = session.user.role
   const currentUserId = session.user.id
 
-  // RBAC: restringir según rol
-  if (OWN_ACCESS_ROLES.includes(userRole)) {
+  // RBAC: restringir según rol (orden FULL → TEAM → OWN, ver resolveActivityScope)
+  const scope = resolveActivityScope(userRole)
+  if (scope === "DENIED") throw new Error("Acceso denegado")
+  if (scope === "TEAM") {
+    where.userId = { in: await teamMemberIds(currentUserId) }
+  } else if (scope === "OWN") {
     where.userId = currentUserId
-  } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
-    const teamMembers = await prisma.user.findMany({
-      where: { teamLeaderId: currentUserId },
-      select: { id: true },
-    })
-    where.userId = { in: [currentUserId, ...teamMembers.map((m) => m.id)] }
-  } else if (!FULL_ACCESS_ROLES.includes(userRole) && userRole !== "MARKETING") {
-    throw new Error("Acceso denegado")
   }
 
   // Aplicar filtros específicos
@@ -376,17 +375,23 @@ export async function getOverdueTasks(userId?: string) {
   const currentUserId = session.user.id
 
   if (userId) {
+    // El llamador pide explícitamente las tareas de un usuario. Hoy el único
+    // call site (server/dashboard.ts) pasa el id de la propia sesión para
+    // ASESOR_SR/ASESOR_JR, así que no hay fuga; pero el parámetro NO valida que
+    // quien pregunta pueda ver a ese usuario. Ver nota al cierre de la sesión.
     where.userId = userId
-  } else if (OWN_ACCESS_ROLES.includes(userRole)) {
-    where.userId = currentUserId
-  } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
-    const teamMembers = await prisma.user.findMany({
-      where: { teamLeaderId: currentUserId },
-      select: { id: true },
-    })
-    where.userId = { in: [currentUserId, ...teamMembers.map((m) => m.id)] }
+  } else {
+    const scope = resolveActivityScope(userRole)
+    if (scope === "TEAM") {
+      where.userId = { in: await teamMemberIds(currentUserId) }
+    } else if (scope === "OWN" || scope === "DENIED") {
+      // DENIED cae a "solo lo propio" en vez de a "todo": esta función nunca
+      // lanzó y no se le va a cambiar el contrato aquí, pero un rol futuro sin
+      // set asignado no debe heredar visibilidad total por omisión.
+      where.userId = currentUserId
+    }
+    // ALL: sin restricción de userId
   }
-  // FULL_ACCESS_ROLES ven todas
 
   const tasks = await prisma.activity.findMany({
     where,
