@@ -87,7 +87,13 @@ logueando el error. Así el cotizador y demás callers no se tocan en esta fase.
 
 `src/lib/bot/hub-catalog.ts` **sí** adopta `{ data, error }`, porque el bot necesita
 distinguir "no hay inventario" de "no pude consultar" (ver "Manejo de errores"). Es el único
-consumidor cuya firma cambia; su único caller es `bot-respond.ts`.
+módulo cuya firma cambia, y arrastra **5 call sites + 3 mocks** que hay que actualizar en el
+mismo commit:
+
+- `src/lib/bot/bot-respond.ts`, `src/lib/bot/ai-actions.ts`, `src/lib/bot/claude.ts`
+  (`catalogBrief`), `src/lib/agents/tools.ts`, `src/app/api/records/search/route.ts`
+- mocks en `bot/ai-actions.test.ts`, `bot/bot-respond.agents.test.ts`,
+  `bot/bot-respond.channel.test.ts`
 
 `client.ts` conserva intacta su mitad de mutación (`requestUnitHold`, `releaseUnitHold`,
 `confirmUnitHold` por REST al Hub con `x-hub-api-key`).
