@@ -530,9 +530,30 @@ describe("POST /api/agenda/activities", () => {
     expect(res.status).toBe(400);
   });
 
-  it("acepta fecha opcional y la pasa como Date", async () => {
+  it("ancla una fecha sin hora a medianoche de Cancún, no de UTC", async () => {
+    // <input type="date"> manda "2026-07-30". Con z.coerce.date() eso sería
+    // medianoche UTC = 19:00 del 29 en Cancún, y la tarea caería un día antes
+    // en la agenda. Medianoche de Cancún (UTC−5) son las 05:00Z.
     await POST(req({ activityType: "TASK", subject: "Junta del jueves", dueDate: "2026-07-30" }));
-    expect(createActivity.mock.calls[0][0].dueDate).toBeInstanceOf(Date);
+
+    const dueDate = createActivity.mock.calls[0][0].dueDate;
+    expect(dueDate).toBeInstanceOf(Date);
+    expect(dueDate.toISOString()).toBe("2026-07-30T05:00:00.000Z");
+  });
+
+  it("respeta un datetime completo tal cual viene", async () => {
+    await POST(req({
+      activityType: "TASK",
+      subject: "Llamada de las 10",
+      dueDate: "2026-07-30T16:00:00.000Z",
+    }));
+    expect(createActivity.mock.calls[0][0].dueDate.toISOString()).toBe("2026-07-30T16:00:00.000Z");
+  });
+
+  it("rechaza una fecha ilegible", async () => {
+    const res = await POST(req({ activityType: "TASK", subject: "Fecha rota", dueDate: "no-es-fecha" }));
+    expect(res.status).toBe(400);
+    expect(createActivity).not.toHaveBeenCalled();
   });
 
   it("traduce la falta de sesión a 401", async () => {
@@ -567,12 +588,34 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createActivity } from "@/server/activities";
 
+// Cancún es UTC−5 sin horario de verano.
+const CANCUN_OFFSET = "-05:00";
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * El <input type="date"> del cliente manda "YYYY-MM-DD" sin hora. `z.coerce.date()`
+ * lo interpretaría como medianoche UTC, que en Cancún son las 19:00 del día anterior:
+ * una tarea fechada el 30 se guardaría el 29 y aparecería vencida un día antes.
+ * Se ancla a medianoche de Cancún. Un datetime completo pasa sin tocarse.
+ *
+ * La regla vive SOLO aquí, en la frontera donde el string entra al sistema —
+ * duplicarla en el módulo de agrupación la haría divergir.
+ */
+const dueDateSchema = z
+  .union([z.string(), z.date()])
+  .transform((v) =>
+    typeof v === "string" && DATE_ONLY.test(v)
+      ? new Date(`${v}T00:00:00${CANCUN_OFFSET}`)
+      : new Date(v),
+  )
+  .refine((d) => !Number.isNaN(d.getTime()), { message: "Fecha inválida" });
+
 const captureSchema = z
   .object({
     activityType: z.enum(["TASK", "NOTE"]),
     subject: z.string().min(3, "El asunto debe tener al menos 3 caracteres").max(200).trim(),
     description: z.string().max(5000).optional(),
-    dueDate: z.coerce.date().optional(),
+    dueDate: dueDateSchema.optional(),
   })
   .strict(); // cualquier campo extra (contactId, dealId, userId) es un 400, no un silencio
 
@@ -609,7 +652,7 @@ export async function POST(request: Request) {
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/app/api/agenda/activities/route.test.ts`
-Expected: PASS — 6 tests
+Expected: PASS — 8 tests
 
 - [ ] **Step 5: Commit**
 
@@ -1268,7 +1311,7 @@ El spec §5.3 documenta por qué `tsc` no basta: un componente cliente que consu
 - [ ] **Step 1: Suite completa**
 
 Run: `npx vitest run`
-Expected: PASS — **890 tests** (los 865 verificados el 2026-07-27 más los 25 de este plan: 10 de agrupación, 9 del módulo de servidor, 6 de la ruta). Cero fallos.
+Expected: PASS — **895 tests** (los 865 verificados el 2026-07-27 más los 30 de este plan: 13 de agrupación, 9 del módulo de servidor, 8 de la ruta). Cero fallos.
 
 - [ ] **Step 2: Typecheck — cero errores nuevos**
 
@@ -1289,7 +1332,8 @@ Expected: build verde, con `/agenda` listado en la tabla de rutas como dinámica
 
 Revisar a mano que cada campo que la UI lee exista en lo que el servidor manda. `tsc` sí cubre `AgendaView` porque importa los tipos de `@/lib/agenda/grouping` y `@/server/agenda`, pero **no** cubre los `fetch`:
 
-- `quick-capture.tsx` hace `POST /api/agenda/activities` con `{ activityType, subject, dueDate? }`. Confirmar contra `captureSchema`: es `.strict()`, así que cualquier campo de más es 400. Verificar que cuando no hay fecha la clave `dueDate` se **omite** y no se manda `""` ni `null` — `z.coerce.date()` convertiría `""` en `Invalid Date`.
+- `quick-capture.tsx` hace `POST /api/agenda/activities` con `{ activityType, subject, dueDate? }`. Confirmar contra `captureSchema`: es `.strict()`, así que cualquier campo de más es 400. Verificar que cuando no hay fecha la clave `dueDate` se **omite** y no se manda `""` ni `null` — el `.refine()` de `dueDateSchema` convertiría `""` en un 400.
+- El `<input type="date">` manda `"YYYY-MM-DD"`. Confirmar que `dueDateSchema` lo ancla a medianoche de Cancún (`T00:00:00-05:00` → `05:00Z`) y no a medianoche UTC. Si esto se rompe, una tarea capturada para mañana aparece hoy en la agenda y nadie lo nota hasta que un asesor se queja.
 - `agenda-view.tsx` hace `PATCH /api/activities/${id}` con `{ status: "COMPLETADA" }`. Confirmar contra `updateActivitySchema` en `src/app/api/activities/[id]/route.ts:11-18`: `status` es un enum que incluye `COMPLETADA`.
 - Ambos leen `body.error` en el camino de fallo. Confirmar que las dos rutas responden `{ error: string }` en 400/401/403/500.
 
@@ -1300,6 +1344,7 @@ Correr `npm run dev` y recorrer, sesión de asesor:
 1. `/agenda` carga sin error de hidratación en consola (la tz fija de `formatDate` y `cancunDayKey` es justo para esto).
 2. Capturar una tarea **sin fecha** → aparece en "Sin fecha". Confirmar que **no** aparece en `/hoy` — es el comportamiento esperado, `today.ts:96` filtra por `dueDate <= hoy`.
 3. Capturar una tarea **con fecha de ayer** → aparece en "Vencidas" y también en `/hoy`.
+3b. Capturar una tarea **con la fecha de mañana** → cae en "Esta semana", **no** en "Hoy". Es la comprobación de que el anclaje a medianoche de Cancún funciona: si se hubiera usado medianoche UTC, la tarea aparecería un día antes.
 4. Capturar una **nota** → aparece en "Notas recientes", no en los pendientes.
 5. Completar una tarea → desaparece del listado tras el `router.refresh()`.
 6. Intentar guardar con asunto de 2 caracteres → el botón está deshabilitado.
