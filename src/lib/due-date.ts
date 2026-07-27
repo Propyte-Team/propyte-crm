@@ -125,8 +125,27 @@ export function parseDueDate(value: string): Date | null {
   return Number.isNaN(anchored.getTime()) ? null : anchored;
 }
 
-/** Esquema zod reutilizable: string de entrada → Date anclada a Cancún. */
+/**
+ * Esquema zod reutilizable: string u objeto Date → Date anclada a Cancún.
+ *
+ * La rama `z.date()` existe por los llamadores de servidor que NO pasan por
+ * `request.json()`: `src/server/deals.ts` construye un `Date` a mano (p.ej.
+ * `new Date(data.expectedCloseDate)`) antes de llamar a `.parse()`. Como usan
+ * `.parse()` y no `.safeParse()`, un `Date` rechazado ahí es una excepción no
+ * capturada, no un 400.
+ *
+ * Aprendizaje que vale la pena dejar escrito: cuando este esquema vivía solo
+ * dentro de la ruta de agenda, se quitó `z.date()` de la unión por
+ * "inalcanzable desde request.json()" — JSON no tiene tipo Date, así que
+ * era cierto ahí. Dejó de serlo en cuanto el esquema pasó a compartirse con
+ * llamadores que no son un body HTTP. Un `dueDateSchema` que solo sirve para
+ * bodies HTTP no es un módulo compartido.
+ *
+ * Un `Date` ya es un instante absoluto — no tiene ambigüedad de zona que
+ * resolver, así que pasa intacto. Solo se valida que no sea Invalid Date,
+ * cosa que `z.date()` ya hace por su cuenta (rechaza si `getTime()` es NaN).
+ */
 export const dueDateSchema = z
-  .string()
-  .transform((value) => parseDueDate(value))
+  .union([z.string(), z.date()])
+  .transform((value) => (value instanceof Date ? value : parseDueDate(value)))
   .refine((d): d is Date => d !== null, { message: "Fecha inválida" });

@@ -9,6 +9,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { DEAL_STAGE_PROBABILITY, STAGNATION_LIMITS } from "@/lib/constants";
 import { createDealSchema, stageTransitionSchema } from "@/lib/validations/deal";
+import { parseDueDate } from "@/lib/due-date";
 import type { Prisma, DealStage, DealType } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { withChangeSource } from "@/lib/audit/change-context";
@@ -410,7 +411,21 @@ export async function updateDeal(
   if (data.dealType) updateData.dealType = data.dealType;
   if (data.estimatedValue) updateData.estimatedValue = data.estimatedValue;
   if (data.currency) updateData.currency = data.currency;
-  if (data.expectedCloseDate) updateData.expectedCloseDate = new Date(data.expectedCloseDate);
+  if (data.expectedCloseDate) {
+    // Coherente con el resto: nunca `new Date(string)` a secas (bug A —
+    // "2026-07-30" corre un día antes en Cancún). Un Date ya construido pasa
+    // intacto; un string se ancla vía parseDueDate; cualquier cosa que no
+    // resuelva a una fecha real falla con un error claro en vez de guardar
+    // una fecha corrida o un Invalid Date.
+    const parsedExpectedCloseDate =
+      data.expectedCloseDate instanceof Date
+        ? data.expectedCloseDate
+        : parseDueDate(data.expectedCloseDate);
+    if (!parsedExpectedCloseDate || Number.isNaN(parsedExpectedCloseDate.getTime())) {
+      throw new Error(`expectedCloseDate inválido: "${data.expectedCloseDate}"`);
+    }
+    updateData.expectedCloseDate = parsedExpectedCloseDate;
+  }
   if (data.assignedToId) updateData.assignedToId = data.assignedToId;
 
   const deal = await prisma.deal.update({

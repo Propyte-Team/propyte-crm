@@ -126,4 +126,19 @@ describe("dueDateSchema", () => {
       expect(result.error.issues[0].message).toBe("Fecha inválida");
     }
   });
+
+  it("acepta un Date válido y lo pasa intacto (llamadores de servidor, no request.json())", () => {
+    // src/server/deals.ts construye un Date a mano (new Date(...)) antes de
+    // llamar a createDealSchema.parse / stageTransitionSchema.parse. Un Date
+    // ya es un instante absoluto: no hay zona que resolver.
+    const instant = new Date("2026-07-30T16:00:00.000Z");
+    const result = dueDateSchema.parse(instant);
+    expect(result).toBeInstanceOf(Date);
+    expect(result.toISOString()).toBe("2026-07-30T16:00:00.000Z");
+  });
+
+  it("rechaza un Date inválido (new Date('x')) como error de validación", () => {
+    const result = dueDateSchema.safeParse(new Date("x"));
+    expect(result.success).toBe(false);
+  });
 });
