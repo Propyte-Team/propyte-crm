@@ -10,8 +10,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createActivity } from "@/server/activities";
+import { CANCUN_TZ } from "@/lib/format-date";
 
-const CANCUN_TZ = "America/Cancun";
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const PARTE_FECHA = /^(\d{4})-(\d{2})-(\d{2})/;
 

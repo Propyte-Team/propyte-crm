@@ -1,8 +1,9 @@
 // Agrupación de pendientes por vencimiento — módulo PURO (testeable en node, sin React ni Prisma).
 // La zona horaria es fija (America/Cancun) por la misma razón que src/lib/format-date.ts:
 // sin tz fija, servidor y navegador discrepan cerca de medianoche y React tira mismatch
-// de hidratación. Cancún es UTC−5 sin horario de verano.
-const TZ = "America/Cancun";
+// de hidratación. Cancún es UTC−5 sin horario de verano. La constante se importa de
+// format-date.ts, que es la fuente única — no se repite el literal.
+import { CANCUN_TZ } from "@/lib/format-date";
 
 export type AgendaBucket = "vencidas" | "hoy" | "semana" | "despues" | "sin_fecha";
 
@@ -25,7 +26,7 @@ export type AgendaBuckets = Record<AgendaBucket, AgendaItem[]>;
 /** Día civil en Cancún como "YYYY-MM-DD". El formato ordena lexicográficamente igual que cronológicamente. */
 export function cancunDayKey(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
+    timeZone: CANCUN_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
