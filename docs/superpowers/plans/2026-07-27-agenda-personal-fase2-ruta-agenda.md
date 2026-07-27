@@ -1417,11 +1417,31 @@ Ejecutado con subagentes, revisión de spec y de calidad por task. **911/911 tes
 6. **Un solo `busyId` para todos los completados.** Con dos clics rápidos el spinner mentía y admitía PATCH duplicados. Se rastrea cada petición en vuelo por separado.
 7. **La zona horaria estaba declarada tres veces.** `format-date.ts`, `grouping.ts` y la ruta de captura tenían cada uno su literal. Se consolidó en `CANCUN_TZ`, exportada desde `format-date.ts`.
 
-### Hallazgo abierto, fuera del alcance de esta fase
+### Addendum: unificación del parseo de `dueDate` (mismo día, a petición)
 
-Otros productores de `Activity.dueDate` **no** anclan a Cancún y ahora quedan expuestos por la agrupación por día:
+El hallazgo de que otros productores de `Activity.dueDate` no anclaban a Cancún se persiguió hasta el final y destapó un bug mayor.
 
-- `src/app/api/webhooks/zapier/activities/route.ts:30` — `new Date(body.dueDate)` crudo.
-- `src/app/api/activities/route.ts:33` — `z.coerce.date()`.
+**Bug A — fecha sin hora.** `new Date("2026-07-30")` da medianoche UTC = 19:00 del 29 en Cancún.
 
-Si cualquiera de los dos recibe una fecha sin hora, esa actividad aparecerá en `/agenda` un día antes de lo debido. Antes era invisible porque nada agrupaba por día. Arreglarlo toca `/api/activities`, que se evitó a propósito en esta fase porque cambiaría el status por defecto de sus callers — necesita su propio análisis de radio de impacto.
+**Bug B, el grave — datetime local sin offset.** `<input type="datetime-local">` produce `"2026-07-30T14:30"`, sin zona. `new Date()` lo interpreta según la zona **del proceso**:
+
+| | `TZ=UTC` (servidor) | `TZ=America/Mexico_City` (dev) |
+|---|---|---|
+| `"2026-07-30T14:30"` | `14:30Z` | `20:30Z` |
+
+El mismo input producía instantes distintos en desarrollo y en producción. Una junta puesta a las 14:30 quedaba guardada como 09:30 hora Cancún en el servidor. `src/components/pipeline/stage-transition-dialog.tsx:115,139` manda ese formato crudo.
+
+**Regla implementada**, en `src/lib/due-date.ts` como fuente única: *si el string no trae información de zona, es hora de pared de Cancún; si la trae, se respeta*. Los formatos que no son ISO estricto se **rechazan con 400** en vez de adivinar — un primer intento los dejaba caer al parser legacy de `new Date()`, que reintroducía el Bug B justo en el webhook de Zapier, el único endpoint con entrada externa no controlada.
+
+Aplicada en: `/api/agenda/activities`, `/api/activities`, `/api/activities/[id]` y `/api/webhooks/zapier/activities`. Las tres últimas no tenían tests; ahora sí.
+
+Radio de impacto verificado: `activity-form.tsx` y `activity-log-form.tsx` ya mandaban `.toISOString()` y no cambian. El único flujo cuyo comportamiento se corrige es el de `stage-transition-dialog.tsx`.
+
+### Hallazgo abierto — toca dinero
+
+`Deal.expectedCloseDate` y `Deal.actualCloseDate` tienen el **Bug A sin corregir**: reciben `"YYYY-MM-DD"` de un `<input type="date">` y lo parsean con `z.coerce.date()`.
+
+- `src/app/api/deals/route.ts:43`
+- `src/app/api/deals/[id]/route.ts:50`
+
+`actualCloseDate` alimenta el cálculo de comisiones. Quedó deliberadamente fuera de este trabajo: es otro modelo, otras rutas, y el radio de impacto incluye dinero ya pagado. Necesita su propia ficha.
