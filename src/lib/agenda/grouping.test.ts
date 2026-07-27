@@ -42,6 +42,14 @@ describe("bucketFor", () => {
   it("el séptimo día por delante ya es después", () => {
     expect(bucketFor(new Date("2026-08-02T14:00:00Z"), now)).toBe("despues");
   });
+
+  it("un string no parseable degrada a sin_fecha en vez de lanzar", () => {
+    expect(bucketFor("basura", now)).toBe("sin_fecha");
+  });
+
+  it("un Date inválido degrada a sin_fecha en vez de lanzar", () => {
+    expect(bucketFor(new Date("invalid"), now)).toBe("sin_fecha");
+  });
 });
 
 describe("groupAgenda", () => {
@@ -80,5 +88,31 @@ describe("groupAgenda", () => {
     expect(Object.keys(result).sort()).toEqual(
       ["despues", "hoy", "semana", "sin_fecha", "vencidas"],
     );
+  });
+
+  it("un ítem con dueDate corrupto no tumba la agrupación y no afecta a los demás", () => {
+    expect(() =>
+      groupAgenda(
+        [
+          item("a", "2026-07-25T18:00:00Z"),
+          item("b", "basura"),
+          item("c", "2026-07-26T14:00:00Z"),
+        ],
+        now,
+      ),
+    ).not.toThrow();
+
+    const result = groupAgenda(
+      [
+        item("a", "2026-07-25T18:00:00Z"),
+        item("b", "basura"),
+        item("c", "2026-07-26T14:00:00Z"),
+      ],
+      now,
+    );
+
+    expect(result.vencidas.map((i) => i.id)).toEqual(["a"]);
+    expect(result.hoy.map((i) => i.id)).toEqual(["c"]);
+    expect(result.sin_fecha.map((i) => i.id)).toEqual(["b"]);
   });
 });

@@ -11,7 +11,11 @@ export interface AgendaItem {
   subject: string;
   activityType: string;
   status: string;
-  dueDate: string | null; // ISO 8601, o null si no tiene fecha
+  // ISO 8601 con hora y offset (ej. "2026-07-30T18:00:00Z"), o null si no tiene fecha.
+  // Una fecha sin hora ("2026-07-30") se interpreta como medianoche UTC, que en Cancún
+  // son las 19:00 del día anterior, y cae un bucket antes. Ese saneo NO se hace aquí —
+  // es responsabilidad de la frontera de entrada (la ruta de captura), no de este módulo.
+  dueDate: string | null;
   contactId: string | null;
   contactName: string | null;
 }
@@ -39,7 +43,10 @@ function addDaysToKey(key: string, days: number): string {
 export function bucketFor(dueDate: Date | string | null, now: Date): AgendaBucket {
   if (!dueDate) return "sin_fecha";
 
-  const dueKey = cancunDayKey(new Date(dueDate));
+  const parsed = new Date(dueDate);
+  if (Number.isNaN(parsed.getTime())) return "sin_fecha"; // fecha ilegible = fecha no utilizable
+
+  const dueKey = cancunDayKey(parsed);
   const todayKey = cancunDayKey(now);
 
   if (dueKey < todayKey) return "vencidas";
