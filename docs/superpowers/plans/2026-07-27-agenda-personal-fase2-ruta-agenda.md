@@ -1437,11 +1437,18 @@ Aplicada en: `/api/agenda/activities`, `/api/activities`, `/api/activities/[id]`
 
 Radio de impacto verificado: `activity-form.tsx` y `activity-log-form.tsx` ya mandaban `.toISOString()` y no cambian. El único flujo cuyo comportamiento se corrige es el de `stage-transition-dialog.tsx`.
 
-### Hallazgo abierto — toca dinero
+### Addendum 2: fechas de cierre de `Deal`
 
-`Deal.expectedCloseDate` y `Deal.actualCloseDate` tienen el **Bug A sin corregir**: reciben `"YYYY-MM-DD"` de un `<input type="date">` y lo parsean con `z.coerce.date()`.
+Se extendió la misma regla a `Deal.expectedCloseDate` y `Deal.actualCloseDate`, que seguían con `z.coerce.date()`.
 
-- `src/app/api/deals/route.ts:43`
-- `src/app/api/deals/[id]/route.ts:50`
+**Riesgo medido antes de tocar nada.** El monto de la comisión **no** depende de la fecha: es `valor × tasa` con splits fijos (`src/app/api/deals/[id]/route.ts:318-330`). La fecha solo mueve la **atribución de periodo** — el corte por trimestre de `src/server/career.ts:178` y la agrupación de reportes. Un cierre del día 1 se contaba en el mes anterior.
 
-`actualCloseDate` alimenta el cálculo de comisiones. Quedó deliberadamente fuera de este trabajo: es otro modelo, otras rutas, y el radio de impacto incluye dinero ya pagado. Necesita su propia ficha.
+**Estado de los datos en producción, consultado el 2026-07-27:** 1 deal en total, **0 con `actualCloseDate`**, **0 activities con `dueDate`**. Ninguna comisión llegó a calcularse con una fecha corrida. El arreglo es puramente hacia adelante; no se hizo ni se necesita backfill.
+
+Aplicado en `src/lib/validations/deal.ts` (3 campos), `/api/deals`, `/api/deals/[id]`, `/api/webhooks/zapier/deals` y `updateDeal()` en `src/server/deals.ts`, que nunca había pasado por ningún schema.
+
+**Trampa encontrada y cerrada.** `dueDateSchema` se había construido sobre `z.string()`, mientras que el `z.coerce.date()` que sustituía también aceptaba objetos `Date`. `src/server/deals.ts` construye un `Date` antes de llamar a `.parse()`, así que el cambio lo habría roto en runtime — y `tsc` no lo ve, porque `.parse()` recibe `unknown`. Hoy esas funciones no tienen llamadores, pero están exportadas.
+
+El arreglo fue en el módulo, no en los llamadores: `dueDateSchema` vuelve a aceptar `Date` (que pasa intacto — un `Date` ya es un instante absoluto, sin zona que resolver) además de string.
+
+> Vale la pena recordar por qué apareció: cuando esta lógica vivía dentro de la ruta de agenda, se quitó `z.date()` de la unión por "inalcanzable desde `request.json()`". Era cierto **ahí**, y dejó de serlo al volverse un módulo compartido. Una decisión correcta en local puede ser incorrecta en global.
