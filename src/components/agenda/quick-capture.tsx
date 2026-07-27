@@ -63,7 +63,12 @@ export function QuickCapture() {
             <button
               key={t}
               type="button"
-              onClick={() => setType(t)}
+              onClick={() => {
+                setType(t);
+                // Al salir de TASK se descarta la fecha: si no, reaparece al
+                // volver a TASK aunque el usuario la haya dado por descartada.
+                if (t !== "TASK") setDueDate("");
+              }}
               aria-pressed={active}
               className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium transition-colors"
               style={{

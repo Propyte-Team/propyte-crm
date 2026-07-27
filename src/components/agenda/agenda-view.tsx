@@ -65,11 +65,15 @@ function ItemRow({ item, onDone, busy }: { item: AgendaItem; onDone: (id: string
 
 export function AgendaView({ buckets, total, truncated, notes, firstName }: AgendaViewProps) {
   const router = useRouter();
-  const [busyId, setBusyId] = React.useState<string | null>(null);
+  // Conjunto de ids en vuelo, no un solo id: con un solo `busyId`, completar A
+  // y luego B antes de que A resuelva apagaba el spinner de A de inmediato
+  // (permitiendo un segundo clic) y el `finally` de A borraba también el
+  // estado "en vuelo" de B al resolver, aunque B seguía pendiente.
+  const [busyIds, setBusyIds] = React.useState<Set<string>>(new Set());
   const [error, setError] = React.useState<string | null>(null);
 
   async function complete(id: string) {
-    setBusyId(id);
+    setBusyIds((prev) => new Set(prev).add(id));
     setError(null);
     try {
       // Reusa el endpoint que ya existe: PATCH delega en updateActivity, que
@@ -87,7 +91,13 @@ export function AgendaView({ buckets, total, truncated, notes, firstName }: Agen
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo completar");
     } finally {
-      setBusyId(null);
+      // Actualización funcional: no pisa cambios que otro `complete()`
+      // concurrente haya hecho al conjunto mientras este PATCH estaba en vuelo.
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -142,7 +152,7 @@ export function AgendaView({ buckets, total, truncated, notes, firstName }: Agen
             </div>
             <ul className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
               {buckets[bucket].map((item) => (
-                <ItemRow key={item.id} item={item} onDone={complete} busy={busyId === item.id} />
+                <ItemRow key={item.id} item={item} onDone={complete} busy={busyIds.has(item.id)} />
               ))}
             </ul>
           </section>
