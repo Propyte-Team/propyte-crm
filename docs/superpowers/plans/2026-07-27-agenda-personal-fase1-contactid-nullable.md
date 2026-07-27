@@ -285,13 +285,15 @@ Recorrer `/tmp/tsc-contactid.txt` y clasificar cada uno en una de tres categorí
 
 Aplicar el arreglo que corresponda a cada uno. **Prohibido usar `!` (non-null assertion) o `as` para silenciar el compilador** — eso reintroduce exactamente el bug de runtime que esta migración vuelve visible.
 
-- [ ] **Step 3.4: Verificar que el compilador queda limpio**
+- [ ] **Step 3.4: Verificar que no quedan errores nuevos**
 
 ```bash
 npx tsc --noEmit
 ```
 
-Esperado: sin salida (exit 0).
+**`tsc` NO está limpio en `origin/main`.** Hay 2 errores preexistentes en `src/lib/workflows/builder-model.test.ts` (líneas 53 y 55, TS2345 sobre `triggerConfig` / `JsonValue`) que no tienen relación con este trabajo. Verificado corriendo `tsc` contra el schema de `origin/main`.
+
+Esperado: **exactamente esos 2 errores, ni uno más.** El gate es "cero errores nuevos", no "cero errores". No arregles los preexistentes — es scope creep y ensucia el diff.
 
 - [ ] **Step 3.5: Commit**
 
@@ -345,7 +347,7 @@ git push -u origin feat/agenda-personal
 
 - `activities.contactId` es nullable en la base y en `schema.prisma`, y ambos coinciden
 - `createActivity` crea actividades con y sin contacto, con tests que cubren los cuatro casos
-- `npx tsc --noEmit` limpio, sin `!` ni `as` agregados para silenciarlo
+- `npx tsc --noEmit` sin errores nuevos (quedan los 2 preexistentes de `builder-model.test.ts`), sin `!` ni `as` agregados para silenciarlo
 - `npm test` y `npm run build` en verde
 - Crear una actividad con contacto se comporta igual que antes del cambio
 - Nada visible cambió para los asesores
