@@ -44,7 +44,7 @@ export interface PublishedDevelopmentDetail extends PublishedDevelopment {
   roiRentalMonthly: number | null;
   roiAppreciation: number | null;
   financingDownPayment: number | null;
-  financingMonths: number | null;
+  financingMonths: number[] | null;
   financingInterest: number | null;
   address: string | null;
   neighborhood: string | null;
@@ -96,7 +96,8 @@ export interface PublishedUnit {
   finMesesOpciones: number[] | null;
   finTasa: number | null;
   finEsquemasPago: unknown;
-  finPreventa: boolean | null;
+  // jsonb — objeto de esquema de preventa, NO un booleano
+  finPreventa: unknown;
 }
 
 export interface DevelopmentCatalogFilters {

@@ -7,6 +7,12 @@
 //
 // SQL directo al schema real_estate_hub por la MISMA conexión Postgres, igual que
 // src/lib/hub/client.ts y que el sitio web. El CRM no posee inventario: solo lo consulta.
+//
+// Tipos de columna verificados contra prod (no inferir, verificar antes de agregar):
+//   v_developments: images/amenities/property_types = text[] · financing_months = int4[]
+//                   estimated_delivery = date · construction_progress = int4
+//   v_units:        fin_meses_opciones = int4[] · fin_esquemas_pago = jsonb
+//                   fin_preventa = jsonb (objeto de esquema, NO booleano)
 import prisma from "@/lib/db";
 import type {
   CatalogResult,
@@ -101,7 +107,7 @@ export async function getPublishedDevelopment(
               d.roi_rental_monthly::float8              AS "roiRentalMonthly",
               d.roi_appreciation::float8                AS "roiAppreciation",
               d.financing_down_payment::float8          AS "financingDownPayment",
-              d.financing_months::int                   AS "financingMonths",
+              d.financing_months::int[]                 AS "financingMonths",
               d.financing_interest::float8              AS "financingInterest",
               d.address::text                           AS address,
               d.neighborhood::text                      AS neighborhood,
