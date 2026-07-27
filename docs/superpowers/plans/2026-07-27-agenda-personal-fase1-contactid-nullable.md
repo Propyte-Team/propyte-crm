@@ -6,7 +6,7 @@
 
 **Architecture:** Migración SQL aditiva que quita el `NOT NULL` de `activities.contactId`, más el cambio correspondiente en `schema.prisma`. Al volverse nullable, Prisma regenera los tipos y `tsc --noEmit` enumera todo el código que asumía un contacto siempre presente. Sin UI nueva: al terminar, la app se comporta exactamente igual que antes.
 
-**Tech Stack:** Next.js 14.2.21, Prisma 6.2.1 (Neon Postgres, schema `propyte_crm`), vitest 2.1.9, TypeScript.
+**Tech Stack:** Next.js 14.2.21, Prisma 6.19.2 (Postgres en Supabase vía pooler, schema `propyte_crm`), vitest 2.1.9, TypeScript.
 
 **Spec:** `docs/superpowers/specs/2026-07-27-agenda-personal-asesor-design.md` §5
 
