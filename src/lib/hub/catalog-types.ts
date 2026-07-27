@@ -120,3 +120,12 @@ export interface UnitCatalogFilters {
   zone?: string | null;
   limit?: number;
 }
+
+export interface CatalogSearchFilters {
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  zone?: string | null;
+  city?: string | null;
+  bedrooms?: number | null;
+  limit?: number;
+}

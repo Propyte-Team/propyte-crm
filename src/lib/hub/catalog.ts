@@ -16,6 +16,7 @@
 import prisma from "@/lib/db";
 import type {
   CatalogResult,
+  CatalogSearchFilters,
   DevelopmentCatalogFilters,
   PublishedDevelopment,
   PublishedDevelopmentDetail,
@@ -29,6 +30,12 @@ export const PUBLIC_GATE = "approved_at IS NOT NULL AND deleted_at IS NULL";
 function fail<T>(fnName: string, err: unknown, fallback: T): CatalogResult<T> {
   console.error(`[hub/catalog] ${fnName} falló`, { err });
   return { data: fallback, error: "No se pudo consultar el catálogo del Hub" };
+}
+
+/** Sanea el LIMIT antes de interpolarlo: entero finito y positivo, topado. */
+function clampLimit(value: number | undefined, fallback: number, max: number): number {
+  const n = Number.isFinite(value) ? Math.trunc(value as number) : fallback;
+  return Math.min(Math.max(n, 1), max);
 }
 
 // Columnas de tarjeta/lista. `publishedUnits` cuenta unidades con el MISMO gate,
@@ -62,7 +69,7 @@ const DEV_LIST_COLS = `
 export async function listPublishedDevelopments(
   filters: DevelopmentCatalogFilters = {}
 ): Promise<CatalogResult<PublishedDevelopment[]>> {
-  const limit = Math.min(filters.limit ?? 200, 500);
+  const limit = clampLimit(filters.limit, 200, 500);
   try {
     const rows = await prisma.$queryRawUnsafe<PublishedDevelopment[]>(
       `SELECT ${DEV_LIST_COLS}
@@ -174,7 +181,7 @@ const UNIT_COLS = `
 export async function listPublishedUnits(
   filters: UnitCatalogFilters = {}
 ): Promise<CatalogResult<PublishedUnit[]>> {
-  const limit = Math.min(filters.limit ?? 200, 500);
+  const limit = clampLimit(filters.limit, 200, 500);
   try {
     const rows = await prisma.$queryRawUnsafe<PublishedUnit[]>(
       `SELECT ${UNIT_COLS}
@@ -214,5 +221,38 @@ export async function getPublishedUnit(id: string): Promise<CatalogResult<Publis
     return { data: rows[0] ?? null, error: null };
   } catch (err) {
     return fail("getPublishedUnit", err, null);
+  }
+}
+
+/**
+ * Búsqueda para el agente IA: unidades publicadas que encajan con el perfil,
+ * con el contexto de su desarrollo y sus esquemas de pago.
+ * Límite duro de 25 — es contexto de prompt, no un listado.
+ */
+export async function searchCatalog(
+  filters: CatalogSearchFilters
+): Promise<CatalogResult<PublishedUnit[]>> {
+  const limit = clampLimit(filters.limit, 5, 25);
+  try {
+    const rows = await prisma.$queryRawUnsafe<PublishedUnit[]>(
+      `SELECT ${UNIT_COLS}
+         FROM real_estate_hub.v_units u
+        WHERE ${PUBLIC_GATE}
+          AND ($1::float8 IS NULL OR u.price_mxn >= $1)
+          AND ($2::float8 IS NULL OR u.price_mxn <= $2)
+          AND ($3::text IS NULL OR u.zone ILIKE '%' || $3 || '%')
+          AND ($4::text IS NULL OR u.city ILIKE $4)
+          AND ($5::int IS NULL OR u.bedrooms >= $5)
+        ORDER BY u.price_mxn ASC NULLS LAST
+        LIMIT ${limit}`,
+      filters.budgetMin ?? null,
+      filters.budgetMax ?? null,
+      filters.zone ?? null,
+      filters.city ?? null,
+      filters.bedrooms ?? null
+    );
+    return { data: rows, error: null };
+  } catch (err) {
+    return fail("searchCatalog", err, []);
   }
 }

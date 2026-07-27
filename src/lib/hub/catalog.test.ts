@@ -11,6 +11,7 @@ import {
   getPublishedDevelopment,
   listPublishedUnits,
   getPublishedUnit,
+  searchCatalog,
 } from "./catalog";
 
 /** SQL de la última llamada a $queryRawUnsafe. */
@@ -76,6 +77,15 @@ describe("no expone columnas internas", () => {
     await listPublishedDevelopments();
     expect(lastSql()).not.toMatch(/select\s+\*/i);
   });
+
+  it("listPublishedUnits tampoco expone columnas internas ni SELECT *", async () => {
+    await listPublishedUnits({ developmentId: "dev-1" });
+    const sql = lastSql();
+    for (const col of ["meta_title", "meta_description", "detection_source", "source_url", "keywords"]) {
+      expect(sql).not.toContain(col);
+    }
+    expect(sql).not.toMatch(/select\s+\*/i);
+  });
 });
 
 describe("manejo de errores", () => {
@@ -96,5 +106,42 @@ describe("manejo de errores", () => {
     const res = await getPublishedDevelopment("no-existe");
     expect(res.data).toBeNull();
     expect(res.error).toBeNull();
+  });
+});
+
+describe("clampLimit — LIMIT saneado antes de interpolar", () => {
+  it("un limit inválido (NaN) cae al default en vez de romper el SQL", async () => {
+    await listPublishedDevelopments({ limit: NaN });
+    expect(lastSql()).toMatch(/LIMIT \d+/);
+    expect(lastSql()).not.toMatch(/LIMIT NaN/);
+  });
+
+  it("topa el límite al máximo: pedir 9999 produce LIMIT 500", async () => {
+    await listPublishedDevelopments({ limit: 9999 });
+    expect(lastSql()).toContain("LIMIT 500");
+  });
+});
+
+describe("searchCatalog (agente IA)", () => {
+  it("aplica el gate y devuelve unidades con su desarrollo", async () => {
+    queryRaw.mockResolvedValueOnce([
+      { id: "u1", developmentName: "Nativa", priceMxn: 4_000_000, bedrooms: 2 },
+    ]);
+    const res = await searchCatalog({ budgetMax: 5_000_000, bedrooms: 2 });
+    expect(lastSql()).toContain(PUBLIC_GATE);
+    expect(res.error).toBeNull();
+    expect(res.data[0].developmentName).toBe("Nativa");
+  });
+
+  it("topa el límite a 25 aunque pidan más", async () => {
+    await searchCatalog({ limit: 500 });
+    expect(lastSql()).toContain("LIMIT 25");
+  });
+
+  it("ante fallo devuelve error, no lista vacía silenciosa", async () => {
+    queryRaw.mockRejectedValueOnce(new Error("timeout"));
+    const res = await searchCatalog({});
+    expect(res.data).toEqual([]);
+    expect(res.error).toBeTruthy();
   });
 });
