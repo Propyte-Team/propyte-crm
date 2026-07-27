@@ -87,7 +87,20 @@ Se eligió nullable a sabiendas de que es la de mayor radio de impacto, porque e
 
 ### 5.3 Radio de impacto medido
 
-65 archivos mencionan `Activity`, pero los accesos que realmente rompen son pocos, y **el compilador los encuentra todos**: los queries usan `include: { contact: { select: {...} } }`, así que al volver nullable el FK, Prisma regenera el tipo como `| null` y `tsc --noEmit` enumera cada dereferencia sin guardia. El riesgo es de compile-time, no de runtime.
+65 archivos mencionan `Activity`. El compilador atrapa la mayoría de los accesos rotos: los queries de servidor usan `include: { contact: { select: {...} } }`, así que al volver nullable el FK, Prisma regenera el tipo como `| null` y `tsc --noEmit` enumera cada dereferencia sin guardia.
+
+**Pero el compilador NO los encuentra todos.** Los componentes cliente que consumen una API route (`fetch("/api/activities")`) tipan la respuesta JSON **a mano**. Ese tipo escrito a mano no está conectado a Prisma, así que puede declarar `contact` como no-nullable y `tsc` pasa en verde mientras el runtime devuelve `null`. Es un punto ciego estructural del enfoque, no un descuido puntual.
+
+El audit necesita por lo tanto **dos modalidades**:
+
+1. `npx tsc --noEmit` — atrapa el código de servidor tipado por Prisma
+2. Búsqueda de tipos escritos a mano en consumidores de API:
+   ```bash
+   grep -rn "^\s*contact: {" --include="*.tsx" src/components/ | grep -v "| null"
+   ```
+   Y verificar, para cada resultado, si el contacto viene de una `Activity` o de otra entidad.
+
+Caso real encontrado por este audit: `src/components/activities/overdue-tasks.tsx` declaraba `contact` no-nullable sobre la respuesta de `/api/activities` y renderizaba `task.contact.firstName` sin guardia — invisible a `tsc`, crash garantizado en cuanto exista una tarea personal. Los otros dos tipos escritos a mano con `contact` (`inbox-view.tsx`, `quotes-global-view.tsx`) resultaron ser de `Conversation` y `Deal`, no afectados.
 
 Puntos identificados en el audit:
 
@@ -192,7 +205,8 @@ Cada fase es desplegable por sí sola. La 1 no cambia nada visible para los ases
 
 | Riesgo | Mitigación |
 |---|---|
-| `contactId` nullable rompe código que asume contacto | `tsc --noEmit` + `next build` como gate; Prisma convierte el riesgo en error de compilación (§5.3) |
+| `contactId` nullable rompe código de servidor que asume contacto | `tsc --noEmit` + `next build` como gate; Prisma convierte el riesgo en error de compilación (§5.3) |
+| `contactId` nullable rompe componentes cliente que tipan JSON a mano | **`tsc` es ciego a esto.** Segunda modalidad de audit por grep sobre tipos escritos a mano (§5.3). Encontró un caso real que el compilador no vio |
 | El grafo se vuelve un bypass de permisos | Consultar por las funciones autorizadas del CRM, nunca `record_links` directo (§7) |
 | Costo del asistente escala por asesor | Límite de mensajes/día por usuario antes de abrirlo al equipo (§8.3) |
 | Rendimiento del grafo en un CRM real | Subgrafo a 2 saltos por defecto (§7) |
