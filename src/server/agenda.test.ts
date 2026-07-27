@@ -229,10 +229,12 @@ describe("getMyRecentNotes", () => {
 
     await getMyRecentNotes();
 
-    const where = activityFindMany.mock.calls[0][0].where;
-    expect(where.userId).toBe("user-1");
-    expect(where.activityType).toBe("NOTE");
-    expect(where.deletedAt).toBeNull();
+    const call = activityFindMany.mock.calls[0][0];
+    expect(call.where.userId).toBe("user-1");
+    expect(call.where.activityType).toBe("NOTE");
+    expect(call.where.deletedAt).toBeNull();
+    expect(call.orderBy).toEqual({ createdAt: "desc" });
+    expect(call.take).toBe(20);
   });
 
   it("mapea la nota con su fecha de creación en ISO", async () => {
