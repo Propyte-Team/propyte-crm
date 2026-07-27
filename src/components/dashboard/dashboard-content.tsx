@@ -21,7 +21,7 @@ interface RecentActivity {
   activityType: string
   subject: string
   createdAt: string | Date
-  contact: { firstName: string; lastName: string }
+  contact: { firstName: string; lastName: string } | null
   user: { name: string }
 }
 
