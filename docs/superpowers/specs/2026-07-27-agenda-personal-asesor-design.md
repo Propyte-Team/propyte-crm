@@ -96,9 +96,14 @@ El audit necesita por lo tanto **dos modalidades**:
 1. `npx tsc --noEmit` — atrapa el código de servidor tipado por Prisma
 2. Búsqueda de tipos escritos a mano en consumidores de API:
    ```bash
-   grep -rn "^\s*contact: {" --include="*.tsx" src/components/ | grep -v "| null"
+   grep -rnE "^\s*contact\??:\s*\{" --include="*.tsx" src/components/ src/app/ | grep -v "| null"
    ```
    Y verificar, para cada resultado, si el contacto viene de una `Activity` o de otra entidad.
+
+   **Tres detalles de la receta que importan**, cada uno por un hueco real encontrado al validarla:
+   - `contact\??:` y no `contact:` — el `?` de opcional (`contact?: {…}`) no matchea el patrón simple, y existe al menos un archivo así (`activity-timeline.tsx:63`, hoy código muerto sin importadores).
+   - Incluir `src/app/` además de `src/components/` — hay client components bajo rutas de página.
+   - Un resultado en `src/app/` puede ser un `select` de Prisma del lado servidor y no un tipo a mano; esos ya los cubre `tsc`. Distinguir antes de tocar.
 
 Caso real encontrado por este audit: `src/components/activities/overdue-tasks.tsx` declaraba `contact` no-nullable sobre la respuesta de `/api/activities` y renderizaba `task.contact.firstName` sin guardia — invisible a `tsc`, crash garantizado en cuanto exista una tarea personal. Los otros dos tipos escritos a mano con `contact` (`inbox-view.tsx`, `quotes-global-view.tsx`) resultaron ser de `Conversation` y `Deal`, no afectados.
 
