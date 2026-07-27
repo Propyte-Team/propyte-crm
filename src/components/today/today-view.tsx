@@ -30,10 +30,11 @@ interface SectionProps {
   accent?: string;
   emptyText: string;
   viewAllHref?: string;
+  viewAllAlways?: boolean;
   renderAction?: (item: TodayMini) => React.ReactNode;
 }
 
-function Section({ title, icon: Icon, count, items = [], accent, emptyText, viewAllHref, renderAction }: SectionProps) {
+function Section({ title, icon: Icon, count, items = [], accent, emptyText, viewAllHref, viewAllAlways, renderAction }: SectionProps) {
   return (
     <div className="crm-card !p-0 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
@@ -82,9 +83,9 @@ function Section({ title, icon: Icon, count, items = [], accent, emptyText, view
       ) : (
         <p className="px-4 py-6 text-center text-[12px] text-[color:var(--text-tertiary)]">{emptyText}</p>
       )}
-      {viewAllHref && count > items.length && (
+      {viewAllHref && (viewAllAlways || count > items.length) && (
         <Link href={viewAllHref} className="flex items-center justify-center gap-1 px-4 py-2 text-[12px] text-[color:var(--text-secondary)] hover:underline" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-          Ver todos ({count}) <ArrowRight className="h-3 w-3" />
+          {count > items.length ? `Ver todos (${count})` : "Ver mi agenda"} <ArrowRight className="h-3 w-3" />
         </Link>
       )}
     </div>
@@ -117,6 +118,7 @@ export function TodayView({ data, firstName, userId }: { data: TodayData; firstN
           accent="#0D9488" emptyText="Bandeja al día." viewAllHref="/inbox" />
         <Section title="Tareas de hoy y vencidas" icon={CheckSquare} count={data.tasks.count} items={data.tasks.items}
           accent="#D97706" emptyText="Sin tareas pendientes."
+          viewAllHref="/agenda" viewAllAlways
           renderAction={(item) =>
             item.activityType === "CALL_TASK" && item.contactPhone && item.contactId
               ? <CallButton phone={item.contactPhone} contactId={item.contactId} userId={userId} />

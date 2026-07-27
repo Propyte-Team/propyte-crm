@@ -14,6 +14,7 @@ import {
   UserCheck,
   Settings,
   Sun,
+  CalendarCheck,
   FileText,
   Target,
   CopyCheck,
@@ -37,6 +38,7 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
     title: null,
     items: [
       { label: "Hoy", href: "/hoy", icon: Sun, roles: TODOS },
+      { label: "Agenda", href: "/agenda", icon: CalendarCheck, roles: TODOS },
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: TODOS },
       { label: "Inbox", href: "/inbox", icon: MessageSquare, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "MARKETING"] },
     ],
