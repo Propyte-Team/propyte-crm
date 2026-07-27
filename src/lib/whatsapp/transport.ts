@@ -27,6 +27,31 @@ export function mediaSupportsCaption(type: ChatMediaType): boolean {
   return type === "image" || type === "document" || type === "video" || type === "gif";
 }
 
+/**
+ * Número emisor concreto, para setups con más de una línea de WhatsApp.
+ *
+ * Se tipa aquí (en vez de importar `WhatsAppCredentials` de `whatsapp/accounts`)
+ * a propósito: accounts.ts arrastra Prisma, y este módulo tiene que poder
+ * probarse mockeando solo `fetch`. Es estructuralmente compatible.
+ *
+ * Sin sender se cae al número global del env, que es el comportamiento correcto
+ * cuando hay una sola línea.
+ */
+export interface WhatsAppSender {
+  phoneNumberId: string;
+  accessToken: string;
+}
+
+/** Credenciales efectivas: las del connector si vienen, si no las del env. */
+function metaCredentials(sender?: WhatsAppSender | null): { phoneNumberId: string; token: string } {
+  const phoneNumberId = sender?.phoneNumberId ?? process.env.META_WA_PHONE_NUMBER_ID?.trim();
+  const token = sender?.accessToken ?? process.env.META_WA_ACCESS_TOKEN?.trim();
+  if (!phoneNumberId || !token) {
+    throw new Error("META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN no configurados");
+  }
+  return { phoneNumberId, token };
+}
+
 export type WhatsAppProvider = "meta_cloud" | "twilio";
 
 export function activeProvider(): WhatsAppProvider {
@@ -43,12 +68,13 @@ export function activeProvider(): WhatsAppProvider {
 // Driver META Cloud API (Graph) — texto libre dentro de la ventana de 24h.
 // Fuera de ventana Meta responde 131047 → error claro (requiere plantilla).
 // ---------------------------------------------------------------------------
-async function deliverViaMetaCloud(toE164: string, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
-  const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID?.trim();
-  const token = process.env.META_WA_ACCESS_TOKEN?.trim();
-  if (!phoneNumberId || !token) {
-    throw new Error("META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN no configurados");
-  }
+async function deliverViaMetaCloud(
+  toE164: string,
+  body: string,
+  media?: DeliveryMedia,
+  sender?: WhatsAppSender | null
+): Promise<DeliveryResult> {
+  const { phoneNumberId, token } = metaCredentials(sender);
 
   let content: Record<string, unknown>;
   if (media) {
@@ -98,13 +124,10 @@ export async function deliverMetaTemplate(
   toE164: string,
   templateName: string,
   language: string,
-  bodyParams: string[] = []
+  bodyParams: string[] = [],
+  sender?: WhatsAppSender | null
 ): Promise<DeliveryResult> {
-  const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID?.trim();
-  const token = process.env.META_WA_ACCESS_TOKEN?.trim();
-  if (!phoneNumberId || !token) {
-    throw new Error("META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN no configurados");
-  }
+  const { phoneNumberId, token } = metaCredentials(sender);
   const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -148,12 +171,22 @@ async function deliverViaTwilio(toE164: string, body: string, media?: DeliveryMe
   return { externalId: msg.sid, status: "SENT" };
 }
 
-export async function deliverWhatsApp(toE164: string, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
+/**
+ * @param sender Línea por la que debe salir el mensaje (multicuenta). Si se
+ *   omite, sale por el número global del env — correcto con una sola línea.
+ *   El driver Twilio lo ignora: ahí el número emisor vive en TWILIO_WHATSAPP_NUMBER.
+ */
+export async function deliverWhatsApp(
+  toE164: string,
+  body: string,
+  media?: DeliveryMedia,
+  sender?: WhatsAppSender | null
+): Promise<DeliveryResult> {
   // Última línea de defensa: WhatsApp no renderea markdown (**x**, # títulos) —
   // se normaliza a formato nativo (*x*) para TODO emisor, con ambos drivers.
   // Idempotente: sendWhatsAppMessage ya la aplica antes de persistir el body.
   const text = formatForWhatsApp(body);
   return activeProvider() === "meta_cloud"
-    ? deliverViaMetaCloud(toE164, text, media)
+    ? deliverViaMetaCloud(toE164, text, media, sender)
     : deliverViaTwilio(toE164, text, media);
 }

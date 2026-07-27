@@ -42,3 +42,34 @@ export async function resolveConnectorByPhoneNumberId(phoneNumberId: string): Pr
 export async function activeWhatsAppConnectors(): Promise<LeadConnector[]> {
   return prisma.leadConnector.findMany({ where: { provider: "WHATSAPP", status: "ACTIVE", deletedAt: null } });
 }
+
+/**
+ * Credenciales de la línea por la que se debe RESPONDER a una conversación.
+ *
+ * `null` significa "usa el número global del env": es lo correcto cuando la
+ * conversación no tiene connector (setup de una sola línea) o cuando el
+ * connector guardado no es de WhatsApp.
+ *
+ * **Lanza** si el connector existe pero le faltan `phoneNumberId` o
+ * `accessToken`. Es deliberado: con 2+ marcas activas, responderle al cliente
+ * desde el número equivocado es peor que no responderle, porque el error es
+ * invisible — llega un mensaje de otra empresa y nadie se entera. Una
+ * excepción sí se ve.
+ */
+export async function resolveWhatsAppSender(
+  connectorId?: string | null,
+): Promise<WhatsAppCredentials | null> {
+  if (!connectorId) return null;
+  const connector = await prisma.leadConnector.findFirst({
+    where: { id: connectorId, provider: "WHATSAPP", deletedAt: null },
+  });
+  if (!connector) return null;
+  const credentials = getWhatsAppCredentials(connector);
+  if (!credentials) {
+    throw new Error(
+      `El connector de WhatsApp "${connector.name}" (${connector.id}) no tiene phoneNumberId o accessToken. ` +
+        `No se envía el mensaje para no responder desde otro número.`,
+    );
+  }
+  return credentials;
+}
