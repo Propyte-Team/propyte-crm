@@ -10,6 +10,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
+import { dueDateSchema } from "@/lib/due-date";
 
 // Roles con acceso completo a actividades
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -30,7 +31,7 @@ const createActivitySchema = z.object({
   ]),
   subject: z.string().min(3, "El asunto debe tener al menos 3 caracteres").max(200).trim(),
   description: z.string().max(5000).optional(),
-  dueDate: z.coerce.date().optional(),
+  dueDate: dueDateSchema.optional(),
   status: z.enum(["PENDIENTE", "COMPLETADA", "VENCIDA", "CANCELADA"]).optional(),
   outcome: z.string().max(1000).optional(),
   duration_minutes: z.number().int().min(0).max(480).optional(),

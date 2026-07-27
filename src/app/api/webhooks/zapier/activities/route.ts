@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
+import { parseDueDate } from "@/lib/due-date";
 
 export async function POST(req: NextRequest) {
   const apiKey = await authenticateApiKey(req);
@@ -19,6 +20,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Sin zona, se interpreta como hora de pared de Cancún — igual que el
+    // resto de las rutas de actividades. Un `new Date(body.dueDate)` a secas
+    // aquí guardaría basura silenciosa (Invalid Date) si Zapier manda un
+    // datetime sin offset o una fecha de calendario imposible.
+    let dueDate: Date | null = null;
+    if (body.dueDate) {
+      dueDate = parseDueDate(body.dueDate);
+      if (!dueDate) {
+        return NextResponse.json({ error: "dueDate inválido" }, { status: 400 });
+      }
+    }
+
     const activity = await prisma.activity.create({
       data: {
         contactId: body.contactId,
@@ -27,7 +40,7 @@ export async function POST(req: NextRequest) {
         activityType: body.activityType,
         subject: body.subject,
         description: body.description || null,
-        dueDate: body.dueDate ? new Date(body.dueDate) : null,
+        dueDate,
         status: body.status || "PENDIENTE",
       },
     });
