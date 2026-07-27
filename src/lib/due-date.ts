@@ -26,12 +26,19 @@ import { CANCUN_TZ } from "@/lib/format-date";
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const PARTE_FECHA = /^(\d{4})-(\d{2})-(\d{2})/;
 
-// Zona explícita al final del string: "Z" literal, o un offset ±HH:MM /
-// ±HHMM (colon opcional). Requerir las 4 cifras del offset completo (no solo
-// "termina en signo+dígitos") es lo que evita el falso positivo con
-// "2026-07-30": su cola "-30" solo tiene 2 dígitos tras el signo, no los 4
-// de un offset real, así que nunca matchea.
-const TIENE_ZONA = /(Z|[+-]\d{2}:?\d{2})$/;
+// Un datetime-local ISO sin zona: "YYYY-MM-DDTHH:mm", con segundos y
+// milisegundos opcionales. Es el ÚNICO formato sin zona que se ancla a
+// Cancún fuera del caso de fecha sola — cualquier otra cosa ("07/30/2026",
+// "July 30, 2026", RFC 2822, etc.) se rechaza en vez de adivinar, ver
+// comentario en parseDueDate.
+const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
+// Zona explícita al final del string: "Z"/"z" literal (RFC 3339 permite
+// minúscula), o un offset ±HH:MM / ±HHMM (colon opcional). Requerir las 4
+// cifras del offset completo (no solo "termina en signo+dígitos") es lo que
+// evita el falso positivo con "2026-07-30": su cola "-30" solo tiene 2
+// dígitos tras el signo, no los 4 de un offset real, así que nunca matchea.
+const TIENE_ZONA = /([Zz]|[+-]\d{2}:?\d{2})$/;
 
 /**
  * Offset de Cancún en el instante dado, como "-05:00", derivado del
@@ -77,8 +84,15 @@ function esDiaDeCalendarioReal(value: string): boolean {
  * - El <input type="datetime-local"> manda "YYYY-MM-DDTHH:mm[:ss]" sin
  *   zona. Interpretarlo con `new Date(value)` a secas lo deja a merced de
  *   la zona del proceso (bug B). Se ancla con la hora de pared de Cancún.
- * - Un string que SÍ trae zona (Z o ±HH:MM/±HHMM) pasa intacto — ya es un
+ * - Un string que SÍ trae zona (Z/z o ±HH:MM/±HHMM) pasa intacto — ya es un
  *   instante inequívoco, no hay nada que anclar.
+ * - Cualquier otro formato ("07/30/2026", "July 30, 2026", RFC 2822, etc.)
+ *   se RECHAZA, no se adivina. Pegarle el offset de Cancún a un string no-ISO
+ *   y confiárselo a `new Date()` no sirve: para formatos no reconocidos por
+ *   el estándar, `new Date()` ignora silenciosamente el offset pegado y cae
+ *   en su parser legacy dependiente de la zona del proceso — exactamente el
+ *   bug B que este módulo existe para matar. Mejor un null (→ 400 explícito)
+ *   que un instante equivocado en silencio.
  *
  * La regla vive SOLO aquí, en la frontera donde el string entra al sistema —
  * duplicarla en el módulo de agrupación (src/lib/agenda/grouping.ts) la
@@ -100,13 +114,13 @@ export function parseDueDate(value: string): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
-  // Sin zona y no es solo fecha: datetime local (u otra cosa no parseable).
-  // Se ancla con el offset de Cancún pegado directamente al final del string
-  // tal cual vino, conservando su propia hora. Si `value` no tiene una parte
-  // de fecha reconocible (garbage), se usa "ahora" como instante de sondeo
-  // para el offset — el resultado de todos modos será Invalid Date más abajo.
-  const m = PARTE_FECHA.exec(value);
-  const offset = cancunOffset(m ? new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00Z`) : new Date());
+  // Sin zona y no es solo fecha: el ÚNICO formato que se acepta aquí es un
+  // datetime-local ISO estricto. Todo lo demás falla cerrado con null —
+  // ver el porqué en el docstring de arriba.
+  if (!LOCAL_DATETIME.test(value)) return null;
+
+  const m = PARTE_FECHA.exec(value)!; // LOCAL_DATETIME ya garantiza el prefijo YYYY-MM-DD
+  const offset = cancunOffset(new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00Z`));
   const anchored = new Date(`${value}${offset}`);
   return Number.isNaN(anchored.getTime()) ? null : anchored;
 }

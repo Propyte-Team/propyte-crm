@@ -21,14 +21,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Sin zona, se interpreta como hora de pared de Cancún — igual que el
-    // resto de las rutas de actividades. Un `new Date(body.dueDate)` a secas
-    // aquí guardaría basura silenciosa (Invalid Date) si Zapier manda un
-    // datetime sin offset o una fecha de calendario imposible.
+    // resto de las rutas de actividades. Antes de este fix, un
+    // `new Date(body.dueDate)` a secas con un datetime sin offset o una
+    // fecha de calendario imposible producía un Invalid Date que Prisma
+    // rechazaba con PrismaClientValidationError: un 500 opaco, no un guardado
+    // silencioso. Ahora se valida aquí y se responde 400 con un mensaje útil.
     let dueDate: Date | null = null;
     if (body.dueDate) {
       dueDate = parseDueDate(body.dueDate);
       if (!dueDate) {
-        return NextResponse.json({ error: "dueDate inválido" }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: `dueDate inválido: "${body.dueDate}". Usa "YYYY-MM-DD" o "YYYY-MM-DDTHH:mm[:ss]" (opcionalmente con zona, ej. "Z" o "-05:00").`,
+          },
+          { status: 400 },
+        );
       }
     }
 

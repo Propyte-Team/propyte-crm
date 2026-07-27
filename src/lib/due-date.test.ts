@@ -34,6 +34,27 @@ describe("parseDueDate", () => {
     );
   });
 
+  it("acepta la 'z' minúscula como zona (RFC 3339 la permite)", () => {
+    expect(parseDueDate("2026-07-30T14:30:00z")?.toISOString()).toBe("2026-07-30T14:30:00.000Z");
+  });
+
+  it.each([
+    ["07/30/2026"],
+    ["2026/07/30"],
+    ["July 30, 2026"],
+    ["Thu, 30 Jul 2026 14:30:00 GMT"],
+  ])(
+    "rechaza el formato no-ISO %s en vez de adivinar la zona del proceso",
+    (value) => {
+      // Estos NO son ISO. Antes del fix, la rama de fallback le pegaba el
+      // offset de Cancún y se lo pasaba a `new Date()` de todos modos —
+      // pero para formatos no-ISO, `new Date()` ignora el offset pegado y
+      // cae en su parser legacy dependiente de la TZ del proceso: el mismo
+      // bug B, reintroducido por la puerta trasera. Ahora se falla cerrado.
+      expect(parseDueDate(value)).toBeNull();
+    },
+  );
+
   it("rechaza una fecha de calendario imposible (30 de febrero), con o sin zona", () => {
     expect(parseDueDate("2026-02-30")).toBeNull();
     expect(parseDueDate("2026-02-30T10:00:00Z")).toBeNull();
@@ -74,6 +95,19 @@ describe("parseDueDate", () => {
       (tz) => {
         vi.stubEnv("TZ", tz);
         expect(parseDueDate("2026-07-30T14:30")?.toISOString()).toBe("2026-07-30T19:30:00.000Z");
+      },
+    );
+
+    it.each(["UTC", "America/Mexico_City", "Asia/Tokyo"])(
+      "rechaza formatos no-ISO igual en las tres zonas (process.env.TZ=%s), no solo en una",
+      (tz) => {
+        // La tabla que motivó el fix: con la rama de fallback vieja,
+        // "July 30, 2026" daba 29 o 30 de julio según esta misma variable.
+        vi.stubEnv("TZ", tz);
+        expect(parseDueDate("07/30/2026")).toBeNull();
+        expect(parseDueDate("2026/07/30")).toBeNull();
+        expect(parseDueDate("July 30, 2026")).toBeNull();
+        expect(parseDueDate("Thu, 30 Jul 2026 14:30:00 GMT")).toBeNull();
       },
     );
   });

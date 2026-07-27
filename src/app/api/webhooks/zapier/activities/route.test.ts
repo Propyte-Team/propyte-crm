@@ -31,9 +31,12 @@ beforeEach(() => {
 });
 
 describe("POST /api/webhooks/zapier/activities — dueDate", () => {
-  it("responde 400 con un dueDate ilegible en vez de guardar Invalid Date", async () => {
-    // Antes del fix: `new Date(body.dueDate)` crudo. Un dueDate roto se
-    // guardaba como Invalid Date en vez de rechazarse.
+  it("responde 400 con un dueDate ilegible, con mensaje que incluye el valor recibido", async () => {
+    // Antes del fix: `new Date(body.dueDate)` crudo. Un dueDate roto producía
+    // un Invalid Date que Prisma rechazaba con PrismaClientValidationError —
+    // un 500 opaco, NO un guardado silencioso. Ahora se valida antes y se
+    // responde 400 con un mensaje que sirve para depurar desde el historial
+    // de un Zap.
     const res = await POST(
       req({
         contactId: "c1",
@@ -46,7 +49,36 @@ describe("POST /api/webhooks/zapier/activities — dueDate", () => {
 
     expect(res.status).toBe(400);
     expect(activityCreate).not.toHaveBeenCalled();
+    const json = await res.json();
+    expect(json.error).toContain("no-es-fecha");
   });
+
+  it.each([
+    ["07/30/2026"],
+    ["2026/07/30"],
+    ["July 30, 2026"],
+    ["Thu, 30 Jul 2026 14:30:00 GMT"],
+  ])(
+    "responde 400 para el formato no-ISO %s en vez de adivinar la zona del proceso",
+    async (dueDate) => {
+      // Estos formatos NO son ISO. Pegarles el offset de Cancún y confiarlos
+      // a `new Date()` no sirve — su parser legacy ignora el offset pegado y
+      // cae de vuelta en la zona del proceso, reintroduciendo el bug B en
+      // este endpoint (el único con input externo no controlado).
+      const res = await POST(
+        req({
+          contactId: "c1",
+          userId: "u1",
+          activityType: "TASK",
+          subject: "Tarea desde Zapier",
+          dueDate,
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(activityCreate).not.toHaveBeenCalled();
+    },
+  );
 
   it("responde 400 con una fecha de calendario imposible", async () => {
     const res = await POST(
