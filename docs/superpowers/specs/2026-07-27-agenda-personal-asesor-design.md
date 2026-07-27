@@ -93,13 +93,15 @@ Puntos identificados en el audit:
 
 | Archivo | Estado |
 |---|---|
-| `app/(dashboard)/activities/page.tsx:68` | Ya tiene guardia: `{a.contact ? … : "—"}` |
-| `app/(dashboard)/activities/page.tsx:78` | **Rompe** — `href={/contacts/${a.contact.id}}` sin guardia |
+| `app/(dashboard)/activities/page.tsx` | **Ya es null-safe** — tanto el nombre (`{a.contact ? … : "—"}`) como el `<Link>` están dentro de guardias |
+| `server/activities.ts:171-191` | **Rompe por construcción** — `CreateActivityInput.contactId: string` y `where: { id: data.contactId }`. Al volverse opcional, el `findUnique` deja de tipar sin guardia |
 | `app/api/activities/route.ts` (115, 225) | Revisar consumidores del include |
 | `server/activities.ts` (145, 223, 281, 391) | Revisar consumidores del include |
 | `server/today.ts:99` | Revisar consumidores del include |
 
-**Gate obligatorio:** `tsc --noEmit` + `next build` en verde antes de mergear. La lista de arriba es el punto de partida del audit, no su resultado final — el compilador manda.
+**Gate obligatorio:** `tsc --noEmit` + `next build` en verde antes de mergear.
+
+**Esta lista es el punto de partida del audit, no su resultado.** No se precomputó la lista completa de errores porque exigiría instalar dependencias en el worktree o regenerar el cliente Prisma bajo el árbol de trabajo activo. El ejecutor corre `tsc --noEmit` tras el cambio y obtiene la lista real y completa — que es la autoridad. Una lista adivinada aquí daría falsa confianza.
 
 ### 5.4 Semántica
 
