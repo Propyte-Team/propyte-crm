@@ -169,7 +169,7 @@ export async function getActivities(filters: ActivityFilters = {}) {
 // ============================================================
 
 export interface CreateActivityInput {
-  contactId: string
+  contactId?: string
   dealId?: string
   activityType: ActivityType
   subject: string
@@ -184,11 +184,14 @@ export async function createActivity(data: CreateActivityInput) {
   const session = await getServerSession()
   if (!session?.user) throw new Error("No autorizado")
 
-  // Verificar que el contacto exista
-  const contact = await prisma.contact.findUnique({
-    where: { id: data.contactId, deletedAt: null },
-  })
-  if (!contact) throw new Error("Contacto no encontrado")
+  // Verificar que el contacto exista (solo si la actividad cuelga de uno).
+  // Sin contactId es una actividad personal del asesor — spec §5.4.
+  if (data.contactId) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: data.contactId, deletedAt: null },
+    })
+    if (!contact) throw new Error("Contacto no encontrado")
+  }
 
   // Si se proporciona dealId, verificar que existe
   if (data.dealId) {
@@ -207,7 +210,7 @@ export async function createActivity(data: CreateActivityInput) {
 
   const activity = await prisma.activity.create({
     data: {
-      contactId: data.contactId,
+      contactId: data.contactId ?? null,
       dealId: data.dealId ?? null,
       userId: session.user.id,
       activityType: data.activityType,
