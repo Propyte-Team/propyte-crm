@@ -7,6 +7,13 @@ import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
 import { findMatchingDevelopments } from "./hub-catalog";
 import { nextTask, buildObjective, COMPLETION_OBJECTIVE, type PlaybookTaskLite } from "./playbook/engine";
+import {
+  selectAgentProfile,
+  applyAgentTone,
+  composeObjective,
+  agentPlaybookOf,
+  type AgentProfileWithPlaybook,
+} from "./agent-profiles";
 import type { ActionResult } from "@/lib/workflows/actions";
 
 async function conversationContext(contactId: string): Promise<BotMessage[]> {
@@ -54,21 +61,24 @@ function fallbackDraftObjective(contact: Contact, goal: string): string {
 }
 
 // Objetivo (capa 3) del borrador — SOLO LECTURA (Anexo Técnico §B-Task 8, follow-up).
-// Si hay playbook activo Y la conversación ya tiene ConversationPlaybookState, calcula
-// el objetivo de la siguiente tarea con los helpers PUROS del engine (nextTask +
-// buildObjective) sobre ese estado tal cual está — NUNCA lo crea (findUnique, no
-// upsert), NUNCA marca tareas cumplidas, NUNCA escribe/extrae campos del Contact y
-// NUNCA toca AuditLog. Si no hay playbook activo o la conversación no arrancó
+// Playbook EFECTIVO (Frente 4): el del agente del segmento manda si trae uno (agentPlaybook,
+// resuelto por agentPlaybookOf con el guard de >=1 tarea); si no, el global activo
+// (config.activePlaybookId), igual que antes. Si hay playbook efectivo Y la conversación ya
+// tiene ConversationPlaybookState, calcula el objetivo de la siguiente tarea con los helpers
+// PUROS del engine (nextTask + buildObjective) sobre ese estado tal cual está — NUNCA lo crea
+// (findUnique, no upsert), NUNCA marca tareas cumplidas, NUNCA escribe/extrae campos del
+// Contact y NUNCA toca AuditLog. Si no hay playbook efectivo o la conversación no arrancó
 // playbook, cae al objetivo/goal que el borrador ya recibía (comportamiento previo).
 // Cualquier error aquí (config/playbook/estado) degrada al mismo fallback — jamás debe
 // impedir que se genere el borrador (mismo criterio defensivo que runPlaybookStep).
 async function resolveDraftObjective(
   contact: Contact,
   goal: string,
-  config: BotConfigResolved
+  config: BotConfigResolved,
+  agentPlaybook: AgentProfileWithPlaybook["playbook"] | null = null
 ): Promise<string> {
   const fallback = fallbackDraftObjective(contact, goal);
-  if (!config.activePlaybookId) return fallback;
+  if (!agentPlaybook && !config.activePlaybookId) return fallback;
 
   try {
     const { findConversationForChannel } = await import("@/lib/messaging/conversations");
@@ -80,10 +90,12 @@ async function resolveDraftObjective(
     });
     if (!state) return fallback; // nunca arrancó el playbook: no lo iniciamos desde el borrador
 
-    const pb = await prisma.botPlaybook.findFirst({
-      where: { id: config.activePlaybookId, isActive: true, deletedAt: null },
-      include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
-    });
+    const pb =
+      agentPlaybook ??
+      (await prisma.botPlaybook.findFirst({
+        where: { id: config.activePlaybookId!, isActive: true, deletedAt: null },
+        include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
+      }));
     if (!pb || pb.tasks.length === 0) return fallback;
 
     const completedKeys = ((state.completedTaskKeys as string[]) ?? []) as string[];
@@ -131,7 +143,25 @@ export async function runAiAction(
   const goal = String(config.kind ?? config.goal ?? "seguimiento");
 
   const botConfig = await getBotConfig();
-  const objective = await resolveDraftObjective(contact, goal, botConfig);
+
+  // Agente por segmento (Frente 4): identidad + playbook + tono propios, igual que el
+  // bot en vivo (bot-respond.ts) — pero SIN clasificar (maybeClassifyContact). AI_DRAFT
+  // no debe tener side effects sobre el contacto ni gastar una llamada de clasificación:
+  // se selecciona por el contactType YA existente. Best-effort: cualquier fallo (incluida
+  // la ausencia del modelo botAgentProfile) degrada al comportamiento global de siempre.
+  let agentProfile: AgentProfileWithPlaybook | null = null;
+  try {
+    const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
+    if (hasAgents) {
+      agentProfile = await selectAgentProfile(prisma, contact.contactType);
+    }
+  } catch {
+    // defensivo: sin agente → comportamiento global
+  }
+  const effectiveConfig = applyAgentTone(botConfig, agentProfile);
+
+  const baseObjective = await resolveDraftObjective(contact, goal, effectiveConfig, agentPlaybookOf(agentProfile));
+  const objective = composeObjective(agentProfile?.identity, baseObjective);
   const catalog = await findMatchingDevelopments({
     budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
     budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
@@ -139,7 +169,7 @@ export async function runAiAction(
   });
 
   const system = buildSystemPrompt({
-    config: botConfig,
+    config: effectiveConfig,
     contact: { firstName: contact.firstName, preferredLanguage: contact.preferredLanguage },
     catalog,
     objective,

@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
+import { TriggerType } from "@prisma/client";
 import {
   conditionsDslSchema,
   actionSpecSchema,
@@ -8,6 +10,7 @@ import {
   userTemplateSchema,
   incomingLeadSchema,
   workflowActionsSchema,
+  TRIGGER_TYPES,
 } from "./rebuild-f1";
 
 describe("conditions DSL (§D.4)", () => {
@@ -31,6 +34,18 @@ describe("conditions DSL (§D.4)", () => {
   });
   it("rechaza hoja sin field", () => {
     expect(conditionsDslSchema.safeParse({ all: [{ op: "eq", value: 1 }] }).success).toBe(false);
+  });
+});
+
+describe("TRIGGER_TYPES (drift con enum Prisma TriggerType)", () => {
+  it("el schema de reglas acepta triggerType LIFECYCLE_CHANGE", () => {
+    const r = z.enum(TRIGGER_TYPES).safeParse("LIFECYCLE_CHANGE");
+    expect(r.success).toBe(true);
+  });
+  it("cubre exactamente los valores del enum Prisma TriggerType (guard anti-drift)", () => {
+    const prismaValues = Object.values(TriggerType).sort();
+    const localValues = [...TRIGGER_TYPES].sort();
+    expect(localValues).toEqual(prismaValues);
   });
 });
 

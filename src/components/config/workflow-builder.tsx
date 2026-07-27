@@ -5,52 +5,44 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import {
-  buildTriggerConfig, buildConditionsTree, parseConditions, parseTriggerValue,
+  buildTriggerConfig, buildConditionsTree, parseConditions, parseTriggerValue, hasDecisionNode,
   DEAL_STAGES, LIFECYCLE_STAGES,
   type ConditionTree, type ActionRow,
 } from "@/lib/workflows/builder-model";
 import { LIFECYCLE_LABELS } from "@/lib/constants";
 import { RULE_TEMPLATES } from "@/lib/workflows/builder-templates";
 import { ConditionTreeEditor } from "./condition-tree";
+import {
+  NODE_CATALOG, TRIGGER_CATALOG, coerceFieldConfig, labelFor, type FieldDef,
+} from "@/lib/journey/node-catalog";
 
-const TRIGGER_TYPES = [
-  { value: "EVENT", label: "Evento del sistema" },
-  { value: "STAGE_CHANGE", label: "Cambio de etapa" },
-  { value: "LIFECYCLE_CHANGE", label: "Cambio de ciclo de vida" },
-  { value: "SCORE_THRESHOLD", label: "Umbral de score" },
-  { value: "INACTIVITY", label: "Inactividad" },
-  { value: "SLA_BREACH", label: "Incumplimiento de SLA" },
-  { value: "TIME", label: "Programado (tiempo)" },
-  { value: "BEHAVIORAL", label: "Comportamiento web" },
-];
+// Catálogo único de acciones/disparadores (C.2-i3, sub-task 2). Antes este archivo
+// mantenía sus PROPIOS `TRIGGER_TYPES`/`ACTION_TYPES`/`ACTION_FIELDS` duplicados, que
+// se desincronizaban del catálogo compartido (usado por el canvas de Journey) cada vez
+// que alguien agregaba una acción/disparador en un solo lado. Ahora todo se DERIVA de
+// node-catalog.ts (+ TRIGGER_TYPES de rebuild-f1 vía TRIGGER_CATALOG) — una sola fuente.
+export const BUILDER_TRIGGER_TYPES: { value: string; label: string }[] = TRIGGER_CATALOG.map((m) => ({
+  value: m.type,
+  label: m.label,
+}));
 
+export const BUILDER_ACTION_TYPES: string[] = NODE_CATALOG.map((m) => m.type);
 
-const ACTION_TYPES = [
-  "CREATE_TASK", "SEND_WHATSAPP", "SEND_EMAIL", "MAKE_CALL", "ASSIGN", "REASSIGN",
-  "NOTIFY", "UPDATE_FIELD", "ADD_TAG", "CHANGE_STAGE", "SET_LIFECYCLE", "ENROLL_PLAN", "ESCALATE",
-  "AI_DRAFT", "AI_REPLY", "AI_CALL_SUMMARY", "WEBHOOK",
-];
+export const BUILDER_ACTION_FIELDS: Record<string, FieldDef[]> = Object.fromEntries(
+  NODE_CATALOG.map((m) => [m.type, m.fields ?? []]),
+);
 
-// Campos de config por tipo de acción (para no escribir JSON crudo).
-const ACTION_FIELDS: Record<string, { key: string; label: string; type?: string }[]> = {
-  CREATE_TASK: [{ key: "subject", label: "Asunto" }, { key: "dueInHours", label: "Vence en (horas)", type: "number" }],
-  SEND_WHATSAPP: [{ key: "templateName", label: "Plantilla" }, { key: "body", label: "Mensaje" }],
-  SEND_EMAIL: [{ key: "subject", label: "Asunto" }, { key: "body", label: "Cuerpo" }],
-  NOTIFY: [{ key: "message", label: "Mensaje" }],
-  ADD_TAG: [{ key: "tag", label: "Etiqueta" }],
-  CHANGE_STAGE: [{ key: "stage", label: "Etapa destino" }],
-  SET_LIFECYCLE: [{ key: "toStage", label: "Ciclo de vida destino", type: "lifecycle" }, { key: "allowBackward", label: "Permitir retroceso", type: "boolean" }],
-  UPDATE_FIELD: [{ key: "field", label: "Campo" }, { key: "value", label: "Valor" }],
-  ASSIGN: [{ key: "strategy", label: "Estrategia (round_robin/territory)" }],
-  REASSIGN: [{ key: "strategy", label: "Estrategia" }],
-  ESCALATE: [{ key: "reason", label: "Motivo" }],
-  ENROLL_PLAN: [{ key: "planId", label: "ID del plan" }],
-  AI_DRAFT: [{ key: "instruction", label: "Instrucción" }],
-  AI_REPLY: [{ key: "instruction", label: "Instrucción" }],
-  AI_CALL_SUMMARY: [{ key: "instruction", label: "Instrucción" }],
-  WEBHOOK: [{ key: "url", label: "URL" }],
-  MAKE_CALL: [{ key: "note", label: "Nota" }],
-};
+// Guard anti data-loss (sub-task 3): una regla armada en el canvas de Journey puede
+// traer nodos `kind:"decision"` (ramas) que este form plano no sabe representar ni
+// reconstruir. Si el form la "guarda" igual, aplana `actions` y la estructura de
+// ramas se pierde para siempre. `shouldGuardRule` es la única fuente de esa decisión
+// — el componente y cualquier prueba la consultan igual, sin lógica duplicada.
+export function shouldGuardRule(rule: { actions?: unknown } | null | undefined): boolean {
+  return hasDecisionNode(rule?.actions);
+}
+
+export const DECISION_GUARD_MESSAGE =
+  "Esta regla usa ramas de decisión; edítala en el canvas de Journey para no perder su estructura.";
 
 interface Props {
   rule?: any;
@@ -61,13 +53,16 @@ interface Props {
 
 export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const isEdit = !!rule;
+  // Guard anti data-loss (sub-task 3): si la regla trae nodos de decisión, este form
+  // plano NUNCA los aplana ni los guarda — ver shouldGuardRule/DECISION_GUARD_MESSAGE arriba.
+  const guarded = shouldGuardRule(rule);
   const [name, setName] = useState(rule?.name ?? "");
   const [description, setDescription] = useState(rule?.description ?? "");
   const [triggerType, setTriggerType] = useState(rule?.triggerType ?? "EVENT");
   const [triggerValue, setTriggerValue] = useState<string>(parseTriggerValue(rule));
   const [tree, setTree] = useState<ConditionTree>(parseConditions(rule?.conditions));
   const [actions, setActions] = useState<ActionRow[]>(
-    Array.isArray(rule?.actions) && rule.actions.length
+    !guarded && Array.isArray(rule?.actions) && rule.actions.length
       ? rule.actions.map((a: any) => ({ type: a.type, config: a.config ?? {}, delayMinutes: a.delayMinutes != null ? String(a.delayMinutes) : "" }))
       : [{ type: "CREATE_TASK", config: {} }]
   );
@@ -89,6 +84,10 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   }
 
   async function save(activate: boolean) {
+    // Defensa en profundidad: aunque los botones de guardar no se rendericen en
+    // estado guardado, save() nunca debe emitir un payload aplanado que pise una
+    // regla con ramas de decisión (sub-task 3).
+    if (guarded) return;
     setError(null);
     if (!name || name.length < 3) { setError("El nombre debe tener al menos 3 caracteres."); return; }
     if (actions.length === 0) { setError("Agrega al menos una acción."); return; }
@@ -100,7 +99,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       conditions: buildConditionsTree(tree),
       actions: actions.map((a) => ({
         type: a.type,
-        config: a.config,
+        config: coerceFieldConfig(a.type, a.config),
         ...(a.delayMinutes && Number(a.delayMinutes) > 0 ? { delayMinutes: Number(a.delayMinutes) } : {}),
       })),
       priority: Number(priority) || 100,
@@ -118,6 +117,23 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       const d = await res.json().catch(() => ({}));
       setError(typeof d.error === "string" ? d.error : "No se pudo guardar la regla");
     }
+  }
+
+  // Estado guardado (sub-task 3): esta regla tiene ramas de decisión que el form plano
+  // no puede editar sin destruirlas. No renderizamos el form — solo un banner + salida
+  // al canvas de Journey. Save no se ofrece en absoluto (ver también el guard en save()).
+  if (guarded) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {DECISION_GUARD_MESSAGE}
+        </div>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary text-[13px]" onClick={onCancel}>Cerrar</button>
+          <a href={rule?.id ? `/journey?mode=targeted&ruleId=${rule.id}` : "/journey"} className="btn-primary text-[13px]">Abrir en Journey</a>
+        </div>
+      </div>
+    );
   }
 
   const showTriggerValue = ["EVENT", "STAGE_CHANGE", "LIFECYCLE_CHANGE", "SCORE_THRESHOLD", "INACTIVITY"].includes(triggerType);
@@ -161,7 +177,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
         <h3 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Disparador</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <select className="form-input text-[13px]" value={triggerType} onChange={(e) => { setTriggerType(e.target.value); setTriggerValue(""); }}>
-            {TRIGGER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {BUILDER_TRIGGER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           {showTriggerValue && (
             triggerType === "STAGE_CHANGE" ? (
@@ -196,33 +212,30 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
             <div className="flex items-center justify-between gap-2">
               <select className="form-input text-[13px]" value={a.type}
                 onChange={(e) => setActions(actions.map((x, j) => j === i ? { type: e.target.value, config: {} } : x))}>
-                {ACTION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {BUILDER_ACTION_TYPES.map((t) => <option key={t} value={t}>{labelFor(t)}</option>)}
               </select>
               <button type="button" onClick={() => setActions(actions.filter((_, j) => j !== i))} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><X className="h-4 w-4" /></button>
             </div>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-              {(ACTION_FIELDS[a.type] ?? []).map((f) => (
-                f.key === "stage" ? (
-                  <select key={f.key} className="form-input text-[13px]" value={a.config[f.key] ?? ""}
-                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))}>
+              {(BUILDER_ACTION_FIELDS[a.type] ?? []).map((f) => (
+                f.kind === "select" ? (
+                  <select key={f.configKey} className="form-input text-[13px]" value={a.config[f.configKey] ?? ""}
+                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))}>
                     <option value="">{f.label}…</option>
-                    {DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {(f.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                ) : f.type === "lifecycle" ? (
-                  <select key={f.key} className="form-input text-[13px]" value={a.config[f.key] ?? ""}
-                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))}>
-                    <option value="">{f.label}…</option>
-                    {LIFECYCLE_STAGES.map((s) => <option key={s} value={s}>{LIFECYCLE_LABELS[s] ?? s}</option>)}
-                  </select>
-                ) : f.type === "boolean" ? (
-                  <select key={f.key} className="form-input text-[13px]" value={a.config[f.key] ?? "false"}
-                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))}>
+                ) : f.kind === "checkbox" ? (
+                  <select key={f.configKey} className="form-input text-[13px]" value={a.config[f.configKey] ?? "false"}
+                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))}>
                     <option value="false">No</option>
                     <option value="true">Sí</option>
                   </select>
+                ) : f.kind === "textarea" ? (
+                  <textarea key={f.configKey} className="form-input text-[13px]" placeholder={f.placeholder ?? f.label} value={a.config[f.configKey] ?? ""}
+                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))} />
                 ) : (
-                  <input key={f.key} className="form-input text-[13px]" type={f.type ?? "text"} placeholder={f.label} value={a.config[f.key] ?? ""}
-                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.key]: e.target.value } } : x))} />
+                  <input key={f.configKey} className="form-input text-[13px]" type={f.kind === "number" ? "number" : "text"} placeholder={f.placeholder ?? f.label} value={a.config[f.configKey] ?? ""}
+                    onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))} />
                 )
               ))}
             </div>

@@ -11,6 +11,7 @@ const convPlaybookStateUpsert = vi.fn();
 const botPlaybookFindFirst = vi.fn();
 const contactUpdate = vi.fn();
 const auditLogCreate = vi.fn();
+const agentCount = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -25,8 +26,18 @@ vi.mock("@/lib/db", () => ({
     botPlaybook: { findFirst: (...a: unknown[]) => botPlaybookFindFirst(...a) },
     contact: { update: (...a: unknown[]) => contactUpdate(...a) },
     auditLog: { create: (...a: unknown[]) => auditLogCreate(...a) },
+    botAgentProfile: { count: (...a: unknown[]) => agentCount(...a) },
   },
 }));
+
+// selectAgentProfile se mockea; applyAgentTone/composeObjective/agentPlaybookOf (puros)
+// quedan reales para poder inspeccionar el ensamblado de verdad (mismo patrón que
+// bot-respond.agents.test.ts).
+const selectAgentProfile = vi.fn();
+vi.mock("./agent-profiles", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agent-profiles")>();
+  return { ...actual, selectAgentProfile: (...a: unknown[]) => selectAgentProfile(...a) };
+});
 
 const getBotConfig = vi.fn();
 vi.mock("./config", () => ({ getBotConfig: (...a: unknown[]) => getBotConfig(...a) }));
@@ -112,6 +123,8 @@ beforeEach(() => {
   messageFindMany.mockResolvedValue([]);
   lintBrandVoice.mockReturnValue({ ok: true, violations: [] });
   askClaude.mockResolvedValue("Hola Ana, este es tu borrador.");
+  agentCount.mockResolvedValue(0);
+  selectAgentProfile.mockResolvedValue(null);
 });
 
 describe("runAiAction(AI_DRAFT) — ensamblado en 4 capas", () => {
@@ -223,5 +236,85 @@ describe("runAiAction(AI_DRAFT) — ensamblado en 4 capas", () => {
     expect(result).toEqual({ skipped: true, note: "Brand linter bloqueó el borrador: hype" });
     expect(activityCreate).not.toHaveBeenCalled();
     expect(notificationCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("runAiAction(AI_DRAFT) — agente por segmento (Frente 4, sin clasificar)", () => {
+  const CONTACT_BROKER = { ...CONTACT, contactType: "BROKER_EXTERNO" } as unknown as Contact;
+
+  it("sin agentes activos (count 0) → NO selecciona agente; comportamiento global intacto", async () => {
+    agentCount.mockResolvedValue(0);
+    await runAiAction("AI_DRAFT", CONTACT_BROKER, { kind: "seguimiento" });
+    expect(selectAgentProfile).not.toHaveBeenCalled();
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).not.toContain("IDENTIDAD");
+  });
+
+  it("con agente activo del segmento con tonePreset → override de tono en el system prompt", async () => {
+    agentCount.mockResolvedValue(1);
+    selectAgentProfile.mockResolvedValue({
+      id: "ap1", name: "Brokers", identity: "IDENTIDAD-BROKERS", tonePreset: "EJECUTIVO_SOBRIO", playbook: null,
+    });
+
+    await runAiAction("AI_DRAFT", CONTACT_BROKER, { kind: "seguimiento" });
+
+    expect(selectAgentProfile).toHaveBeenCalledWith(expect.anything(), "BROKER_EXTERNO");
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).toContain("Trato de usted."); // voiceGuidance de EJECUTIVO_SOBRIO
+  });
+
+  it("NO clasifica: selectAgentProfile se llama con el contactType actual, sin tocar el clasificador", async () => {
+    agentCount.mockResolvedValue(1);
+    selectAgentProfile.mockResolvedValue(null);
+    await runAiAction("AI_DRAFT", CONTACT_BROKER, { kind: "seguimiento" });
+    expect(selectAgentProfile).toHaveBeenCalledWith(expect.anything(), "BROKER_EXTERNO");
+  });
+
+  it("identidad del agente antecede al objetivo del borrador", async () => {
+    agentCount.mockResolvedValue(1);
+    selectAgentProfile.mockResolvedValue({
+      id: "ap2", name: "Reclutamiento", identity: "IDENTIDAD-EMPLEO", tonePreset: null, playbook: null,
+    });
+
+    await runAiAction("AI_DRAFT", CONTACT_BROKER, { kind: "seguimiento" });
+
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).toContain("IDENTIDAD-EMPLEO");
+    expect(system).toContain("seguimiento"); // el objetivo base sigue presente
+    expect(system.indexOf("IDENTIDAD-EMPLEO")).toBeLessThan(system.indexOf("seguimiento"));
+  });
+
+  it("agente con playbook propio y estado con tarea pendiente → usa el playbook del AGENTE, no el global (solo lectura)", async () => {
+    agentCount.mockResolvedValue(1);
+    selectAgentProfile.mockResolvedValue({
+      id: "ap3", name: "Brokers", identity: "IDENTIDAD-BROKERS", tonePreset: null,
+      playbook: { id: "pb-agent", tasks: [TASK_A, TASK_B] },
+    });
+    findConversationForChannel.mockResolvedValue({ id: "conv1" });
+    convPlaybookStateFindUnique.mockResolvedValue({ conversationId: "conv1", completedTaskKeys: ["a"] });
+
+    await runAiAction("AI_DRAFT", CONTACT_BROKER, { kind: "seguimiento" });
+
+    expect(botPlaybookFindFirst).not.toHaveBeenCalled(); // usa el del agente, no consulta el global
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).toContain("confirmar presupuesto"); // objetivo de TASK_B ("a" ya completada)
+    expect(system).toContain("IDENTIDAD-BROKERS");
+
+    // Solo lectura: ningún write de playbook/contacto/auditoría
+    expect(convPlaybookStateUpdate).not.toHaveBeenCalled();
+    expect(convPlaybookStateUpsert).not.toHaveBeenCalled();
+    expect(contactUpdate).not.toHaveBeenCalled();
+    expect(auditLogCreate).not.toHaveBeenCalled();
+  });
+
+  it("selectAgentProfile falla → degrada al comportamiento global, el borrador se genera igual", async () => {
+    agentCount.mockResolvedValue(1);
+    selectAgentProfile.mockRejectedValue(new Error("boom"));
+
+    const result = await runAiAction("AI_DRAFT", CONTACT_BROKER, { kind: "seguimiento" });
+
+    expect(result).toEqual({});
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).not.toContain("IDENTIDAD");
   });
 });

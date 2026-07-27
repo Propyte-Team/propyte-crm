@@ -13,9 +13,18 @@ export interface PlanLite {
 }
 
 export type Lane = string; // LifecycleStage | "GENERAL"
-export interface RuleNode { id: string; name: string; isActive: boolean; triggerType: string }
+export interface RuleNode { id: string; name: string; isActive: boolean; triggerType: string; isSlaBreach: boolean }
 export interface CadenceNode { id: string; name: string; isActive: boolean; stepCount: number }
 export interface GeneralView { lanes: { stage: Lane; rules: RuleNode[]; cadences: CadenceNode[] }[] }
+
+export interface SlaPolicyLite {
+  id: string; name: string; isActive: boolean; isDefault: boolean; priority: number;
+  firstTouchMinutes: number; retryMinutes: number; orphanHours: number; conditions: unknown;
+}
+export interface SlaPanelRow {
+  id: string; name: string; isDefault: boolean; priority: number;
+  firstTouchMinutes: number; retryMinutes: number; orphanHours: number; conditionsSummary: string;
+}
 
 const STAGES: string[] = LIFECYCLE_ORDER as unknown as string[];
 
@@ -59,6 +68,11 @@ export function ruleStage(rule: RuleLite): Lane {
   return fromAction;
 }
 
+/** true si la regla se dispara por incumplimiento de SLA (badge en el canvas de Journey). */
+export function isSlaTriggeredRule(rule: RuleLite): boolean {
+  return rule.triggerType === "SLA_BREACH";
+}
+
 function planIdsEnrolledBy(rule: RuleLite): string[] {
   return collectActionNodes(safeActions(rule))
     .filter((a) => a.type === "ENROLL_PLAN" && typeof a.config?.planId === "string")
@@ -74,7 +88,7 @@ export function buildGeneralView(rules: RuleLite[], plans: PlanLite[]): GeneralV
 
   for (const r of rules) {
     const stage = ruleStage(r);
-    ensure(stage).rules.push({ id: r.id, name: r.name, isActive: r.isActive, triggerType: r.triggerType });
+    ensure(stage).rules.push({ id: r.id, name: r.name, isActive: r.isActive, triggerType: r.triggerType, isSlaBreach: isSlaTriggeredRule(r) });
     for (const pid of planIdsEnrolledBy(r)) {
       const p = planById.get(pid);
       if (p && !placedPlans.has(pid)) {
@@ -97,7 +111,13 @@ export function buildGeneralView(rules: RuleLite[], plans: PlanLite[]): GeneralV
   return { lanes };
 }
 
-export interface FlowNode { kind: "trigger" | "condition" | "action" | "cadence" | "stage"; label: string }
+export interface FlowNode {
+  kind: "trigger" | "condition" | "action" | "cadence" | "stage"; label: string;
+  /** Solo en nodos "cadence": id del ActionPlan enrolado (deep-link a Configuración). */
+  planId?: string;
+  /** Solo en nodos "trigger": true si la regla dispara por incumplimiento de SLA. */
+  isSlaBreach?: boolean;
+}
 export interface TargetedView { flows: FlowNode[][] }
 export interface TargetedFilter { campaign?: string; contactType?: string }
 
@@ -143,7 +163,7 @@ export function buildTargetedView(rules: RuleLite[], plans: PlanLite[], filter: 
     if (!ruleMatchesFilter(r, filter)) continue;
     const flow: FlowNode[] = [];
     const trigVal = (r.triggerConfig?.eventType ?? r.triggerConfig?.toStage ?? r.triggerType) as string;
-    flow.push({ kind: "trigger", label: `⚡ ${r.name} (${trigVal})` });
+    flow.push({ kind: "trigger", label: `⚡ ${r.name} (${trigVal})`, isSlaBreach: isSlaTriggeredRule(r) });
     flow.push({ kind: "condition", label: filter.campaign ?? filter.contactType ?? "condición" });
 
     let stageEffect: string | null =
@@ -153,7 +173,7 @@ export function buildTargetedView(rules: RuleLite[], plans: PlanLite[], filter: 
     for (const a of collectActionNodes(safeActions(r))) {
       if (a.type === "ENROLL_PLAN") {
         const p = planById.get(String(a.config?.planId));
-        flow.push({ kind: "cadence", label: `⟳ ${p ? p.name : "cadencia"}${p ? ` (${p.steps.length} pasos)` : ""}` });
+        flow.push({ kind: "cadence", label: `⟳ ${p ? p.name : "cadencia"}${p ? ` (${p.steps.length} pasos)` : ""}`, planId: p?.id });
       } else if (a.type === "SET_LIFECYCLE") {
         if (typeof a.config?.toStage === "string") stageEffect = a.config.toStage as string;
       } else {
@@ -164,4 +184,60 @@ export function buildTargetedView(rules: RuleLite[], plans: PlanLite[], filter: 
     flows.push(flow);
   }
   return { flows };
+}
+
+// ─── Deep-link Journey ↔ Configuración (sub-block D) ──────────────────────────
+
+export interface TargetedJourneyLink { mode: "targeted"; campaign: string }
+export interface GeneralJourneyLink { mode: "general" }
+
+/**
+ * Decide cómo abrir una regla en el canvas de Journey al llegar desde Configuración
+ * (?mode=targeted&ruleId=<id>). Si la regla referencia una campaña
+ * (adAttribution.campaignName) en sus condiciones, se puede mostrar en la vista
+ * Dirigida con esa campaña ya seleccionada. Si no (regla "general", sin segmento de
+ * campaña), la vista Dirigida no tiene cómo filtrarla — degrada a General sin
+ * crashear, en vez de forzar un estado inconsistente.
+ */
+export function resolveRuleJourneyLink(rule: RuleLite | undefined): TargetedJourneyLink | GeneralJourneyLink {
+  if (!rule) return { mode: "general" };
+  let campaign: string | undefined;
+  walkConditions(rule.conditions, (leaf) => {
+    if (!campaign && leaf.field === "adAttribution.campaignName" && typeof leaf.value === "string" && leaf.value) {
+      campaign = leaf.value;
+    }
+  });
+  return campaign ? { mode: "targeted", campaign } : { mode: "general" };
+}
+
+// ─── Panel SLA de solo lectura (sub-block A) ──────────────────────────────────
+
+const OP_SHORT: Record<string, string> = {
+  eq: "=", neq: "≠", gt: ">", gte: "≥", lt: "<", lte: "≤",
+  in: "en", nin: "no en", contains: "contiene", changed_to: "cambió a",
+};
+
+/** Resumen corto y legible de un árbol de condiciones DSL (all/any, anidado). Puro. */
+export function summarizeConditions(conditions: unknown): string {
+  const parts: string[] = [];
+  walkConditions(conditions, (leaf) => {
+    if (!leaf.field) return;
+    if (leaf.op === "exists") { parts.push(`${leaf.field} existe`); return; }
+    const op = OP_SHORT[leaf.op ?? ""] ?? leaf.op ?? "";
+    parts.push(`${leaf.field} ${op} ${leaf.value ?? ""}`.trim());
+  });
+  return parts.length ? parts.join(" · ") : "Sin condiciones (aplica siempre)";
+}
+
+/** Filas de solo lectura para el panel SLA del Journey: solo activas, resumen de segmento. */
+export function deriveSlaPanel(policies: SlaPolicyLite[]): SlaPanelRow[] {
+  return policies
+    .filter((p) => p.isActive)
+    .slice()
+    .sort((a, b) => a.priority - b.priority)
+    .map((p) => ({
+      id: p.id, name: p.name, isDefault: p.isDefault, priority: p.priority,
+      firstTouchMinutes: p.firstTouchMinutes, retryMinutes: p.retryMinutes, orphanHours: p.orphanHours,
+      conditionsSummary: p.isDefault ? "Todos los contactos (default)" : summarizeConditions(p.conditions),
+    }));
 }

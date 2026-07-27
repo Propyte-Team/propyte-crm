@@ -36,6 +36,16 @@ export function isGroup(item: CondItem): item is CondGroup {
   return (item as CondGroup).combinator !== undefined;
 }
 
+// Guard anti data-loss (sub-task 3): el formulario plano del WorkflowBuilder solo
+// entiende ActionSpec (type/config). Un árbol construido en el canvas de Journey puede
+// tener nodos `kind:"decision"` (ramas) que el form plano no sabe representar; si los
+// aplana y guarda, la estructura de ramas se pierde. Los nodos-acción del schema
+// (workflowNodeSchema) nunca anidan `branches`, así que basta revisar el nivel superior.
+export function hasDecisionNode(actions: unknown): boolean {
+  if (!Array.isArray(actions)) return false;
+  return actions.some((n) => n !== null && typeof n === "object" && (n as { kind?: unknown }).kind === "decision");
+}
+
 // STAGE_CHANGE escribe `toStage` (motor en engine.ts lee `toStage`). Compat: parseTriggerValue lee `stage` como fallback para reglas antiguas.
 export function buildTriggerConfig(triggerType: string, triggerValue: string): Record<string, unknown> {
   if (!triggerValue) return {};

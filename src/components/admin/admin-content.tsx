@@ -118,7 +118,7 @@ const ADMIN_TAB_TITLES: Record<string, string> = {
   integrations: "Integraciones",
   bot: "Bot",
   playbook: "Playbook de calificación",
-  botAgents: "Agentes del bot",
+  botAgents: "Agentes conversacionales",
 };
 const DEFAULT_ADMIN_TAB = "users";
 

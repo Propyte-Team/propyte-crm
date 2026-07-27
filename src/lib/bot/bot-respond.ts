@@ -9,6 +9,7 @@ import { findMatchingDevelopments } from "./hub-catalog";
 import { runPlaybookStep } from "./playbook/run";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
+import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profiles";
 
 export function shouldBotRespondForChannel(config: BotConfigResolved, channel: string): boolean {
   return config.botEnabled && config.enabledChannels.includes(channel);
@@ -139,7 +140,7 @@ export async function botRespond(
   } catch {
     // defensivo: sin agente → comportamiento global
   }
-  const effectiveConfig = agentProfile?.tonePreset ? { ...config, tonePreset: agentProfile.tonePreset } : config;
+  const effectiveConfig = applyAgentTone(config, agentProfile);
 
   const firstTouch = history.length === 1 && history[0].role === "user";
   const fallbackObjective = firstTouch
@@ -151,7 +152,7 @@ export async function botRespond(
   // Playbook configurable (Anexo Técnico §B-Task 8): el del agente del segmento manda;
   // si el agente no trae, el global activo. Su objective gana sobre la ruta A. Cualquier
   // error aquí cae al fallback de arriba — nunca debe impedir que el bot responda.
-  const agentPlaybook = agentProfile?.playbook && agentProfile.playbook.tasks.length > 0 ? agentProfile.playbook : null;
+  const agentPlaybook = agentPlaybookOf(agentProfile);
   let playbookObjective: string | undefined;
   if (agentPlaybook || config.activePlaybookId) {
     try {
@@ -177,7 +178,7 @@ export async function botRespond(
 
   // La identidad del agente antecede al objetivo del playbook/ruta A en la capa "objetivo"
   const baseObjective = playbookObjective ?? fallbackObjective;
-  const objective = [agentProfile?.identity, baseObjective].filter(Boolean).join("\n\n") || undefined;
+  const objective = composeObjective(agentProfile?.identity, baseObjective);
 
   const system = buildSystemPrompt({
     config: effectiveConfig,

@@ -35,7 +35,7 @@ export const conditionsDslSchema: z.ZodType<ConditionNode | Record<string, never
 // Spec de acción (AutomationRule.actions[] / ActionPlanStep)
 // ---------------------------------------------------------------------------
 export const TRIGGER_TYPES = [
-  "EVENT", "TIME", "BEHAVIORAL", "INACTIVITY", "STAGE_CHANGE", "SLA_BREACH", "SCORE_THRESHOLD",
+  "EVENT", "TIME", "BEHAVIORAL", "INACTIVITY", "STAGE_CHANGE", "SLA_BREACH", "SCORE_THRESHOLD", "LIFECYCLE_CHANGE",
 ] as const;
 
 export const workflowActionTypes = [

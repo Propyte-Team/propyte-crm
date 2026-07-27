@@ -1,4 +1,4 @@
-// Configuración → Agentes IA: activar/pausar, autonomía, últimas corridas auditadas.
+// Configuración → Agentes automáticos: activar/pausar, autonomía, últimas corridas auditadas.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -52,7 +52,7 @@ export function AgentsSection({ userRole }: { userRole: string }) {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Agentes IA</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Agentes automáticos</h1>
           <p className="text-muted-foreground">
             Empleados digitales con identidad RBAC, herramientas acotadas y corridas auditadas.
             Requieren ANTHROPIC_API_KEY en el servidor.

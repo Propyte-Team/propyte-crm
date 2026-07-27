@@ -24,12 +24,12 @@ export function generalToFlow(view: GeneralView): Flow {
     let row = 1;
     for (const r of lane.rules) {
       nodes.push({ id: `rule:${r.id}`, type: "rule", position: { x, y: row * ROW_H },
-        data: { label: r.name, isActive: r.isActive, triggerType: r.triggerType } });
+        data: { label: r.name, isActive: r.isActive, triggerType: r.triggerType, isSlaBreach: r.isSlaBreach } });
       row++;
     }
     for (const c of lane.cadences) {
       nodes.push({ id: `plan:${c.id}`, type: "cadence", position: { x, y: row * ROW_H },
-        data: { label: c.name, isActive: c.isActive, stepCount: c.stepCount } });
+        data: { label: c.name, isActive: c.isActive, stepCount: c.stepCount, planId: c.id } });
       row++;
     }
     if (li > 0) {
@@ -47,8 +47,10 @@ export function targetedToFlow(view: TargetedView): Flow {
     let prevId: string | null = null;
     flow.forEach((node, ni) => {
       const id = `f${fi}:${node.kind}:${ni}`;
-      nodes.push({ id, type: node.kind, position: { x: ni * LANE_W, y: fi * (ROW_H * 1.6) },
-        data: { label: node.label } });
+      const data: Record<string, unknown> = { label: node.label };
+      if (node.planId) data.planId = node.planId;
+      if (node.isSlaBreach) data.isSlaBreach = node.isSlaBreach;
+      nodes.push({ id, type: node.kind, position: { x: ni * LANE_W, y: fi * (ROW_H * 1.6) }, data });
       if (prevId) edges.push({ id: `${prevId}->${id}`, source: prevId, target: id });
       prevId = id;
     });

@@ -1,6 +1,6 @@
 // Catálogo único de tipos de nodo (C.2-i3). Fuente de labels/categorías/campos
 // para lienzo + paleta + inspector. Puro: sin React.
-import { workflowActionTypes } from "@/lib/validations/rebuild-f1";
+import { workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 import { PIPELINE_STAGES, LIFECYCLE_ORDER, LIFECYCLE_LABELS } from "@/lib/constants";
 
 export type NodeCategory = "Comunicación" | "Pipeline" | "Asignación" | "IA" | "Otros";
@@ -39,7 +39,8 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
       { configKey: "subject", label: "Asunto", kind: "text" },
       { configKey: "body", label: "Cuerpo", kind: "textarea" },
     ] },
-  { type: "MAKE_CALL", category: "Comunicación", label: "📞 Llamada" },
+  { type: "MAKE_CALL", category: "Comunicación", label: "📞 Llamada",
+    fields: [{ configKey: "reason", label: "Nota", kind: "text" }] },
   { type: "NOTIFY", category: "Comunicación", label: "🔔 Notificar", summaryKey: "title",
     fields: [
       { configKey: "title", label: "Título", kind: "text" },
@@ -66,17 +67,22 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
     fields: [{ configKey: "reason", label: "Motivo", kind: "text" }] },
   { type: "ESCALATE", category: "Asignación", label: "⚠️ Escalar",
     fields: [{ configKey: "reason", label: "Motivo", kind: "text" }] },
-  { type: "AI_DRAFT", category: "IA", label: "🤖 Borrador IA" },
-  { type: "AI_REPLY", category: "IA", label: "🤖 Respuesta IA" },
-  { type: "AI_CALL_SUMMARY", category: "IA", label: "🤖 Resumen llamada" },
+  { type: "AI_DRAFT", category: "IA", label: "🤖 Borrador IA",
+    fields: [{ configKey: "goal", label: "Instrucción", kind: "text" }] },
+  { type: "AI_REPLY", category: "IA", label: "🤖 Respuesta IA",
+    fields: [{ configKey: "goal", label: "Instrucción", kind: "text" }] },
+  { type: "AI_CALL_SUMMARY", category: "IA", label: "🤖 Resumen llamada",
+    fields: [{ configKey: "goal", label: "Instrucción", kind: "text" }] },
   { type: "CREATE_TASK", category: "Otros", label: "📋 Tarea", summaryKey: "subject",
     fields: [
       { configKey: "subject", label: "Asunto", kind: "text" },
       { configKey: "description", label: "Descripción", kind: "textarea" },
       { configKey: "dueInMinutes", label: "Vence en (min)", kind: "number", placeholder: "1440" },
     ] },
-  { type: "ENROLL_PLAN", category: "Otros", label: "⟳ Cadencia" },
-  { type: "WEBHOOK", category: "Otros", label: "🔗 Webhook" },
+  { type: "ENROLL_PLAN", category: "Otros", label: "⟳ Cadencia",
+    fields: [{ configKey: "planId", label: "ID del plan", kind: "text" }] },
+  { type: "WEBHOOK", category: "Otros", label: "🔗 Webhook",
+    fields: [{ configKey: "url", label: "URL", kind: "text" }] },
 ];
 
 // Verify at module load: NODE_CATALOG must cover exactly workflowActionTypes
@@ -121,4 +127,58 @@ export const TRIGGER_FIELDS: Record<string, FieldDef[]> = {
 };
 export function triggerFieldsFor(triggerType: string): FieldDef[] {
   return TRIGGER_FIELDS[triggerType] ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo de disparadores (sub-task 2 — C.2-i3). Antes duplicado como un array
+// local {value,label} dentro de WorkflowBuilder; ahora vive aquí junto al resto
+// del catálogo para que builder y canvas compartan una sola fuente de verdad.
+// ---------------------------------------------------------------------------
+export interface TriggerTypeMeta {
+  type: string;
+  label: string;
+}
+
+export const TRIGGER_CATALOG: TriggerTypeMeta[] = [
+  { type: "EVENT", label: "Evento del sistema" },
+  { type: "STAGE_CHANGE", label: "Cambio de etapa" },
+  { type: "LIFECYCLE_CHANGE", label: "Cambio de ciclo de vida" },
+  { type: "SCORE_THRESHOLD", label: "Umbral de score" },
+  { type: "INACTIVITY", label: "Inactividad" },
+  { type: "SLA_BREACH", label: "Incumplimiento de SLA" },
+  { type: "TIME", label: "Programado (tiempo)" },
+  { type: "BEHAVIORAL", label: "Comportamiento web" },
+];
+
+// Guard anti-drift, igual patrón que NODE_CATALOG vs workflowActionTypes arriba.
+if (process.env.NODE_ENV !== "production") {
+  const triggerCatalogTypes = new Set(TRIGGER_CATALOG.map((m) => m.type));
+  for (const t of TRIGGER_TYPES) {
+    if (!triggerCatalogTypes.has(t)) {
+      console.warn(`[node-catalog] Missing entry for TriggerType: ${t}`);
+    }
+  }
+}
+
+export function triggerLabelFor(type: string): string {
+  return TRIGGER_CATALOG.find((m) => m.type === type)?.label ?? type;
+}
+
+// ---------------------------------------------------------------------------
+// Adapter puro (sub-task 2): el form plano de WorkflowBuilder guarda todo el
+// config de una acción como strings (inputs controlados). Antes de armar el
+// payload hay que devolver a los tipos reales que el engine espera (actions.ts
+// lee `typeof config.dueInMinutes === "number"`, `config.allowBackward === true`, etc.)
+// Puro y sin React → testeable sin renderizar el componente.
+// ---------------------------------------------------------------------------
+export function coerceFieldConfig(type: string, raw: Record<string, unknown>): Record<string, unknown> {
+  const defs = fieldDefsFor(type);
+  const out: Record<string, unknown> = { ...raw };
+  for (const d of defs) {
+    const v = raw[d.configKey];
+    if (v === undefined || v === "") continue;
+    if (d.kind === "number") out[d.configKey] = Number(v);
+    else if (d.kind === "checkbox") out[d.configKey] = v === "true" || v === true;
+  }
+  return out;
 }

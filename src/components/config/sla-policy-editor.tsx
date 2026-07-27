@@ -2,7 +2,7 @@
 // condiciones de segmento (reusa ConditionTreeEditor) y horario laboral por día/tz.
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { ConditionTreeEditor } from "./condition-tree";
 import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
@@ -317,13 +317,24 @@ export function SlaPolicyEditor({
   policies,
   canEdit,
   onChanged,
+  deepLinkSlaId,
 }: {
   policies: Sla[];
   canEdit: boolean;
   onChanged: () => void;
+  /** Deep-link desde el panel SLA del Journey → abre esta política directo, una vez. */
+  deepLinkSlaId?: string;
 }) {
   const [editing, setEditing] = useState<"new" | Sla | null>(null);
   const [msg, setMsg] = useState("");
+  const appliedDeepLink = useRef(false);
+
+  useEffect(() => {
+    if (appliedDeepLink.current || !deepLinkSlaId || policies.length === 0) return;
+    appliedDeepLink.current = true;
+    const match = policies.find((p) => p.id === deepLinkSlaId);
+    if (match) setEditing(match);
+  }, [deepLinkSlaId, policies]);
 
   async function handleDelete(s: Sla) {
     if (s.isDefault) return;

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ReactFlow, Background, Controls, MiniMap, useNodesState, useEdgesState,
   Handle, Position,
@@ -8,7 +8,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
-import { buildGeneralView, buildTargetedView, extractCampaigns, type RuleLite, type PlanLite } from "@/lib/journey/journey-map";
+import {
+  buildGeneralView, buildTargetedView, extractCampaigns, deriveSlaPanel, resolveRuleJourneyLink,
+  type RuleLite, type PlanLite, type SlaPolicyLite,
+} from "@/lib/journey/journey-map";
 import { generalToFlow, targetedToFlow, applyPositions, type Positions } from "@/lib/journey/flow-adapter";
 import { draftToFlow, type RuleRow } from "@/lib/journey/rule-draft";
 import { computeNodeMetrics, type RawMetrics, type NodeMetrics } from "@/lib/journey/node-metrics";
@@ -83,26 +86,34 @@ function nodeStyle(type: string, data: Record<string, unknown>, selected: boolea
 }
 
 function nodeLabel(type: string, data: Record<string, unknown>): string {
+  let label: string;
   if (type === "stage") {
     // Vista General: el carril ya trae su label (etapa de lifecycle). Edición: deriva de config.toStage (pipeline).
-    if (typeof data.label === "string" && data.label) return data.label;
-    const s = String((data.config as Record<string, unknown> | undefined)?.toStage ?? "");
-    return s ? `Etapa → ${STAGE_LABELS[s] ?? s}` : "Etapa";
+    label = typeof data.label === "string" && data.label
+      ? data.label
+      : (() => { const s = String((data.config as Record<string, unknown> | undefined)?.toStage ?? ""); return s ? `Etapa → ${STAGE_LABELS[s] ?? s}` : "Etapa"; })();
+  } else if (data.actionType) {
+    label = summaryFor(String(data.actionType), (data.config ?? {}) as Record<string, unknown>);
+  } else if (typeof data.label === "string" && data.label) {
+    label = data.label;
+  } else {
+    label = labelFor(type) || type;
   }
-  if (data.actionType) {
-    return summaryFor(String(data.actionType), (data.config ?? {}) as Record<string, unknown>);
-  }
-  if (typeof data.label === "string" && data.label) return data.label;
-  return labelFor(type) || type;
+  // Marca SLA (Tarea 1): reglas/triggers con triggerType SLA_BREACH (ver isSlaTriggeredRule
+  // en journey-map.ts, propagado a data.isSlaBreach por generalToFlow/targetedToFlow).
+  return data.isSlaBreach ? `⏱️ ${label}` : label;
 }
 
 export function JourneyMapView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [rules, setRules] = useState<RuleRow[]>([]);
   const [plans, setPlans] = useState<PlanLite[]>([]);
+  const [slas, setSlas] = useState<SlaPolicyLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<Mode>("general");
   const [campaign, setCampaign] = useState("");
+  const [slaOpen, setSlaOpen] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,6 +152,7 @@ export function JourneyMapView() {
       const d = j.data ?? j;
       setRules((d.rules ?? []) as RuleRow[]);
       setPlans((d.plans ?? []) as PlanLite[]);
+      setSlas((d.slaPolicies ?? []) as SlaPolicyLite[]);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -148,6 +160,29 @@ export function JourneyMapView() {
   useEffect(() => { refreshData(); }, [refreshData]);
 
   const campaigns = useMemo(() => extractCampaigns(rules as unknown as RuleLite[]), [rules]);
+  const slaRows = useMemo(() => deriveSlaPanel(slas), [slas]);
+
+  // Deep-link desde Configuración (Tarea 3): /journey?mode=targeted&ruleId=<id> — reusa el
+  // flujo EXISTENTE de edición dirigida (load() de useRuleDraft), no uno paralelo. Se aplica
+  // una sola vez, tras el primer fetch (rules ya disponibles). Si la regla no referencia una
+  // campaña (resolveRuleJourneyLink → "general"), degrada sin crashear: se queda en General.
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current || loading) return;
+    deepLinkApplied.current = true;
+    const dlMode = searchParams.get("mode");
+    const ruleId = searchParams.get("ruleId");
+    if (dlMode !== "targeted" || !ruleId) return;
+    const r = rules.find((x) => x.id === ruleId);
+    const link = resolveRuleJourneyLink(r as unknown as RuleLite | undefined);
+    if (link.mode === "targeted") {
+      setMode("targeted");
+      setCampaign(link.campaign);
+      load(r!);
+      setSelectedId(null);
+    }
+    // else: degradación a General (rama por defecto) — regla sin señal de campaña o inexistente.
+  }, [loading, rules, searchParams, load]);
 
   // Salir de edición si se vuelve a General (solo Dirigida es editable).
   useEffect(() => { if (mode === "general" && draft) { discard(); setSelectedId(null); } }, [mode, draft, discard]);
@@ -208,7 +243,13 @@ export function JourneyMapView() {
 
   const onNodeClick = useCallback((_e: React.MouseEvent, node: Node) => {
     if (editing) { setSelectedId(node.id); return; }
-    if (node.type === "cadence") router.push("/configuracion");
+    if (node.type === "cadence") {
+      // Tarea 2: deep-link a la cadencia específica (ActionPlan) que representa este nodo,
+      // no un push genérico a /configuracion. planId viene de data (ver typedNodes abajo,
+      // originado en generalToFlow/targetedToFlow → journey-map.ts CadenceNode.id / FlowNode.planId).
+      const planId = (node.data as Record<string, unknown> | undefined)?.planId as string | undefined;
+      router.push(planId ? `/configuracion?section=automation&planId=${encodeURIComponent(planId)}` : "/configuracion?section=automation");
+    }
   }, [editing, router]);
 
   const typedNodes = useMemo(() => nodes.map((n) => {
@@ -218,6 +259,10 @@ export function JourneyMapView() {
     const label = vol !== undefined && n.type !== "decision" ? `${vol} · ${baseLabel}` : baseLabel;
     const data: Record<string, unknown> = { label };
     if (n.type === "decision" && vol !== undefined) data.metricVolume = vol;
+    // Preservar planId/isSlaBreach para el click handler y el badge (nodeLabel ya los leyó
+    // arriba para el label; onNodeClick los necesita en el nodo final que recibe el evento).
+    if (d.planId) data.planId = d.planId;
+    if (d.isSlaBreach) data.isSlaBreach = d.isSlaBreach;
     return { ...n, data, style: nodeStyle(n.type ?? "action", d, n.id === selectedId) };
   }), [nodes, selectedId, metricsOn, metrics]);
 
@@ -237,7 +282,9 @@ export function JourneyMapView() {
   const onDiscard = useCallback(() => { discard(); setSelectedId(null); }, [discard]);
 
   if (loading) return <div className="p-8 text-sm text-neutral-500">Cargando lienzo…</div>;
-  if (!rules.length && !plans.length) return <div className="p-8 text-sm text-neutral-500">Sin reglas ni cadencias configuradas. Créalas en Configuración → Automatización.</div>;
+  // slas.length también cuenta: sin esto, una cuenta con solo políticas SLA (sin reglas/cadencias
+  // aún) nunca vería el panel SLA — quedaría atrapada en este estado vacío (Tarea 1).
+  if (!rules.length && !plans.length && !slas.length) return <div className="p-8 text-sm text-neutral-500">Sin reglas ni cadencias configuradas. Créalas en Configuración → Automatización.</div>;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -248,6 +295,16 @@ export function JourneyMapView() {
             <button onClick={() => setMode("general")} className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === "general" ? "bg-neutral-900 text-white" : "text-neutral-600"}`}>General</button>
             <button onClick={() => setMode("targeted")} className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === "targeted" ? "bg-neutral-900 text-white" : "text-neutral-600"}`}>Dirigida</button>
           </div>
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => setSlaOpen((v) => !v)}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${slaOpen ? "bg-neutral-900 text-white" : "border border-neutral-300"}`}
+              title="Políticas SLA activas"
+            >
+              ⏱ SLA{slaRows.length > 0 ? ` (${slaRows.length})` : ""}
+            </button>
+          )}
           {mode === "targeted" && !editing && (
             <>
               <select value={campaign} onChange={(e) => setCampaign(e.target.value)} className="rounded-md border border-neutral-300 px-2 py-1 text-xs bg-transparent">
@@ -333,6 +390,38 @@ export function JourneyMapView() {
         {editing && draft && (
           <div className="w-80 shrink-0 overflow-y-auto border-l border-neutral-200 p-4 dark:border-neutral-800">
             <RuleInspectorPanel draft={draft} selectedId={selectedId} ops={ops} />
+          </div>
+        )}
+        {!editing && slaOpen && (
+          <div className="w-80 shrink-0 overflow-y-auto border-l border-neutral-200 p-4 dark:border-neutral-800">
+            <h2 className="mb-3 text-sm font-semibold">Políticas SLA activas</h2>
+            {slaRows.length === 0 && (
+              <p className="text-xs text-neutral-500">Sin políticas SLA activas.</p>
+            )}
+            <ul className="space-y-3">
+              {slaRows.map((s) => (
+                <li key={s.id} className="rounded-md border border-neutral-200 p-3 text-xs dark:border-neutral-800">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{s.name}</span>
+                    {s.isDefault && (
+                      <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                        default
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-neutral-500">
+                    1er toque {s.firstTouchMinutes}min · reintento {s.retryMinutes}min · huérfano {s.orphanHours}h · prioridad {s.priority}
+                  </p>
+                  <p className="mt-1 text-neutral-500">{s.conditionsSummary}</p>
+                  <a
+                    href={`/configuracion?section=automation&slaId=${encodeURIComponent(s.id)}`}
+                    className="mt-2 inline-block font-medium text-neutral-900 underline dark:text-neutral-100"
+                  >
+                    Editar →
+                  </a>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

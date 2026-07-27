@@ -3,9 +3,9 @@ import { generalToFlow, targetedToFlow, applyPositions, type RFNode } from "./fl
 import type { GeneralView, TargetedView } from "./journey-map";
 
 const general: GeneralView = { lanes: [
-  { stage: "LEAD", rules: [{ id: "r1", name: "Speed", isActive: true, triggerType: "EVENT" }],
+  { stage: "LEAD", rules: [{ id: "r1", name: "Speed", isActive: true, triggerType: "EVENT", isSlaBreach: false }],
     cadences: [{ id: "p1", name: "Bienvenida", isActive: true, stepCount: 3 }] },
-  { stage: "MQL", rules: [{ id: "r2", name: "Respondió", isActive: false, triggerType: "EVENT" }], cadences: [] },
+  { stage: "MQL", rules: [{ id: "r2", name: "Respondió", isActive: false, triggerType: "EVENT", isSlaBreach: false }], cadences: [] },
 ] };
 
 describe("generalToFlow", () => {
@@ -35,6 +35,46 @@ describe("targetedToFlow", () => {
     expect(edges).toHaveLength(2);
     expect(edges[0].source).toBe(nodes[0].id);
     expect(edges[0].target).toBe(nodes[1].id);
+  });
+
+  it("propaga planId a data del nodo cadence (deep-link a config)", () => {
+    const tv: TargetedView = { flows: [[
+      { kind: "trigger", label: "⚡ Brokers" },
+      { kind: "cadence", label: "⟳ Bienvenida", planId: "pl1" },
+    ]] };
+    const { nodes } = targetedToFlow(tv);
+    const cadence = nodes.find((n) => n.type === "cadence")!;
+    expect(cadence.data.planId).toBe("pl1");
+  });
+
+  it("propaga isSlaBreach a data del nodo trigger (badge en canvas)", () => {
+    const tv: TargetedView = { flows: [[
+      { kind: "trigger", label: "⚡ SLA vencido", isSlaBreach: true },
+    ]] };
+    const { nodes } = targetedToFlow(tv);
+    expect(nodes[0].data.isSlaBreach).toBe(true);
+  });
+
+  it("no agrega planId/isSlaBreach a data cuando no vienen en el FlowNode", () => {
+    const tv: TargetedView = { flows: [[{ kind: "action", label: "👤 Asignar" }]] };
+    const { nodes } = targetedToFlow(tv);
+    expect(nodes[0].data.planId).toBeUndefined();
+    expect(nodes[0].data.isSlaBreach).toBeUndefined();
+  });
+});
+
+describe("generalToFlow — planId e isSlaBreach en data", () => {
+  it("nodo cadence lleva planId (== id del plan)", () => {
+    const { nodes } = generalToFlow(general);
+    const cadence = nodes.find((n) => n.id === "plan:p1")!;
+    expect(cadence.data.planId).toBe("p1");
+  });
+  it("nodo rule lleva isSlaBreach", () => {
+    const view: GeneralView = { lanes: [
+      { stage: "LEAD", rules: [{ id: "rSla", name: "SLA", isActive: true, triggerType: "SLA_BREACH", isSlaBreach: true }], cadences: [] },
+    ] };
+    const { nodes } = generalToFlow(view);
+    expect(nodes.find((n) => n.id === "rule:rSla")!.data.isSlaBreach).toBe(true);
   });
 });
 

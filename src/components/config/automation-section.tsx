@@ -1,8 +1,8 @@
 // Configuración → Automatización: workflows con switch, cadencias, SLA editable, cola.
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Plus, Pencil, GitBranch } from "lucide-react";
 import { WorkflowBuilder } from "./workflow-builder";
 import { CadenceEditor } from "./cadence-editor";
 import { SlaPolicyEditor } from "./sla-policy-editor";
@@ -57,11 +57,22 @@ function Switch({ on, disabled, onChange }: { on: boolean; disabled?: boolean; o
   );
 }
 
-export function AutomationSection({ userRole }: { userRole: string }) {
+export function AutomationSection({
+  userRole,
+  deepLinkPlanId,
+  deepLinkSlaId,
+}: {
+  userRole: string;
+  /** Deep-link desde Journey (cadence node click) → abre esta cadencia directo. */
+  deepLinkPlanId?: string;
+  /** Deep-link desde Journey (panel SLA) → abre esta política directo (via SlaPolicyEditor). */
+  deepLinkSlaId?: string;
+}) {
   const canEdit = ["ADMIN", "DIRECTOR"].includes(userRole);
   const [rules, setRules] = useState<Rule[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [slas, setSlas] = useState<Sla[]>([]);
+  const appliedPlanDeepLink = useRef(false);
   const [queue, setQueue] = useState<Record<string, number>>({});
   const [msg, setMsg] = useState("");
   const [obs, setObs] = useState<{ recentErrors: any[]; eventsPending: number; eventsDone24h: number }>({ recentErrors: [], eventsPending: 0, eventsDone24h: 0 });
@@ -80,6 +91,15 @@ export function AutomationSection({ userRole }: { userRole: string }) {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Deep-link desde Journey (Tarea 2): cadence node → /configuracion?section=automation&planId=<id>
+  // abre esa cadencia directo, una sola vez (no reabrir si el usuario la cierra o edita otra).
+  useEffect(() => {
+    if (appliedPlanDeepLink.current || !deepLinkPlanId || plans.length === 0) return;
+    appliedPlanDeepLink.current = true;
+    const p = plans.find((x) => x.id === deepLinkPlanId);
+    if (p) setEditingPlan(p);
+  }, [deepLinkPlanId, plans]);
 
   async function retry(id: string) {
     const res = await fetch("/api/admin/automation/retry", {
@@ -196,6 +216,13 @@ export function AutomationSection({ userRole }: { userRole: string }) {
                   <Pencil className="h-4 w-4" />
                 </button>
               )}
+              <a
+                href={`/journey?mode=targeted&ruleId=${r.id}`}
+                className="text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]"
+                title="Editar en Journey"
+              >
+                <GitBranch className="h-4 w-4" />
+              </a>
               <Switch on={r.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "rule", id: r.id, isActive: v })} />
             </div>
           </div>
@@ -302,7 +329,7 @@ export function AutomationSection({ userRole }: { userRole: string }) {
       </div>
 
       {/* SLA */}
-      <SlaPolicyEditor policies={slas} canEdit={canEdit} onChanged={load} />
+      <SlaPolicyEditor policies={slas} canEdit={canEdit} onChanged={load} deepLinkSlaId={deepLinkSlaId} />
     </div>
   );
 }

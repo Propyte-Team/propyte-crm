@@ -36,3 +36,34 @@ export async function selectAgentProfile(
     return null;
   }
 }
+
+/**
+ * Aplica el tono override del agente sobre una config (BotConfigResolved u otro
+ * objeto con `tonePreset`). Sin perfil o sin tonePreset propio → la misma config,
+ * sin copiar (comportamiento global intacto). Con tonePreset → copia con override.
+ */
+export function applyAgentTone<T extends { tonePreset: unknown }>(
+  config: T,
+  profile: { tonePreset: T["tonePreset"] | null | undefined } | null | undefined
+): T {
+  if (!profile?.tonePreset) return config;
+  return { ...config, tonePreset: profile.tonePreset } as T;
+}
+
+/**
+ * Compone la capa "objetivo": la identidad del agente antecede al objetivo base
+ * (playbook o ruta A). Sin ninguno → undefined (mismo criterio que bot-respond).
+ */
+export function composeObjective(
+  identity: string | null | undefined,
+  baseObjective: string | undefined
+): string | undefined {
+  return [identity, baseObjective].filter(Boolean).join("\n\n") || undefined;
+}
+
+/** Playbook propio del agente si existe y tiene >=1 tarea; si no, null (fallback al global). */
+export function agentPlaybookOf(
+  profile: { playbook: (BotPlaybook & { tasks: BotTask[] }) | null } | null | undefined
+): (BotPlaybook & { tasks: BotTask[] }) | null {
+  return profile?.playbook && profile.playbook.tasks.length > 0 ? profile.playbook : null;
+}

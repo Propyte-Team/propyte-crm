@@ -56,7 +56,10 @@ vi.mock("./hub-catalog", () => ({ findMatchingDevelopments: async () => [], cata
 const maybeClassifyContact = vi.fn();
 vi.mock("./classify", () => ({ maybeClassifyContact: (...a: unknown[]) => maybeClassifyContact(...a) }));
 const selectAgentProfile = vi.fn();
-vi.mock("./agent-profiles", () => ({ selectAgentProfile: (...a: unknown[]) => selectAgentProfile(...a) }));
+vi.mock("./agent-profiles", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agent-profiles")>();
+  return { ...actual, selectAgentProfile: (...a: unknown[]) => selectAgentProfile(...a) };
+});
 
 const runPlaybookStep = vi.fn();
 vi.mock("./playbook/run", () => ({ runPlaybookStep: (...a: unknown[]) => runPlaybookStep(...a) }));

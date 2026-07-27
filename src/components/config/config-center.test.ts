@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { visibleCards } from "./config-center";
+import { visibleCards, resolveInitialSection } from "./config-center";
 
 describe("visibleCards", () => {
   const cards = [
@@ -25,5 +25,22 @@ describe("visibleCards", () => {
   it("cards sin `roles` siempre son visibles, sin importar el rol", () => {
     const result = visibleCards(cards, "ASESOR");
     expect(result.map((c) => c.title)).toEqual(["Sin restriccion"]);
+  });
+});
+
+describe("resolveInitialSection", () => {
+  it("sin param → index", () => {
+    expect(resolveInitialSection(null)).toBe("index");
+    expect(resolveInitialSection(undefined)).toBe("index");
+  });
+  it("param desconocido → index (no crashea)", () => {
+    expect(resolveInitialSection("no-existe")).toBe("index");
+  });
+  it("param válido (ej. automation, deep-link desde Journey) → esa sección", () => {
+    expect(resolveInitialSection("automation")).toBe("automation");
+  });
+  it("acepta cualquier SectionKey válida", () => {
+    expect(resolveInitialSection("teams")).toBe("teams");
+    expect(resolveInitialSection("agents")).toBe("agents");
   });
 });

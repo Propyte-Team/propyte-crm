@@ -1,10 +1,8 @@
 // src/lib/mcp/handlers/automation.ts
 import { z } from "zod";
 import prisma from "@/lib/db";
-import { conditionsDslSchema, workflowActionTypes } from "@/lib/validations/rebuild-f1";
+import { conditionsDslSchema, workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 import { writeAudit } from "../respond";
-
-const TRIGGER_TYPES = ["EVENT", "TIME", "BEHAVIORAL", "INACTIVITY", "STAGE_CHANGE", "SLA_BREACH", "SCORE_THRESHOLD"] as const;
 
 // --- AutomationRule ---
 

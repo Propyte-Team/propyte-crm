@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTriggerConfig, parseValue, buildConditions, nodeToRows, parseTriggerValue, FIELD_SUGGESTIONS, LIFECYCLE_STAGES } from "./builder-model";
 import { buildConditionsTree, parseConditions, type ConditionTree } from "./builder-model";
+import { hasDecisionNode } from "./builder-model";
 
 describe("parseValue", () => {
   it("exists → true", () => expect(parseValue("exists", "")).toBe(true));
@@ -115,5 +116,32 @@ describe("LIFECYCLE_CHANGE trigger + LIFECYCLE_STAGES", () => {
   });
   it("LIFECYCLE_STAGES expone las 7 etapas", () => {
     expect(LIFECYCLE_STAGES).toHaveLength(7);
+  });
+});
+
+describe("hasDecisionNode (guard anti data-loss del form plano — sub-task 3)", () => {
+  it("detecta un nodo kind:'decision' en el nivel superior de actions", () => {
+    const actions = [
+      { kind: "decision", branches: [{ conditions: {}, steps: [{ type: "ASSIGN", config: {} }] }] },
+    ];
+    expect(hasDecisionNode(actions)).toBe(true);
+  });
+  it("no marca falso positivo para una lista plana de ActionSpec simples", () => {
+    const actions = [{ type: "ADD_TAG", config: { tag: "x" } }, { type: "ASSIGN", config: {} }];
+    expect(hasDecisionNode(actions)).toBe(false);
+  });
+  it("es false para actions ausente, vacío o no-array", () => {
+    expect(hasDecisionNode(undefined)).toBe(false);
+    expect(hasDecisionNode([])).toBe(false);
+    expect(hasDecisionNode(null)).toBe(false);
+    expect(hasDecisionNode("not-an-array")).toBe(false);
+  });
+  it("detecta la decisión aunque venga mezclada con acciones planas antes/después", () => {
+    const actions = [
+      { type: "NOTIFY", config: {} },
+      { kind: "decision", branches: [{ conditions: {}, steps: [] }] },
+      { type: "ADD_TAG", config: { tag: "y" } },
+    ];
+    expect(hasDecisionNode(actions)).toBe(true);
   });
 });

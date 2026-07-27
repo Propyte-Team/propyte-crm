@@ -35,6 +35,14 @@ describe("createRule", () => {
     expect(r.isActive).toBe(false);
     expect(prisma.auditLog.create).toHaveBeenCalled();
   });
+  it("acepta triggerType LIFECYCLE_CHANGE (regresión: TRIGGER_TYPES local no debe re-declararse sin LIFECYCLE_CHANGE)", async () => {
+    (prisma.automationRule.findFirst as any).mockResolvedValue(null);
+    (prisma.automationRule.create as any).mockImplementation(({ data }: any) => ({ id: "r2", ...data }));
+    const r: any = await createRule(
+      { name: "Flujo Lifecycle", triggerType: "LIFECYCLE_CHANGE", conditions: {}, actions: [{ type: "ASSIGN", config: {} }] }, "u1"
+    );
+    expect(r.triggerType).toBe("LIFECYCLE_CHANGE");
+  });
 });
 
 import { createRouting, createSla, retryQueue } from "./automation";

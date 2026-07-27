@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { ruleStage, buildGeneralView, extractCampaigns, buildTargetedView, type RuleLite, type PlanLite } from "./journey-map";
+import {
+  ruleStage, buildGeneralView, extractCampaigns, buildTargetedView,
+  deriveSlaPanel, isSlaTriggeredRule, summarizeConditions, resolveRuleJourneyLink,
+  type RuleLite, type PlanLite, type SlaPolicyLite,
+} from "./journey-map";
 
 const plan: PlanLite = { id: "pl1", name: "Bienvenida", isActive: true, steps: [{ actionType: "SEND_WHATSAPP", delayMinutes: 0 }] };
 
@@ -147,6 +151,113 @@ describe("nodos de decisión (árbol de acciones)", () => {
     const flow = view.flows[0];
     expect(flow.some((n) => n.kind === "cadence")).toBe(true);
     expect(flow[flow.length - 1]).toMatchObject({ kind: "stage", label: "SQL" });
+  });
+});
+
+describe("isSlaTriggeredRule", () => {
+  it("true cuando triggerType es SLA_BREACH", () => {
+    expect(isSlaTriggeredRule(rule({ triggerType: "SLA_BREACH" }))).toBe(true);
+  });
+  it("false para cualquier otro triggerType", () => {
+    expect(isSlaTriggeredRule(rule({ triggerType: "EVENT" }))).toBe(false);
+  });
+});
+
+describe("summarizeConditions", () => {
+  it("sin condiciones (objeto vacío) → texto 'aplica siempre'", () => {
+    expect(summarizeConditions({})).toBe("Sin condiciones (aplica siempre)");
+  });
+  it("una condición simple → 'campo op valor'", () => {
+    expect(summarizeConditions({ all: [{ field: "contact.score", op: "gte", value: 70 }] })).toBe("contact.score ≥ 70");
+  });
+  it("múltiples condiciones anidadas (any + subgrupo) → unidas con separador", () => {
+    const s = summarizeConditions({
+      any: [
+        { field: "adAttribution.campaignName", op: "contains", value: "BROKERS" },
+        { all: [{ field: "contact.contactType", op: "eq", value: "EMPLEO" }] },
+      ],
+    });
+    expect(s).toContain("adAttribution.campaignName contiene BROKERS");
+    expect(s).toContain("contact.contactType = EMPLEO");
+  });
+  it("op exists no imprime el valor booleano", () => {
+    expect(summarizeConditions({ all: [{ field: "contact.custom.x", op: "exists", value: true }] })).toBe("contact.custom.x existe");
+  });
+});
+
+describe("deriveSlaPanel", () => {
+  const base: SlaPolicyLite = {
+    id: "s1", name: "Default", isActive: true, isDefault: true, priority: 100,
+    firstTouchMinutes: 15, retryMinutes: 60, orphanHours: 24, conditions: {},
+  };
+  it("filtra solo políticas activas", () => {
+    const inactive: SlaPolicyLite = { ...base, id: "s2", isActive: false, isDefault: false };
+    const rows = deriveSlaPanel([base, inactive]);
+    expect(rows.map((r) => r.id)).toEqual(["s1"]);
+  });
+  it("ordena por prioridad ascendente", () => {
+    const low: SlaPolicyLite = { ...base, id: "sLow", isDefault: false, priority: 10, conditions: { all: [{ field: "contact.score", op: "gte", value: 80 }] } };
+    const rows = deriveSlaPanel([base, low]);
+    expect(rows.map((r) => r.id)).toEqual(["sLow", "s1"]);
+  });
+  it("marca isDefault y resume 'Todos los contactos' para la política default", () => {
+    const rows = deriveSlaPanel([base]);
+    expect(rows[0]).toMatchObject({ isDefault: true, conditionsSummary: "Todos los contactos (default)" });
+  });
+  it("expone los umbrales de tiempo tal cual (min/min/horas)", () => {
+    const rows = deriveSlaPanel([base]);
+    expect(rows[0]).toMatchObject({ firstTouchMinutes: 15, retryMinutes: 60, orphanHours: 24 });
+  });
+  it("política no-default resume su segmento de condiciones", () => {
+    const vip: SlaPolicyLite = { ...base, id: "sVip", isDefault: false, priority: 5, conditions: { all: [{ field: "contact.score", op: "gte", value: 90 }] } };
+    const rows = deriveSlaPanel([vip]);
+    expect(rows[0].conditionsSummary).toBe("contact.score ≥ 90");
+  });
+});
+
+describe("resolveRuleJourneyLink", () => {
+  it("regla sin match → { mode: 'general' } (degradación)", () => {
+    expect(resolveRuleJourneyLink(undefined)).toEqual({ mode: "general" });
+  });
+  it("regla sin condición de campaña → degrada a general", () => {
+    const r = rule({ conditions: { all: [{ field: "contact.score", op: "gte", value: "70" }] } });
+    expect(resolveRuleJourneyLink(r)).toEqual({ mode: "general" });
+  });
+  it("regla con condición de campaña → targeted + esa campaña", () => {
+    const r = rule({ conditions: { all: [{ field: "adAttribution.campaignName", op: "contains", value: "BROKERS" }] } });
+    expect(resolveRuleJourneyLink(r)).toEqual({ mode: "targeted", campaign: "BROKERS" });
+  });
+});
+
+describe("buildTargetedView — planId e isSlaBreach en nodos", () => {
+  it("nodo cadence lleva planId del plan enrolado", () => {
+    const r = rule({
+      id: "rB", conditions: { all: [{ field: "adAttribution.campaignName", op: "contains", value: "BROKERS" }] },
+      actions: [{ type: "ENROLL_PLAN", config: { planId: "pl1" } }],
+    });
+    const view = buildTargetedView([r], [plan], { campaign: "BROKERS" });
+    const cadenceNode = view.flows[0].find((n) => n.kind === "cadence");
+    expect(cadenceNode?.planId).toBe("pl1");
+  });
+  it("nodo trigger lleva isSlaBreach cuando la regla dispara por SLA_BREACH", () => {
+    const r = rule({
+      id: "rSla", triggerType: "SLA_BREACH",
+      conditions: { all: [{ field: "adAttribution.campaignName", op: "contains", value: "BROKERS" }] },
+    });
+    const view = buildTargetedView([r], [], { campaign: "BROKERS" });
+    const triggerNode = view.flows[0].find((n) => n.kind === "trigger");
+    expect(triggerNode?.isSlaBreach).toBe(true);
+  });
+});
+
+describe("buildGeneralView — isSlaBreach en RuleNode", () => {
+  it("marca isSlaBreach:true en reglas SLA_BREACH, false en las demás", () => {
+    const rSla = rule({ id: "rSla", triggerType: "SLA_BREACH" });
+    const rNormal = rule({ id: "rNorm", triggerType: "EVENT" });
+    const view = buildGeneralView([rSla, rNormal], []);
+    const gen = view.lanes.find((l) => l.stage === "GENERAL")!;
+    expect(gen.rules.find((r) => r.id === "rSla")?.isSlaBreach).toBe(true);
+    expect(gen.rules.find((r) => r.id === "rNorm")?.isSlaBreach).toBe(false);
   });
 });
 
