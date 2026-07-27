@@ -82,3 +82,52 @@ export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
     truncated: items.length < total,
   };
 }
+
+/** Tope de notas recientes en la vista. */
+const NOTES_TAKE = 20;
+
+export interface AgendaNote {
+  id: string;
+  subject: string;
+  description: string | null;
+  createdAt: string; // ISO 8601
+  contactId: string | null;
+  contactName: string | null;
+}
+
+/**
+ * Notas del asesor. Una NOTE nace COMPLETADA (src/server/activities.ts:205),
+ * así que queda fuera de getMyAgenda: sin esta lista, capturar una nota la
+ * haría desaparecer de la vista.
+ */
+export async function getMyRecentNotes(): Promise<AgendaNote[]> {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const rows = await prisma.activity.findMany({
+    where: {
+      userId: session.user.id,
+      deletedAt: null,
+      activityType: "NOTE",
+    },
+    select: {
+      id: true,
+      subject: true,
+      description: true,
+      createdAt: true,
+      contactId: true,
+      contact: { select: { id: true, firstName: true, lastName: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: NOTES_TAKE,
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    description: r.description,
+    createdAt: r.createdAt.toISOString(),
+    contactId: r.contactId,
+    contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
+  }));
+}

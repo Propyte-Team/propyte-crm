@@ -19,7 +19,7 @@ vi.mock("@/lib/auth/session", () => ({
   getServerSession: () => Promise.resolve(session),
 }));
 
-import { getMyAgenda } from "./agenda";
+import { getMyAgenda, getMyRecentNotes } from "./agenda";
 
 beforeEach(() => {
   activityFindMany.mockReset();
@@ -220,5 +220,48 @@ describe("getMyAgenda — forma del resultado", () => {
   it("lanza si no hay sesión", async () => {
     session = null;
     await expect(getMyAgenda(new Date("2026-07-27T02:00:00Z"))).rejects.toThrow("No autorizado");
+  });
+});
+
+describe("getMyRecentNotes", () => {
+  it("trae solo NOTE del usuario de sesión", async () => {
+    activityFindMany.mockResolvedValue([]);
+
+    await getMyRecentNotes();
+
+    const where = activityFindMany.mock.calls[0][0].where;
+    expect(where.userId).toBe("user-1");
+    expect(where.activityType).toBe("NOTE");
+    expect(where.deletedAt).toBeNull();
+  });
+
+  it("mapea la nota con su fecha de creación en ISO", async () => {
+    activityFindMany.mockResolvedValue([
+      {
+        id: "note-1",
+        subject: "Idea para la campaña de Tulum",
+        description: "Enfocar en preventa",
+        createdAt: new Date("2026-07-26T14:00:00Z"),
+        contactId: null,
+        contact: null,
+      },
+    ]);
+
+    const notes = await getMyRecentNotes();
+    expect(notes).toEqual([
+      {
+        id: "note-1",
+        subject: "Idea para la campaña de Tulum",
+        description: "Enfocar en preventa",
+        createdAt: "2026-07-26T14:00:00.000Z",
+        contactId: null,
+        contactName: null,
+      },
+    ]);
+  });
+
+  it("lanza si no hay sesión", async () => {
+    session = null;
+    await expect(getMyRecentNotes()).rejects.toThrow("No autorizado");
   });
 });
