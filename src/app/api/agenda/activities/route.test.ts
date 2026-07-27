@@ -121,6 +121,46 @@ describe("POST /api/agenda/activities", () => {
     expect(dueDate.toISOString()).toBe("2026-02-28T05:00:00.000Z");
   });
 
+  it("rechaza una fecha de calendario imposible con hora (30 de febrero)", async () => {
+    // Mismo rollover silencioso que el caso sin hora, pero colado por la otra
+    // rama de parseDueDate si solo se comprueba !isNaN(getTime()).
+    const res = await POST(
+      req({ activityType: "TASK", subject: "Fecha imposible con hora", dueDate: "2026-02-30T10:00:00.000Z" }),
+    );
+    expect(res.status).toBe(400);
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("rechaza una fecha de calendario imposible con hora (31 de abril)", async () => {
+    const res = await POST(
+      req({ activityType: "TASK", subject: "Fecha imposible con hora", dueDate: "2026-04-31T00:00:00.000Z" }),
+    );
+    expect(res.status).toBe(400);
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("rechaza el 29 de febrero de un año no bisiesto", async () => {
+    const res = await POST(
+      req({ activityType: "TASK", subject: "Febrero raro", dueDate: "2026-02-29T10:00:00.000Z" }),
+    );
+    expect(res.status).toBe(400);
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("acepta el 29 de febrero de un año bisiesto", async () => {
+    await POST(req({ activityType: "TASK", subject: "Febrero bisiesto", dueDate: "2024-02-29T10:00:00.000Z" }));
+    expect(createActivity.mock.calls[0][0].dueDate.toISOString()).toBe("2024-02-29T10:00:00.000Z");
+  });
+
+  it("no rechaza un datetime que cae en otro día en Cancún que en UTC (falso positivo a evitar)", async () => {
+    // "2026-07-30T02:00:00Z" son las 21:00 del 29 en Cancún. Es un día de
+    // calendario legítimo en UTC y debe pasar intacto — validar el día contra
+    // Cancún aquí sería el mismo error que se corrigió para el caso sin hora,
+    // aplicado al revés.
+    await POST(req({ activityType: "TASK", subject: "Hora tardía en UTC", dueDate: "2026-07-30T02:00:00.000Z" }));
+    expect(createActivity.mock.calls[0][0].dueDate.toISOString()).toBe("2026-07-30T02:00:00.000Z");
+  });
+
   it("pasa la description intacta a createActivity", async () => {
     await POST(req({
       activityType: "NOTE",
