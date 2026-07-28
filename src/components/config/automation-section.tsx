@@ -298,7 +298,7 @@ export function AutomationSection({
 
         {plans.length === 0 && !editingPlan && (
           <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-            Sin cadencias. Crea la primera con "Nueva cadencia".
+            Sin cadencias. Crea la primera con &ldquo;Nueva cadencia&rdquo;.
           </p>
         )}
         {plans.map((p) => (

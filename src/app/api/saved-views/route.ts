@@ -15,11 +15,13 @@ const createSchema = z.object({
 export async function GET(req: NextRequest) {
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const module = req.nextUrl.searchParams.get("module") ?? undefined;
+  // No se llama `module`: sombrear ese identificador rompe el bundler de Next
+  // (regla @next/next/no-assign-module-variable). La columna sigue siendo `module`.
+  const moduleParam = req.nextUrl.searchParams.get("module") ?? undefined;
   try {
     const views = await prisma.savedView.findMany({
       where: {
-        ...(module ? { module } : {}),
+        ...(moduleParam ? { module: moduleParam } : {}),
         OR: [{ ownerId: session.user.id }, { scope: { in: ["team", "org"] } }],
       },
       orderBy: { createdAt: "asc" },
