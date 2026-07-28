@@ -84,7 +84,14 @@ export async function GET(request: NextRequest) {
     const userId = session.user.id;
     const userPlaza = session.user.plaza;
 
-    if (OWN_ACCESS_ROLES.includes(userRole)) {
+    // FULL primero: ADMIN está en FULL_ACCESS_ROLES y en TEAM_ACCESS_ROLES a la
+    // vez, así que con TEAM antes un ADMIN veía solo los deals de su equipo. No se
+    // reordena el resto (PLAZA / READ_ONLY) ni se unifica con el helper de
+    // lib/rbac/query-scope: esta ruta tiene 5 niveles y sus propios sets, y
+    // meterlos al molde de 3 cambiaría permisos en silencio.
+    if (FULL_ACCESS_ROLES.includes(userRole)) {
+      // Sin filtro: ven todo
+    } else if (OWN_ACCESS_ROLES.includes(userRole)) {
       // Asesores solo ven sus deals
       where.assignedToId = userId;
     } else if (TEAM_ACCESS_ROLES.includes(userRole)) {

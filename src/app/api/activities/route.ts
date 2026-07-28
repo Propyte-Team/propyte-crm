@@ -10,6 +10,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
+import { resolveScopeBucket, canReadUserScope } from "@/lib/rbac/query-scope";
 import { dueDateSchema } from "@/lib/due-date";
 
 // Roles con acceso completo a actividades
@@ -76,28 +77,45 @@ export async function GET(request: NextRequest) {
     const userRole = session.user.role;
     const currentUserId = session.user.id;
 
-    if (OWN_ACCESS_ROLES.includes(userRole)) {
-      // Solo actividades del propio usuario
-      where.userId = currentUserId;
-    } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
-      // Actividades del equipo
+    // Orden FULL → TEAM → OWN: ADMIN está en FULL y en TEAM a la vez, y
+    // evaluando TEAM primero un ADMIN veía solo las actividades de su equipo.
+    // MARKETING ve todo sin estar en FULL — se declara explícito en `alsoAll`
+    // en vez de colarse por un `else` permisivo.
+    const bucket = resolveScopeBucket(userRole, {
+      full: FULL_ACCESS_ROLES,
+      team: TEAM_ACCESS_ROLES,
+      own: OWN_ACCESS_ROLES,
+      alsoAll: ["MARKETING"],
+    });
+    if (bucket === "DENIED") {
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+    }
+
+    let allowedIds: string[] = [];
+    if (bucket === "OWN") {
+      allowedIds = [currentUserId];
+    } else if (bucket === "TEAM") {
       const teamMembers = await prisma.user.findMany({
         where: { teamLeaderId: currentUserId },
         select: { id: true },
       });
-      const teamIds = [currentUserId, ...teamMembers.map((m) => m.id)];
-      where.userId = { in: teamIds };
-    } else if (!FULL_ACCESS_ROLES.includes(userRole)) {
-      // Marketing puede ver actividades (lectura)
-      if (userRole !== "MARKETING") {
+      allowedIds = [currentUserId, ...teamMembers.map((m) => m.id)];
+    }
+    // El ?userId= se INTERSECTA con el alcance, no lo reemplaza. Antes se
+    // asignaba más abajo sobreescribiendo este filtro, así que un asesor podía
+    // leer las actividades de cualquiera pasando su id.
+    if (userId) {
+      if (!canReadUserScope(bucket, allowedIds, userId)) {
         return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
       }
+      where.userId = userId;
+    } else if (allowedIds.length > 0) {
+      where.userId = { in: allowedIds };
     }
 
     // Filtros específicos
     if (contactId) where.contactId = contactId;
     if (dealId) where.dealId = dealId;
-    if (userId) where.userId = userId;
     if (activityType) where.activityType = activityType as any;
     if (status) where.status = status as any;
 

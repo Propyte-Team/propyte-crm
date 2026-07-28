@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
+import { resolveScopeBucket, canReadUserScope } from "@/lib/rbac/query-scope";
 
 // Roles con acceso completo a todas las comisiones
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -45,25 +46,40 @@ export async function GET(request: NextRequest) {
       deletedAt: null,
     };
 
-    // Filtrar por acceso según rol
-    if (OWN_ACCESS_ROLES.includes(userRole)) {
-      // Solo comisiones de deals propios
-      where.assignedToId = currentUserId;
-    } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
-      // Comisiones de deals del equipo
+    // Filtrar por acceso según rol. El orden FULL → TEAM → OWN importa: ADMIN
+    // está en FULL y en TEAM a la vez, y evaluando TEAM primero un ADMIN veía
+    // solo las comisiones de su equipo.
+    const bucket = resolveScopeBucket(userRole, {
+      full: FULL_ACCESS_ROLES,
+      team: TEAM_ACCESS_ROLES,
+      own: OWN_ACCESS_ROLES,
+    });
+    if (bucket === "DENIED") {
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+    }
+
+    let allowedIds: string[] = [];
+    if (bucket === "OWN") {
+      allowedIds = [currentUserId];
+    } else if (bucket === "TEAM") {
       const teamMembers = await prisma.user.findMany({
         where: { teamLeaderId: currentUserId },
         select: { id: true },
       });
-      const teamIds = [currentUserId, ...teamMembers.map((m) => m.id)];
-      where.assignedToId = { in: teamIds };
-    } else if (!FULL_ACCESS_ROLES.includes(userRole)) {
-      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+      allowedIds = [currentUserId, ...teamMembers.map((m) => m.id)];
     }
 
-    // Filtros específicos
+    // El ?userId= se INTERSECTA con el alcance, no lo reemplaza. Antes se
+    // asignaba después del bloque de arriba y lo sobreescribía, así que un asesor
+    // podía leer las comisiones de cualquiera pasando su id. 403 y no lista vacía:
+    // una lista vacía se lee como "no hay comisiones" y esconde el intento.
     if (userId) {
+      if (!canReadUserScope(bucket, allowedIds, userId)) {
+        return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+      }
       where.assignedToId = userId;
+    } else if (allowedIds.length > 0) {
+      where.assignedToId = { in: allowedIds };
     }
     if (dealId) {
       where.id = dealId;
