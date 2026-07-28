@@ -32,9 +32,13 @@ function fail<T>(fnName: string, err: unknown, fallback: T): CatalogResult<T> {
   return { data: fallback, error: "No se pudo consultar el catálogo del Hub" };
 }
 
-/** Sanea el LIMIT antes de interpolarlo: entero finito y positivo, topado. */
+/**
+ * Sanea el LIMIT antes de interpolarlo: cualquier valor que no sea un entero finito
+ * y POSITIVO (0, negativo, NaN, Infinity, undefined) cae al fallback — no se trunca a 1.
+ * El resultado final siempre queda topado a `max`.
+ */
 function clampLimit(value: number | undefined, fallback: number, max: number): number {
-  const n = Number.isFinite(value) ? Math.trunc(value as number) : fallback;
+  const n = Number.isFinite(value) && (value as number) > 0 ? Math.trunc(value as number) : fallback;
   return Math.min(Math.max(n, 1), max);
 }
 

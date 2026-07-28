@@ -120,6 +120,21 @@ describe("clampLimit — LIMIT saneado antes de interpolar", () => {
     await listPublishedDevelopments({ limit: 9999 });
     expect(lastSql()).toContain("LIMIT 500");
   });
+
+  it("limit 0 no es positivo: cae al default (200), no a LIMIT 1", async () => {
+    await listPublishedDevelopments({ limit: 0 });
+    expect(lastSql()).toContain("LIMIT 200");
+  });
+
+  it("limit negativo cae al default, no a LIMIT 1", async () => {
+    await listPublishedDevelopments({ limit: -100 });
+    expect(lastSql()).toContain("LIMIT 200");
+  });
+
+  it("limit fraccionario se trunca a entero", async () => {
+    await listPublishedDevelopments({ limit: 12.7 });
+    expect(lastSql()).toContain("LIMIT 12");
+  });
 });
 
 describe("searchCatalog (agente IA)", () => {
