@@ -1,33 +1,26 @@
-// Página del catálogo de desarrollos inmobiliarios - componente de servidor
-// Obtiene datos reales de la BD y muestra grid de tarjetas con filtros
+// Espejo del catálogo publicado en propyte.com — server component.
+// El CRM no posee inventario: esta pantalla solo refleja real_estate_hub.v_developments
+// con el gate público. La edición vive en el Hub.
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
-import { getDevelopments } from "@/server/developments";
+import { listPublishedDevelopments } from "@/lib/hub/catalog";
 import { DevelopmentsClient } from "./developments-client";
 
+export const dynamic = "force-dynamic";
+
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
+
 export default async function DevelopmentsPage() {
-  // Verificar autenticación
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  // Obtener desarrollos de la BD
-  let developments: any[] = [];
-  try {
-    developments = await getDevelopments();
-  } catch (error) {
-    console.error("Error al cargar desarrollos:", error);
-  }
-
-  // Determinar si el usuario puede crear/editar desarrollos
-  const isAdmin = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"].includes(
-    session.user.role
-  );
+  const { data: developments, error } = await listPublishedDevelopments();
 
   return (
     <DevelopmentsClient
-      initialDevelopments={JSON.parse(JSON.stringify(developments))}
-      isAdmin={isAdmin}
-      userRole={session.user.role}
+      developments={developments}
+      loadError={error}
+      isAdmin={ADMIN_ROLES.includes(session.user.role)}
     />
   );
 }

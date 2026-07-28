@@ -1,281 +1,219 @@
-// Cliente para la lista de desarrollos con filtros y grid
+// Lista del catálogo publicado — espejo de propyte.com. Solo lectura.
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, Home, DollarSign, Plus, Filter, Building2, Percent } from "lucide-react";
+import { MapPin, DollarSign, Filter, Building2, Tag, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
-import {
-  DEVELOPMENT_STATUS_LABELS,
-  DEVELOPMENT_STATUS_COLORS,
-  DEVELOPMENT_TYPE_LABELS,
-  PLAZA_LABELS,
-  formatCurrency,
-} from "@/lib/constants";
-import { DevelopmentForm } from "@/components/developments/development-form";
+import { formatCurrency } from "@/lib/constants";
+import type { PublishedDevelopment } from "@/lib/hub/catalog-types";
 
-interface DevelopmentsClientProps {
-  initialDevelopments: any[];
+interface Props {
+  developments: PublishedDevelopment[];
+  loadError: string | null;
   isAdmin: boolean;
-  userRole: string;
 }
 
-export function DevelopmentsClient({
-  initialDevelopments,
-  isAdmin,
-  userRole,
-}: DevelopmentsClientProps) {
+const SITE_BASE = "https://propyte.com/es/desarrollos";
+
+export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) {
   const router = useRouter();
-  const [developments] = useState(initialDevelopments);
-  const [showNewDev, setShowNewDev] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterCity, setFilterCity] = useState("all");
+  const [filterStage, setFilterStage] = useState("all");
 
-  // Filtros
-  const [filterPlaza, setFilterPlaza] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterType, setFilterType] = useState("all");
+  const cities = useMemo(
+    () => [...new Set(developments.map((d) => d.city).filter((c): c is string => !!c))].sort(),
+    [developments]
+  );
+  const stages = useMemo(
+    () => [...new Set(developments.map((d) => d.stage).filter((s): s is string => !!s))].sort(),
+    [developments]
+  );
 
-  // Aplicar filtros
-  const filteredDevs = developments.filter((dev: any) => {
-    if (filterPlaza !== "all" && dev.plaza !== filterPlaza) return false;
-    if (filterStatus !== "all" && dev.status !== filterStatus) return false;
-    if (filterType !== "all" && dev.developmentType !== filterType) return false;
+  const filtered = developments.filter((d) => {
+    if (filterCity !== "all" && d.city !== filterCity) return false;
+    if (filterStage !== "all" && d.stage !== filterStage) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = `${d.name} ${d.developerName ?? ""} ${d.zone ?? ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
+  // Fallo de consulta ≠ catálogo vacío. Nunca los muestres igual.
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight">Desarrollos</h1>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="font-medium">No se pudo cargar el catálogo del Hub</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Esto no significa que no haya desarrollos publicados: la consulta falló.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => router.refresh()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Encabezado */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Desarrollos</h1>
           <p className="text-muted-foreground">
-            Catálogo de desarrollos inmobiliarios ({filteredDevs.length})
+            Espejo de lo publicado en propyte.com ({filtered.length})
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-          >
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
             <Filter className="mr-1 h-4 w-4" />
             Filtros
           </Button>
-          {/* Fase 1: el inventario vive en el Hub (SOT). El CRM no crea/edita desarrollos. */}
           <span
-            className="inline-flex items-center rounded-full border px-3 py-1 text-xs"
-            style={{ borderColor: "var(--border-default, #e5e5e5)", color: "var(--text-tertiary, #888)" }}
-            title="El catálogo de desarrollos y unidades es propiedad del Hub (Propyte Hub). El CRM solo lo consulta."
+            className="inline-flex items-center rounded-full border px-3 py-1 text-xs text-muted-foreground"
+            title="El catálogo es propiedad del Hub (Propyte Hub). El CRM solo lo consulta."
           >
             Catálogo del Hub · solo lectura
           </span>
         </div>
       </div>
 
-      {/* Filtros */}
       {showFilters && (
         <Card>
-          <CardContent className="flex flex-wrap gap-4 p-4">
+          <CardContent className="flex flex-wrap items-end gap-4 p-4">
+            <div className="w-64">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Buscar</label>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Nombre, desarrollador o zona"
+              />
+            </div>
             <div className="w-44">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Plaza
-              </label>
-              <Select value={filterPlaza} onValueChange={setFilterPlaza}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Ciudad</label>
+              <Select value={filterCity} onValueChange={setFilterCity}>
+                <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas las plazas</SelectItem>
-                  {Object.entries(PLAZA_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
+                  <SelectItem value="all">Todas las ciudades</SelectItem>
+                  {cities.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="w-44">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Estado
-              </label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Etapa</label>
+              <Select value={filterStage} onValueChange={setFilterStage}>
+                <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos los estados</SelectItem>
-                  {Object.entries(DEVELOPMENT_STATUS_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
+                  <SelectItem value="all">Todas las etapas</SelectItem>
+                  {stages.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-44">
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Tipo
-              </label>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los tipos</SelectItem>
-                  {Object.entries(DEVELOPMENT_TYPE_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setFilterPlaza("all");
-                  setFilterStatus("all");
-                  setFilterType("all");
-                }}
-              >
-                Limpiar
-              </Button>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setSearch(""); setFilterCity("all"); setFilterStage("all"); }}
+            >
+              Limpiar
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Grid de tarjetas de desarrollos */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {filteredDevs.map((dev: any) => {
-          const statusColors = DEVELOPMENT_STATUS_COLORS[dev.status] || "bg-gray-100 text-gray-700";
-          const unitCounts = dev.unitCounts || {
-            disponible: dev.availableUnits,
-            apartada: dev.reservedUnits || 0,
-            vendida: dev.soldUnits || 0,
-            total: dev.totalUnits,
-          };
-          const totalRegistered = unitCounts.total || dev.totalUnits;
-          const disponiblePct = totalRegistered > 0
-            ? (unitCounts.disponible / totalRegistered) * 100
-            : 0;
-
-          return (
-            <Card
-              key={dev.id}
-              className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-              onClick={() => router.push(`/developments/${dev.id}`)}
-            >
-              {/* Placeholder de imagen */}
+        {filtered.map((dev) => (
+          <Card
+            key={dev.id}
+            className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
+            onClick={() => router.push(`/developments/${dev.id}`)}
+          >
+            {dev.coverImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={dev.coverImage} alt={dev.name} className="h-36 w-full object-cover" />
+            ) : (
               <div className="flex h-36 items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
                 <Building2 className="h-12 w-12 text-primary/30" />
               </div>
+            )}
 
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg truncate">{dev.name}</CardTitle>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusColors}`}>
-                    {DEVELOPMENT_STATUS_LABELS[dev.status] || dev.status}
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between gap-2">
+                <CardTitle className="truncate text-lg">{dev.name}</CardTitle>
+                {dev.stage && (
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
+                    {dev.stage}
                   </span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {dev.developerName} &middot;{" "}
-                  {DEVELOPMENT_TYPE_LABELS[dev.developmentType] || dev.developmentType}
-                </p>
-              </CardHeader>
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {dev.developerName ?? "Sin desarrollador"}
+              </p>
+            </CardHeader>
 
-              <CardContent className="space-y-3">
-                {/* Ubicación */}
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <MapPin className="h-4 w-4 flex-shrink-0" />
-                  <span className="truncate">{dev.location}</span>
-                  <span className="ml-auto text-xs">
-                    {PLAZA_LABELS[dev.plaza] || dev.plaza}
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <MapPin className="h-4 w-4 shrink-0" />
+                <span className="truncate">{[dev.zone, dev.city].filter(Boolean).join(", ") || "—"}</span>
+              </div>
+
+              <div className="flex items-center gap-1 text-sm">
+                <DollarSign className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="font-medium">
+                  {dev.priceMinMxn != null
+                    ? `${formatCurrency(dev.priceMinMxn, "MXN")}${
+                        dev.priceMaxMxn != null && dev.priceMaxMxn !== dev.priceMinMxn
+                          ? ` – ${formatCurrency(dev.priceMaxMxn, "MXN")}`
+                          : ""
+                      }`
+                    : "Precio no publicado"}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{dev.publishedUnits} unid. publicadas</span>
+                {dev.availableUnits != null && <span>· {dev.availableUnits} disponibles</span>}
+                {(dev.discountedUnitsCount ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                    <Tag className="h-3 w-3" />
+                    {dev.discountedUnitsCount} con descuento
                   </span>
-                </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
 
-                {/* Unidades disponibles */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Unidades</span>
-                    <span className="font-medium">
-                      {unitCounts.disponible}{" "}
-                      <span className="text-muted-foreground">
-                        / {totalRegistered} disponibles
-                      </span>
-                    </span>
-                  </div>
-                  <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
-                    {/* Verde: disponible */}
-                    <div
-                      className="h-full bg-green-500"
-                      style={{ width: `${(unitCounts.disponible / Math.max(totalRegistered, 1)) * 100}%` }}
-                    />
-                    {/* Amarillo: apartada */}
-                    <div
-                      className="h-full bg-yellow-400"
-                      style={{ width: `${(unitCounts.apartada / Math.max(totalRegistered, 1)) * 100}%` }}
-                    />
-                    {/* Rojo: vendida */}
-                    <div
-                      className="h-full bg-red-500"
-                      style={{ width: `${(unitCounts.vendida / Math.max(totalRegistered, 1)) * 100}%` }}
-                    />
-                  </div>
-                  <div className="flex gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-green-500" />
-                      {unitCounts.disponible} disp.
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-yellow-400" />
-                      {unitCounts.apartada} apart.
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
-                      {unitCounts.vendida} vend.
-                    </span>
-                  </div>
-                </div>
-
-                {/* Rango de precios */}
-                <div className="flex items-center gap-1 text-sm">
-                  <DollarSign className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="font-medium">
-                    {formatCurrency(Number(dev.priceMin), dev.currency)} -{" "}
-                    {formatCurrency(Number(dev.priceMax), dev.currency)}
-                  </span>
-                </div>
-
-                {/* Comisión */}
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Percent className="h-4 w-4 flex-shrink-0" />
-                  <span>Comisión: {Number(dev.commissionRate)}%</span>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-
-        {filteredDevs.length === 0 && (
+        {filtered.length === 0 && (
           <div className="col-span-full py-12 text-center text-muted-foreground">
-            No se encontraron desarrollos con los filtros actuales
+            {developments.length === 0
+              ? "No hay desarrollos publicados en propyte.com"
+              : "Ningún desarrollo coincide con los filtros"}
           </div>
         )}
       </div>
+
+      {isAdmin && (
+        <p className="text-xs text-muted-foreground">
+          ¿Falta un desarrollo? Se publica desde el Hub —{" "}
+          <a href={SITE_BASE} target="_blank" rel="noreferrer" className="underline">
+            ver catálogo en propyte.com
+          </a>
+        </p>
+      )}
     </div>
   );
 }
