@@ -6,7 +6,13 @@
 //
 // El CRM NO escribe catálogo. Esta capa aísla el swap futuro a una API REST de lectura
 // (solo habría que reimplementar las funciones list/get sin tocar a los callers).
-import prisma from "@/lib/db";
+import {
+  listPublishedDevelopments,
+  getPublishedDevelopment,
+  listPublishedUnits,
+  getPublishedUnit,
+} from "./catalog";
+import type { PublishedDevelopment, PublishedUnit } from "./catalog-types";
 import type {
   HubDevelopment,
   HubUnit,
@@ -18,125 +24,76 @@ import type {
 const HUB_BASE = process.env.HUB_API_BASE_URL?.replace(/\/$/, "") ?? "";
 const HUB_KEY = process.env.HUB_API_KEY?.trim() ?? "";
 
-// ───────────────────────── Lectura (SQL directo) ─────────────────────────
+// ───────────────────────── Lectura (delega en catalog.ts) ─────────────────────────
+// El gate público vive en catalog.ts. Aquí solo se adapta al shape legado HubDevelopment /
+// HubUnit y se conserva la firma (array / T|null) para no tocar a los 6 callers actuales.
+
+function toHubDevelopment(d: PublishedDevelopment): HubDevelopment {
+  return {
+    id: d.id,
+    nombre: d.name,
+    zona: d.zone,
+    plaza: d.city,
+    status: d.stage,
+    precioMin: d.priceMinMxn,
+    precioMax: d.priceMaxMxn,
+    moneda: d.currency ?? "MXN",
+  };
+}
+
+function toHubUnit(u: PublishedUnit): HubUnit {
+  return {
+    id: u.id,
+    developmentId: u.developmentId,
+    numero: u.unitNumber,
+    titulo: u.title,
+    tipo: u.unitType,
+    tipologia: u.typology,
+    recamaras: u.bedrooms,
+    banos: u.bathrooms,
+    m2Construccion: u.builtAreaM2,
+    m2Total: u.areaM2,
+    precioMxn: u.priceMxn,
+    precioUsd: u.priceUsd,
+    moneda: u.currency ?? "MXN",
+    status: u.status,
+  };
+}
 
 export async function listHubDevelopments(
   filters: HubDevelopmentFilters = {}
 ): Promise<HubDevelopment[]> {
-  const limit = Math.min(filters.limit ?? 100, 200);
-  try {
-    return await prisma.$queryRawUnsafe<HubDevelopment[]>(
-      `SELECT d.id::text AS id,
-              d.nombre_desarrollo AS nombre,
-              d.zona AS zona,
-              NULL::text AS plaza,
-              d.pipeline_status AS status,
-              d.ext_precio_min_mxn::float8 AS "precioMin",
-              d.ext_precio_max_mxn::float8 AS "precioMax",
-              'MXN' AS moneda
-         FROM real_estate_hub."Propyte_desarrollos" d
-        WHERE d.pipeline_status::text = 'Publicado'
-          AND ($1::text IS NULL OR d.nombre_desarrollo ILIKE '%' || $1 || '%')
-          AND ($2::text IS NULL OR d.zona ILIKE '%' || $2 || '%')
-          AND ($3::float8 IS NULL OR d.ext_precio_max_mxn >= $3)
-          AND ($4::float8 IS NULL OR d.ext_precio_min_mxn <= $4)
-        ORDER BY d.nombre_desarrollo ASC
-        LIMIT ${limit}`,
-      filters.search ?? null,
-      filters.zone ?? null,
-      filters.budgetMin ?? null,
-      filters.budgetMax ?? null
-    );
-  } catch (err) {
-    console.error("[hub/client] listHubDevelopments falló:", err);
-    return [];
-  }
+  const { data } = await listPublishedDevelopments({
+    search: filters.search ?? null,
+    zone: filters.zone ?? null,
+    priceMin: filters.budgetMin ?? null,
+    priceMax: filters.budgetMax ?? null,
+    limit: filters.limit ?? 100,
+  });
+  return data.map(toHubDevelopment);
 }
 
 export async function getHubDevelopment(id: string): Promise<HubDevelopment | null> {
-  try {
-    const rows = await prisma.$queryRawUnsafe<HubDevelopment[]>(
-      `SELECT d.id::text AS id,
-              d.nombre_desarrollo AS nombre,
-              d.zona AS zona,
-              NULL::text AS plaza,
-              d.pipeline_status AS status,
-              d.ext_precio_min_mxn::float8 AS "precioMin",
-              d.ext_precio_max_mxn::float8 AS "precioMax",
-              'MXN' AS moneda
-         FROM real_estate_hub."Propyte_desarrollos" d
-        WHERE d.id::text = $1
-        LIMIT 1`,
-      id
-    );
-    return rows[0] ?? null;
-  } catch (err) {
-    console.error("[hub/client] getHubDevelopment falló:", err);
-    return null;
-  }
+  const { data } = await getPublishedDevelopment(id);
+  return data ? toHubDevelopment(data) : null;
 }
 
 export async function listHubUnits(filters: HubUnitFilters = {}): Promise<HubUnit[]> {
-  const limit = Math.min(filters.limit ?? 200, 500);
-  try {
-    return await prisma.$queryRawUnsafe<HubUnit[]>(
-      `SELECT u.id::text AS id,
-              u.id_desarrollo::text AS "developmentId",
-              u.ext_numero_unidad AS numero,
-              u.titulo_unidad AS titulo,
-              u.tipo_unidad AS tipo,
-              u.ext_tipologia AS tipologia,
-              u.recamaras::int AS recamaras,
-              u.banos_completos::int AS banos,
-              u.superficie_construida_m2::float8 AS "m2Construccion",
-              u.superficie_total_m2::float8 AS "m2Total",
-              u.precio_mxn::float8 AS "precioMxn",
-              u.precio_usd::float8 AS "precioUsd",
-              COALESCE(u.moneda_principal, 'MXN') AS moneda,
-              u.estado_unidad AS status
-         FROM real_estate_hub."Propyte_unidades" u
-        WHERE ($1::text IS NULL OR u.id_desarrollo::text = $1)
-          AND ($2::text IS NULL OR u.titulo_unidad ILIKE '%' || $2 || '%' OR u.ext_numero_unidad ILIKE '%' || $2 || '%')
-          AND ($3::bool IS NOT TRUE OR u.estado_unidad::text ILIKE 'disponible')
-        ORDER BY u.ext_numero_unidad ASC NULLS LAST
-        LIMIT ${limit}`,
-      filters.developmentId ?? null,
-      filters.search ?? null,
-      filters.onlyAvailable ?? null
-    );
-  } catch (err) {
-    console.error("[hub/client] listHubUnits falló:", err);
-    return [];
-  }
+  const { data } = await listPublishedUnits({
+    developmentId: filters.developmentId ?? null,
+    search: filters.search ?? null,
+    limit: filters.limit ?? 200,
+  });
+  const units = data.map(toHubUnit);
+  // onlyAvailable se resuelve en JS: v_units ya trae solo publicadas y `status` es texto libre.
+  return filters.onlyAvailable
+    ? units.filter((u) => (u.status ?? "").toLowerCase() === "disponible")
+    : units;
 }
 
 export async function getHubUnit(id: string): Promise<HubUnit | null> {
-  try {
-    const rows = await prisma.$queryRawUnsafe<HubUnit[]>(
-      `SELECT u.id::text AS id,
-              u.id_desarrollo::text AS "developmentId",
-              u.ext_numero_unidad AS numero,
-              u.titulo_unidad AS titulo,
-              u.tipo_unidad AS tipo,
-              u.ext_tipologia AS tipologia,
-              u.recamaras::int AS recamaras,
-              u.banos_completos::int AS banos,
-              u.superficie_construida_m2::float8 AS "m2Construccion",
-              u.superficie_total_m2::float8 AS "m2Total",
-              u.precio_mxn::float8 AS "precioMxn",
-              u.precio_usd::float8 AS "precioUsd",
-              COALESCE(u.moneda_principal, 'MXN') AS moneda,
-              u.estado_unidad AS status
-         FROM real_estate_hub."Propyte_unidades" u
-        WHERE u.id::text = $1
-        LIMIT 1`,
-      id
-    );
-    return rows[0] ?? null;
-  } catch (err) {
-    console.error("[hub/client] getHubUnit falló:", err);
-    return null;
-  }
+  const { data } = await getPublishedUnit(id);
+  return data ? toHubUnit(data) : null;
 }
 
 // ───────────────────── Mutación de inventario (REST al Hub) ─────────────────────
