@@ -9,6 +9,7 @@ import prisma from "@/lib/db";
 import { handleInboundWhatsApp } from "@/lib/twilio/whatsapp";
 import { resolveWaMediaToStorage } from "@/lib/whatsapp/media";
 import { mediaTypeFromWaType } from "@/lib/messaging/media";
+import { resolveConnectorByPhoneNumberId } from "@/lib/whatsapp/accounts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
     entry?: Array<{
       changes?: Array<{
         value?: {
+          metadata?: { phone_number_id?: string; display_phone_number?: string };
           contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>;
           messages?: MetaMessage[];
           statuses?: MetaStatus[];
@@ -115,10 +117,28 @@ export async function POST(req: NextRequest) {
   }
 
   let processed = 0;
+  // Coalescing del bot (BUG 2026-07-24): un batch de texto + N adjuntos disparaba N+1
+  // respuestas (y N+1 llamadas a Claude secuenciales dentro de maxDuration=30 → riesgo
+  // de timeout + retry de Meta). Se ingiere TODO el batch con triggerBot:false y el bot
+  // responde UNA vez por contacto al final, ya con el contexto completo.
+  const botTargets = new Map<string, { contactId: string; connectorId: string | null }>();
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
+
+      // Cuenta receptora (2026-07-25): metadata.phone_number_id identifica a QUÉ número
+      // de WhatsApp llegó el mensaje → conector WHATSAPP (config.phoneNumberId) → el
+      // Inbox muestra "WhatsApp · Marca" igual que IG/Messenger. Best-effort: sin
+      // conector configurado todo fluye como antes (connectorId null).
+      let connectorId: string | null = null;
+      if (value.metadata?.phone_number_id) {
+        try {
+          connectorId = (await resolveConnectorByPhoneNumberId(value.metadata.phone_number_id))?.id ?? null;
+        } catch (err) {
+          console.error("[whatsapp-meta] resolución de conector falló:", err);
+        }
+      }
 
       // Estatus de entrega de mensajes salientes → actualizar Message.status
       for (const st of value.statuses ?? []) {
@@ -130,7 +150,7 @@ export async function POST(req: NextRequest) {
         }).catch(() => {});
       }
 
-      // Mensajes entrantes → mismo pipeline que Twilio (inbox/bot/SLA/opt-out)
+      // Mensajes entrantes → mismo pipeline que Twilio (inbox/SLA/opt-out); bot al final
       const profileName = value.contacts?.[0]?.profile?.name;
       for (const msg of value.messages ?? []) {
         try {
@@ -141,11 +161,12 @@ export async function POST(req: NextRequest) {
           if (mediaType && mediaRef?.id) {
             stored = await resolveWaMediaToStorage(mediaRef.id);
           }
-          await handleInboundWhatsApp({
+          const saved = await handleInboundWhatsApp({
             From: `whatsapp:+${msg.from}`,
             Body: extractBody(msg),
             MessageSid: msg.id, // wamid → idempotencia por UNIQUE
             ProfileName: profileName,
+            ...(connectorId ? { ConnectorId: connectorId } : {}),
             ...(stored && mediaType
               ? {
                   MediaUrl0: stored.path,
@@ -154,12 +175,26 @@ export async function POST(req: NextRequest) {
                   MediaFilename: mediaRef?.filename ?? null,
                 }
               : {}),
-          });
+          }, { triggerBot: false });
+          if (saved?.contactId) {
+            botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
+          }
           processed++;
         } catch (err) {
           console.error("[whatsapp-meta] inbound:", err);
         }
       }
+    }
+  }
+
+  // Una respuesta del bot por contacto del batch (los guards internos de botRespond
+  // deciden si procede: status BOT, opt-out, canal habilitado, staleness).
+  for (const t of botTargets.values()) {
+    try {
+      const { botRespond } = await import("@/lib/bot/bot-respond");
+      await botRespond(t.contactId, { channel: "WHATSAPP", connectorId: t.connectorId });
+    } catch (err) {
+      console.error("[whatsapp-meta] botRespond:", err);
     }
   }
 

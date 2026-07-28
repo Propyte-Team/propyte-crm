@@ -90,20 +90,31 @@ export async function handleInboundSMS(payload: {
     },
   });
 
-  // Crear actividad
-  await prisma.activity.create({
-    data: {
-      contactId: contact.id,
-      userId: contact.assignedToId || contact.id, // fallback si no hay asesor
-      activityType: "SMS_IN",
-      subject: `SMS recibido de ${contact.firstName} ${contact.lastName}`,
-      description: payload.Body.length > 100
-        ? payload.Body.substring(0, 100) + "..."
-        : payload.Body,
-      status: "COMPLETADA",
-      completedAt: new Date(),
-    },
-  });
+  // Crear actividad — best-effort: Activity.userId es NOT NULL (FK a users); el viejo
+  // fallback `contact.id` era una FK violada garantizada con contacto sin asignar
+  // (misma clase del BUG 2026-07-24 en core.ts) y mataba la ingesta del SMS.
+  try {
+    const activityUserId =
+      contact.assignedToId ??
+      (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
+    if (activityUserId) {
+      await prisma.activity.create({
+        data: {
+          contactId: contact.id,
+          userId: activityUserId,
+          activityType: "SMS_IN",
+          subject: `SMS recibido de ${contact.firstName} ${contact.lastName}`,
+          description: payload.Body.length > 100
+            ? payload.Body.substring(0, 100) + "..."
+            : payload.Body,
+          status: "COMPLETADA",
+          completedAt: new Date(),
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[twilio-sms] activity inbound falló:", err);
+  }
 
   // Notificar al asesor asignado
   if (contact.assignedToId) {

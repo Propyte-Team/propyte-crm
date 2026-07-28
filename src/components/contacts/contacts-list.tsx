@@ -47,7 +47,7 @@ import {
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
 import { SavedViewsBar } from "@/components/views/saved-views-bar";
-import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER } from "@/lib/constants";
+import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Tipos ---
 interface ContactData {
@@ -75,21 +75,9 @@ interface ContactsListProps {
   userRole: string;
 }
 
-// Etiquetas en español para fuentes de leads (según enum Prisma)
-const SOURCE_LABEL: Record<string, string> = {
-  WALK_IN: "Walk-in",
-  FACEBOOK_ADS: "Facebook Ads",
-  GOOGLE_ADS: "Google Ads",
-  INSTAGRAM: "Instagram",
-  PORTAL_INMOBILIARIO: "Portal",
-  REFERIDO_CLIENTE: "Referido cliente",
-  REFERIDO_BROKER: "Referido broker",
-  LLAMADA_FRIA: "Llamada fría",
-  EVENTO: "Evento",
-  WEBSITE: "Sitio web",
-  WHATSAPP: "WhatsApp",
-  OTRO: "Otro",
-};
+// Etiquetas de fuentes: única fuente de verdad en constants.ts (AUD-20260710-02 —
+// este mapa local estaba desincronizado y dejaba fuentes válidas sin label).
+const SOURCE_LABEL = LEAD_SOURCE_LABELS;
 
 // Etiquetas para temperatura del lead
 const TEMP_LABEL: Record<string, string> = {
@@ -367,18 +355,11 @@ export function ContactsList({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Todas las fuentes</SelectItem>
-                <SelectItem value="WALK_IN">Walk-in</SelectItem>
-                <SelectItem value="FACEBOOK_ADS">Facebook Ads</SelectItem>
-                <SelectItem value="GOOGLE_ADS">Google Ads</SelectItem>
-                <SelectItem value="INSTAGRAM">Instagram</SelectItem>
-                <SelectItem value="PORTAL_INMOBILIARIO">Portal</SelectItem>
-                <SelectItem value="REFERIDO_CLIENTE">Referido cliente</SelectItem>
-                <SelectItem value="REFERIDO_BROKER">Referido broker</SelectItem>
-                <SelectItem value="LLAMADA_FRIA">Llamada fría</SelectItem>
-                <SelectItem value="EVENTO">Evento</SelectItem>
-                <SelectItem value="WEBSITE">Sitio web</SelectItem>
-                <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
-                <SelectItem value="OTRO">Otro</SelectItem>
+                {LEAD_SOURCE_ORDER.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {LEAD_SOURCE_LABELS[v]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 

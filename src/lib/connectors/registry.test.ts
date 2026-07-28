@@ -29,6 +29,17 @@ describe("registry de proveedores", () => {
       expect(p.webhookPath).toBeDefined();
     }
   });
+
+  // Cuenta WA en el Inbox (2026-07-25): sin card WHATSAPP no se pueden crear los
+  // conectores por número (phoneNumberId+brand) que alimentan el badge del Inbox.
+  it("existe la card WHATSAPP con phoneNumberId/brand en config y webhook correcto", () => {
+    const wa = providerById("WHATSAPP");
+    expect(wa).toBeDefined();
+    expect(wa!.webhookPath).toBe("/api/webhooks/whatsapp/meta");
+    const configKeys = wa!.credFields.filter((f) => f.config).map((f) => f.key);
+    expect(configKeys).toContain("phoneNumberId");
+    expect(configKeys).toContain("brand");
+  });
 });
 
 describe("splitConnectorFields", () => {

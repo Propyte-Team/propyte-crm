@@ -20,7 +20,10 @@ vi.mock("@/lib/db", () => ({
       findFirst: (...a: unknown[]) => convFindFirst(...a),
       update: vi.fn(async () => ({})),
     },
-    message: { findMany: (...a: unknown[]) => msgFindMany(...a) },
+    message: {
+      findMany: (...a: unknown[]) => msgFindMany(...a),
+      findFirst: vi.fn(async () => null), // guard anti-burst: sin mensajes nuevos
+    },
     user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
     botAgentProfile: { count: (...a: unknown[]) => agentCount(...a) },
     botPlaybook: { findFirst: (...a: unknown[]) => playbookFindFirst(...a) },

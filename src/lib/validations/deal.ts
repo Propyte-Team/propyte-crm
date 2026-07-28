@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dueDateSchema } from "@/lib/due-date";
 
 // --- Etapas válidas del pipeline (coinciden con el enum DealStage de Prisma) ---
 const VALID_STAGES = [
@@ -58,8 +59,8 @@ export const createDealSchema = z.object({
   // Moneda
   currency: z.enum(["MXN", "USD"]).default("MXN"),
 
-  // Fecha esperada de cierre
-  expectedCloseDate: z.coerce.date(),
+  // Fecha esperada de cierre — hora de pared de Cancún si el string no trae zona
+  expectedCloseDate: dueDateSchema,
 
   // Fuente del lead al momento de crear el deal (snapshot)
   leadSourceAtDeal: z.string().min(1, "La fuente del lead es requerida"),
@@ -72,7 +73,7 @@ export const updateDealSchema = z.object({
   dealType: z.enum(VALID_DEAL_TYPES).optional(),
   estimatedValue: z.number().positive("El valor debe ser positivo").optional(),
   currency: z.enum(["MXN", "USD"]).optional(),
-  expectedCloseDate: z.coerce.date().optional(),
+  expectedCloseDate: dueDateSchema.optional(),
   lostReason: z.enum(VALID_LOST_REASONS).optional(),
   lostReasonDetail: z.string().max(500).optional(),
 });
@@ -87,7 +88,7 @@ export const stageTransitionSchema = z
     // Campos que pueden ser requeridos según la etapa destino
     unitId: z.string().uuid().optional(),
     estimatedValue: z.number().positive().optional(),
-    actualCloseDate: z.coerce.date().optional(),
+    actualCloseDate: dueDateSchema.optional(),
     lostReason: z.enum(VALID_LOST_REASONS).optional(),
     lostReasonDetail: z.string().max(500).optional(),
   })

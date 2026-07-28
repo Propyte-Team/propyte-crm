@@ -10,6 +10,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
+import { dueDateSchema } from "@/lib/due-date";
 
 // Roles con acceso completo
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -38,7 +39,8 @@ const updateDealSchema = z.object({
   estimatedValue: z.number().positive().optional(),
   currency: z.enum(["MXN", "USD"]).optional(),
   probability: z.number().int().min(0).max(100).optional(),
-  expectedCloseDate: z.coerce.date().optional(),
+  // Hora de pared de Cancún si el string no trae zona — ver src/lib/due-date.ts
+  expectedCloseDate: dueDateSchema.optional(),
   developmentId: z.string().uuid().optional().nullable(),
   unitId: z.string().uuid().optional().nullable(),
   assignedToId: z.string().uuid().optional(),
@@ -47,7 +49,7 @@ const updateDealSchema = z.object({
     "NO_CONTACTABLE", "COMPRO_DIRECTO", "DESARROLLO_CANCELADO", "OTRO",
   ]).optional(),
   lostReasonDetail: z.string().max(500).optional(),
-  actualCloseDate: z.coerce.date().optional(),
+  actualCloseDate: dueDateSchema.optional(),
 });
 
 /**

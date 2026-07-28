@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Esquema de validación Zod ---
 // El teléfono se normaliza (sin espacios/guiones/paréntesis) antes de validar,
@@ -35,10 +36,7 @@ const contactFormSchema = z.object({
   secondaryPhone: phoneField.optional().or(z.literal("")),
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
-  leadSource: z.enum([
-    "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
-    "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
-  ]),
+  leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
   residenceCity: z.string().max(100).optional(),
   residenceCountry: z.string().max(100).optional(),
@@ -86,20 +84,12 @@ const CONTACT_TYPE_OPTIONS = [
   { value: "EMPLEO", label: "Empleo" },
 ];
 
-const LEAD_SOURCE_OPTIONS = [
-  { value: "WALK_IN", label: "Walk-in" },
-  { value: "FACEBOOK_ADS", label: "Facebook Ads" },
-  { value: "GOOGLE_ADS", label: "Google Ads" },
-  { value: "INSTAGRAM", label: "Instagram" },
-  { value: "PORTAL_INMOBILIARIO", label: "Portal inmobiliario" },
-  { value: "REFERIDO_CLIENTE", label: "Referido por cliente" },
-  { value: "REFERIDO_BROKER", label: "Referido por broker" },
-  { value: "LLAMADA_FRIA", label: "Llamada en frío" },
-  { value: "EVENTO", label: "Evento" },
-  { value: "WEBSITE", label: "Sitio web" },
-  { value: "WHATSAPP", label: "WhatsApp" },
-  { value: "OTRO", label: "Otro" },
-];
+// AUD-20260710-02: derivado de LEAD_SOURCE_ORDER/LABELS (constants.ts) para que el alta
+// ofrezca SIEMPRE el enum completo — la lista manual dejaba 9/21 fuentes inelegibles.
+const LEAD_SOURCE_OPTIONS = LEAD_SOURCE_ORDER.map((value) => ({
+  value,
+  label: LEAD_SOURCE_LABELS[value],
+}));
 
 const LANGUAGE_OPTIONS = [
   { value: "ES", label: "Español" },

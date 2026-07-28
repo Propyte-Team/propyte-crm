@@ -9,7 +9,9 @@ interface OverdueTask {
   id: string
   subject: string
   dueDate: string
-  contact: { id: string; firstName: string; lastName: string }
+  // Null en tareas personales del asesor (Activity sin contacto). Este tipo describe
+  // la respuesta JSON de /api/activities, así que tsc no puede verificarlo contra Prisma.
+  contact: { id: string; firstName: string; lastName: string } | null
   user: { id: string; name: string }
 }
 
@@ -106,7 +108,7 @@ export function OverdueTasks() {
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-medium truncate" style={{ color: "var(--text-primary)" }}>{task.subject}</p>
                   <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                    {task.contact.firstName} {task.contact.lastName}
+                    {task.contact ? `${task.contact.firstName} ${task.contact.lastName}` : "—"}
                   </p>
                   <div className="mt-1 flex items-center gap-2">
                     <span className="text-[11px] font-medium" style={{ color: "var(--color-error)" }}>

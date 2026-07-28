@@ -42,23 +42,11 @@ import {
   URGENCY_COLORS,
   CONTACT_TYPE_LABELS,
   LEAD_TEMPERATURE_LABELS,
+  LEAD_SOURCE_ORDER,
+  LEAD_SOURCE_LABELS,
 } from "@/lib/constants";
 
 // --- Etiquetas locales (no en constants) ---
-const SOURCE_LABEL: Record<string, string> = {
-  WALK_IN: "Walk-in",
-  FACEBOOK_ADS: "Facebook Ads",
-  GOOGLE_ADS: "Google Ads",
-  INSTAGRAM: "Instagram",
-  PORTAL_INMOBILIARIO: "Portal",
-  REFERIDO_CLIENTE: "Referido cliente",
-  REFERIDO_BROKER: "Referido broker",
-  LLAMADA_FRIA: "Llamada fría",
-  EVENTO: "Evento",
-  WEBSITE: "Sitio web",
-  WHATSAPP: "WhatsApp",
-  OTRO: "Otro",
-};
 const TEMP_COLORS: Record<string, string> = {
   HOT: "#DC2626",
   WARM: "#D97706",
@@ -322,9 +310,16 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
                   onChange={(v) => changeField("urgency", v || null)}
                 />
               )}
-              <span className="text-xs text-[color:var(--text-tertiary)]">
-                {SOURCE_LABEL[contact.leadSource] ?? contact.leadSource}
-              </span>
+              {/* AUD-20260710-04: la fuente ahora es editable inline (antes span estático) */}
+              {acc("leadSource") !== "HIDDEN" && (
+                <ChipSelect
+                  value={contact.leadSource ?? "OTRO"}
+                  options={LEAD_SOURCE_ORDER.map((v) => ({ value: v, label: LEAD_SOURCE_LABELS[v] }))}
+                  loading={busy === "leadSource"}
+                  readOnly={acc("leadSource") !== "EDIT"}
+                  onChange={(v) => changeField("leadSource", v)}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -151,7 +151,9 @@ export async function handleInboundWhatsApp(payload: {
   MediaMimeType?: string | null;
   MediaFilename?: string | null;
   ProfileName?: string;
-}) {
+  /** Conector WHATSAPP del número que RECIBIÓ el mensaje (metadata.phone_number_id). */
+  ConnectorId?: string | null;
+}, opts: { triggerBot?: boolean } = {}) {
   const rawPhone = payload.From.replace("whatsapp:", "");
 
   // Opt-out por keyword (§I.3 paso 7) — específico de WhatsApp.
@@ -182,5 +184,6 @@ export async function handleInboundWhatsApp(payload: {
     mediaMimeType: payload.MediaMimeType ?? null,
     mediaFilename: payload.MediaFilename ?? null,
     profileName: payload.ProfileName ?? null,
-  });
+    connectorId: payload.ConnectorId ?? null,
+  }, opts);
 }

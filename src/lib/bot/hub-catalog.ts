@@ -2,6 +2,15 @@
 // Delega en src/lib/hub/catalog.ts: el gate público (approved_at IS NOT NULL AND
 // deleted_at IS NULL) vive allí, escrito una sola vez.
 //
+// Historia del gate (no lo aflojes sin leer esto):
+//   25-jul: se ancló el catálogo en UNIDADES dadas de alta en el sitio (pedido de Luis) —
+//   no basta el flag del desarrollo: si no tiene unidades publicadas no se ofrece, y los
+//   precios salen de esas unidades reales, no del ext_precio_min stale del desarrollo.
+//   27-jul: ese criterio (ext_publicado + JOIN) daba 19 devs / 54 unidades, mientras el
+//   sitio renderiza 21 / 56. Ahora se consulta v_units con el MISMO gate que propyte.com,
+//   así que la propiedad de "solo devs con unidades publicadas" se conserva por
+//   construcción (agrupamos unidades reales) y además el conjunto calza con el sitio.
+//
 // Devuelve { data, error } a propósito: el bot NO debe decir "no tengo inventario"
 // cuando en realidad la consulta falló. Los callers deben propagar esa distinción
 // (omitir el brief / escalar), nunca tratar error como catálogo vacío.

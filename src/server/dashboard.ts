@@ -28,7 +28,7 @@ export interface RecentActivity {
   activityType: string
   subject: string
   createdAt: Date
-  contact: { firstName: string; lastName: string }
+  contact: { firstName: string; lastName: string } | null
   user: { name: string }
 }
 
@@ -404,7 +404,7 @@ export async function getDashboardStats(
       activityType: a.activityType,
       subject: a.subject,
       createdAt: a.createdAt,
-      contact: { firstName: a.contact.firstName, lastName: a.contact.lastName },
+      contact: a.contact ? { firstName: a.contact.firstName, lastName: a.contact.lastName } : null,
       user: { name: a.user.name },
     })),
     overdueTasksCount: overdueTasks.length,

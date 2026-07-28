@@ -6,6 +6,16 @@ import { createSlaTimer } from "./sla";
 import { withChangeSource } from "@/lib/audit/change-context";
 
 const RR_POINTER_KEY = "workflows.routing.rr_pointer";
+// AUD-20260710-09: el round-robin asignó un lead REAL a un usuario QA recién creado.
+// Gate anti-test doble: lista configurable de ids excluidos (SystemConfig) + convención
+// de correos internos/QA (dominio ".local": audit-temp@propyte.local, qa-asesor@propyte.local…).
+const RR_EXCLUDED_KEY = "workflows.routing.excluded_user_ids";
+
+async function routingExcludedIds(): Promise<string[]> {
+  const cfg = await prisma.systemConfig.findUnique({ where: { key: RR_EXCLUDED_KEY } });
+  if (!Array.isArray(cfg?.value)) return [];
+  return (cfg.value as unknown[]).filter((v): v is string => typeof v === "string");
+}
 
 async function roundRobinPick(userIds: string[]): Promise<string | null> {
   if (userIds.length === 0) return null;
@@ -48,6 +58,14 @@ export async function autoRouteLead(
     orderBy: { priority: "asc" },
   });
 
+  // Gate anti-test (AUD-20260710-09): usuarios QA/prueba jamás reciben leads reales.
+  const excludedIds = await routingExcludedIds();
+  const routableWhere = {
+    isActive: true,
+    deletedAt: null,
+    NOT: { email: { endsWith: ".local" } },
+  };
+
   let assigneeId: string | null = null;
   for (const rule of rules) {
     const ctx = {
@@ -60,7 +78,10 @@ export async function autoRouteLead(
     let candidates: string[] = [];
     if (Array.isArray(targets.userIds) && targets.userIds.length > 0) {
       const users = await prisma.user.findMany({
-        where: { id: { in: targets.userIds }, isActive: true, deletedAt: null },
+        where: {
+          id: { in: targets.userIds, ...(excludedIds.length ? { notIn: excludedIds } : {}) },
+          ...routableWhere,
+        },
         select: { id: true },
         orderBy: { createdAt: "asc" },
       });
@@ -72,8 +93,8 @@ export async function autoRouteLead(
       const users = await prisma.user.findMany({
         where: {
           role: { in: roles as never },
-          isActive: true,
-          deletedAt: null,
+          ...routableWhere,
+          ...(excludedIds.length ? { id: { notIn: excludedIds } } : {}),
           ...(targets.plaza ? { plaza: targets.plaza as never } : {}),
         },
         select: { id: true },

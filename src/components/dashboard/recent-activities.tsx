@@ -44,7 +44,7 @@ interface RecentActivityItem {
   activityType: string
   subject: string
   createdAt: string | Date
-  contact: { firstName: string; lastName: string }
+  contact: { firstName: string; lastName: string } | null
   user: { name: string }
 }
 
@@ -84,7 +84,7 @@ export function RecentActivities({ activities }: RecentActivitiesProps) {
                     {activity.subject}
                   </p>
                   <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                    {activity.contact.firstName} {activity.contact.lastName}
+                    {activity.contact ? `${activity.contact.firstName} ${activity.contact.lastName}` : "—"}
                   </p>
                   <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
                     {timeAgo}

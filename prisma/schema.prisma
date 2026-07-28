@@ -955,8 +955,8 @@ model Deal {
 // Actividades e interacciones
 model Activity {
   id               String         @id @default(uuid())
-  contactId        String
-  contact          Contact        @relation(fields: [contactId], references: [id])
+  contactId        String?
+  contact          Contact?       @relation(fields: [contactId], references: [id])
   dealId           String?
   deal             Deal?          @relation(fields: [dealId], references: [id])
   userId           String

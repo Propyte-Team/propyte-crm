@@ -65,11 +65,33 @@ const DM_STEPS: WizardStep[] = [
   { title: "Prueba y guarda", body: "Validamos el token contra la API y guardamos cifrado (los IDs van en config)." },
 ];
 
+// WhatsApp Cloud API: el webhook y el envío global ya viven en env (META_WA_*). El
+// conector por número existe para que el Inbox muestre A QUÉ cuenta llegó cada mensaje
+// (config.phoneNumberId ↔ metadata.phone_number_id del webhook). accessToken es opcional
+// (reservado para envío multicuenta, hoy el envío usa el token global del env).
+const WHATSAPP_FIELDS: CredField[] = [
+  { key: "phoneNumberId", label: "Phone Number ID (Cloud API)", config: true },
+  { key: "displayPhone", label: "Número (para mostrar, ej. +52 998 123 4567)", config: true },
+  { key: "brand", label: "Marca (ej. Propyte / Nativa Tulum)", config: true },
+  { key: "accessToken", label: "Access Token (opcional — el envío usa el global)", secret: true },
+];
+const WHATSAPP_STEPS: WizardStep[] = [
+  { title: "Abre tu app de Meta → WhatsApp → API Setup", body: "Ahí ves los números conectados y su Phone Number ID.", link: "https://developers.facebook.com/apps" },
+  { title: "Copia el Phone Number ID del número", body: "Es el ID que llega en metadata.phone_number_id del webhook — así el Inbox sabe a qué cuenta llegó cada mensaje." },
+  { title: "Ponle marca y número visible", body: "La marca aparece en el Inbox como 'WhatsApp · Marca'." },
+  { title: "Guarda y activa", body: "El webhook global /api/webhooks/whatsapp/meta ya recibe todos los números de la app." },
+];
+
 export const PROVIDERS: ProviderDef[] = [
   {
     id: "META", label: "Facebook · Lead Ads", group: "meta", groupLabel: "Meta",
     pull: "webhook", testKind: "meta", credFields: META_CRED, wizardSteps: META_STEPS,
     webhookPath: "/api/connectors/meta/webhook",
+  },
+  {
+    id: "WHATSAPP", label: "WhatsApp · Cloud API", group: "meta", groupLabel: "Meta",
+    pull: "webhook", testKind: "none", credFields: WHATSAPP_FIELDS, wizardSteps: WHATSAPP_STEPS,
+    webhookPath: "/api/webhooks/whatsapp/meta",
   },
   {
     id: "INSTAGRAM", label: "Instagram · DM", group: "meta", groupLabel: "Meta",

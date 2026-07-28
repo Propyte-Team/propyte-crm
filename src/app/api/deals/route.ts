@@ -11,6 +11,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
+import { dueDateSchema } from "@/lib/due-date";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -40,7 +41,8 @@ const createDealSchema = z.object({
   estimatedValue: z.number().positive("El valor estimado debe ser positivo"),
   currency: z.enum(["MXN", "USD"]).optional(),
   probability: z.number().int().min(0).max(100).optional(),
-  expectedCloseDate: z.coerce.date(),
+  // Hora de pared de Cancún si el string no trae zona — ver src/lib/due-date.ts
+  expectedCloseDate: dueDateSchema,
   leadSourceAtDeal: z.string().min(1, "La fuente del lead es requerida"),
   assignedToId: z.string().uuid("ID de asesor inválido").optional(),
 });

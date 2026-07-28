@@ -106,7 +106,9 @@ export function buildBrandRules(config: BotConfigResolved): string {
     gate,
     `Tu objetivo: perfilar (presupuesto, zona, recámaras, plazo), responder FAQ del catálogo que te den en contexto, y agendar una llamada/visita con el asesor.`,
     `Si detectas intención fuerte o alguno de estos temas (${triggers}), responde un mensaje breve de transición y termina con el token ${ESCALATE_TOKEN}. No sigas tú.`,
-    "Responde en el idioma del cliente (ES/EN).",
+    // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
+    // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
+    "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
     `Mensajes cortos, estilo WhatsApp (máx ~${config.maxLines} líneas).`,
     "En WhatsApp la negrita se escribe con UN solo asterisco (*así*). NUNCA uses sintaxis markdown: ni doble asterisco (**negrita**) ni encabezados con #.",
     "Nunca digas que eres una IA salvo pregunta directa; entonces sé honesto.",
@@ -144,7 +146,11 @@ export function buildSystemPrompt(args: {
     `\nObjetivo ahora: ${args.objective ?? DEFAULT_OBJECTIVE}`,
   ];
   if (contact) {
-    parts.push(`\nCliente: ${contact.firstName} · Idioma: ${contact.preferredLanguage}`);
+    // "registrado" + "solo referencia": el preferredLanguage suele ser el default ES del
+    // intake, no una elección del cliente — no debe leerse como directiva de idioma.
+    parts.push(
+      `\nCliente: ${contact.firstName} · Idioma registrado: ${contact.preferredLanguage} (solo referencia — responde en el idioma del último mensaje del cliente)`
+    );
   }
   parts.push(`\n${catalogBlock}`);
 

@@ -36,6 +36,26 @@ describe("findMatchingDevelopments", () => {
     expect(res.data).toEqual([]);
     expect(res.error).toBeTruthy();
   });
+
+  // Intención heredada del fix del 25-jul (pedido de Luis): un desarrollo sin unidades
+  // publicadas NO se cita. Antes se lograba con un JOIN a Propyte_unidades; ahora sale por
+  // construcción, porque agrupamos las unidades publicadas que devuelve searchCatalog.
+  it("no cita desarrollos sin unidades publicadas", async () => {
+    searchCatalog.mockResolvedValue({ data: [], error: null });
+    const res = await findMatchingDevelopments({ budgetMax: 6_000_000 });
+    expect(res.error).toBeNull();
+    expect(res.data).toEqual([]);
+  });
+
+  // Intención heredada del 25-jul: el presupuesto y la zona tienen que llegar a la consulta,
+  // no filtrarse después en JS sobre una ventana ya recortada.
+  it("pasa presupuesto y zona a la capa de catálogo", async () => {
+    searchCatalog.mockResolvedValue({ data: [], error: null });
+    await findMatchingDevelopments({ budgetMin: 1_000_000, budgetMax: 6_000_000, zone: "Tulum" });
+    expect(searchCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({ budgetMin: 1_000_000, budgetMax: 6_000_000, zone: "Tulum" })
+    );
+  });
 });
 
 describe("catalogBrief", () => {

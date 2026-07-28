@@ -7,11 +7,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { updateActivity, deleteActivity } from "@/server/activities";
+import { dueDateSchema } from "@/lib/due-date";
 
 const updateActivitySchema = z.object({
   subject: z.string().min(3).max(200).trim().optional(),
   description: z.string().max(5000).nullable().optional(),
-  dueDate: z.coerce.date().nullable().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
   status: z.enum(["PENDIENTE", "COMPLETADA", "VENCIDA", "CANCELADA"]).optional(),
   outcome: z.string().max(1000).nullable().optional(),
   duration_minutes: z.number().int().min(0).max(480).nullable().optional(),

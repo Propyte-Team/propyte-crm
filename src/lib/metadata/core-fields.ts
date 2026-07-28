@@ -37,6 +37,8 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     { key: "contactType", label: "Tipo de contacto", group: "Clasificación" },
     { key: "urgency", label: "Urgencia", group: "Clasificación" },
     { key: "score", label: "Score", group: "Clasificación" },
+    // AUD-20260710-04: fuente editable inline en el detalle — gateable por rol desde aquí
+    { key: "leadSource", label: "Fuente del lead", group: "Clasificación" },
   ],
 };
 

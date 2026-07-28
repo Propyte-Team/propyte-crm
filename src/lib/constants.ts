@@ -185,18 +185,59 @@ export const LOST_REASON_LABELS: Record<string, string> = {
 } as const;
 
 // --- Fuentes de leads (alineado con enum LeadSource de Prisma) ---
+// Única fuente de verdad (patrón CONTACT_STATUS_ORDER): alimenta los selects de
+// alta/filtro/detalle y los z.enum de las APIs. AUD-20260710-02: había 3 mapas
+// desincronizados con 12/21 fuentes — un valor válido en BD quedaba inelegible/sin label.
+// Paridad con el enum Prisma fijada por constants.lead-source.test.ts.
+export const LEAD_SOURCE_ORDER = [
+  // Pagado / social
+  "FACEBOOK_ADS",
+  "INSTAGRAM",
+  "META_ADS",
+  "MESSENGER",
+  "GOOGLE_ADS",
+  "TIKTOK_ADS",
+  "LINKEDIN",
+  // Directo / orgánico
+  "WHATSAPP",
+  "WEBSITE",
+  "PORTAL_INMOBILIARIO",
+  "WALK_IN",
+  "LLAMADA_ENTRANTE",
+  // Eventos y actividad propia
+  "WEBINAR",
+  "EVENTO",
+  "LLAMADA_FRIA",
+  "SELF_GEN",
+  "BASE_DE_DATOS",
+  // Referidos / brokers
+  "REFERIDO_CLIENTE",
+  "REFERIDO_BROKER",
+  "REGISTRO_BROKER",
+  "OTRO",
+] as const;
+
 export const LEAD_SOURCE_LABELS: Record<string, string> = {
-  WALK_IN: "Walk-in",
   FACEBOOK_ADS: "Facebook Ads",
-  GOOGLE_ADS: "Google Ads",
   INSTAGRAM: "Instagram",
+  META_ADS: "Meta Ads",
+  MESSENGER: "Messenger",
+  GOOGLE_ADS: "Google Ads",
+  TIKTOK_ADS: "TikTok Ads",
+  LINKEDIN: "LinkedIn",
+  WHATSAPP: "WhatsApp",
+  WEBSITE: "Sitio web",
   PORTAL_INMOBILIARIO: "Portal Inmobiliario",
+  WALK_IN: "Walk-in",
+  LLAMADA_ENTRANTE: "Llamada entrante",
+  WEBINAR: "Webinar",
+  EVENTO: "Evento",
+  LLAMADA_FRIA: "Llamada en frío",
+  SELF_GEN: "Prospección propia",
+  BASE_DE_DATOS: "Base de datos",
   REFERIDO_CLIENTE: "Referido de Cliente",
   REFERIDO_BROKER: "Referido de Broker",
-  LLAMADA_FRIA: "Llamada en frío",
-  EVENTO: "Evento",
-  WEBSITE: "Sitio web",
-  WHATSAPP: "WhatsApp",
+  REGISTRO_BROKER: "Registro de Broker",
   OTRO: "Otro",
 } as const;
 

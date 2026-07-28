@@ -21,7 +21,7 @@ const createSchema = z.object({
   name: z.string().min(2).max(120),
   provider: z.enum([
     "META", "TIKTOK", "WEBSITE", "ZAPIER", "MANUAL", "INSTAGRAM", "MESSENGER",
-    "GOOGLE_ADS", "LINKEDIN",
+    "GOOGLE_ADS", "LINKEDIN", "WHATSAPP",
   ]),
   credentials: z.record(z.string()).optional(),
   config: z.record(z.unknown()).optional(),
@@ -91,6 +91,12 @@ export async function POST(req: NextRequest) {
     if (parsed.data.provider === "INSTAGRAM" && !cfg.data.igBusinessId) {
       return NextResponse.json({ error: "igBusinessId requerido para Instagram" }, { status: 400 });
     }
+  }
+
+  // WHATSAPP: el phoneNumberId es la llave con la que el webhook identifica a qué
+  // número llegó cada mensaje (metadata.phone_number_id) — sin él el conector no sirve.
+  if (parsed.data.provider === "WHATSAPP" && !(parsed.data.config as Record<string, unknown> | undefined)?.phoneNumberId) {
+    return NextResponse.json({ error: "phoneNumberId requerido para WhatsApp" }, { status: 400 });
   }
 
   const connector = await prisma.leadConnector.create({
