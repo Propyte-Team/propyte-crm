@@ -1,342 +1,250 @@
-// Cliente para detalle de desarrollo con mapa de unidades y estadísticas
+// Ficha del desarrollo publicado — espejo de propyte.com. Solo lectura.
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  Building2,
-  MapPin,
-  Calendar,
-  ExternalLink,
-  Edit,
-  DollarSign,
-  Percent,
-  BarChart3,
-  Timer,
+  ArrowLeft, MapPin, ExternalLink, Building2, AlertCircle, Tag, CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Progress } from "@/components/ui/progress";
-import {
-  DEVELOPMENT_STATUS_LABELS,
-  DEVELOPMENT_STATUS_COLORS,
-  DEVELOPMENT_TYPE_LABELS,
-  PLAZA_LABELS,
-  UNIT_TYPE_LABELS,
-  formatCurrency,
-} from "@/lib/constants";
-import { UnitGrid } from "@/components/developments/unit-grid";
+import { formatCurrency } from "@/lib/constants";
+import type { PublishedDevelopmentDetail, PublishedUnit } from "@/lib/hub/catalog-types";
 
-interface DevelopmentDetailClientProps {
-  development: any;
+interface Props {
+  development: PublishedDevelopmentDetail | null;
+  units: PublishedUnit[];
+  loadError: string | null;
   isAdmin: boolean;
 }
 
-export function DevelopmentDetailClient({
-  development,
-  isAdmin,
-}: DevelopmentDetailClientProps) {
+const SITE = "https://propyte.com/es";
+
+/** financingMonths es un array de plazos (ej. [12,24,36,48,60]), no un escalar. */
+function formatFinancingMonths(months: number[] | null): string | null {
+  if (!months || months.length === 0) return null;
+  return `${months.join("/")} meses`;
+}
+
+export function DevelopmentDetailClient({ development, units, loadError, isAdmin }: Props) {
   const router = useRouter();
-  const dev = development;
 
-  // Calcular estadísticas de unidades
-  const units = dev.units || [];
-  const disponible = units.filter((u: any) => u.status === "DISPONIBLE").length;
-  const apartada = units.filter((u: any) => u.status === "APARTADA").length;
-  const vendida = units.filter((u: any) => u.status === "VENDIDA").length;
-  const noDisponible = units.filter((u: any) => u.status === "NO_DISPONIBLE").length;
-  const totalUnits = units.length;
-
-  // Tasa de absorción
-  const absorptionRate = totalUnits > 0 ? ((vendida + apartada) / totalUnits) * 100 : 0;
-
-  // Ingreso total
-  const totalRevenue = units
-    .filter((u: any) => u.status === "VENDIDA" && u.salePrice)
-    .reduce((sum: number, u: any) => sum + Number(u.salePrice || 0), 0);
-
-  const statusColors = DEVELOPMENT_STATUS_COLORS[dev.status] || "bg-gray-100 text-gray-700";
-
-  // Formatear fecha
-  function formatDate(dateStr: string | null | undefined): string {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("es-MX", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+  // Fallo de consulta ≠ "sin unidades". Nunca los muestres igual.
+  if (loadError || !development) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/developments")}>
+          <ArrowLeft className="mr-1 h-4 w-4" /> Desarrollos
+        </Button>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="font-medium">No se pudo cargar el desarrollo</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Esto no significa que el desarrollo no exista: la consulta al catálogo falló.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => router.refresh()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
+
+  const d = development;
+  const ubicacion = [d.neighborhood, d.zone, d.city, d.state].filter(Boolean).join(", ");
+  const financiamiento = formatFinancingMonths(d.financingMonths);
 
   return (
     <div className="space-y-6">
-      {/* Navegación */}
-      <Button variant="ghost" size="sm" onClick={() => router.push("/developments")}>
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Desarrollos
-      </Button>
-
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">{dev.name}</h1>
-          <div className="flex items-center gap-3 mt-1">
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColors}`}>
-              {DEVELOPMENT_STATUS_LABELS[dev.status] || dev.status}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              {dev.developerName}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              {DEVELOPMENT_TYPE_LABELS[dev.developmentType] || dev.developmentType}
-            </span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {dev.brochureUrl && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={dev.brochureUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="mr-1 h-4 w-4" />
-                {dev.brochureUrl.includes("drive.google.com") ? "Carpeta Drive" : "Brochure"}
-              </a>
-            </Button>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Button variant="ghost" size="sm" className="mb-2 -ml-2" onClick={() => router.push("/developments")}>
+            <ArrowLeft className="mr-1 h-4 w-4" /> Desarrollos
+          </Button>
+          <h1 className="truncate text-2xl font-bold tracking-tight">{d.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            {d.developerName ?? "Sin desarrollador"}
+            {d.stage ? ` · ${d.stage}` : ""}
+          </p>
+          {ubicacion && (
+            <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+              <MapPin className="h-4 w-4 shrink-0" /> {ubicacion}
+            </p>
           )}
-          {dev.virtualTourUrl && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={dev.virtualTourUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="mr-1 h-4 w-4" />
-                Tour Virtual
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {d.slug && (
+            <Button asChild variant="outline" size="sm">
+              <a href={`${SITE}/desarrollos/${d.slug}`} target="_blank" rel="noreferrer">
+                Ver en propyte.com <ExternalLink className="ml-1 h-4 w-4" />
               </a>
             </Button>
           )}
           {isAdmin && (
-            <Button variant="outline" size="sm">
-              <Edit className="mr-1 h-4 w-4" />
-              Editar
-            </Button>
+            <a
+              href="https://hub.propyte.com"
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-muted-foreground underline"
+            >
+              Editar en el Hub
+            </a>
           )}
         </div>
       </div>
 
-      {/* Stats cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          icon={<Building2 className="h-5 w-5" />}
-          label="Unidades Totales"
-          value={totalUnits.toString()}
-          detail={`${disponible} disponibles`}
-        />
-        <StatCard
-          icon={<BarChart3 className="h-5 w-5" />}
-          label="Absorción"
-          value={`${absorptionRate.toFixed(1)}%`}
-          detail={`${vendida} vendidas, ${apartada} apartadas`}
-        />
-        <StatCard
-          icon={<DollarSign className="h-5 w-5" />}
-          label="Rango de Precios"
-          value={formatCurrency(Number(dev.priceMin), dev.currency)}
-          detail={`a ${formatCurrency(Number(dev.priceMax), dev.currency)}`}
-        />
-        <StatCard
-          icon={<DollarSign className="h-5 w-5" />}
-          label="Ingreso por Ventas"
-          value={formatCurrency(totalRevenue, dev.currency)}
-          detail={`Comisión: ${Number(dev.commissionRate)}%`}
-        />
-      </div>
+      {d.images.length > 0 && (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {d.images.slice(0, 8).map((src, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} src={src} alt={`${d.name} ${i + 1}`} className="h-40 w-64 shrink-0 rounded-lg object-cover" />
+          ))}
+        </div>
+      )}
 
-      {/* Información del desarrollo */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Información General</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Ubicación</span>
-              <span className="font-medium flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" />
-                {dev.location}
-              </span>
-            </div>
-            <Separator />
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Plaza</span>
-              <span className="font-medium">{PLAZA_LABELS[dev.plaza] || dev.plaza}</span>
-            </div>
-            <Separator />
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Moneda</span>
-              <span className="font-medium">{dev.currency}</span>
-            </div>
-            <Separator />
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Progreso de Construcción</span>
-              <span className="font-medium">{dev.constructionProgress}%</span>
-            </div>
-            <Progress value={dev.constructionProgress} className="h-2" />
-            <Separator />
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Fecha de Entrega</span>
-              <span className="font-medium">{formatDate(dev.deliveryDate)}</span>
-            </div>
-            {dev.contractStartDate && (
-              <>
-                <Separator />
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Contrato</span>
-                  <span className="font-medium">
-                    {formatDate(dev.contractStartDate)} - {formatDate(dev.contractEndDate)}
-                  </span>
-                </div>
-              </>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Rango de precio</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-lg font-semibold">
+              {d.priceMinMxn != null ? formatCurrency(d.priceMinMxn, "MXN") : "—"}
+              {d.priceMaxMxn != null && d.priceMaxMxn !== d.priceMinMxn && ` – ${formatCurrency(d.priceMaxMxn, "MXN")}`}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Unidades publicadas</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-lg font-semibold">{units.length}</p>
+            {d.availableUnits != null && (
+              <p className="text-xs text-muted-foreground">{d.availableUnits} disponibles según el Hub</p>
             )}
           </CardContent>
         </Card>
-
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Descripción y Amenidades</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">{dev.description}</p>
-            {dev.amenities && dev.amenities.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Amenidades:
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {dev.amenities.map((amenity: string, idx: number) => (
-                    <Badge key={idx} variant="secondary" className="text-xs">
-                      {amenity}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Entrega</CardTitle></CardHeader>
+          <CardContent>
+            <p className="flex items-center gap-1 text-lg font-semibold">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              {d.deliveryText ?? d.estimatedDelivery ?? "—"}
+            </p>
+            {d.constructionProgress != null && (
+              <p className="text-xs text-muted-foreground">{d.constructionProgress}% de avance</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Financiamiento</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-lg font-semibold">
+              {d.financingDownPayment != null ? `${d.financingDownPayment}% enganche` : "—"}
+            </p>
+            {financiamiento && (
+              <p className="text-xs text-muted-foreground">
+                {financiamiento}{d.financingInterest != null ? ` · ${d.financingInterest}%` : ""}
+              </p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Mapa de unidades */}
+      {d.descriptionEs && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Descripción</CardTitle></CardHeader>
+          <CardContent><p className="whitespace-pre-line text-sm text-muted-foreground">{d.descriptionEs}</p></CardContent>
+        </Card>
+      )}
+
+      {d.amenities.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Amenidades</CardTitle></CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {d.amenities.map((a) => (
+              <span key={a} className="rounded-full bg-muted px-3 py-1 text-xs">{a}</span>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Mapa de Disponibilidad ({totalUnits} unidades)
-          </CardTitle>
+          <CardTitle className="text-base">Unidades publicadas ({units.length})</CardTitle>
         </CardHeader>
-        <CardContent>
-          <UnitGrid units={units} />
-        </CardContent>
-      </Card>
-
-      {/* Tabla de unidades */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Detalle de Unidades</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-3 font-medium">Unidad</th>
-                  <th className="pb-3 font-medium">Tipo</th>
-                  <th className="pb-3 font-medium">Piso</th>
-                  <th className="pb-3 font-medium">Area (m2)</th>
-                  <th className="pb-3 font-medium">Precio</th>
-                  <th className="pb-3 font-medium">Estado</th>
-                  <th className="pb-3 font-medium">Reservado por</th>
-                  <th className="pb-3 font-medium">Deals</th>
-                </tr>
-              </thead>
-              <tbody>
-                {units.map((unit: any) => {
-                  const statusMap: Record<string, { label: string; className: string }> = {
-                    DISPONIBLE: { label: "Disponible", className: "bg-green-100 text-green-700" },
-                    APARTADA: { label: "Apartada", className: "bg-yellow-100 text-yellow-700" },
-                    VENDIDA: { label: "Vendida", className: "bg-red-100 text-red-700" },
-                    NO_DISPONIBLE: { label: "No Disponible", className: "bg-gray-100 text-gray-500" },
-                  };
-                  const statusConfig = statusMap[unit.status] || statusMap.NO_DISPONIBLE;
-
-                  return (
-                    <tr
-                      key={unit.id}
-                      className="border-b last:border-0 hover:bg-muted/50"
-                    >
-                      <td className="py-3 font-medium">{unit.unitNumber}</td>
-                      <td className="py-3 text-muted-foreground">
-                        {UNIT_TYPE_LABELS[unit.unitType] || unit.unitType}
+        <CardContent className="p-0">
+          {units.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+              Este desarrollo no tiene unidades publicadas en el sitio
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Unidad</th>
+                    <th className="px-4 py-2 font-medium">Tipología</th>
+                    <th className="px-4 py-2 font-medium">Rec / Baños</th>
+                    <th className="px-4 py-2 font-medium">m²</th>
+                    <th className="px-4 py-2 font-medium">Precio</th>
+                    <th className="px-4 py-2 font-medium">Estado</th>
+                    <th className="px-4 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {units.map((u) => (
+                    <tr key={u.id} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="px-4 py-2 font-medium">{u.unitNumber ?? u.title ?? "—"}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{u.typology ?? u.unitType ?? "—"}</td>
+                      <td className="px-4 py-2 text-muted-foreground">
+                        {u.bedrooms ?? "—"} / {u.bathrooms ?? "—"}
                       </td>
-                      <td className="py-3 text-muted-foreground">
-                        {unit.floor ?? "-"}
+                      <td className="px-4 py-2 text-muted-foreground">
+                        {u.builtAreaM2 ?? u.areaM2 ?? "—"}
                       </td>
-                      <td className="py-3 text-muted-foreground">
-                        {Number(unit.area_m2)}
+                      <td className="px-4 py-2">
+                        {u.isDiscountActive && u.discountPriceMxn != null ? (
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium">{formatCurrency(u.discountPriceMxn, "MXN")}</span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                              <Tag className="h-3 w-3" />
+                              {u.discountPct != null ? `-${u.discountPct}%` : "descuento"}
+                            </span>
+                          </span>
+                        ) : u.priceMxn != null ? (
+                          formatCurrency(u.priceMxn, "MXN")
+                        ) : u.priceUsd != null ? (
+                          formatCurrency(u.priceUsd, "USD")
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td className="py-3 font-medium">
-                        {formatCurrency(Number(unit.price), unit.currency)}
-                      </td>
-                      <td className="py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusConfig.className}`}>
-                          {statusConfig.label}
-                        </span>
-                      </td>
-                      <td className="py-3 text-muted-foreground text-xs">
-                        {unit.reservedByContact
-                          ? `${unit.reservedByContact.firstName} ${unit.reservedByContact.lastName}`
-                          : "-"}
-                      </td>
-                      <td className="py-3 text-muted-foreground">
-                        {unit._count?.deals || 0}
+                      <td className="px-4 py-2 text-muted-foreground">{u.status ?? "—"}</td>
+                      <td className="px-4 py-2 text-right">
+                        {u.slug && (
+                          <a
+                            href={`${SITE}/propiedades/${u.slug}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs underline"
+                          >
+                            Ver <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
                       </td>
                     </tr>
-                  );
-                })}
-                {units.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="py-8 text-center text-muted-foreground">
-                      No hay unidades registradas para este desarrollo
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
 
-// Componente auxiliar para tarjetas de estadística
-function StatCard({
-  icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-4">
-        <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
-          {icon}
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-lg font-bold">{value}</p>
-          <p className="text-xs text-muted-foreground">{detail}</p>
-        </div>
-      </CardContent>
-    </Card>
+      {units.length === 0 && d.images.length === 0 && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Building2 className="h-4 w-4" /> El contenido de esta ficha se administra en el Hub.
+        </p>
+      )}
+    </div>
   );
 }

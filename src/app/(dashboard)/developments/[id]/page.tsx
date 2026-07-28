@@ -1,31 +1,34 @@
-// Página de detalle de desarrollo - componente de servidor
-// Muestra info completa, mapa de unidades y estadísticas
+// Ficha del desarrollo — espejo de la página pública. Solo lectura.
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
-import { getDevelopment } from "@/server/developments";
+import { getPublishedDevelopment, listPublishedUnits } from "@/lib/hub/catalog";
 import { DevelopmentDetailClient } from "./development-detail-client";
 
-interface DevelopmentDetailPageProps {
-  params: { id: string };
-}
+export const dynamic = "force-dynamic";
+
+const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 
 export default async function DevelopmentDetailPage({
   params,
-}: DevelopmentDetailPageProps) {
+}: {
+  params: { id: string };
+}) {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  const development = await getDevelopment(params.id);
-  if (!development) notFound();
+  const { data: development, error: devError } = await getPublishedDevelopment(params.id);
+  if (!devError && !development) notFound();
 
-  const isAdmin = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"].includes(
-    session.user.role
-  );
+  const { data: units, error: unitsError } = development
+    ? await listPublishedUnits({ developmentId: development.id })
+    : { data: [], error: null };
 
   return (
     <DevelopmentDetailClient
-      development={JSON.parse(JSON.stringify(development))}
-      isAdmin={isAdmin}
+      development={development}
+      units={units}
+      loadError={devError ?? unitsError}
+      isAdmin={ADMIN_ROLES.includes(session.user.role)}
     />
   );
 }
