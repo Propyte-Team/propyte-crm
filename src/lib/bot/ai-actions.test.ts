@@ -47,6 +47,8 @@ vi.mock("./hub-catalog", () => ({
   findMatchingDevelopments: (...a: unknown[]) => findMatchingDevelopments(...a),
   catalogBrief: () => "",
 }));
+// findMatchingDevelopments ahora devuelve { data, error } — el mock por defecto
+// (beforeEach) refleja un catálogo vacío legítimo, no un fallo de consulta.
 
 const lintBrandVoice = vi.fn((..._a: unknown[]) => ({ ok: true, violations: [] as string[] }));
 vi.mock("./brand-linter", () => ({ lintBrandVoice: (...a: unknown[]) => lintBrandVoice(...a) }));
@@ -119,7 +121,7 @@ const TASK_B = {
 beforeEach(() => {
   vi.resetAllMocks();
   getBotConfig.mockResolvedValue({ ...BASE_CONFIG });
-  findMatchingDevelopments.mockResolvedValue([]);
+  findMatchingDevelopments.mockResolvedValue({ data: [], error: null });
   messageFindMany.mockResolvedValue([]);
   lintBrandVoice.mockReturnValue({ ok: true, violations: [] });
   askClaude.mockResolvedValue("Hola Ana, este es tu borrador.");

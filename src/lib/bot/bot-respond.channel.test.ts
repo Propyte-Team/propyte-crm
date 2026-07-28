@@ -57,7 +57,7 @@ vi.mock("./brand-linter", () => ({
 }));
 
 vi.mock("./hub-catalog", () => ({
-  findMatchingDevelopments: async () => [],
+  findMatchingDevelopments: async () => ({ data: [], error: null }),
   catalogBrief: () => "",
 }));
 

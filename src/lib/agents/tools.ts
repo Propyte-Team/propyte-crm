@@ -109,12 +109,15 @@ export const AGENT_TOOLS: AgentTool[] = [
       const contact = await prisma.contact.findUnique({ where: { id: String(input.contactId) } });
       if (!contact) return [];
       const { findMatchingDevelopments } = await import("@/lib/bot/hub-catalog");
-      return findMatchingDevelopments({
+      const { data, error } = await findMatchingDevelopments({
         budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
         budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
         zone: contact.preferredZone,
         limit: 3,
       });
+      // Fallo de catálogo ≠ catálogo vacío: nunca dejar que el agente asuma "sin inventario".
+      if (error) return { error: "El catálogo del Hub no está disponible ahora mismo" };
+      return data;
     },
   },
   {

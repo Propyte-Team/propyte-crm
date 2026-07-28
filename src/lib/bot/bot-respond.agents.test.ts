@@ -51,7 +51,10 @@ const botConfig = {
 vi.mock("./config", () => ({ getBotConfig: async () => ({ ...botConfig }) }));
 
 vi.mock("./brand-linter", () => ({ lintBrandVoice: () => ({ ok: true, violations: [] }) }));
-vi.mock("./hub-catalog", () => ({ findMatchingDevelopments: async () => [], catalogBrief: () => "" }));
+vi.mock("./hub-catalog", () => ({
+  findMatchingDevelopments: async () => ({ data: [], error: null }),
+  catalogBrief: () => "",
+}));
 
 const maybeClassifyContact = vi.fn();
 vi.mock("./classify", () => ({ maybeClassifyContact: (...a: unknown[]) => maybeClassifyContact(...a) }));

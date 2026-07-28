@@ -162,11 +162,14 @@ export async function runAiAction(
 
   const baseObjective = await resolveDraftObjective(contact, goal, effectiveConfig, agentPlaybookOf(agentProfile));
   const objective = composeObjective(agentProfile?.identity, baseObjective);
-  const catalog = await findMatchingDevelopments({
+  // Fallo de catálogo ≠ catálogo vacío: propagamos el mismo criterio que bot-respond.ts
+  // (omitir el brief del prompt, no fingir que no hay inventario).
+  const { data: catalog, error: catalogError } = await findMatchingDevelopments({
     budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
     budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
     zone: contact.preferredZone,
   });
+  if (catalogError) console.error("[ai-actions] catálogo del Hub no disponible:", catalogError);
 
   const system = buildSystemPrompt({
     config: effectiveConfig,

@@ -60,8 +60,10 @@ export async function GET(req: NextRequest) {
     });
     results = rows.map((r) => ({ id: r.id, name: r.name, meta: r.role }));
   } else if (object === "hub_development") {
-    // Objeto EXTERNO (Hub, read-only — OQ5)
-    const devs = await findMatchingDevelopments({ zone: q, limit: 10 });
+    // Objeto EXTERNO (Hub, read-only — OQ5). Fallo de catálogo ≠ catálogo vacío: si la
+    // consulta al Hub falló, respondemos 503 en vez de fingir que no hay desarrollos.
+    const { data: devs, error } = await findMatchingDevelopments({ zone: q, limit: 10 });
+    if (error) return NextResponse.json({ error }, { status: 503 });
     results = devs.map((d) => ({
       id: d.id,
       name: d.nombre,

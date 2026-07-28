@@ -117,11 +117,15 @@ export async function botRespond(
     history.push({ role: "user", content: "(nuevo lead entrante)" });
   }
 
-  const catalog = await findMatchingDevelopments({
+  // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
+  // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
+  // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
+  const { data: catalog, error: catalogError } = await findMatchingDevelopments({
     budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
     budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
     zone: contact.preferredZone,
   });
+  if (catalogError) console.error("[bot-respond] catálogo del Hub no disponible:", catalogError);
 
   // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente
   // (identidad + playbook + tono propios). Solo gasta clasificación si hay agentes activos.
