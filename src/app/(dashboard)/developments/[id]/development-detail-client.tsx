@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/constants";
+import { formatFinancingMonths } from "@/lib/format-financing";
 import type { PublishedDevelopmentDetail, PublishedUnit } from "@/lib/hub/catalog-types";
 
 interface Props {
@@ -21,12 +22,6 @@ interface Props {
 }
 
 const SITE = "https://propyte.com/es";
-
-/** financingMonths es un array de plazos (ej. [12,24,36,48,60]), no un escalar. */
-function formatFinancingMonths(months: number[] | null): string | null {
-  if (!months || months.length === 0) return null;
-  return `${months.join("/")} meses`;
-}
 
 export function DevelopmentDetailClient({ development, units, devError, unitsError, isAdmin }: Props) {
   const router = useRouter();
