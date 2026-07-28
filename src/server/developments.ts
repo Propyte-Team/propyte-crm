@@ -2,6 +2,17 @@
 // Server Actions: Gestión de desarrollos e inventario de unidades
 // ============================================================
 
+// ============================================================
+// @deprecated — el CRM no posee inventario.
+//
+// Este módulo opera propyte_crm.developments / units, tablas VACÍAS (0 filas) que quedaron
+// del diseño anterior. El catálogo real vive en el Hub y se consulta con
+// src/lib/hub/catalog.ts, que aplica el mismo gate público que propyte.com.
+//
+// Se conserva sin borrar (decisión D5 del spec 2026-07-27) por si hace falta revertir.
+// NO agregues callers nuevos: usa @/lib/hub/catalog.
+// ============================================================
+
 "use server";
 
 import prisma from "@/lib/db";
