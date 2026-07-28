@@ -27,7 +27,8 @@ export default async function DevelopmentDetailPage({
     <DevelopmentDetailClient
       development={development}
       units={units}
-      loadError={devError ?? unitsError}
+      devError={devError}
+      unitsError={unitsError}
       isAdmin={ADMIN_ROLES.includes(session.user.role)}
     />
   );

@@ -13,7 +13,10 @@ import type { PublishedDevelopmentDetail, PublishedUnit } from "@/lib/hub/catalo
 interface Props {
   development: PublishedDevelopmentDetail | null;
   units: PublishedUnit[];
-  loadError: string | null;
+  /** Fallo al cargar el desarrollo en sí → oculta toda la ficha (no hay nada que mostrar). */
+  devError: string | null;
+  /** Fallo al cargar SOLO las unidades → la ficha se muestra normal; el error se acota a esa sección. */
+  unitsError: string | null;
   isAdmin: boolean;
 }
 
@@ -25,11 +28,11 @@ function formatFinancingMonths(months: number[] | null): string | null {
   return `${months.join("/")} meses`;
 }
 
-export function DevelopmentDetailClient({ development, units, loadError, isAdmin }: Props) {
+export function DevelopmentDetailClient({ development, units, devError, unitsError, isAdmin }: Props) {
   const router = useRouter();
 
-  // Fallo de consulta ≠ "sin unidades". Nunca los muestres igual.
-  if (loadError || !development) {
+  // Fallo del desarrollo ≠ "sin unidades". Nunca lo escondas detrás de un error parcial de unidades.
+  if (devError || !development) {
     return (
       <div className="space-y-6">
         <Button variant="ghost" size="sm" onClick={() => router.push("/developments")}>
@@ -121,7 +124,7 @@ export function DevelopmentDetailClient({ development, units, loadError, isAdmin
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Unidades publicadas</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-lg font-semibold">{units.length}</p>
+            <p className="text-lg font-semibold">{unitsError ? "—" : units.length}</p>
             {d.availableUnits != null && (
               <p className="text-xs text-muted-foreground">{d.availableUnits} disponibles según el Hub</p>
             )}
@@ -174,10 +177,23 @@ export function DevelopmentDetailClient({ development, units, loadError, isAdmin
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Unidades publicadas ({units.length})</CardTitle>
+          <CardTitle className="text-base">
+            {unitsError ? "Unidades publicadas" : `Unidades publicadas (${units.length})`}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          {units.length === 0 ? (
+        <CardContent className={unitsError ? undefined : "p-0"}>
+          {unitsError ? (
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <AlertCircle className="h-6 w-6 text-destructive" />
+              <p className="text-sm font-medium">No se pudieron cargar las unidades</p>
+              <p className="max-w-md text-xs text-muted-foreground">
+                Esto no significa que el desarrollo no tenga unidades publicadas: la consulta al catálogo falló.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => router.refresh()}>
+                Reintentar
+              </Button>
+            </div>
+          ) : units.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-muted-foreground">
               Este desarrollo no tiene unidades publicadas en el sitio
             </p>
@@ -245,7 +261,7 @@ export function DevelopmentDetailClient({ development, units, loadError, isAdmin
         </CardContent>
       </Card>
 
-      {units.length === 0 && d.images.length === 0 && (
+      {!unitsError && units.length === 0 && d.images.length === 0 && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Building2 className="h-4 w-4" /> El contenido de esta ficha se administra en el Hub.
         </p>
