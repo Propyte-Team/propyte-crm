@@ -143,8 +143,16 @@ export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) 
         {filtered.map((dev) => (
           <Card
             key={dev.id}
+            role="button"
+            tabIndex={0}
             className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
             onClick={() => router.push(`/developments/${dev.id}`)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push(`/developments/${dev.id}`);
+              }
+            }}
           >
             {dev.coverImage ? (
               // eslint-disable-next-line @next/next/no-img-element
