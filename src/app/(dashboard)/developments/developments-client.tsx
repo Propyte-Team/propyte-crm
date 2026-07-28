@@ -21,6 +21,11 @@ interface Props {
 
 const SITE_BASE = "https://propyte.com/es/desarrollos";
 
+/** Normaliza para búsqueda acento-insensible. */
+function norm(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) {
   const router = useRouter();
   const [showFilters, setShowFilters] = useState(false);
@@ -41,8 +46,8 @@ export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) 
     if (filterCity !== "all" && d.city !== filterCity) return false;
     if (filterStage !== "all" && d.stage !== filterStage) return false;
     if (search) {
-      const q = search.toLowerCase();
-      const hay = `${d.name} ${d.developerName ?? ""} ${d.zone ?? ""}`.toLowerCase();
+      const q = norm(search);
+      const hay = norm(`${d.name} ${d.developerName ?? ""} ${d.zone ?? ""}`);
       if (!hay.includes(q)) return false;
     }
     return true;
