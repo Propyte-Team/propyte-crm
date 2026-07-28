@@ -58,4 +58,22 @@ describe("firmas legadas intactas", () => {
       m2Construccion: 90, precioMxn: 4_000_000, moneda: "MXN",
     });
   });
+
+  it("getHubDevelopment (toHubDevelopment) mapea cada campo al shape legado HubDevelopment", async () => {
+    queryRaw.mockResolvedValueOnce([
+      { id: "d1", name: "Nativa Tulum", zone: "La Veleta", city: "Tulum", stage: "Preventa",
+        priceMinMxn: 1_500_000, priceMaxMxn: 3_200_000, currency: "MXN" },
+    ]);
+    const d = await getHubDevelopment("d1");
+    expect(d).toMatchObject({
+      id: "d1",
+      nombre: "Nativa Tulum",
+      zona: "La Veleta",
+      plaza: "Tulum",
+      status: "Preventa",
+      precioMin: 1_500_000,
+      precioMax: 3_200_000,
+      moneda: "MXN",
+    });
+  });
 });
