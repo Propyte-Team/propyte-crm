@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency } from "@/lib/constants";
+import { formatPriceRange } from "@/lib/format-price";
 import type { PublishedDevelopment } from "@/lib/hub/catalog-types";
 
 interface Props {
@@ -186,13 +186,7 @@ export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) 
               <div className="flex items-center gap-1 text-sm">
                 <DollarSign className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className="font-medium">
-                  {dev.priceMinMxn != null
-                    ? `${formatCurrency(dev.priceMinMxn, "MXN")}${
-                        dev.priceMaxMxn != null && dev.priceMaxMxn !== dev.priceMinMxn
-                          ? ` – ${formatCurrency(dev.priceMaxMxn, "MXN")}`
-                          : ""
-                      }`
-                    : "Precio no publicado"}
+                  {formatPriceRange(dev.priceMinMxn, dev.priceMaxMxn) ?? "Precio no publicado"}
                 </span>
               </div>
 
