@@ -77,3 +77,44 @@ describe("firmas legadas intactas", () => {
     });
   });
 });
+
+describe("getHubUnit/getHubDevelopment NO llevan gate (regresión: resolución operativa)", () => {
+  // Antes de esta corrección, getHubUnit/getHubDevelopment delegaban en
+  // getPublishedUnit/getPublishedDevelopment (con PUBLIC_GATE). De v_units con 1,479
+  // unidades, solo 56 pasan el gate — cotizar o dar seguimiento a la unidad apartada o
+  // vendida más común del embudo fallaba en silencio. Estas pruebas fijan que el lookup
+  // por ID resuelve SIEMPRE, sin importar si la unidad/desarrollo está publicado.
+
+  it("getHubUnit no filtra por PUBLIC_GATE en su SQL", async () => {
+    await getHubUnit("u1");
+    expect(lastSql()).not.toContain(PUBLIC_GATE);
+  });
+
+  it("getHubDevelopment no gatea su WHERE principal", async () => {
+    // DEV_LIST_COLS trae PUBLIC_GATE en una subquery de conteo (publishedUnits) que es
+    // independiente del WHERE principal — por eso se ancla en `WHERE ${PUBLIC_GATE}`.
+    await getHubDevelopment("d1");
+    expect(lastSql()).not.toContain(`WHERE ${PUBLIC_GATE}`);
+  });
+
+  it("getHubUnit resuelve una unidad que NO pasaría el gate (ej. vendida, sin approved_at)", async () => {
+    queryRaw.mockResolvedValueOnce([
+      { id: "u-vendida", developmentId: "d1", unitNumber: "205", title: "PH Vendido",
+        unitType: "Depa", typology: "2R", bedrooms: 2, bathrooms: 2, builtAreaM2: 90,
+        areaM2: 100, priceMxn: 4_000_000, priceUsd: null, currency: "MXN", status: "Vendida" },
+    ]);
+    const u = await getHubUnit("u-vendida");
+    expect(u).not.toBeNull();
+    expect(u).toMatchObject({ id: "u-vendida", status: "Vendida" });
+  });
+
+  it("getHubDevelopment resuelve un desarrollo que NO pasaría el gate (ej. no aprobado)", async () => {
+    queryRaw.mockResolvedValueOnce([
+      { id: "d-no-publicado", name: "Interno Sin Aprobar", zone: "Zona X", city: "Tulum",
+        stage: "Preventa", priceMinMxn: 1_000_000, priceMaxMxn: null, currency: "MXN" },
+    ]);
+    const d = await getHubDevelopment("d-no-publicado");
+    expect(d).not.toBeNull();
+    expect(d).toMatchObject({ id: "d-no-publicado", nombre: "Interno Sin Aprobar" });
+  });
+});

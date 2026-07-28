@@ -8,9 +8,9 @@
 // (solo habría que reimplementar las funciones list/get sin tocar a los callers).
 import {
   listPublishedDevelopments,
-  getPublishedDevelopment,
+  getDevelopmentByIdUngated,
   listPublishedUnits,
-  getPublishedUnit,
+  getUnitByIdUngated,
 } from "./catalog";
 import type { PublishedDevelopment, PublishedUnit } from "./catalog-types";
 import type {
@@ -26,7 +26,13 @@ const HUB_KEY = process.env.HUB_API_KEY?.trim() ?? "";
 
 // ───────────────────────── Lectura (delega en catalog.ts) ─────────────────────────
 // El gate público vive en catalog.ts. Aquí solo se adapta al shape legado HubDevelopment /
-// HubUnit y se conserva la firma (array / T|null) para no tocar a los 6 callers actuales.
+// HubUnit y se conserva la firma (array / T|null) para no tocar a los callers actuales.
+//
+// getHubUnit/getHubDevelopment (lookup por ID) usan las variantes *Ungated a propósito:
+// resuelven cualquier unidad/desarrollo exista o no en el sitio — el cotizador, shortlists
+// y deals resuelven un hubUnitId que el CRM ya posee, aunque la unidad ya se haya vendido.
+// list*/search* SÍ llevan el gate público: son listados de descubrimiento (pantalla
+// /developments, agente IA), no resolución de un ID que el CRM ya tiene guardado.
 
 function toHubDevelopment(d: PublishedDevelopment): HubDevelopment {
   return {
@@ -74,7 +80,7 @@ export async function listHubDevelopments(
 }
 
 export async function getHubDevelopment(id: string): Promise<HubDevelopment | null> {
-  const { data } = await getPublishedDevelopment(id);
+  const { data } = await getDevelopmentByIdUngated(id);
   return data ? toHubDevelopment(data) : null;
 }
 
@@ -92,7 +98,7 @@ export async function listHubUnits(filters: HubUnitFilters = {}): Promise<HubUni
 }
 
 export async function getHubUnit(id: string): Promise<HubUnit | null> {
-  const { data } = await getPublishedUnit(id);
+  const { data } = await getUnitByIdUngated(id);
   return data ? toHubUnit(data) : null;
 }
 

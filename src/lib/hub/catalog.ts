@@ -228,6 +228,55 @@ export async function getPublishedUnit(id: string): Promise<CatalogResult<Publis
   }
 }
 
+// ─────────────────── Resolución operativa por ID (SIN gate) ───────────────────
+// getUnitByIdUngated / getDevelopmentByIdUngated resuelven CUALQUIER unidad o
+// desarrollo por ID, esté o no publicado. Existen para el cotizador, shortlists y
+// deals: el CRM guarda hubUnitId/hubDevelopmentId en negocios que siguen vivos
+// (cotizar, dar seguimiento, congelar snapshot) mucho después de que la unidad se
+// vendió o se retiró del sitio — que es justo cuando más importa poder resolverla.
+//
+// Antes de esta separación, client.ts delegaba estos lookups en
+// getPublishedUnit/getPublishedDevelopment (con PUBLIC_GATE) y eso era una
+// regresión real: de v_units con 1,479 unidades solo 56 pasan el gate, y la única
+// cotización existente con hubUnitId apuntaba a una unidad fuera del gate. El
+// resultado era pérdida de datos silenciosa (unitSnapshot vacío) o mensajes falsos
+// ("la unidad no existe" / 404) para el caso más común del embudo: apartado/vendido.
+//
+// Si sientes la tentación de "corregir" la ausencia del gate aquí: NO — es a
+// propósito. El gate es correcto SOLO para el espejo público (listPublished*/
+// getPublished* arriba); nunca para resolver un ID que el propio CRM ya posee.
+export async function getUnitByIdUngated(id: string): Promise<CatalogResult<PublishedUnit | null>> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<PublishedUnit[]>(
+      `SELECT ${UNIT_COLS}
+         FROM real_estate_hub.v_units u
+        WHERE (u.id::text = $1 OR u.slug = $1)
+        LIMIT 1`,
+      id
+    );
+    return { data: rows[0] ?? null, error: null };
+  } catch (err) {
+    return fail("getUnitByIdUngated", err, null);
+  }
+}
+
+export async function getDevelopmentByIdUngated(
+  id: string
+): Promise<CatalogResult<PublishedDevelopment | null>> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<PublishedDevelopment[]>(
+      `SELECT ${DEV_LIST_COLS}
+         FROM real_estate_hub.v_developments d
+        WHERE (d.id::text = $1 OR d.slug = $1)
+        LIMIT 1`,
+      id
+    );
+    return { data: rows[0] ?? null, error: null };
+  } catch (err) {
+    return fail("getDevelopmentByIdUngated", err, null);
+  }
+}
+
 /**
  * Búsqueda para el agente IA: unidades publicadas que encajan con el perfil,
  * con el contexto de su desarrollo y sus esquemas de pago.

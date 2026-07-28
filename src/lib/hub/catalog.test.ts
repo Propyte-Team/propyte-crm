@@ -11,6 +11,8 @@ import {
   getPublishedDevelopment,
   listPublishedUnits,
   getPublishedUnit,
+  getUnitByIdUngated,
+  getDevelopmentByIdUngated,
   searchCatalog,
 } from "./catalog";
 
@@ -134,6 +136,33 @@ describe("clampLimit — LIMIT saneado antes de interpolar", () => {
   it("limit fraccionario se trunca a entero", async () => {
     await listPublishedDevelopments({ limit: 12.7 });
     expect(lastSql()).toContain("LIMIT 12");
+  });
+});
+
+describe("lookup por ID sin gate — resolución operativa (cotizador, shortlists, deals)", () => {
+  // Nota igual que arriba: DEV_LIST_COLS trae una subquery correlacionada que YA
+  // incluye PUBLIC_GATE (para contar "publishedUnits"). Por eso getDevelopmentByIdUngated
+  // se verifica con el ancla `WHERE ${PUBLIC_GATE}` (el WHERE principal, no la subquery)
+  // en vez de un .not.toContain(PUBLIC_GATE) plano, que daría falso verde.
+
+  it("getUnitByIdUngated NO filtra por el gate", async () => {
+    await getUnitByIdUngated("u-1");
+    expect(lastSql()).not.toContain(PUBLIC_GATE);
+    expect(lastSql()).toContain("WHERE (u.id::text = $1 OR u.slug = $1)");
+  });
+
+  it("getDevelopmentByIdUngated NO gatea su WHERE principal", async () => {
+    await getDevelopmentByIdUngated("d-1");
+    expect(lastSql()).not.toContain(`WHERE ${PUBLIC_GATE}`);
+    expect(lastSql()).toContain("WHERE (d.id::text = $1 OR d.slug = $1)");
+  });
+
+  it("a diferencia de getPublishedUnit/getPublishedDevelopment, que sí gatean", async () => {
+    await getPublishedUnit("u-1");
+    expect(lastSql()).toContain(`WHERE ${PUBLIC_GATE}`);
+
+    await getPublishedDevelopment("d-1");
+    expect(lastSql()).toContain(`WHERE ${PUBLIC_GATE}`);
   });
 });
 
