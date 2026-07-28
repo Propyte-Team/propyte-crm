@@ -7,6 +7,10 @@ export const NATIVE_TARGET_FIELDS: Record<string, TargetFieldSpec> = {
   lastName: { captureType: "TEXT" },
   email: { captureType: "EMAIL" },
   phone: { captureType: "PHONE" },
+  // Columna real de Contact (String?). Se whitelistea para el playbook de
+  // reclutamiento: la ciudad decide a qué plaza se canaliza al candidato, así que
+  // merece una columna consultable y no una llave dentro del Json `custom`.
+  residenceCity: { captureType: "TEXT" },
   budgetMin: { captureType: "MONEY" },
   budgetMax: { captureType: "MONEY" },
   preferredZone: { captureType: "ZONE" },
