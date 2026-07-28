@@ -108,8 +108,13 @@ export function DevelopmentDetailClient({ development, units, loadError, isAdmin
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Rango de precio</CardTitle></CardHeader>
           <CardContent>
             <p className="text-lg font-semibold">
-              {d.priceMinMxn != null ? formatCurrency(d.priceMinMxn, "MXN") : "—"}
-              {d.priceMaxMxn != null && d.priceMaxMxn !== d.priceMinMxn && ` – ${formatCurrency(d.priceMaxMxn, "MXN")}`}
+              {d.priceMinMxn != null
+                ? formatCurrency(d.priceMinMxn, "MXN")
+                : d.priceMaxMxn != null
+                  ? formatCurrency(d.priceMaxMxn, "MXN")
+                  : "—"}
+              {d.priceMinMxn != null && d.priceMaxMxn != null && d.priceMaxMxn !== d.priceMinMxn
+                && ` – ${formatCurrency(d.priceMaxMxn, "MXN")}`}
             </p>
           </CardContent>
         </Card>
