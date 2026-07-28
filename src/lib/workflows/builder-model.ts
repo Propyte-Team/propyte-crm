@@ -1,4 +1,5 @@
 // Lógica pura del builder visual de reglas (Fase 2). Sin React, sin BD → testeable.
+import type { Prisma } from "@prisma/client";
 import type { ConditionNode } from "@/lib/validations/rebuild-f1";
 
 export type TriggerType =
@@ -37,7 +38,13 @@ export function isGroup(item: CondItem): item is CondGroup {
 }
 
 // STAGE_CHANGE escribe `toStage` (motor en engine.ts lee `toStage`). Compat: parseTriggerValue lee `stage` como fallback para reglas antiguas.
-export function buildTriggerConfig(triggerType: string, triggerValue: string): Record<string, unknown> {
+//
+// Devuelve `Prisma.JsonObject`, no `Record<string, unknown>`: lo que sale de aquí
+// se persiste tal cual en la columna Json de AutomationRule.triggerConfig, así que
+// el tipo laxo obligaba a castear en cada uso y rompía el build (`Record<string,
+// unknown>` no es asignable a `JsonValue`). Todas las ramas ya devolvían JSON puro:
+// el cambio es de tipo, no de runtime.
+export function buildTriggerConfig(triggerType: string, triggerValue: string): Prisma.JsonObject {
   if (!triggerValue) return {};
   switch (triggerType) {
     case "EVENT": return { eventType: triggerValue };
