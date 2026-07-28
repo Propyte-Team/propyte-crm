@@ -118,6 +118,14 @@ export interface UnitCatalogFilters {
   priceMin?: number | null;
   priceMax?: number | null;
   zone?: string | null;
+  /**
+   * Filtra por status "disponible" (case-insensitive: `status` es texto libre en la
+   * BD, se ha visto "Disponible" con mayúscula inicial). Se aplica en el WHERE de SQL,
+   * ANTES del LIMIT — antes vivía como un .filter() en JS después de traer `limit` filas
+   * ya ordenadas, así que unidades disponibles fuera de esa primera ventana se perdían
+   * en silencio si el caller pedía un limit chico (ver /api/hub/units?limit=).
+   */
+  onlyAvailable?: boolean | null;
   limit?: number;
 }
 

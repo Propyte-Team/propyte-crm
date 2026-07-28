@@ -197,6 +197,7 @@ export async function listPublishedUnits(
           AND ($4::float8 IS NULL OR u.price_mxn >= $4)
           AND ($5::float8 IS NULL OR u.price_mxn <= $5)
           AND ($6::text IS NULL OR u.zone ILIKE '%' || $6 || '%')
+          AND ($7::bool IS NOT TRUE OR LOWER(u.status) = 'disponible')
         ORDER BY u.unit_number ASC NULLS LAST
         LIMIT ${limit}`,
       filters.developmentId ?? null,
@@ -204,7 +205,8 @@ export async function listPublishedUnits(
       filters.bedrooms ?? null,
       filters.priceMin ?? null,
       filters.priceMax ?? null,
-      filters.zone ?? null
+      filters.zone ?? null,
+      filters.onlyAvailable ?? null
     );
     return { data: rows, error: null };
   } catch (err) {

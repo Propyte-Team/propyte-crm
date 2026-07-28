@@ -166,6 +166,43 @@ describe("lookup por ID sin gate — resolución operativa (cotizador, shortlist
   });
 });
 
+describe("onlyAvailable se filtra en SQL, antes del LIMIT (no en JS después de traer)", () => {
+  // Antes, este filtro vivía como un .filter() en JS sobre las `limit` filas ya
+  // traídas y ordenadas por unit_number. Si las unidades disponibles no caían en esa
+  // primera ventana, se perdían en silencio aunque existieran (limit chico desde
+  // /api/hub/units?limit=). El fix es que WHERE (que SQL aplica antes que LIMIT)
+  // incluya el filtro de status — nunca un recorte posterior en memoria.
+
+  it("el filtro de status vive en el WHERE, antes del LIMIT (igual que los demás filtros)", async () => {
+    // Sigue el mismo patrón parametrizado que priceMin/priceMax/etc: la condición
+    // siempre está en el texto del SQL; el parámetro decide si se activa o no
+    // (`$7::bool IS NOT TRUE OR ...` la vuelve no-op cuando el param es null/false).
+    await listPublishedUnits({ onlyAvailable: true, limit: 5 });
+    const sql = lastSql();
+    const statusIdx = sql.indexOf("LOWER(u.status) = 'disponible'");
+    const limitIdx = sql.lastIndexOf("LIMIT");
+    expect(statusIdx).toBeGreaterThan(-1);
+    expect(statusIdx).toBeLessThan(limitIdx);
+  });
+
+  it("compara sin distinguir mayúsculas (status es texto libre: 'Disponible' con mayúscula)", async () => {
+    await listPublishedUnits({ onlyAvailable: true });
+    expect(lastSql()).toContain("LOWER(u.status) = 'disponible'");
+  });
+
+  it("con onlyAvailable, pasa `true` como parámetro (activa el filtro)", async () => {
+    await listPublishedUnits({ onlyAvailable: true });
+    const params = queryRaw.mock.calls[queryRaw.mock.calls.length - 1].slice(1);
+    expect(params[6]).toBe(true);
+  });
+
+  it("sin onlyAvailable, pasa `null` como parámetro (el filtro queda inactivo, no-op)", async () => {
+    await listPublishedUnits({});
+    const params = queryRaw.mock.calls[queryRaw.mock.calls.length - 1].slice(1);
+    expect(params[6]).toBeNull();
+  });
+});
+
 describe("searchCatalog (agente IA)", () => {
   it("aplica el gate y devuelve unidades con su desarrollo", async () => {
     queryRaw.mockResolvedValueOnce([

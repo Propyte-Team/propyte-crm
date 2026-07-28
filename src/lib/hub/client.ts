@@ -85,16 +85,17 @@ export async function getHubDevelopment(id: string): Promise<HubDevelopment | nu
 }
 
 export async function listHubUnits(filters: HubUnitFilters = {}): Promise<HubUnit[]> {
+  // onlyAvailable se resuelve en SQL (catalog.ts), ANTES del LIMIT. Antes se filtraba
+  // aquí en JS después de traer `limit` filas ya ordenadas por unit_number — si las
+  // unidades disponibles no caían en esa primera ventana, se perdían en silencio pese
+  // a existir (ej. /api/hub/units?limit=20 desde el deal form).
   const { data } = await listPublishedUnits({
     developmentId: filters.developmentId ?? null,
     search: filters.search ?? null,
+    onlyAvailable: filters.onlyAvailable ?? null,
     limit: filters.limit ?? 200,
   });
-  const units = data.map(toHubUnit);
-  // onlyAvailable se resuelve en JS: v_units ya trae solo publicadas y `status` es texto libre.
-  return filters.onlyAvailable
-    ? units.filter((u) => (u.status ?? "").toLowerCase() === "disponible")
-    : units;
+  return data.map(toHubUnit);
 }
 
 export async function getHubUnit(id: string): Promise<HubUnit | null> {

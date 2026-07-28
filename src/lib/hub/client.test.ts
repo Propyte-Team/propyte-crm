@@ -30,6 +30,30 @@ describe("client.ts usa el mismo gate que el sitio", () => {
   });
 });
 
+describe("listHubUnits delega onlyAvailable en SQL, no filtra otra vez en JS", () => {
+  // Regresión: onlyAvailable se filtraba aquí en JS DESPUÉS de que la SQL ya hubiera
+  // aplicado el LIMIT sobre filas ordenadas por unit_number — las disponibles fuera de
+  // esa ventana se perdían en silencio. Ahora el filtro vive en SQL (catalog.ts, antes
+  // del LIMIT) y client.ts confía en lo que la query ya filtró, sin recortar de nuevo.
+  it("pasa onlyAvailable a listPublishedUnits en vez de filtrar el resultado en JS", async () => {
+    await listHubUnits({ onlyAvailable: true, limit: 5 });
+    const params = queryRaw.mock.calls[queryRaw.mock.calls.length - 1].slice(1);
+    expect(params[6]).toBe(true); // 7º parámetro posicional = onlyAvailable, activado
+  });
+
+  it("no vuelve a filtrar en JS: confía en lo que la SQL ya devolvió", async () => {
+    // Si client.ts todavía filtrara en JS, esta fila con status "Vendida" se
+    // descartaría. Como la responsabilidad ya es de SQL, debe pasar intacta.
+    queryRaw.mockResolvedValueOnce([
+      { id: "u1", developmentId: "d1", unitNumber: "101", status: "Vendida",
+        bedrooms: 1, bathrooms: 1, priceMxn: 2_000_000, currency: "MXN" },
+    ]);
+    const units = await listHubUnits({ onlyAvailable: true });
+    expect(units).toHaveLength(1);
+    expect(units[0].status).toBe("Vendida");
+  });
+});
+
 describe("firmas legadas intactas", () => {
   it("listHubDevelopments devuelve un array, no un CatalogResult", async () => {
     const res = await listHubDevelopments();
