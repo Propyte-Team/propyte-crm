@@ -780,11 +780,12 @@ model Contact {
   mergedFrom   Contact[] @relation("MergedContacts")
 
   // Relaciones
-  deals      Deal[]
-  activities Activity[]
-  walkIns    WalkIn[]
-  units      Unit[]     @relation("ReservedByContact")
-  messages   Message[]
+  deals       Deal[]
+  activities  Activity[]
+  walkIns     WalkIn[]
+  units       Unit[]           @relation("ReservedByContact")
+  messages    Message[]
+  commentLogs CommentRuleLog[]
 
   // Relaciones rebuild F1
   dossier          ContactDossier?
@@ -1518,6 +1519,7 @@ model LeadConnector {
 
   leadLogs      ConnectorLeadLog[]
   conversations Conversation[]
+  commentRules  CommentRule[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2644,5 +2646,79 @@ model JourneyLayout {
   updatedAt DateTime @updatedAt
 
   @@map("journey_layouts")
+  @@schema("propyte_crm")
+}
+
+enum CommentPlatform {
+  INSTAGRAM
+  FACEBOOK
+
+  @@schema("propyte_crm")
+}
+
+enum CommentActionStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@schema("propyte_crm")
+}
+
+model CommentRule {
+  id            String   @id @default(uuid())
+  name          String
+  connectorId   String
+  isActive      Boolean  @default(false)
+  priority      Int      @default(100)
+  phrases       String[]
+  publicReplies String[]
+  dmTemplate    String   @db.Text
+  postFilter    String[] @default([])
+
+  connector LeadConnector    @relation(fields: [connectorId], references: [id])
+  logs      CommentRuleLog[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([connectorId, name])
+  @@index([connectorId, isActive, priority])
+  @@map("comment_rules")
+  @@schema("propyte_crm")
+}
+
+model CommentRuleLog {
+  id                  String              @id @default(uuid())
+  ruleId              String?
+  connectorId         String
+  platform            CommentPlatform
+  externalCommentId   String              @unique
+  postId              String
+  authorId            String
+  authorHandle        String?
+  commentText         String              @db.Text
+  matchedPhrase       String
+  publicReplyStatus   CommentActionStatus @default(PENDING)
+  publicReplyError    String?
+  publicReplyId       String?
+  publicText          String?             @db.Text
+  dmStatus            CommentActionStatus @default(PENDING)
+  dmError             String?
+  dmText              String?             @db.Text
+  dmRecipientId       String?
+  dmExternalMessageId String?
+  contactId           String?
+
+  rule    CommentRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  contact Contact?     @relation(fields: [contactId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([connectorId, postId, authorId])
+  @@index([dmRecipientId])
+  @@index([ruleId, createdAt])
+  @@map("comment_rule_logs")
   @@schema("propyte_crm")
 }
