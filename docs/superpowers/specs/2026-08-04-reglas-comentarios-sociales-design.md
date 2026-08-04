@@ -141,11 +141,13 @@ model CommentRuleLog {
   authorHandle       String?
   commentText        String              @db.Text
   matchedPhrase      String              // solo se registra lo que hizo match
-  publicReplyStatus  CommentActionStatus
+  publicReplyStatus  CommentActionStatus @default(PENDING)
   publicReplyError   String?
   publicReplyId      String?
-  dmStatus           CommentActionStatus
+  publicText         String?             @db.Text  // variante que salió, textual
+  dmStatus           CommentActionStatus @default(PENDING)
   dmError            String?
+  dmText             String?             @db.Text  // opener renderizado, textual
   dmRecipientId      String?             // PSID/IGSID que devuelve la Send API
   dmExternalMessageId String?
   contactId          String?             // se llena al responder el DM
@@ -163,7 +165,7 @@ model CommentRuleLog {
 }
 
 enum CommentPlatform { INSTAGRAM  FACEBOOK  @@schema("propyte_crm") }
-enum CommentActionStatus { SENT  FAILED  SKIPPED  @@schema("propyte_crm") }
+enum CommentActionStatus { PENDING  SENT  FAILED  SKIPPED  @@schema("propyte_crm") }
 ```
 
 Relaciones inversas que hay que agregar a los modelos existentes (Prisma exige
@@ -224,8 +226,10 @@ la lista.
 4. **Match**. Sin match → salir sin escribir nada.
 5. **Cuota**: si existe log previo con `(connectorId, postId, authorId)` →
    registrar `SKIPPED` en ambas acciones y salir.
-6. **Crear el log** antes de llamar a Graph. El `@unique` es el candado contra
-   reintentos concurrentes de Meta.
+6. **Crear el log** antes de llamar a Graph, con ambas acciones en `PENDING`. El
+   `@unique` es el candado contra reintentos concurrentes de Meta. Los textos
+   renderizados se guardan en `publicText` y `dmText`: son lo que permite
+   *Reintentar* con el mismo texto y rellenar el opener en el hilo después.
 7. **Acciones independientes**, cada una en su try/catch: si la pública falla, el
    DM sale igual, y al revés. Cada una escribe estado y motivo en su columna.
    - Pública: IG `POST /{comment_id}/replies`, FB `POST /{comment_id}/comments`.
@@ -302,9 +306,12 @@ Mismo lenguaje visual que `connectors-section.tsx`.
 con qué frase, qué variante pública saldría y el DM ya renderizado. Cero llamadas
 a Meta: imposible publicar por accidente desde el probador.
 
-**Log**: tabla paginada con fecha, cuenta, publicación (link al post y copiar ID),
-autor, comentario, regla, estado público, estado DM, motivo del error y contacto
-vinculado. Filtro por regla y estado. **Reintentar** en los fallidos.
+**Log**: tabla paginada con fecha, cuenta, publicación, autor, comentario, regla,
+estado público, estado DM, motivo del error y contacto vinculado. Filtro por regla
+y estado. **Reintentar** en los fallidos. Cada fila deja copiar el ID de la
+publicación; el link directo al post solo se ofrece en Facebook, porque para
+Instagram el webhook manda el `media_id` y la URL pública usa un *shortcode*
+distinto que Graph no permite derivar.
 
 ## APIs
 
