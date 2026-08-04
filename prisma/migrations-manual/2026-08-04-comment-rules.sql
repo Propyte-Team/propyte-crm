@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS "propyte_crm"."comment_rules" (
   "connectorId"   TEXT NOT NULL,
   "isActive"      BOOLEAN NOT NULL DEFAULT false,
   "priority"      INTEGER NOT NULL DEFAULT 100,
-  "phrases"       TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-  "publicReplies" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "phrases"       TEXT[] NOT NULL,
+  "publicReplies" TEXT[] NOT NULL,
   "dmTemplate"    TEXT NOT NULL,
   "postFilter"    TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -89,3 +89,7 @@ CREATE INDEX IF NOT EXISTS "comment_rule_logs_dmRecipientId_idx"
   ON "propyte_crm"."comment_rule_logs"("dmRecipientId");
 CREATE INDEX IF NOT EXISTS "comment_rule_logs_ruleId_createdAt_idx"
   ON "propyte_crm"."comment_rule_logs"("ruleId", "createdAt");
+CREATE INDEX IF NOT EXISTS "comment_rule_logs_ruleId_publicReplyStatus_idx"
+  ON "propyte_crm"."comment_rule_logs"("ruleId", "publicReplyStatus");
+CREATE INDEX IF NOT EXISTS "comment_rule_logs_createdAt_idx"
+  ON "propyte_crm"."comment_rule_logs"("createdAt");

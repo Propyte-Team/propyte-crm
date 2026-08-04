@@ -2719,6 +2719,8 @@ model CommentRuleLog {
   @@index([connectorId, postId, authorId])
   @@index([dmRecipientId])
   @@index([ruleId, createdAt])
+  @@index([ruleId, publicReplyStatus])
+  @@index([createdAt])
   @@map("comment_rule_logs")
   @@schema("propyte_crm")
 }

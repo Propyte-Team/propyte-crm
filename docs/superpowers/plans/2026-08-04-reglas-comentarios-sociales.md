@@ -124,10 +124,14 @@ model CommentRuleLog {
   @@index([connectorId, postId, authorId])
   @@index([dmRecipientId])
   @@index([ruleId, createdAt])
+  @@index([ruleId, publicReplyStatus])
+  @@index([createdAt])
   @@map("comment_rule_logs")
   @@schema("propyte_crm")
 }
 ```
+
+`(ruleId, publicReplyStatus)` cubre el `count({ where: { ruleId, publicReplyStatus: "SENT" } })` del camino caliente de rotación de variante pública (Task 6 y Task 10). `(createdAt)` solo cubre el sort de `GET /api/admin/comment-rules/logs` cuando `ruleId` no viene en el filtro (primera vista del admin).
 
 - [ ] **Step 2: Agregar las relaciones inversas (Prisma exige los dos lados)**
 
@@ -182,8 +186,8 @@ CREATE TABLE IF NOT EXISTS "propyte_crm"."comment_rules" (
   "connectorId"   TEXT NOT NULL,
   "isActive"      BOOLEAN NOT NULL DEFAULT false,
   "priority"      INTEGER NOT NULL DEFAULT 100,
-  "phrases"       TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-  "publicReplies" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "phrases"       TEXT[] NOT NULL,
+  "publicReplies" TEXT[] NOT NULL,
   "dmTemplate"    TEXT NOT NULL,
   "postFilter"    TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -249,7 +253,13 @@ CREATE INDEX IF NOT EXISTS "comment_rule_logs_dmRecipientId_idx"
   ON "propyte_crm"."comment_rule_logs"("dmRecipientId");
 CREATE INDEX IF NOT EXISTS "comment_rule_logs_ruleId_createdAt_idx"
   ON "propyte_crm"."comment_rule_logs"("ruleId", "createdAt");
+CREATE INDEX IF NOT EXISTS "comment_rule_logs_ruleId_publicReplyStatus_idx"
+  ON "propyte_crm"."comment_rule_logs"("ruleId", "publicReplyStatus");
+CREATE INDEX IF NOT EXISTS "comment_rule_logs_createdAt_idx"
+  ON "propyte_crm"."comment_rule_logs"("createdAt");
 ```
+
+`phrases` y `publicReplies` no llevan `DEFAULT` a propósito: en Prisma no tienen `@default([])`, así que siguen siendo obligatorios en el tipo generado y no se puede crear una regla sin frases ni sin respuesta pública. `postFilter` sí conserva `DEFAULT ARRAY[]::TEXT[]` porque en Prisma tiene `@default([])`.
 
 **NO ejecutar esta migración.** La Supabase `oaijxdpevakashxshhvm` es compartida con el Hub y la aplica Luis. El código de las tareas siguientes tolera que las tablas no existan todavía (ver Task 9, Step 5).
 
