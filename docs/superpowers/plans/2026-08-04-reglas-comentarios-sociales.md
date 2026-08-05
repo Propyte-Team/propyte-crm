@@ -4074,8 +4074,13 @@ git commit -m "feat(comments): pestana Admin de reglas con probador y log"
 
 - [ ] **Step 1: Correr la suite completa**
 
-Run: `npm test`
-Expected: PASS. El total sube ~78 tests respecto a `main`. Cero fallos nuevos; si algo de `messaging/` falla, es regresión de Task 7 y se arregla antes de seguir.
+Run: `npx vitest run`
+Expected: PASS. El total sube ~122 tests respecto a `main` (8 archivos nuevos en
+`src/lib/comments/` y `src/app/api/admin/comment-rules/` + tests agregados a
+`src/lib/messaging/core.test.ts` y `src/app/api/webhooks/meta-dm/route.test.ts`;
+no ~78 como se estimó al escribir este plan, antes de implementar). Cero fallos
+nuevos; si algo de `messaging/` falla, es regresión de Task 7 y se arregla antes
+de seguir.
 
 - [ ] **Step 2: Typecheck y build**
 
