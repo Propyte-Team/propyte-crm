@@ -74,7 +74,7 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
         <label className="flex items-center gap-2 text-[12px]">
           <input type="checkbox" checked={onlyFailed}
             onChange={(e) => { setOnlyFailed(e.target.checked); setPage(1); }} />
-          Solo fallidos
+          Solo pendientes o fallidos
         </label>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -87,7 +87,17 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
         {!loading && !error && rows.length === 0 && (
           <p className="py-4 text-center text-sm text-muted-foreground">Sin registros todavía</p>
         )}
-        {!loading && !error && rows.map((r) => (
+        {!loading && !error && rows.map((r) => {
+          const hasFailed = r.publicReplyStatus === "FAILED" || r.dmStatus === "FAILED";
+          // PENDING sin ninguna FAILED es el caso del worker muerto a mitad de
+          // la llamada a Graph (ver logs/[id]/retry/route.ts): reintentable,
+          // pero a diferencia de FAILED no hay certeza de que Graph nunca haya
+          // recibido la llamada, así que puede duplicar el envío.
+          const hasPending = r.publicReplyStatus === "PENDING" || r.dmStatus === "PENDING";
+          const retryTitle = hasPending
+            ? "Puede duplicar el envío: el proceso original pudo haber llegado a llamar a Graph antes de morir."
+            : "Reintenta solo lo que falló; no reenvía lo que ya se publicó o mandó.";
+          return (
           <div key={r.id} className="rounded-lg border p-3 text-[12px]" style={{ borderColor: "var(--border-default)" }}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="badge badge-neutral">{r.platform === "INSTAGRAM" ? "IG" : "FB"}</span>
@@ -121,14 +131,17 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
                   Ver publicación
                 </a>
               )}
-              {(r.publicReplyStatus === "FAILED" || r.dmStatus === "FAILED") && (
-                <Button variant="outline" size="sm" onClick={() => retry(r.id)} disabled={retryingId === r.id}>
-                  <RefreshCw className="mr-1 h-3 w-3" /> {retryingId === r.id ? "Reintentando…" : "Reintentar"}
+              {(hasFailed || hasPending) && (
+                <Button variant="outline" size="sm" onClick={() => retry(r.id)}
+                  disabled={retryingId === r.id} title={retryTitle}>
+                  <RefreshCw className="mr-1 h-3 w-3" />
+                  {retryingId === r.id ? "Reintentando…" : hasPending ? "Reintentar (puede duplicar)" : "Reintentar"}
                 </Button>
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
         {total > 25 && (
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>

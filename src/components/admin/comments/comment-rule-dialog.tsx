@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, X } from "lucide-react";
+import { normalize } from "@/lib/comments/match";
 
 export interface ConnectorOption {
   id: string;
@@ -40,16 +41,6 @@ const MAX_VARIANTS = 5;
 // Este repo no tiene componente Textarea: se usa <textarea> nativo con la clase
 // form-input, igual que bot-agents-tab.tsx y playbook-tab.tsx.
 const TEXTAREA_CLASS = "form-input w-full resize-none text-[13px]";
-
-/** Espejo de normalize() del matcher: lo que el usuario ve es lo que se compara. */
-function normalizePreview(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 export function CommentRuleDialog({
   open, onOpenChange, connectors, rules, editing, onSaved,
@@ -95,7 +86,7 @@ export function CommentRuleDialog({
     setPhraseDraft("");
   }, [open, editing, connectors]);
 
-  const normalized = phrases.map(normalizePreview);
+  const normalized = phrases.map(normalize);
   const clashes = rules
     .filter((r) => r.connectorId === connectorId && r.isActive && r.id !== editing?.id)
     .flatMap((r) => r.phrases.filter((p) => normalized.includes(p)).map((p) => ({ rule: r.name, phrase: p })));
@@ -103,7 +94,7 @@ export function CommentRuleDialog({
   function addPhrase() {
     const value = phraseDraft.trim();
     if (!value) return;
-    if (!phrases.some((p) => normalizePreview(p) === normalizePreview(value))) {
+    if (!phrases.some((p) => normalize(p) === normalize(value))) {
       setPhrases([...phrases, value]);
     }
     setPhraseDraft("");

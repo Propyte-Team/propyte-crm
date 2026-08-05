@@ -28,10 +28,21 @@ export async function GET(req: NextRequest) {
   const page = parsePositiveInt(url.searchParams.get("page"), 1);
   const pageSize = Math.min(PAGE_SIZE_MAX, parsePositiveInt(url.searchParams.get("pageSize"), 25));
 
+  // Incluye PENDING: un log puede quedarse ahí para siempre si el worker
+  // muere a mitad de la llamada a Graph (ver logs/[id]/retry/route.ts). Ese
+  // caso nunca pasa por FAILED, así que "solo fallidos" lo dejaba invisible
+  // aunque el botón Reintentar ya lo acepta.
   const where = {
     ...(ruleId ? { ruleId } : {}),
     ...(onlyFailed
-      ? { OR: [{ publicReplyStatus: "FAILED" as const }, { dmStatus: "FAILED" as const }] }
+      ? {
+          OR: [
+            { publicReplyStatus: "FAILED" as const },
+            { dmStatus: "FAILED" as const },
+            { publicReplyStatus: "PENDING" as const },
+            { dmStatus: "PENDING" as const },
+          ],
+        }
       : {}),
   };
 

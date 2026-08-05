@@ -81,6 +81,19 @@ la Supabase compartida.
 18. [ ] Con una fila con algo `FAILED`, click **Reintentar** → reintenta solo
         la(s) acción(es) fallida(s) reusando el texto **exacto** que ya se
         guardó (no genera otra variante ni recalcula el DM).
+18b. [ ] Caso `PENDING` — si algún día ves un registro así (no es reproducible
+        a voluntad: requiere matar el worker a mitad de la llamada a Graph,
+        p. ej. un restart del proceso justo después de reclamar la acción).
+        En el log se ve igual que cualquier otro estado: badge "público:
+        PENDING" o "DM: PENDING" en `STATUS_BADGE` (mismo gris que
+        `SKIPPED`, no hay color de alerta propio). Con el filtro "Solo
+        pendientes o fallidos" activado, la fila aparece — antes de este fix
+        un log así solo era visible hojeando todas las páginas sin filtro.
+        El botón **Reintentar** aparece igual que para `FAILED`, pero su
+        `title` (y el texto del botón, "Reintentar (puede duplicar)") avisa
+        que puede duplicar el envío: a diferencia de `FAILED`, no hay
+        certeza de que el proceso original nunca haya llegado a llamar a
+        Graph.
 19. [ ] El campo "Publicaciones" del formulario de regla **solo acepta IDs**,
         no URLs — pegar una URL no la resuelve. El ID de un post aparece en
         el log en cuanto llega su primer comentario; se copia con el botón
@@ -115,14 +128,21 @@ sección "Riesgos aceptados (code review, 2026-08-05)"). Si aparecen durante
 el smoke, **no es un bug** — ya se evaluó y se decidió no cerrarlos ahora:
 
 - **Carrera de cuota entre webhooks distintos.** Si Meta entrega dos
-  comentarios de la misma persona en el mismo post en dos peticiones HTTP
-  separadas casi simultáneas, ambos pueden pasar el chequeo de cuota antes de
-  que cualquiera cree su log → respuesta pública doble. Dentro de un mismo
-  batch no pasa (se procesa en serie). Probabilidad baja; consecuencia
-  visible pero benigna (una respuesta de más, sin daño de datos).
+  comentarios **distintos** de la misma persona en el mismo post en dos
+  peticiones HTTP separadas casi simultáneas, ambos pueden pasar el chequeo
+  de cuota antes de que cualquiera cree su log. Pasado ese chequeo, la
+  respuesta pública y el DM se ejecutan siempre para cada uno — no es solo
+  la respuesta pública repetida: la persona recibe **dos DMs de apertura**,
+  porque el límite de "una vez" de Meta es por comentario, no por
+  destinatario. Dentro de un mismo batch no pasa (se procesa en serie).
+  Probabilidad baja; consecuencia visible pero benigna (una respuesta
+  pública y un DM de apertura de más, sin daño de datos).
 - **Presupuesto de tiempo del batch.** El webhook tiene `maxDuration = 30`;
   cada comentario puede hacer hasta dos llamadas a Graph de 8 s de timeout
   en serie. Con un batch de 2+ comentarios y Graph colgado (no fallando
   rápido) en ambas llamadas, la función puede morir a mitad del bucle y los
   comentarios restantes se pierden sin log. Probabilidad baja: requiere que
   Graph llegue al timeout, no que falle rápido.
+- **Reintento manual sobre un log en `PENDING` puede duplicar el envío.**
+  Ver el paso de smoke dedicado más abajo ("Caso PENDING") y la fila
+  correspondiente en el spec.
