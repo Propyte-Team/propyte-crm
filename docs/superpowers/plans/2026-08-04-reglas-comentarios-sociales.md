@@ -665,6 +665,8 @@ git commit -m "feat(comments): matcher de palabra completa sin acentos"
 
 Dos formas distintas de payload que Meta manda al **mismo** endpoint. El detalle que se presta a error: en Facebook, un comentario de primer nivel trae `parent_id` **igual al `post_id`**; solo es respuesta anidada si difieren. En Instagram, `parent_id` solo aparece en respuestas.
 
+`parseCommentWebhook` devuelve `{ comments, discarded }` en vez de solo el arreglo: sin esto, un payload que SÍ era un comentario pero le faltaba un campo obligatorio se perdía exactamente igual que un payload que nunca fue un comentario (DM, `field` desconocido, `verb: "edited"`). El caso real de producción es Facebook sin `from` — Meta lo omite cuando el comentarista bloqueó la Página, cuando falta el permiso `pages_read_engagement`, o cuando la cuenta fue borrada — y ese comentario de un cliente real se caía sin dejar rastro, sin nunca llegar a crear un `CommentRuleLog`. `discarded` no rompe la pureza de la función (sigue sin loguear ni escribir); es la Task 8 la que emite el `console.warn` por cada elemento.
+
 **Files:**
 - Create: `src/lib/comments/parse.ts`
 - Test: `src/lib/comments/parse.test.ts`
@@ -723,7 +725,7 @@ const fbComment = {
 
 describe("parseCommentWebhook", () => {
   it("extrae el comentario de Instagram", () => {
-    expect(parseCommentWebhook(igComment)).toEqual([
+    expect(parseCommentWebhook(igComment).comments).toEqual([
       {
         platform: "INSTAGRAM",
         accountId: "17841453458089530",
@@ -738,7 +740,7 @@ describe("parseCommentWebhook", () => {
   });
 
   it("extrae el comentario de Facebook y usa from.name como handle", () => {
-    expect(parseCommentWebhook(fbComment)).toEqual([
+    expect(parseCommentWebhook(fbComment).comments).toEqual([
       {
         platform: "FACEBOOK",
         accountId: "PAGE-1",
@@ -755,7 +757,7 @@ describe("parseCommentWebhook", () => {
   it("Facebook: parent_id == post_id es primer nivel, distinto es anidado", () => {
     const nested = structuredClone(fbComment);
     nested.entry[0].changes[0].value.parent_id = "PAGE-1_COMMENT-OTRO";
-    expect(parseCommentWebhook(nested)[0].isNested).toBe(true);
+    expect(parseCommentWebhook(nested).comments[0].isNested).toBe(true);
   });
 
   it("Instagram: parent_id presente es anidado", () => {
@@ -763,41 +765,67 @@ describe("parseCommentWebhook", () => {
       entry: Array<{ changes: Array<{ value: Record<string, unknown> }> }>;
     };
     nested.entry[0].changes[0].value.parent_id = "IGCOMMENT-PADRE";
-    expect(parseCommentWebhook(nested)[0].isNested).toBe(true);
+    expect(parseCommentWebhook(nested).comments[0].isNested).toBe(true);
   });
 
-  it("ignora verbos que no son 'add' (ediciones y borrados)", () => {
+  it("ignora verbos que no son 'add' (ediciones y borrados): cero comentarios y cero descartes", () => {
     for (const verb of ["edited", "remove", "hide"]) {
       const other = structuredClone(fbComment);
       other.entry[0].changes[0].value.verb = verb;
-      expect(parseCommentWebhook(other), verb).toEqual([]);
+      const result = parseCommentWebhook(other);
+      expect(result.comments, verb).toEqual([]);
+      expect(result.discarded, verb).toEqual([]);
     }
   });
 
-  it("ignora items de feed que no son comentarios", () => {
+  it("ignora items de feed que no son comentarios (item !== 'comment'): cero y cero", () => {
     const post = structuredClone(fbComment);
     post.entry[0].changes[0].value.item = "reaction";
-    expect(parseCommentWebhook(post)).toEqual([]);
+    const result = parseCommentWebhook(post);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([]);
   });
 
-  it("ignora el payload de mensajes (entry[].messaging) sin lanzar", () => {
+  it("field desconocido (reactions) no es un comentario: cero y cero", () => {
+    const other = structuredClone(fbComment);
+    other.entry[0].changes[0].field = "reactions";
+    const result = parseCommentWebhook(other);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([]);
+  });
+
+  it("ignora el payload de mensajes (entry[].messaging) sin lanzar y sin descartes", () => {
     const dm = {
       object: "instagram",
       entry: [{ id: "1", messaging: [{ sender: { id: "X" }, message: { mid: "m", text: "hola" } }] }],
     };
-    expect(parseCommentWebhook(dm)).toEqual([]);
+    const result = parseCommentWebhook(dm);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([]);
   });
 
-  it("comentario sin texto (solo sticker) se descarta", () => {
+  it("comentario de Facebook sin texto (solo sticker) se descarta con reason 'sin-texto'", () => {
     const sinTexto = structuredClone(fbComment);
     delete (sinTexto.entry[0].changes[0].value as Record<string, unknown>).message;
-    expect(parseCommentWebhook(sinTexto)).toEqual([]);
+    const result = parseCommentWebhook(sinTexto);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([
+      {
+        platform: "FACEBOOK",
+        accountId: "PAGE-1",
+        externalCommentId: "PAGE-1_COMMENT-1",
+        reason: "sin-texto",
+      },
+    ]);
   });
 
-  it("objetos desconocidos y basura devuelven vacío", () => {
-    expect(parseCommentWebhook({ object: "whatsapp_business_account", entry: [] })).toEqual([]);
-    expect(parseCommentWebhook(null)).toEqual([]);
-    expect(parseCommentWebhook({})).toEqual([]);
+  it("objetos desconocidos y basura devuelven vacío sin descartes", () => {
+    expect(parseCommentWebhook({ object: "whatsapp_business_account", entry: [] })).toEqual({
+      comments: [],
+      discarded: [],
+    });
+    expect(parseCommentWebhook(null)).toEqual({ comments: [], discarded: [] });
+    expect(parseCommentWebhook({})).toEqual({ comments: [], discarded: [] });
   });
 
   it("procesa varios cambios en un solo entry", () => {
@@ -811,9 +839,131 @@ describe("parseCommentWebhook", () => {
         media: { id: "MEDIA-1", media_product_type: "FEED" },
       },
     });
-    expect(parseCommentWebhook(dos).map((c) => c.externalCommentId)).toEqual([
+    expect(parseCommentWebhook(dos).comments.map((c) => c.externalCommentId)).toEqual([
       "IGCOMMENT-1",
       "IGCOMMENT-2",
+    ]);
+  });
+
+  // --- Descartes: era un comentario y le faltó un campo obligatorio ---
+  // Caso real de producción: Meta omite `from` cuando el comentarista bloqueó
+  // la Página, cuando falta `pages_read_engagement`, o cuando la cuenta fue
+  // borrada. Sin `discarded` ese comentario se perdía sin dejar rastro.
+
+  it("Facebook sin 'from' se descarta con reason 'sin-autor'", () => {
+    const sinAutor = structuredClone(fbComment);
+    delete (sinAutor.entry[0].changes[0].value as Record<string, unknown>).from;
+    const result = parseCommentWebhook(sinAutor);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([
+      {
+        platform: "FACEBOOK",
+        accountId: "PAGE-1",
+        externalCommentId: "PAGE-1_COMMENT-1",
+        reason: "sin-autor",
+      },
+    ]);
+  });
+
+  it("Instagram sin 'from' se descarta con reason 'sin-autor'", () => {
+    const sinAutor = structuredClone(igComment);
+    delete (sinAutor.entry[0].changes[0].value as Record<string, unknown>).from;
+    const result = parseCommentWebhook(sinAutor);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([
+      {
+        platform: "INSTAGRAM",
+        accountId: "17841453458089530",
+        externalCommentId: "IGCOMMENT-1",
+        reason: "sin-autor",
+      },
+    ]);
+  });
+
+  it("Instagram sin 'media' se descarta con reason 'sin-publicacion'", () => {
+    const sinMedia = structuredClone(igComment);
+    delete (sinMedia.entry[0].changes[0].value as Record<string, unknown>).media;
+    const result = parseCommentWebhook(sinMedia);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([
+      {
+        platform: "INSTAGRAM",
+        accountId: "17841453458089530",
+        externalCommentId: "IGCOMMENT-1",
+        reason: "sin-publicacion",
+      },
+    ]);
+  });
+
+  it("Facebook sin 'comment_id' se descarta con reason 'sin-id' y externalCommentId null", () => {
+    const sinId = structuredClone(fbComment);
+    delete (sinId.entry[0].changes[0].value as Record<string, unknown>).comment_id;
+    const result = parseCommentWebhook(sinId);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([
+      {
+        platform: "FACEBOOK",
+        accountId: "PAGE-1",
+        externalCommentId: null,
+        reason: "sin-id",
+      },
+    ]);
+  });
+
+  it("Instagram sin 'id' se descarta con reason 'sin-id' y externalCommentId null", () => {
+    const sinId = structuredClone(igComment);
+    delete (sinId.entry[0].changes[0].value as Record<string, unknown>).id;
+    const result = parseCommentWebhook(sinId);
+    expect(result.comments).toEqual([]);
+    expect(result.discarded).toEqual([
+      {
+        platform: "INSTAGRAM",
+        accountId: "17841453458089530",
+        externalCommentId: null,
+        reason: "sin-id",
+      },
+    ]);
+  });
+
+  it("precedencia: falta 'from' y 'message' reporta 'sin-autor', no 'sin-texto'", () => {
+    const sinAmbos = structuredClone(fbComment);
+    const value = sinAmbos.entry[0].changes[0].value as Record<string, unknown>;
+    delete value.from;
+    delete value.message;
+    const result = parseCommentWebhook(sinAmbos);
+    expect(result.discarded).toEqual([
+      {
+        platform: "FACEBOOK",
+        accountId: "PAGE-1",
+        externalCommentId: "PAGE-1_COMMENT-1",
+        reason: "sin-autor",
+      },
+    ]);
+  });
+
+  it("un batch con un comentario válido y otro sin 'from' devuelve uno en comments y uno en discarded", () => {
+    const batch = structuredClone(igComment);
+    batch.entry[0].changes.push({
+      field: "comments",
+      value: {
+        id: "IGCOMMENT-2",
+        text: "precio?",
+        from: { id: "IGSID-2", username: "ana" },
+        media: { id: "MEDIA-1", media_product_type: "FEED" },
+      },
+    });
+    delete (batch.entry[0].changes[1].value as Record<string, unknown>).from;
+
+    const result = parseCommentWebhook(batch);
+    expect(result.comments).toHaveLength(1);
+    expect(result.comments[0].externalCommentId).toBe("IGCOMMENT-1");
+    expect(result.discarded).toEqual([
+      {
+        platform: "INSTAGRAM",
+        accountId: "17841453458089530",
+        externalCommentId: "IGCOMMENT-2",
+        reason: "sin-autor",
+      },
     ]);
   });
 });
@@ -837,6 +987,31 @@ Expected: FAIL — `Failed to resolve import "./parse"`
 //
 // OJO Facebook: en un comentario de primer nivel `parent_id` viene IGUAL al
 // `post_id`. Solo es respuesta anidada cuando difieren.
+//
+// Este mismo endpoint recibe también el payload de DMs (entry[].messaging),
+// porque Meta solo permite una callback URL por objeto. Por eso todo aquí es
+// defensivo: nunca lanza, y cualquier forma que no reconozca se ignora en
+// silencio (no es un descarte: nunca fue un comentario).
+//
+// `discarded`: cuando SÍ era un comentario (pasó el gate de object/field, y en
+// Facebook además item==="comment" && verb==="add") pero le faltó un campo
+// obligatorio. Caso real de producción: Meta omite `from` cuando el
+// comentarista bloqueó la Página, cuando falta el permiso
+// `pages_read_engagement`, o cuando la cuenta fue borrada. Sin esto, ese
+// comentario se perdía sin dejar rastro — nunca llegaba a crear un
+// CommentRuleLog, así que no había forma de saber cuántos comentarios de
+// clientes reales se estaban cayendo. La función sigue siendo pura (no
+// loguea ni escribe); es responsabilidad del webhook (Task 8) emitir el
+// console.warn por cada descarte.
+
+export type DiscardReason = "sin-id" | "sin-autor" | "sin-publicacion" | "sin-texto";
+
+export interface DiscardedComment {
+  platform: "INSTAGRAM" | "FACEBOOK";
+  accountId: string; // entry.id → igBusinessId (IG) o pageId (FB)
+  externalCommentId: string | null;
+  reason: DiscardReason;
+}
 
 export interface IncomingComment {
   platform: "INSTAGRAM" | "FACEBOOK";
@@ -849,66 +1024,102 @@ export interface IncomingComment {
   isNested: boolean;
 }
 
+export interface ParsedCommentWebhook {
+  comments: IncomingComment[];
+  discarded: DiscardedComment[];
+}
+
 interface RawEntry {
   id?: string;
   changes?: Array<{ field?: string; value?: Record<string, unknown> }>;
 }
 
+// Resultado interno de intentar parsear un `value` que ya se sabe es un
+// comentario (pasó el gate de object/field/item/verb):
+//   - "ok": se armó el IncomingComment completo.
+//   - "discarded": faltó un campo obligatorio; trae la razón determinista.
+//   - null: NO se llega a intentar (ni siquiera es un comentario), p. ej.
+//     Facebook con verb distinto de "add" — el llamador lo ignora sin más.
+type ParseAttempt =
+  | { kind: "ok"; comment: IncomingComment }
+  | { kind: "discarded"; reason: DiscardReason; externalCommentId: string | null }
+  | null;
+
 function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function parseIg(entryId: string, value: Record<string, unknown>): IncomingComment | null {
+// Precedencia determinista de la razón de descarte: primero la identidad
+// (id, autor, publicación) y al final el contenido (texto).
+function parseIg(entryId: string, value: Record<string, unknown>): ParseAttempt {
   const from = (value.from ?? {}) as Record<string, unknown>;
   const media = (value.media ?? {}) as Record<string, unknown>;
   const id = str(value.id);
-  const text = str(value.text);
   const authorId = str(from.id);
   const postId = str(media.id);
-  if (!id || !text || !authorId || !postId) return null;
+  const text = str(value.text);
+
+  if (!id) return { kind: "discarded", reason: "sin-id", externalCommentId: null };
+  if (!authorId) return { kind: "discarded", reason: "sin-autor", externalCommentId: id };
+  if (!postId) return { kind: "discarded", reason: "sin-publicacion", externalCommentId: id };
+  if (!text) return { kind: "discarded", reason: "sin-texto", externalCommentId: id };
 
   return {
-    platform: "INSTAGRAM",
-    accountId: entryId,
-    externalCommentId: id,
-    postId,
-    authorId,
-    authorHandle: str(from.username),
-    text,
-    isNested: !!str(value.parent_id),
+    kind: "ok",
+    comment: {
+      platform: "INSTAGRAM",
+      accountId: entryId,
+      externalCommentId: id,
+      postId,
+      authorId,
+      authorHandle: str(from.username),
+      text,
+      isNested: !!str(value.parent_id),
+    },
   };
 }
 
-function parseFb(entryId: string, value: Record<string, unknown>): IncomingComment | null {
+function parseFb(entryId: string, value: Record<string, unknown>): ParseAttempt {
   if (value.item !== "comment" || value.verb !== "add") return null;
 
   const from = (value.from ?? {}) as Record<string, unknown>;
   const id = str(value.comment_id);
-  const text = str(value.message);
   const authorId = str(from.id);
   const postId = str(value.post_id);
-  if (!id || !text || !authorId || !postId) return null;
+  const text = str(value.message);
+
+  if (!id) return { kind: "discarded", reason: "sin-id", externalCommentId: null };
+  if (!authorId) return { kind: "discarded", reason: "sin-autor", externalCommentId: id };
+  if (!postId) return { kind: "discarded", reason: "sin-publicacion", externalCommentId: id };
+  if (!text) return { kind: "discarded", reason: "sin-texto", externalCommentId: id };
 
   const parentId = str(value.parent_id);
   return {
-    platform: "FACEBOOK",
-    accountId: entryId,
-    externalCommentId: id,
-    postId,
-    authorId,
-    authorHandle: str(from.name),
-    text,
-    isNested: !!parentId && parentId !== postId,
+    kind: "ok",
+    comment: {
+      platform: "FACEBOOK",
+      accountId: entryId,
+      externalCommentId: id,
+      postId,
+      authorId,
+      authorHandle: str(from.name),
+      text,
+      isNested: !!parentId && parentId !== postId,
+    },
   };
 }
 
-export function parseCommentWebhook(body: unknown): IncomingComment[] {
-  if (!body || typeof body !== "object") return [];
-  const { object, entry } = body as { object?: string; entry?: unknown };
-  if (object !== "instagram" && object !== "page") return [];
-  if (!Array.isArray(entry)) return [];
+export function parseCommentWebhook(body: unknown): ParsedCommentWebhook {
+  const comments: IncomingComment[] = [];
+  const discarded: DiscardedComment[] = [];
 
-  const out: IncomingComment[] = [];
+  if (!body || typeof body !== "object") return { comments, discarded };
+  const { object, entry } = body as { object?: string; entry?: unknown };
+  if (object !== "instagram" && object !== "page") return { comments, discarded };
+  if (!Array.isArray(entry)) return { comments, discarded };
+
+  const platform: "INSTAGRAM" | "FACEBOOK" = object === "instagram" ? "INSTAGRAM" : "FACEBOOK";
+
   for (const raw of entry as RawEntry[]) {
     const entryId = str(raw?.id);
     if (!entryId || !Array.isArray(raw.changes)) continue;
@@ -917,24 +1128,34 @@ export function parseCommentWebhook(body: unknown): IncomingComment[] {
       const value = change?.value;
       if (!value || typeof value !== "object") continue;
 
-      const parsed =
+      const attempt: ParseAttempt =
         object === "instagram" && change.field === "comments"
           ? parseIg(entryId, value)
           : object === "page" && change.field === "feed"
             ? parseFb(entryId, value)
             : null;
 
-      if (parsed) out.push(parsed);
+      if (!attempt) continue;
+      if (attempt.kind === "ok") {
+        comments.push(attempt.comment);
+      } else {
+        discarded.push({
+          platform,
+          accountId: entryId,
+          externalCommentId: attempt.externalCommentId,
+          reason: attempt.reason,
+        });
+      }
     }
   }
-  return out;
+  return { comments, discarded };
 }
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/parse.test.ts`
-Expected: PASS — 10 tests
+Expected: PASS — 18 tests
 
 - [ ] **Step 5: Commit**
 
@@ -2097,9 +2318,21 @@ Después del bucle `for (const t of botTargets.values())` y **antes** de `record
 ```ts
   // Comentarios (entry[].changes): camino independiente del de DMs. Un fallo
   // aquí nunca debe afectar lo que ya se ingirió arriba.
-  const comments = parseCommentWebhook(body);
+  const parsed = parseCommentWebhook(body);
+
+  // `parsed.discarded`: SÍ eran comentarios pero les faltó un campo
+  // obligatorio (típicamente `from`, cuando Meta lo omite porque el
+  // comentarista bloqueó la Página, falta pages_read_engagement, o la cuenta
+  // fue borrada). parseCommentWebhook es pura y no loguea; este es el único
+  // lugar donde se deja rastro de un comentario de cliente real que se cayó.
+  for (const d of parsed.discarded) {
+    console.warn(
+      `[meta-dm] comentario descartado (${d.reason}) platform=${d.platform} account=${d.accountId} comment=${d.externalCommentId ?? "?"}`
+    );
+  }
+
   let commentsProcessed = 0;
-  for (const c of comments) {
+  for (const c of parsed.comments) {
     try {
       const { handleComment } = await import("@/lib/comments/handle-comment");
       const outcome = await handleComment(c);
@@ -2117,10 +2350,15 @@ Después del bucle `for (const t of botTargets.values())` y **antes** de `record
   }
 ```
 
-Y cambiar el return final:
+Y cambiar el return final: `discarded` se suma al payload de respuesta para que quede visible sin tener que ir a los logs (no inventa campos nuevos en `results`, solo cuenta cuántos se cayeron en este batch).
 
 ```ts
-  return NextResponse.json({ ok: true, processed, comments: commentsProcessed });
+  return NextResponse.json({
+    ok: true,
+    processed,
+    comments: commentsProcessed,
+    discarded: parsed.discarded.length,
+  });
 ```
 
 - [ ] **Step 4: Correr los tests y verificar que pasan**
