@@ -15,6 +15,8 @@ const notifCreate = vi.fn();
 const captureLead = vi.fn();
 const botRespond = vi.fn();
 const meetSlaTimers = vi.fn();
+const commentRuleLogFindFirst = vi.fn();
+const commentRuleLogUpdateMany = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -36,11 +38,19 @@ vi.mock("@/lib/db", () => ({
     activity: { create: (...a: unknown[]) => activityCreate(...a) },
     notification: { create: (...a: unknown[]) => notifCreate(...a) },
     user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
+    commentRuleLog: {
+      findFirst: (...a: unknown[]) => commentRuleLogFindFirst(...a),
+      updateMany: (...a: unknown[]) => commentRuleLogUpdateMany(...a),
+    },
   },
 }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a) }));
+const linkCommentOrigin = vi.fn();
+vi.mock("@/lib/comments/link-comment-origin", () => ({
+  linkCommentOrigin: (...a: unknown[]) => linkCommentOrigin(...a),
+}));
 const emitEvent = vi.fn();
 vi.mock("@/lib/workflows/events", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
 const fetchProfileForMessage = vi.fn();
@@ -68,8 +78,11 @@ beforeEach(() => {
     convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate,
     notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
+    commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin,
   ].forEach((m) => m.mockReset());
   contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
+  commentRuleLogFindFirst.mockResolvedValue(null);
+  linkCommentOrigin.mockResolvedValue(null);
   contactUpdate.mockImplementation(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({
     id: where.id,
     assignedToId: "u1",
@@ -485,6 +498,59 @@ describe("handleInboundMessage — echoes (Caso 4)", () => {
     expect(fetchProfileForMessage).not.toHaveBeenCalled();
     expect(contactTxUpdate).not.toHaveBeenCalled();
   });
+
+  // Fix 1 (code review): la defensa contra el eco del propio DM era escribir
+  // nosotros el opener con el message_id de la Send API, para que el eco choque
+  // con Message.externalMessageId @unique. Eso es una CARRERA, no una garantía:
+  // si el create() del eco commitea primero, este código ya evaluó
+  // conversation.status === "BOT" y ya disparó el takeover; nuestro create choca
+  // con P2002 y se descarta en silencio, demasiado tarde. La comprobación contra
+  // CommentRuleLog.dmExternalMessageId es determinista y no depende de quién
+  // gane la carrera.
+  describe("Fix 1 — comprobación determinista contra CommentRuleLog", () => {
+    it("eco de un DM disparado por regla de comentarios → sender BOT y SIN takeover", async () => {
+      msgFindUnique.mockResolvedValue(null);
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+      commentRuleLogFindFirst.mockResolvedValue({ id: "log-1" });
+      await handleInboundMessage(echo);
+      expect(commentRuleLogFindFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { dmExternalMessageId: "mid-echo-1" } })
+      );
+      expect(msgCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sender: "BOT" }) })
+      );
+      // Solo el update de lastMessageAt; NUNCA el takeover a HUMAN.
+      expect(convUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("eco normal (sin log de comentarios) → sigue ADVISOR y SÍ aplica el takeover si estaba en BOT (regresión)", async () => {
+      msgFindUnique.mockResolvedValue(null);
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+      commentRuleLogFindFirst.mockResolvedValue(null);
+      convUpdate.mockResolvedValueOnce({ id: "conv1", status: "BOT", botEnabled: true });
+      await handleInboundMessage(echo);
+      expect(msgCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sender: "ADVISOR" }) })
+      );
+      expect(convUpdate).toHaveBeenCalledTimes(2);
+      const takeover = convUpdate.mock.calls[1][0];
+      expect(takeover.data.status).toBe("HUMAN");
+    });
+
+    it("la consulta a CommentRuleLog lanza → el eco sigue el camino de siempre (ADVISOR + takeover), no rompe la ingesta", async () => {
+      msgFindUnique.mockResolvedValue(null);
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+      commentRuleLogFindFirst.mockRejectedValue(new Error("relation \"comment_rule_logs\" does not exist"));
+      convUpdate.mockResolvedValueOnce({ id: "conv1", status: "BOT", botEnabled: true });
+      const r = await handleInboundMessage(echo);
+      expect(r).toBeTruthy();
+      expect(msgCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sender: "ADVISOR" }) })
+      );
+      expect(convUpdate).toHaveBeenCalledTimes(2);
+      expect(convUpdate.mock.calls[1][0].data.status).toBe("HUMAN");
+    });
+  });
 });
 
 describe("handleInboundMessage – media", () => {
@@ -581,5 +647,24 @@ describe("handleInboundMessage – regresiones WhatsApp", () => {
     expect(contactFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ OR: expect.arrayContaining([{ phone: "+529991112233" }]) }) })
     );
+  });
+});
+
+// Fix 3 (code review): el mock de @/lib/db no declaraba commentRuleLog, así que en
+// CADA test no-WhatsApp de handleInboundMessage el hook a linkCommentOrigin (real,
+// no mockeado) reventaba con TypeError al tocar prisma.commentRuleLog.findFirst — su
+// propio try/catch lo absorbía en silencio. Ninguna aserción cubría el hook: una
+// regresión que rompiera el guard de WhatsApp no hacía fallar ningún test.
+describe("handleInboundMessage — hook a linkCommentOrigin (Fix 3)", () => {
+  it("inbound de Instagram/Messenger → llama a linkCommentOrigin con (contact.id, channel, senderId)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(base);
+    expect(linkCommentOrigin).toHaveBeenCalledWith("c1", "INSTAGRAM", "IG-1");
+  });
+
+  it("inbound de WhatsApp → NO llama a linkCommentOrigin", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage(wa);
+    expect(linkCommentOrigin).not.toHaveBeenCalled();
   });
 });
