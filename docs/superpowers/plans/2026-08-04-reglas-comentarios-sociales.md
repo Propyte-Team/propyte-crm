@@ -1882,7 +1882,7 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/handle-comment.test.ts`
-Expected: PASS — 18 tests
+Expected: PASS — 17 tests
 
 - [ ] **Step 5: Commit**
 
@@ -1890,6 +1890,19 @@ Expected: PASS — 18 tests
 git add src/lib/comments/handle-comment.ts src/lib/comments/handle-comment.test.ts
 git commit -m "feat(comments): motor de reglas con cuota, idempotencia y log"
 ```
+
+> **Nota (code review post-Task 6 — Fix 5):** si `publicReplies` estuviera vacío,
+> `pickVariant` devuelve `null`, `publicText` queda `""` y el `if (publicText)`
+> saltaba la respuesta pública — pero el log se quedaba con
+> `publicReplyStatus: "PENDING"` **sin ninguna ruta que lo actualizara**:
+> invisible en la UI, ni enviado ni fallido. La validación de reglas exige al
+> menos una variante, así que no debería pasar, pero un estado terminal
+> imposible de alcanzar es una trampa. Se agregó un `else` al `if (publicText)`
+> que deja el log en `publicReplyStatus: "SKIPPED"` con un `publicReplyError`
+> explicando la causa ("La regla no tenía respuesta pública configurada
+> (publicReplies vacío)"). Test agregado: `handle-comment.test.ts` — "Fix 5:
+> publicReplies vacío deja el log en SKIPPED (no PENDING eterno)...", con una
+> regla `{ ...RULE, publicReplies: [] }`. 18 tests en total (17 originales + 1).
 
 ---
 
@@ -2240,7 +2253,7 @@ export async function linkCommentOrigin(
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/link-comment-origin.test.ts`
-Expected: PASS — 10 tests
+Expected: PASS — 13 tests (10 originales + 3 de code review: Fix 2 y Fix 4, ver nota abajo)
 
 - [ ] **Step 5: Enganchar en el intake**
 
@@ -2270,6 +2283,69 @@ Expected: PASS — toda la carpeta, incluidos `core.test.ts` y los tests de adap
 git add src/lib/comments/link-comment-origin.ts src/lib/comments/link-comment-origin.test.ts src/lib/messaging/core.ts
 git commit -m "feat(comments): puente comentario->contacto sin perder el hilo del bot"
 ```
+
+> **Nota (code review post-Task 7 — Fix 1, Fix 2, Fix 3, Fix 4):** el hook del
+> Step 5 solo cubre la mitad del puente (la persona responde el DM y el intake
+> normal la encuentra por `linkCommentOrigin`). La otra mitad — el eco que Meta
+> manda de vuelta del DM que el CRM mismo mandó — vive en
+> `handleEchoMessage` (`src/lib/messaging/core.ts`, ~línea 91), una función
+> **anterior a este plan** (Caso 4 de echoes) que este plan no documentaba y
+> que el code review tocó directamente:
+>
+> - **Fix 1 (el importante):** la defensa contra el eco de un DM disparado por
+>   una regla era escribir NOSOTROS el opener con el `message_id` de la Send
+>   API (`persistOpenerForKnownContact` → `writeOpener`, en este mismo
+>   archivo), para que el eco de Meta chocara con
+>   `Message.externalMessageId @unique` y se descartara. Eso es una **carrera**,
+>   no una garantía: si el `create()` del eco de `handleEchoMessage` commitea
+>   primero, esa función ya evaluó `conversation.status === "BOT"` y ya disparó
+>   el takeover suave (bot mudo para siempre en ese hilo) **antes** de que
+>   nuestro propio `create` choque con `P2002` y se descarte en silencio —
+>   demasiado tarde. `handleEchoMessage` ahora comprueba, ANTES de decidir
+>   sender/takeover, si `msg.externalMessageId` es el `dmExternalMessageId` de
+>   un `CommentRuleLog` (`prisma.commentRuleLog.findFirst`, envuelto en
+>   try/catch — la tabla puede no existir todavía o la consulta puede fallar,
+>   y el eco debe seguir su camino de siempre sin romper la ingesta). Si
+>   coincide: `sender: "BOT"` (no `"ADVISOR"`) y **sin** takeover. Si no
+>   coincide, o si la consulta falla, el comportamiento es exactamente el de
+>   siempre. Tests en `core.test.ts` (describe "Fix 1 — comprobación
+>   determinista contra CommentRuleLog"): eco con log → BOT sin takeover; eco
+>   sin log → ADVISOR + takeover (regresión); consulta que lanza → camino de
+>   siempre.
+> - **Fix 2:** en `linkCommentOrigin`, el `findFirst` + `update` para estampar
+>   `contactId` no era atómico. Dos inbounds casi simultáneos del mismo
+>   remitente (reintento del webhook de Meta, o dos mensajes seguidos) podían
+>   pasar los dos el `findFirst` antes de que cualquiera actualizara. El opener
+>   está protegido por el índice único de `externalMessageId`, pero
+>   `activity.create` no tenía ninguna protección: se creaban dos notas
+>   idénticas "Origen: comentario…" en la cronología del contacto. Se cambió el
+>   estampado a `prisma.commentRuleLog.updateMany({ where: { id: log.id,
+>   contactId: null }, data: { contactId } })` — candado atómico sin
+>   transacción; si `count !== 1`, otro inbound concurrente ya lo reclamó y la
+>   función devuelve `null` sin tocar opener ni actividad. Test: "Fix 2: carrera
+>   — otro inbound concurrente ya reclamó el log (updateMany count 0)...".
+> - **Fix 3:** el mock de `@/lib/db` en `core.test.ts` no declaraba
+>   `commentRuleLog`, así que en cada test no-WhatsApp de `handleInboundMessage`
+>   el hook del Step 5 (real, sin mockear) reventaba con `TypeError` al llegar
+>   a `prisma.commentRuleLog.findFirst` — absorbido en silencio por su propio
+>   try/catch, y sin ninguna aserción que cubriera el hook (una regresión que
+>   rompiera el guard de WhatsApp no hacía fallar ningún test). Se agregó
+>   `commentRuleLog` (`findFirst`/`updateMany`) al mock de `@/lib/db` de
+>   `core.test.ts` y un `vi.mock("@/lib/comments/link-comment-origin", ...)`
+>   con spy — dos aserciones nuevas: se llama con `(contact.id, msg.channel,
+>   msg.senderId)` en un inbound de Instagram/Messenger, y NO se llama en un
+>   inbound de WhatsApp.
+> - **Fix 4:** en `link-comment-origin.test.ts`, `ensureConversation` estaba
+>   mockeado devolviendo siempre `{ id: "conv-1" }` sin importar los
+>   argumentos — nada verificaba lo que se le pasaba. Se agregaron dos tests
+>   que revisan `ensureConversation.mock.calls[0][0]`: `INSTAGRAM` →
+>   `channel: "INSTAGRAM"`, `FACEBOOK` → `channel: "MESSENGER"`, ambos con el
+>   `connectorId` correcto — si alguien invierte el mapeo `CHANNEL`, estos
+>   tests gritan.
+>
+> `core.test.ts` queda en 48 tests (43 originales + 5: 3 de Fix 1 + 2 de Fix 3).
+> `npx vitest run src/lib/messaging/` ya NO imprime `[messaging] linkCommentOrigin
+> falló` en stderr — esa era la señal de que el Fix 3 estaba incompleto.
 
 ---
 

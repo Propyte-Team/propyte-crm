@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const contactFindFirst = vi.fn();
 const logFindFirst = vi.fn();
 const logUpdate = vi.fn();
+const logUpdateMany = vi.fn();
 const messageCreate = vi.fn();
 const conversationUpdate = vi.fn();
 const activityCreate = vi.fn();
@@ -13,6 +14,7 @@ vi.mock("@/lib/db", () => ({
     commentRuleLog: {
       findFirst: (...a: unknown[]) => logFindFirst(...a),
       update: (...a: unknown[]) => logUpdate(...a),
+      updateMany: (...a: unknown[]) => logUpdateMany(...a),
     },
     message: { create: (...a: unknown[]) => messageCreate(...a) },
     conversation: { update: (...a: unknown[]) => conversationUpdate(...a) },
@@ -30,12 +32,13 @@ import { persistOpenerForKnownContact, linkCommentOrigin } from "./link-comment-
 
 beforeEach(() => {
   for (const m of [
-    contactFindFirst, logFindFirst, logUpdate, messageCreate,
+    contactFindFirst, logFindFirst, logUpdate, logUpdateMany, messageCreate,
     conversationUpdate, activityCreate, userFindFirst, ensureConversation,
   ]) m.mockReset();
   ensureConversation.mockResolvedValue({ id: "conv-1", status: "BOT" });
   messageCreate.mockResolvedValue({ id: "msg-1" });
   userFindFirst.mockResolvedValue({ id: "admin-1" });
+  logUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("persistOpenerForKnownContact", () => {
@@ -82,6 +85,28 @@ describe("persistOpenerForKnownContact", () => {
     expect(contactFindFirst.mock.calls[0][0].where).toMatchObject({ messengerPsid: "IGSID-1" });
   });
 
+  // Fix 4 (code review): ensureConversation está mockeado y devuelve siempre
+  // {id: "conv-1"} sin importar los argumentos — nada verificaba lo que se le
+  // pasa. Si alguien invierte el mapeo CHANNEL (INSTAGRAM<->MESSENGER), estos
+  // tests deben gritar.
+  it("Fix 4: INSTAGRAM mapea a channel INSTAGRAM en ensureConversation, con el connectorId correcto", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c-1", assignedToId: "u-1" });
+    await persistOpenerForKnownContact(args);
+    expect(ensureConversation.mock.calls[0][0]).toMatchObject({
+      channel: "INSTAGRAM",
+      connectorId: "conn-ig",
+    });
+  });
+
+  it("Fix 4: FACEBOOK mapea a channel MESSENGER en ensureConversation, con el connectorId correcto", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c-1", assignedToId: "u-1" });
+    await persistOpenerForKnownContact({ ...args, platform: "FACEBOOK" });
+    expect(ensureConversation.mock.calls[0][0]).toMatchObject({
+      channel: "MESSENGER",
+      connectorId: "conn-ig",
+    });
+  });
+
   it("mid repetido (P2002) no revienta: el eco ya lo había guardado", async () => {
     contactFindFirst.mockResolvedValue({ id: "c-1", assignedToId: null });
     messageCreate.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
@@ -93,16 +118,38 @@ describe("linkCommentOrigin", () => {
   it("sin log pendiente para ese remitente no hace nada", async () => {
     logFindFirst.mockResolvedValue(null);
     expect(await linkCommentOrigin("c-1", "INSTAGRAM", "IGSID-1")).toBeNull();
-    expect(logUpdate).not.toHaveBeenCalled();
+    expect(logUpdateMany).not.toHaveBeenCalled();
   });
 
-  it("estampa contactId en el log del comentario", async () => {
+  it("estampa contactId en el log del comentario vía updateMany condicionado a contactId: null", async () => {
     logFindFirst.mockResolvedValue({
       id: "log-1", connectorId: "conn-ig", postId: "MEDIA-1", matchedPhrase: "info",
       dmText: "Hola, info", dmExternalMessageId: "mid-1", dmStatus: "SENT", createdAt: new Date("2026-08-04T10:00:00Z"),
     });
     await linkCommentOrigin("c-1", "INSTAGRAM", "IGSID-1");
-    expect(logUpdate).toHaveBeenCalledWith({ where: { id: "log-1" }, data: { contactId: "c-1" } });
+    expect(logUpdateMany).toHaveBeenCalledWith({
+      where: { id: "log-1", contactId: null },
+      data: { contactId: "c-1" },
+    });
+  });
+
+  // Fix 2 (code review): findFirst + update no era atómico. Dos inbounds casi
+  // simultáneos del mismo remitente (reintento del webhook de Meta, o dos
+  // mensajes seguidos) podían pasar los dos el findFirst antes de que cualquiera
+  // actualizara. El opener está protegido por el índice único de
+  // externalMessageId, pero activity.create no tenía ninguna protección: se
+  // creaban dos notas idénticas "Origen: comentario…" en la cronología del
+  // contacto. El updateMany condicionado a contactId: null es el candado
+  // atómico, sin necesidad de transacción.
+  it("Fix 2: carrera — otro inbound concurrente ya reclamó el log (updateMany count 0) → no crea opener ni actividad, devuelve null", async () => {
+    logFindFirst.mockResolvedValue({
+      id: "log-1", connectorId: "conn-ig", postId: "MEDIA-1", matchedPhrase: "info",
+      dmText: "Hola", dmExternalMessageId: "mid-1", dmStatus: "SENT", createdAt: new Date(),
+    });
+    logUpdateMany.mockResolvedValue({ count: 0 });
+    expect(await linkCommentOrigin("c-1", "INSTAGRAM", "IGSID-1")).toBeNull();
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
   });
 
   it("rellena el opener con el createdAt del log para que quede ANTES de la respuesta", async () => {
@@ -149,6 +196,6 @@ describe("linkCommentOrigin", () => {
     });
     ensureConversation.mockRejectedValue(new Error("boom"));
     await expect(linkCommentOrigin("c-1", "INSTAGRAM", "IGSID-1")).resolves.not.toThrow();
-    expect(logUpdate).toHaveBeenCalled();
+    expect(logUpdateMany).toHaveBeenCalled();
   });
 });

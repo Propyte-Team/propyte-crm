@@ -143,6 +143,19 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
         data: { publicReplyStatus: "FAILED", publicReplyError: errorText(err) },
       });
     }
+  } else {
+    // Sin esto, un publicReplies vacío (pickVariant devuelve null → publicText
+    // "") dejaba el log en PENDING para siempre: ninguna ruta lo actualizaba,
+    // así que quedaba invisible en la UI, ni enviado ni fallido. La validación
+    // de reglas exige al menos una variante, así que no debería pasar — pero
+    // un estado terminal imposible de alcanzar es una trampa.
+    await prisma.commentRuleLog.update({
+      where: { id: log.id },
+      data: {
+        publicReplyStatus: "SKIPPED",
+        publicReplyError: "La regla no tenía respuesta pública configurada (publicReplies vacío)",
+      },
+    });
   }
 
   try {

@@ -84,6 +84,10 @@ async function findContactByChannel(channel: MessagingChannel, senderId: string)
  * - Registra OUTBOUND `sender: "ADVISOR"` (humano externo, no BOT) y aplica el
  *   takeover suave si la conversación estaba en BOT — mismo mecanismo que el
  *   envío manual del inbox (app/api/conversations/[id]/messages/route.ts).
+ * - EXCEPCIÓN: si el mid del eco es el `dmExternalMessageId` de un
+ *   `CommentRuleLog`, lo mandó el bot (una regla de comentarios), no un
+ *   humano — se registra `sender: "BOT"` y NO se aplica el takeover. Ver la
+ *   comprobación más abajo y su comentario: por qué existe.
  * - NO dispara side-effects de inbound (notificación, botRespond, actividad IN,
  *   lastInboundAt, unreadCount). SÍ marca los SLA timers como cumplidos, igual
  *   que el envío saliente del dispatcher (un humano respondió al lead).
@@ -105,6 +109,31 @@ async function handleEchoMessage(msg: IncomingMessage) {
     data: { lastMessageAt: new Date() },
   });
 
+  // Por qué existe esta comprobación: la defensa contra el eco del propio DM de
+  // una regla de comentarios era escribir NOSOTROS el opener con el message_id de
+  // la Send API (persistOpenerForKnownContact → writeOpener, en
+  // lib/comments/link-comment-origin.ts), para que el eco de Meta chocara con
+  // Message.externalMessageId @unique y se descartara. Eso es una CARRERA, no una
+  // garantía: si el create() del eco de ABAJO commitea primero, ya se evaluó
+  // conversation.status === "BOT" y ya se disparó el takeover; nuestro propio
+  // create llega después, choca con P2002 y se descarta en silencio — demasiado
+  // tarde, el bot ya se calló. Esta comprobación es determinista y no depende de
+  // quién gane la carrera de commits: si el mid del eco es el de un DM que salió
+  // por una regla, se sabe ANTES de decidir sender/takeover. try/catch: la tabla
+  // puede no existir todavía (migración manual pendiente) o la consulta puede
+  // fallar por cualquier otra razón — el eco debe seguir el camino de siempre,
+  // nunca romper la ingesta.
+  let fromCommentRule = false;
+  try {
+    const log = await prisma.commentRuleLog.findFirst({
+      where: { dmExternalMessageId: msg.externalMessageId },
+      select: { id: true },
+    });
+    fromCommentRule = !!log;
+  } catch (err) {
+    console.warn(`[messaging] chequeo de commentRuleLog en echo falló (sigue como eco normal):`, err);
+  }
+
   let message;
   try {
     message = await prisma.message.create({
@@ -118,7 +147,7 @@ async function handleEchoMessage(msg: IncomingMessage) {
         mediaUrl: msg.mediaUrl ?? null,
         status: "DELIVERED",
         conversationId: conversation.id,
-        sender: "ADVISOR",
+        sender: fromCommentRule ? "BOT" : "ADVISOR",
         aiGenerated: false,
       },
     });
@@ -131,7 +160,9 @@ async function handleEchoMessage(msg: IncomingMessage) {
 
   // Takeover suave (réplica del envío manual del inbox): alguien del equipo ya
   // respondió desde otra superficie → el bot suelta el hilo y no habla encima.
-  if (conversation.status === "BOT") {
+  // Si el eco es el DM de una regla de comentarios, lo mandó el bot, no un
+  // humano: la conversación se queda exactamente como está.
+  if (!fromCommentRule && conversation.status === "BOT") {
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { status: "HUMAN", controlledById: contact.assignedToId ?? null, takeoverAt: new Date() },

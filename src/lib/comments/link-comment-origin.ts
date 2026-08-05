@@ -112,7 +112,18 @@ export async function linkCommentOrigin(
   });
   if (!log) return null;
 
-  await prisma.commentRuleLog.update({ where: { id: log.id }, data: { contactId } });
+  // Candado atómico sin transacción: dos inbounds casi simultáneos del mismo
+  // remitente (reintento del webhook de Meta, o dos mensajes seguidos) pueden
+  // pasar los dos el findFirst de arriba antes de que cualquiera actualice. El
+  // opener queda protegido por el índice único de externalMessageId, pero
+  // activity.create no tenía ninguna protección: se creaban dos notas
+  // idénticas "Origen: comentario…" en la cronología del contacto. El
+  // updateMany condicionado a contactId: null solo puede "ganar" una vez.
+  const claimed = await prisma.commentRuleLog.updateMany({
+    where: { id: log.id, contactId: null },
+    data: { contactId },
+  });
+  if (claimed.count !== 1) return null; // otro inbound concurrente ya lo reclamó
 
   // Los dos pasos de abajo son cosméticos frente al estampado: si fallan, el
   // vínculo ya quedó hecho y no se pierde la trazabilidad.

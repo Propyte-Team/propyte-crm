@@ -253,4 +253,25 @@ describe("handleComment — envíos", () => {
     persistOpener.mockRejectedValue(new Error("boom"));
     expect((await handleComment(comment())).status).toBe("procesado");
   });
+
+  // Fix 5 (code review, detectado por el implementer de la Task 6): si
+  // publicReplies estuviera vacío, pickVariant devuelve null, publicText queda
+  // "" y el `if (publicText)` salta la respuesta pública — pero el log se
+  // quedaba con publicReplyStatus: "PENDING" SIN ninguna ruta que lo
+  // actualizara: invisible en la UI, ni enviado ni fallido. La validación de
+  // reglas exige al menos una variante, así que no debería pasar, pero un
+  // estado terminal imposible de alcanzar es una trampa.
+  it("Fix 5: publicReplies vacío deja el log en SKIPPED (no PENDING eterno), sin llamar a replyToComment", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, publicReplies: [] }]);
+    const out = await handleComment(comment());
+    expect(out.status).toBe("procesado");
+    expect(replyToComment).not.toHaveBeenCalled();
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        publicReplyStatus: "SKIPPED",
+        publicReplyError: expect.stringContaining("respuesta pública"),
+      })
+    );
+  });
 });
