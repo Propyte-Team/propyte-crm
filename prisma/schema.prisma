@@ -715,6 +715,8 @@ model User {
   goals        Goal[] @relation("UserGoals")
   goalsCreated Goal[] @relation("GoalsCreated")
 
+  sendersBlocked BlockedSender[] @relation("SendersBlockedBy")
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -786,6 +788,7 @@ model Contact {
   units       Unit[]           @relation("ReservedByContact")
   messages    Message[]
   commentLogs CommentRuleLog[]
+  blockedSenders BlockedSender[]
 
   // Relaciones rebuild F1
   dossier          ContactDossier?
@@ -2722,5 +2725,37 @@ model CommentRuleLog {
   @@index([ruleId, publicReplyStatus])
   @@index([createdAt])
   @@map("comment_rule_logs")
+  @@schema("propyte_crm")
+}
+
+/// Remitentes bloqueados al marcar una conversación como spam desde el Inbox.
+/// Una fila por remitente: desbloquear y volver a bloquear reutiliza la fila
+/// (unblockedAt vuelve a null) en vez de duplicarla.
+/// Migración: prisma/migrations-manual/2026-08-05-blocked-senders.sql (aplicada 2026-08-05).
+model BlockedSender {
+  id          String         @id @default(uuid())
+  channel     MessageChannel
+  identifier  String
+  reason      String?
+  blockedById String?
+  contactId   String?
+
+  /// Estado del bloqueo en Meta: la limpieza del CRM va en transacción, esto es
+  /// best-effort y reintentable (mismo patrón que CommentRuleLog.dmStatus).
+  metaBlockStatus CommentActionStatus @default(PENDING)
+  metaSpamStatus  CommentActionStatus @default(PENDING)
+  metaError       String?
+
+  createdAt   DateTime  @default(now())
+  unblockedAt DateTime?
+
+  blockedBy User?    @relation("SendersBlockedBy", fields: [blockedById], references: [id], onDelete: SetNull)
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([channel, identifier])
+  @@index([unblockedAt])
+  @@index([contactId])
+  @@index([createdAt])
+  @@map("blocked_senders")
   @@schema("propyte_crm")
 }
