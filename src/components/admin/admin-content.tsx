@@ -43,6 +43,7 @@ import { IntegrationsTab } from "./integrations-tab";
 import { BotConfigTab } from "./bot-config-tab";
 import { PlaybookTab, type PlaybookData } from "./playbook-tab";
 import { BotAgentsTab, type AgentProfileRow } from "./bot-agents-tab";
+import { CommentRulesTab } from "./comments/comment-rules-tab";
 import type { BotTonePreset } from "@prisma/client";
 
 // Configuracion de colores para estados de usuario
@@ -119,6 +120,7 @@ const ADMIN_TAB_TITLES: Record<string, string> = {
   bot: "Bot",
   playbook: "Playbook de calificación",
   botAgents: "Agentes conversacionales",
+  comments: "Reglas de comentarios",
 };
 const DEFAULT_ADMIN_TAB = "users";
 
@@ -710,6 +712,9 @@ export function AdminContent({
             playbooks={playbooks.map((pb) => ({ id: pb.id, name: pb.name }))}
           />
       )}
+
+      {/* Seccion: Reglas de comentarios sociales (palabra clave -> respuesta publica + DM) */}
+      {activeTab === "comments" && <CommentRulesTab />}
 
       {/* Dialog de usuario */}
       <UserFormDialog

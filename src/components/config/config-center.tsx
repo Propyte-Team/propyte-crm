@@ -12,7 +12,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Workflow, Users, Database, Bot, Plug, MessageSquare, UserCircle,
   FileText, Eye, ArrowUpRight, ShieldCheck, DollarSign, ClipboardCheck,
-  GitBranch, ListChecks, CopyCheck, KeyRound, type LucideIcon,
+  GitBranch, ListChecks, CopyCheck, KeyRound, MessageCircle, type LucideIcon,
 } from "lucide-react";
 import { AutomationSection } from "./automation-section";
 import { TeamsSection } from "./teams-section";
@@ -80,6 +80,7 @@ const GROUPS: Array<{ title: string; cards: CardDef[] }> = [
       { href: "/admin?tab=bot", icon: Bot, title: "Bot: tono y comportamiento", items: ["Encendido y canales", "Tono elegible (4 presets)", "Autonomía L0-L2", "Escalamiento"] },
       { href: "/admin?tab=playbook", icon: ListChecks, title: "Playbook de calificación", items: ["Tareas ordenadas", "Auto-llenado del contacto", "Activar/desactivar"] },
       { href: "/admin?tab=botAgents", icon: Bot, title: "Agentes conversacionales", items: ["Persona del bot por segmento", "Clasificador por tipo de contacto", "Identidad + playbook por segmento", "Clientes / Brokers / Reclutamiento"] },
+      { href: "/admin?tab=comments", icon: MessageCircle, title: "Reglas de comentarios", items: ["Palabra clave → respuesta pública", "DM privado automático", "Instagram y Facebook", "Historial con reintento"] },
     ],
   },
   {
