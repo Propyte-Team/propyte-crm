@@ -41,6 +41,11 @@ vi.mock("./link-comment-origin", () => ({
   persistOpenerForKnownContact: (...a: unknown[]) => persistOpener(...a),
 }));
 
+const isSenderBlocked = vi.fn();
+vi.mock("@/lib/moderation/is-blocked", () => ({
+  isSenderBlocked: (...a: unknown[]) => isSenderBlocked(...a),
+}));
+
 import { handleComment } from "./handle-comment";
 
 const IG_CONNECTOR = {
@@ -79,6 +84,9 @@ beforeEach(() => {
     ruleFindMany, logFindUnique, logFindFirst, logCreate, logUpdate, logCount,
     resolveByIg, resolveByPage, getToken, replyToComment, sendPrivateReply, persistOpener,
   ]) m.mockReset();
+
+  isSenderBlocked.mockReset();
+  isSenderBlocked.mockResolvedValue(false);
 
   resolveByIg.mockResolvedValue(IG_CONNECTOR);
   resolveByPage.mockResolvedValue(null);
@@ -369,5 +377,37 @@ describe("handleComment — Facebook camino feliz", () => {
       expect.any(String)
     );
     expect(sendPrivateReply).toHaveBeenCalledWith("TOKEN", "FBCOMMENT-1", expect.any(String));
+  });
+});
+
+describe("handleComment — autor bloqueado", () => {
+  it("no responde en público ni manda DM", async () => {
+    resolveByIg.mockResolvedValue(IG_CONNECTOR);
+    isSenderBlocked.mockResolvedValue(true);
+
+    const res = await handleComment(comment());
+
+    expect(res.status).toBe("bloqueado");
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(sendPrivateReply).not.toHaveBeenCalled();
+    expect(logCreate).not.toHaveBeenCalled();
+  });
+
+  it("consulta la lista con el canal INSTAGRAM y el authorId", async () => {
+    resolveByIg.mockResolvedValue(IG_CONNECTOR);
+    isSenderBlocked.mockResolvedValue(true);
+
+    await handleComment(comment({ authorId: "IGSID-42" }));
+
+    expect(isSenderBlocked).toHaveBeenCalledWith("INSTAGRAM", "IGSID-42");
+  });
+
+  it("un comentario de Facebook consulta el canal MESSENGER", async () => {
+    resolveByPage.mockResolvedValue({ id: "conn-fb", provider: "MESSENGER", config: { pageId: "PAGE-1" } });
+    isSenderBlocked.mockResolvedValue(true);
+
+    await handleComment(comment({ platform: "FACEBOOK", accountId: "PAGE-1", authorId: "PSID-7" }));
+
+    expect(isSenderBlocked).toHaveBeenCalledWith("MESSENGER", "PSID-7");
   });
 });

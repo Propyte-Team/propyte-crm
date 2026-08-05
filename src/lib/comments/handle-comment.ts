@@ -14,6 +14,7 @@ import {
 export type CommentOutcome =
   | "sin-conector"
   | "propio"
+  | "bloqueado"
   | "anidado"
   | "duplicado"
   | "sin-match"
@@ -49,6 +50,15 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
   const config = (connector.config ?? {}) as { pageId?: string; igBusinessId?: string };
   if (comment.authorId === config.igBusinessId || comment.authorId === config.pageId) {
     return { status: "propio" };
+  }
+
+  // Autor marcado como spam: ni respuesta pública ni DM. Sin esto seguiría
+  // disparando reglas aunque tenga el DM bloqueado.
+  const { isSenderBlocked } = await import("@/lib/moderation/is-blocked");
+  const blockChannel = comment.platform === "INSTAGRAM" ? "INSTAGRAM" : "MESSENGER";
+  if (await isSenderBlocked(blockChannel, comment.authorId)) {
+    console.warn(`[comments] autor bloqueado (${comment.platform}): ${comment.authorId} — se ignora`);
+    return { status: "bloqueado" };
   }
 
   // Instagram no acepta responder a una respuesta: solo primer nivel.
