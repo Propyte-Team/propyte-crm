@@ -1447,8 +1447,15 @@ Y añade el import arriba del archivo:
 import { canMarkSpam } from "@/lib/moderation/roles";
 ```
 
-`userRole` ya llega como prop al componente desde `src/app/(dashboard)/inbox/page.tsx`, no hay
-que pasar nada nuevo.
+**Ojo con `userRole`:** la firma del componente (línea 177) es
+`export function InboxView({ userId }: { userId: string; userRole: string })` — la prop está
+**tipada pero no desestructurada**, así que hoy no existe como variable dentro del componente.
+`src/app/(dashboard)/inbox/page.tsx` ya la pasa, así que basta con añadirla a la
+desestructuración:
+
+```tsx
+export function InboxView({ userId, userRole }: { userId: string; userRole: string }) {
+```
 
 - [ ] **Step 4: Verificar que compila y que la suite sigue verde**
 
