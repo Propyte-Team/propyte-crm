@@ -5,12 +5,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign, Paperclip, FileText, Zap,
+  Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign, Paperclip, FileText, Zap, ShieldBan,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/constants";
 import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/messaging/media";
 import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
+import { canMarkSpam } from "@/lib/moderation/roles";
 
 interface ConversationListItem {
   id: string;
@@ -174,7 +175,7 @@ function ContactAvatar({ url, size }: { url: string | null; size: number }) {
   );
 }
 
-export function InboxView({ userId }: { userId: string; userRole: string }) {
+export function InboxView({ userId, userRole }: { userId: string; userRole: string }) {
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
@@ -340,6 +341,40 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
       const data = await res.json().catch(() => ({}));
       alert(data.error ?? "Error");
     }
+  }
+
+  async function markSpam() {
+    if (!selectedId || !thread) return;
+    const nombre = `${thread.contact.firstName} ${thread.contact.lastName}`.trim();
+    const ok = confirm(
+      `¿Marcar como spam la conversación con ${nombre}?\n\n` +
+        `• Se bloquea a esta persona en Meta: no podrá escribirte ni ver tu perfil, publicaciones ni historias.\n` +
+        `• La conversación se archiva y el bot deja de responderle.\n` +
+        `• El contacto se da de baja y sus datos personales se borran.\n\n` +
+        `Los datos personales NO se pueden recuperar. El bloqueo sí se puede deshacer.`
+    );
+    if (!ok) return;
+
+    const res = await fetch(`/api/conversations/${selectedId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mark_spam" }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      alert(data.error ?? "No se pudo marcar como spam");
+      return;
+    }
+    // El CRM ya está limpio aunque Meta haya fallado: se avisa sin dar marcha atrás.
+    if (data.data?.meta?.blockStatus === "FAILED") {
+      alert(
+        `Limpiado en el CRM, pero Meta rechazó el bloqueo:\n\n${data.data.meta.error}\n\n` +
+          `Esta persona ya no puede volver a entrar al CRM. Puedes reintentar el bloqueo desde Admin.`
+      );
+    }
+    setSelectedId(null);
+    await loadList();
   }
 
   async function sendMessage() {
@@ -519,6 +554,15 @@ export function InboxView({ userId }: { userId: string; userRole: string }) {
                 <button className="btn-secondary !py-1.5 !px-2 text-[12px]" title="Cerrar conversación" onClick={() => doAction("close")}>
                   <X className="h-3.5 w-3.5" />
                 </button>
+                {canMarkSpam(userRole) && (
+                  <button
+                    className="btn-secondary !py-1.5 !px-2 text-[12px]"
+                    title="Marcar como spam: bloquea en Meta y da de baja el contacto"
+                    onClick={markSpam}
+                  >
+                    <ShieldBan className="h-3.5 w-3.5" style={{ color: "var(--color-error)" }} />
+                  </button>
+                )}
               </div>
             </div>
 
