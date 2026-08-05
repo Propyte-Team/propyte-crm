@@ -31,6 +31,21 @@ describe("renderTemplate", () => {
     expect(renderTemplate("{{usuario}}, bienvenido a Propyte!", { usuario: null }))
       .toBe("bienvenido a Propyte!");
   });
+
+  it("sin usuario, multilinea: conserva la sangria intencional de otros parrafos", () => {
+    expect(renderTemplate("Hola {{usuario}},\n\n  Gracias por tu comentario.", { usuario: null }))
+      .toBe("Hola,\n\n  Gracias por tu comentario.");
+  });
+
+  it("sin usuario, placeholder solo en la primera linea: no deja lineas en blanco al inicio", () => {
+    expect(renderTemplate("{{usuario}}\n\nSegunda linea", { usuario: null }))
+      .toBe("Segunda linea");
+  });
+
+  it("con usuario, multilinea: solo sustituye el nombre, conserva el espaciado intencional", () => {
+    expect(renderTemplate("Hola {{usuario}},\n\n  Gracias por tu comentario.", { usuario: "ana" }))
+      .toBe("Hola ana,\n\n  Gracias por tu comentario.");
+  });
 });
 
 describe("pickVariant", () => {
