@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const session = { user: { id: "u1", role: "MARKETING" } };
+const session = { user: { id: "u1", role: "ADMIN" } };
 vi.mock("@/lib/auth/session", () => ({ getServerSession: () => Promise.resolve(session) }));
 
 const ruleFindMany = vi.fn();
@@ -34,7 +34,9 @@ beforeEach(() => {
   ruleFindMany.mockReset();
   logCount.mockReset();
   logCount.mockResolvedValue(0);
-  session.user.role = "MARKETING";
+  // Fix 5 (code review): MARKETING salió de ALLOWED_ROLES, pareado con el
+  // guard de /admin/page.tsx. El caso feliz se prueba con un rol permitido.
+  session.user.role = "ADMIN";
 });
 
 describe("POST /api/admin/comment-rules/test", () => {

@@ -7,7 +7,10 @@ import { getServerSession } from "@/lib/auth/session";
 import { matchRule } from "@/lib/comments/match";
 import { renderTemplate, pickVariant } from "@/lib/comments/template";
 
-const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
+// Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
+// GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
+// no debe conceder más acceso del que esa página deja ver.
+const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 const schema = z.object({
   connectorId: z.string().min(1),

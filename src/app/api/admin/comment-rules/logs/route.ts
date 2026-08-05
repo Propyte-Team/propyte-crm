@@ -3,8 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 
-const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
+// Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
+// GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
+// no debe conceder más acceso del que esa página deja ver.
+const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 const PAGE_SIZE_MAX = 100;
+
+/** `Number("abc")` es NaN, y `Math.max`/`Math.min` con un NaN de por medio dan NaN:
+ * Prisma recibiría `take: NaN` y lanzaría, cayendo al catch genérico como 500. */
+function parsePositiveInt(raw: string | null, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession();
@@ -15,8 +25,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const ruleId = url.searchParams.get("ruleId");
   const onlyFailed = url.searchParams.get("failed") === "1";
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
-  const pageSize = Math.min(PAGE_SIZE_MAX, Number(url.searchParams.get("pageSize") ?? 25));
+  const page = parsePositiveInt(url.searchParams.get("page"), 1);
+  const pageSize = Math.min(PAGE_SIZE_MAX, parsePositiveInt(url.searchParams.get("pageSize"), 25));
 
   const where = {
     ...(ruleId ? { ruleId } : {}),

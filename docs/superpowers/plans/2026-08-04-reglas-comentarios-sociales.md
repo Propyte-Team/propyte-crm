@@ -2977,6 +2977,23 @@ git add src/server/comment-rules.schema.ts src/app/api/admin/comment-rules/
 git commit -m "feat(comments): API CRUD de reglas con aviso de colision de frases"
 ```
 
+> **Nota (code review post-Task 9 — Fix 5, guard de roles):** el snippet de
+> arriba (y el de Task 10) trae `ALLOWED_ROLES = ["ADMIN", "DIRECTOR",
+> "GERENTE", "MARKETING"]`, copiado del guard de `/api/admin/connectors` sin
+> revisar contra la página que expone esta feature. El spec dice "guard de rol
+> igual al del resto de `/admin`", pero `src/app/(dashboard)/admin/page.tsx`
+> solo permite `ADMIN`, `DIRECTOR`, `GERENTE` — la contradicción viene de este
+> plan, no de un cambio de decisión posterior. Con `MARKETING` en la lista, un
+> usuario con ese rol tenía acceso pleno por API (crear, editar, borrar reglas
+> y **reintentar publicaciones reales**) mientras la página lo redirigía a
+> `/dashboard` sin dejarlo ver nada. Se quitó `MARKETING` de `ALLOWED_ROLES` en
+> las 5 rutas de `comment-rules` (`route.ts`, `[id]/route.ts`, `logs/route.ts`,
+> `logs/[id]/retry/route.ts`, `test/route.ts`), con un comentario de una línea
+> en cada una explicando el pareo intencional con `/admin/page.tsx`. El
+> `test/route.test.ts` que ya existía usaba `role: "MARKETING"` como el rol
+> "feliz" por defecto — se cambió a `"ADMIN"` (el 403 con `"ASESOR"` no
+> cambió).
+
 ---
 
 ## Task 10: API de log, reintento y probador
@@ -3319,6 +3336,68 @@ Expected: `tsc` con **cero errores** (exit 0); todos los tests de comentarios en
 git add src/app/api/admin/comment-rules/
 git commit -m "feat(comments): API de log, reintento manual y probador en seco"
 ```
+
+> **Nota (code review posterior, Fix 1-7 — 2026-08-05):** el reintento del
+> snippet de arriba era el único endpoint de esta feature con efectos externos
+> reales (publica en el post y manda un DM) y el único sin test. Sin ningún
+> cambio de diseño, el code review encontró que la implementación no cerraba
+> lo que el propio diseño exigía:
+>
+> - **Fix 1:** `leadConnector.findFirst` filtraba por `deletedAt: null` pero
+>   NO por `status: "ACTIVE"` — a diferencia de
+>   `resolveConnectorByPageId`/`ByIgBusinessId` en `social-accounts.ts`, que sí
+>   filtran por `ACTIVE`. Pausar el conector es el interruptor de apagado del
+>   sistema; sin este filtro, pausar la cuenta no evitaba que el reintento
+>   publicara igual. Se agregó `status: "ACTIVE"` al `where`, 400 con mensaje
+>   claro si no hay conector activo.
+> - **Fix 2:** dos clicks casi simultáneos (o dos pestañas) pasaban ambos el
+>   chequeo `!== "FAILED"` antes de que el primero actualizara → dos
+>   respuestas públicas y dos DMs duplicados. Se agregó un candado atómico sin
+>   transacción, mismo patrón que `persistOpenerForKnownContact`/
+>   `linkCommentOrigin` en `link-comment-origin.ts`: antes de llamar a Graph,
+>   un `updateMany` pone la acción en `PENDING` condicionado a que el campo
+>   siga en el estado que justificó el reintento; si `count` sale 0, otro
+>   reintento ya la tomó. La pública y el DM se reclaman por separado (cada
+>   `updateMany` solo mira su propio campo), porque uno puede estar `FAILED`
+>   mientras el otro ya está `SENT`. Si no se reclama ninguna, 409.
+> - **Fix 3:** un log en `PENDING` (worker muerto a mitad de la llamada a
+>   Graph — timeout, restart, OOM) no tenía salida: la idempotencia por
+>   `externalCommentId` impide que Meta lo reprocese, y el reintento solo
+>   aceptaba `FAILED`. Se amplió a `FAILED` **o** `PENDING`, con el mismo
+>   candado del Fix 2. Riesgo documentado en el código y en el spec (tabla de
+>   riesgos aceptados): si el proceso original sí había llamado a Graph antes
+>   de morir, este reintento puede duplicar el envío. Se acepta como mal menor
+>   frente a dejar el comentario mudo para siempre.
+> - **Fix 4:** era la única acción de esta superficie con efectos externos
+>   reales y la única sin `auditLog`. Se agregó `auditLog.create` (`action:
+>   "UPDATE"`, `entity: "CommentRuleLog"`, `changes` con qué acción se
+>   reintentó, si venía de `PENDING`, y con qué resultado), con `.catch(() =>
+>   {})` como el resto del repo.
+> - **Fix 5:** ver la nota de code review al final de Task 9 — se quitó
+>   `MARKETING` de `ALLOWED_ROLES` también en este archivo.
+> - **Fix 6 (menor, en `logs/route.ts`):** `pageSize=abc` → `Number("abc")` es
+>   `NaN` → `Math.min(100, NaN)` es `NaN` → Prisma recibe `take: NaN` y lanza →
+>   500 genérico. `page` tenía el mismo problema aunque no se veía a simple
+>   vista: `Math.max(1, NaN)` también es `NaN` (JS, no `1`). Se agregó
+>   `parsePositiveInt` con `Number.isFinite` y default.
+> - **Fix 7 (menor):** `getSocialPageToken` (vía `readCredentials`) necesita el
+>   conector COMPLETO — el blob `credentials` cifrado es justo el campo que
+>   hay que descifrar — así que el `findFirst` sin `select` del snippet de
+>   arriba ya era correcto; se dejó un comentario explicándolo para que nadie
+>   lo "optimice" con un `select` a medias más adelante.
+>
+> Tests nuevos en `logs/[id]/retry/route.test.ts` (11, antes 0): texto exacto
+> de `publicText`/`dmText` sin reconstruir, DM-only cuando la pública ya está
+> `SENT`, 404, 400 sin nada que reintentar, `PENDING` sí es reintentable
+> (Fix 3), 400 con conector pausado (Fix 1), 409 con el candado perdido y con
+> candados independientes (Fix 2), 403, `auditLog` con el resultado (Fix 4), y
+> que un fallo de Graph tras reclamar el candado vuelve a `FAILED` (no se queda
+> `PENDING` colgado). Se agregó también `[id]/route.test.ts` (6 tests) como
+> regresión de que la colisión de frases en PATCH ya excluía la propia regla
+> por `id: { not: current.id }` — eso no era un bug, solo no tenía test.
+>
+> `npx vitest run src/app/api/admin/comment-rules/` queda en 33 tests (antes
+> ~16 sin retry ni `[id]`). Suite completa: 1271 (1254 + 17).
 
 ---
 

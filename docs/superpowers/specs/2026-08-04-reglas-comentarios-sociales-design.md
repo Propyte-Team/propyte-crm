@@ -308,8 +308,9 @@ a Meta: imposible publicar por accidente desde el probador.
 
 **Log**: tabla paginada con fecha, cuenta, publicación, autor, comentario, regla,
 estado público, estado DM, motivo del error y contacto vinculado. Filtro por regla
-y estado. **Reintentar** en los fallidos. Cada fila deja copiar el ID de la
-publicación; el link directo al post solo se ofrece en Facebook, porque para
+y estado. **Reintentar** en los fallidos y en los que quedaron atascados en
+`PENDING` (código review, 2026-08-05: ver más abajo). Cada fila deja copiar el ID
+de la publicación; el link directo al post solo se ofrece en Facebook, porque para
 Instagram el webhook manda el `media_id` y la URL pública usa un *shortcode*
 distinto que Graph no permite derivar.
 
@@ -320,7 +321,7 @@ distinto que Graph no permite derivar.
 | `/api/admin/comment-rules` | GET, POST | listar, crear |
 | `/api/admin/comment-rules/[id]` | PATCH, DELETE | editar, pausar, borrar (soft) |
 | `/api/admin/comment-rules/logs` | GET | log con filtros y paginación |
-| `/api/admin/comment-rules/logs/[id]/retry` | POST | reintentar acción fallida |
+| `/api/admin/comment-rules/logs/[id]/retry` | POST | reintentar acción `FAILED` o `PENDING` huérfana (candado atómico + auditLog) |
 | `/api/admin/comment-rules/test` | POST | dry-run del matcher |
 
 Validación con Zod en `src/server/comment-rules.schema.ts`, siguiendo el patrón
@@ -348,6 +349,19 @@ Consecuencia asumida: una acción `FAILED` **no se reintenta sola**. Ese es el
 motivo de que el botón *Reintentar* del log exista, y de que el motivo del error
 se guarde textual y no como un genérico — es lo único con lo que Luis puede
 decidir si vale la pena reintentar o si la ventana ya venció.
+
+**Actualización (code review, 2026-08-05):** el reintento también acepta un log
+en `PENDING` — el caso de un worker que murió a mitad de la llamada a Graph
+(timeout, restart, OOM). Sin esto, la idempotencia por `externalCommentId`
+impedía que Meta lo reprocesara y el reintento solo aceptaba `FAILED`, así que
+ese comentario quedaba mudo para siempre sin forma de repararlo desde la UI.
+Ver el riesgo aceptado correspondiente en la tabla de abajo. El reintento
+también quedó protegido por un candado atómico (`updateMany` condicionado al
+estado que justificó el reintento, mismo patrón que
+`linkCommentOrigin`/`persistOpenerForKnownContact`) para que dos clicks casi
+simultáneos no dupliquen la publicación y el DM, y por un filtro
+`status: "ACTIVE"` en el conector, para que pausar la cuenta también apague el
+reintento.
 
 ## Pruebas
 
@@ -399,3 +413,4 @@ el código no hace nada. Para encenderla, en la app *CRM Propyte* de Meta:
 |---|---|---|
 | **Carrera de cuota entre webhooks distintos.** El índice `(connectorId, postId, authorId)` no es único (no puede serlo: el caso "cuota consumida" inserta a propósito una segunda fila `SKIPPED`). Dos comentarios distintos de la misma persona en el mismo post, entregados por Meta en **dos peticiones HTTP separadas** casi simultáneas, pueden pasar ambos el chequeo de cuota antes de que cualquiera cree su log → se responde dos veces en público. Dentro de un mismo batch no pasa (el handler procesa los comentarios en serie). | Cerrarlo requeriría un advisory lock de Postgres alrededor del check-then-create. | Probabilidad baja (exige dos requests HTTP casi simultáneas del webhook de Meta). Consecuencia visible pero benigna: una respuesta pública de más, sin daño de datos ni destinatario equivocado. |
 | **Presupuesto de tiempo del batch.** El webhook tiene `maxDuration = 30` y cada comentario hace hasta dos llamadas a Graph de 8 s de timeout cada una, en serie (`TIMEOUT_MS` en `src/lib/comments/graph.ts`). Con un batch de 2+ comentarios en el peor caso (Graph colgado en ambas llamadas de cada uno) la función puede morir a mitad del bucle, y los comentarios que faltaban se pierden **sin log y sin rastro**, porque el log de cada uno se crea solo cuando le toca su iteración. | Si se vuelve real: lanzar la respuesta pública y el DM con `Promise.allSettled` (baja el peor caso por comentario de ~16 s a ~8 s), o mover el bucle de comentarios a la cola de acciones. | Probabilidad baja: requiere que Graph cuelgue (llegue al timeout), no que simplemente falle rápido con error. |
+| **Reintento manual sobre un log en `PENDING` puede duplicar el envío.** El reintento (`logs/[id]/retry`) acepta `PENDING` además de `FAILED` para poder reparar un worker que murió a mitad de la llamada a Graph. Si ese worker SÍ llegó a llamar a Graph con éxito antes de morir (murió justo al escribir el resultado), el reintento no tiene forma de distinguirlo de uno que nunca llamó, y puede publicar el comentario o mandar el DM por segunda vez. | Ninguna estructural: Meta no expone un token de idempotencia en `POST /{comment_id}/replies` ni en `POST /me/messages`. El candado atómico (Fix 2) evita que DOS reintentos concurrentes disparen esto, pero no protege contra el propio proceso original habiendo tenido éxito. | Es peor dejar el comentario de un cliente real mudo para siempre (la alternativa de no aceptar `PENDING`) que arriesgar una duplicación ocasional; el estado previo queda visible en el log y en `auditLog.changes.resumedFromPending` para que quien reintenta lo sepa. |
