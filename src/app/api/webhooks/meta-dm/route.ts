@@ -1,7 +1,10 @@
 // Webhook de Instagram DM + Facebook Messenger (Meta Graph API).
 // Configurar en developers.facebook.com → app → Webhooks:
 //   Callback URL: https://crm.propyte.com/api/webhooks/meta-dm
-//   Verify token: META_DM_VERIFY_TOKEN · Suscribir field `messages` para objetos instagram y page.
+//   Verify token: META_DM_VERIFY_TOKEN
+//   Campos a suscribir: `messages` (DM) y `comments`/`feed` (comentarios) para
+//   los objetos instagram y page. Meta permite UNA callback URL por objeto, así
+//   que ambos tipos llegan aquí y se bifurcan por la forma del payload.
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { handleInboundMessage } from "@/lib/messaging/core";
@@ -9,6 +12,7 @@ import { parseInstagramWebhook } from "@/lib/messaging/adapters/instagram";
 import { parseMessengerWebhook } from "@/lib/messaging/adapters/messenger";
 import { resolveConnectorByIgBusinessId, resolveConnectorByPageId } from "@/lib/messaging/social-accounts";
 import { recordHit } from "@/lib/messaging/webhook-debug"; // [TEMPORAL] diagnóstico
+import { parseCommentWebhook } from "@/lib/comments/parse";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -122,10 +126,48 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Comentarios (entry[].changes): camino independiente del de DMs. Un fallo
+  // aquí nunca debe afectar lo que ya se ingirió arriba.
+  const parsed = parseCommentWebhook(body);
+
+  // `parsed.discarded`: SÍ eran comentarios pero les faltó un campo
+  // obligatorio (típicamente `from`, cuando Meta lo omite porque el
+  // comentarista bloqueó la Página, falta pages_read_engagement, o la cuenta
+  // fue borrada). parseCommentWebhook es pura y no loguea; este es el único
+  // lugar donde se deja rastro de un comentario de cliente real que se cayó.
+  for (const d of parsed.discarded) {
+    console.warn(
+      `[meta-dm] comentario descartado (${d.reason}) platform=${d.platform} account=${d.accountId} comment=${d.externalCommentId ?? "?"}`
+    );
+  }
+
+  let commentsProcessed = 0;
+  for (const c of parsed.comments) {
+    try {
+      const { handleComment } = await import("@/lib/comments/handle-comment");
+      const outcome = await handleComment(c);
+      commentsProcessed++;
+      results.push({ comment: c.externalCommentId, platform: c.platform, status: outcome.status });
+    } catch (err) {
+      results.push({
+        comment: c.externalCommentId,
+        platform: c.platform,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      console.error("[meta-dm] comentario:", err);
+    }
+  }
+
   recordHit({
     at: new Date().toISOString(), object: body.object, sigHeader: !!sigHeader, sigValid,
     entryCount: Array.isArray(body.entry) ? body.entry.length : 0,
     parsed: messages.length, processed, results, rawSnippet: rawBody.slice(0, 500),
   });
-  return NextResponse.json({ ok: true, processed });
+  return NextResponse.json({
+    ok: true,
+    processed,
+    comments: commentsProcessed,
+    discarded: parsed.discarded.length,
+  });
 }

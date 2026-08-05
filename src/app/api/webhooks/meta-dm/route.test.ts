@@ -4,12 +4,16 @@ const handleInboundMessage = vi.fn();
 const resolveByIg = vi.fn();
 const resolveByPage = vi.fn();
 const botRespond = vi.fn();
+const handleComment = vi.fn();
 vi.mock("@/lib/messaging/core", () => ({ handleInboundMessage: (...a: unknown[]) => handleInboundMessage(...a) }));
 vi.mock("@/lib/messaging/social-accounts", () => ({
   resolveConnectorByIgBusinessId: (...a: unknown[]) => resolveByIg(...a),
   resolveConnectorByPageId: (...a: unknown[]) => resolveByPage(...a),
 }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
+vi.mock("@/lib/comments/handle-comment", () => ({
+  handleComment: (...a: unknown[]) => handleComment(...a),
+}));
 
 import { GET, POST } from "./route";
 
@@ -18,6 +22,8 @@ beforeEach(() => {
   resolveByIg.mockReset();
   resolveByPage.mockReset();
   botRespond.mockReset();
+  handleComment.mockReset();
+  handleComment.mockResolvedValue({ status: "procesado", logId: "log-1" });
   process.env.META_DM_VERIFY_TOKEN = "verifyme";
   delete process.env.META_DM_APP_SECRET;
 });
@@ -113,5 +119,64 @@ describe("meta-dm webhook", () => {
     }] }] });
     await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
     expect(botRespond).not.toHaveBeenCalled();
+  });
+});
+
+describe("meta-dm webhook — comentarios", () => {
+  it("payload de comentarios de IG llega al motor de comentarios", async () => {
+    const body = JSON.stringify({
+      object: "instagram",
+      entry: [{ id: "17841", changes: [{ field: "comments", value: {
+        id: "IGCOMMENT-1", text: "info", from: { id: "IGSID-1", username: "luisf" },
+        media: { id: "MEDIA-1" },
+      } }] }],
+    });
+    const res = await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(res.status).toBe(200);
+    expect(handleComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: "INSTAGRAM", externalCommentId: "IGCOMMENT-1", accountId: "17841",
+      })
+    );
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("payload de comentarios de Facebook llega al motor", async () => {
+    const body = JSON.stringify({
+      object: "page",
+      entry: [{ id: "PAGE-1", changes: [{ field: "feed", value: {
+        item: "comment", verb: "add", comment_id: "C-1", post_id: "P-1", parent_id: "P-1",
+        from: { id: "ASID-1", name: "Luis" }, message: "info",
+      } }] }],
+    });
+    await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(handleComment).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: "FACEBOOK", externalCommentId: "C-1" })
+    );
+  });
+
+  it("REGRESIÓN: un DM sigue yendo al intake y NO al motor de comentarios", async () => {
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c1" });
+    const body = JSON.stringify({
+      object: "instagram",
+      entry: [{ messaging: [{ sender: { id: "IGSID-1" }, message: { mid: "mid-1", text: "hola" } }] }],
+    });
+    await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(handleInboundMessage).toHaveBeenCalled();
+    expect(handleComment).not.toHaveBeenCalled();
+  });
+
+  it("un comentario que revienta no tumba el resto del batch", async () => {
+    handleComment.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ status: "procesado" });
+    const body = JSON.stringify({
+      object: "instagram",
+      entry: [{ id: "17841", changes: [
+        { field: "comments", value: { id: "C-1", text: "info", from: { id: "A" }, media: { id: "M" } } },
+        { field: "comments", value: { id: "C-2", text: "info", from: { id: "B" }, media: { id: "M" } } },
+      ] }],
+    });
+    const res = await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
+    expect(res.status).toBe(200);
+    expect(handleComment).toHaveBeenCalledTimes(2);
   });
 });
