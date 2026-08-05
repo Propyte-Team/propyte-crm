@@ -55,6 +55,10 @@ const emitEvent = vi.fn();
 vi.mock("@/lib/workflows/events", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
 const fetchProfileForMessage = vi.fn();
 vi.mock("./profile", () => ({ fetchProfileForMessage: (...a: unknown[]) => fetchProfileForMessage(...a) }));
+const isSenderBlocked = vi.fn();
+vi.mock("@/lib/moderation/is-blocked", () => ({
+  isSenderBlocked: (...a: unknown[]) => isSenderBlocked(...a),
+}));
 const mirrorExternalMedia = vi.fn();
 vi.mock("@/lib/storage/chat-media", () => ({
   mirrorExternalMedia: (...a: unknown[]) => mirrorExternalMedia(...a),
@@ -99,6 +103,8 @@ beforeEach(() => {
   fetchProfileForMessage.mockResolvedValue(null);
   mirrorExternalMedia.mockReset();
   mirrorExternalMedia.mockResolvedValue(null);
+  isSenderBlocked.mockReset();
+  isSenderBlocked.mockResolvedValue(false);
 });
 
 const base = { channel: "INSTAGRAM" as const, senderId: "IG-1", externalMessageId: "mid-1", text: "hola", profileName: "Ana" };
@@ -666,5 +672,50 @@ describe("handleInboundMessage — hook a linkCommentOrigin (Fix 3)", () => {
     contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
     await handleInboundMessage(wa);
     expect(linkCommentOrigin).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleInboundMessage — remitente bloqueado", () => {
+  it("descarta el mensaje sin tocar contactos", async () => {
+    isSenderBlocked.mockResolvedValue(true);
+
+    const res = await handleInboundMessage({
+      channel: "INSTAGRAM",
+      senderId: "IGSID-1",
+      externalMessageId: "MID-BLOQ-1",
+      text: "hola",
+    } as never);
+
+    expect(res).toBeNull();
+    expect(isSenderBlocked).toHaveBeenCalledWith("INSTAGRAM", "IGSID-1");
+    expect(contactFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("consulta la lista con el canal y el senderId de WhatsApp", async () => {
+    isSenderBlocked.mockResolvedValue(true);
+
+    await handleInboundMessage({
+      channel: "WHATSAPP",
+      senderId: "+5219981234567",
+      externalMessageId: "MID-BLOQ-2",
+      text: "hola",
+    } as never);
+
+    expect(isSenderBlocked).toHaveBeenCalledWith("WHATSAPP", "+5219981234567");
+    expect(contactFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("un remitente no bloqueado sigue el camino normal", async () => {
+    isSenderBlocked.mockResolvedValue(false);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+
+    await handleInboundMessage({
+      channel: "INSTAGRAM",
+      senderId: "IGSID-2",
+      externalMessageId: "MID-BLOQ-3",
+      text: "hola",
+    } as never);
+
+    expect(contactFindFirst).toHaveBeenCalled();
   });
 });

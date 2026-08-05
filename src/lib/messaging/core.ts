@@ -186,6 +186,14 @@ async function handleEchoMessage(msg: IncomingMessage) {
 export async function handleInboundMessage(msg: IncomingMessage, opts: { triggerBot?: boolean } = {}) {
   if (msg.isEcho) return handleEchoMessage(msg);
 
+  // Remitente marcado como spam: se descarta antes de crear nada. Un solo punto
+  // cubre WhatsApp, Instagram y Messenger. Ver lib/moderation/block-sender.ts.
+  const { isSenderBlocked } = await import("@/lib/moderation/is-blocked");
+  if (await isSenderBlocked(msg.channel, msg.senderId)) {
+    console.warn(`[messaging] inbound de remitente bloqueado (${msg.channel}): ${msg.senderId} — descartado`);
+    return null;
+  }
+
   let contact = await findContactByChannel(msg.channel, msg.senderId);
 
   // Identidad social: perfil Graph SOLO cuando el contacto es nuevo o sigue placeholder
