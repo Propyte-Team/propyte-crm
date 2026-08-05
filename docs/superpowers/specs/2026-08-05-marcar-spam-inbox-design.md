@@ -111,7 +111,8 @@ Tres piezas, una responsabilidad cada una, ninguna depende de las otras dos:
   consulta, `unblockedAt: null`.
 
 El endpoint es una acción más en `POST /api/conversations/[id]/actions` (`mark_spam`),
-reutilizando su esquema zod y su gate de sesión. No se crea ninguna ruta nueva para la acción.
+reutilizando su esquema zod y su comprobación de sesión. No se crea ninguna ruta nueva para la
+acción. **Pero no reutiliza el gate de permisos de esa ruta** — ver el paso 3 del flujo.
 
 ## Flujo
 
@@ -123,6 +124,13 @@ reutilizando su esquema zod y su gate de sesión. No se crea ninguna ruta nueva 
    escritos hoy en `src/app/api/contacts/route.ts`. Esas constantes están **duplicadas en cada
    route file**; se exporta la lista una vez desde el módulo de moderación y se usa ahí. No se
    refactorizan las demás rutas: queda fuera de este trabajo.
+
+   **`mark_spam` se resuelve ANTES del gate genérico de la ruta, no dentro de él.** Esa ruta ya
+   filtra por `isOwner || MANAGER_ROLES` (`["ADMIN","DIRECTOR","GERENTE","TEAM_LEADER"]`), que no
+   es el mismo conjunto. Si `mark_spam` cayera en ese gate pasarían dos cosas mal: un **asesor**
+   dueño del hilo podría borrar el contacto, y **DEVELOPER_EXT** o **MANTENIMIENTO** serían
+   rechazados aunque el borrado de contactos sí se lo permite. Ser dueño del hilo **no** habilita
+   marcar spam: manda solo la lista de roles.
 4. **Salvaguarda:** contar `deals` y `walkIns` del contacto. Si hay alguno → `409` enumerando
    qué lo bloquea. Las cotizaciones **no se cuentan aparte** porque `Quote` cuelga de `Deal`
    (`dealId`), no del contacto: sin deals no puede haber cotizaciones. Actividades y mensajes
