@@ -92,9 +92,11 @@ export async function markConversationAsSpam(args: {
           firstName: "Spam",
           lastName: "(bloqueado)",
           email: null,
-          // phone es NOT NULL en el schema (a diferencia de email/secondaryPhone); el
-          // cast es deliberado para preservar la anonimización pedida por diseño.
-          phone: null as unknown as string,
+          // phone es NOT NULL (a diferencia de email/secondaryPhone), así que se vacía con
+          // cadena vacía en vez de null. No hay índice único sobre phone y ya hay contactos
+          // con '' en la base, así que es un valor válido y sin colisiones. Verificado en
+          // pg_indexes y en los datos, no inferido del schema.
+          phone: "",
           secondaryPhone: null,
           instagramId: null,
           messengerPsid: null,

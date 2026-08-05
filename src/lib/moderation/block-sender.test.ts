@@ -130,7 +130,7 @@ describe("markConversationAsSpam — la transacción", () => {
     expect(contactArgs.where).toEqual({ id: "contact-1" });
     expect(contactArgs.data).toMatchObject({
       email: null,
-      phone: null,
+      phone: "",
       secondaryPhone: null,
       instagramId: null,
       messengerPsid: null,
