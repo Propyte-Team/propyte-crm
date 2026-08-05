@@ -3,23 +3,29 @@
 
 const GRAPH = "https://graph.facebook.com/v24.0";
 
-interface GraphError {
-  error?: { code?: number; message?: string };
-}
+// Dos llamadas secuenciales (respuesta pública + private reply) más escrituras
+// de log caben en el maxDuration de 30s del webhook; 8s por llamada deja margen
+// para ambas sin arriesgar que un cuelgue de Graph deje el registro en PENDING.
+const TIMEOUT_MS = 8000;
 
-async function postJson(url: string, payload: unknown): Promise<Record<string, unknown>> {
+async function postJson(
+  url: string,
+  payload: unknown
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & GraphError;
-  return { __ok: res.ok, __status: res.status, ...data };
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, data };
 }
 
-function graphError(prefix: string, data: Record<string, unknown>): Error {
+function graphError(prefix: string, status: number, data: Record<string, unknown>): Error {
+  if (typeof data.error === "string") return new Error(`${prefix} ${status}: ${data.error}`);
   const err = (data.error ?? {}) as { code?: number; message?: string };
-  return new Error(`${prefix} ${err.code ?? data.__status}: ${err.message ?? "error"}`);
+  return new Error(`${prefix} ${err.code ?? status}: ${err.message ?? "error"}`);
 }
 
 /**
@@ -33,11 +39,11 @@ export async function replyToComment(
   message: string
 ): Promise<{ id: string }> {
   const edge = platform === "INSTAGRAM" ? "replies" : "comments";
-  const data = await postJson(`${GRAPH}/${commentId}/${edge}`, {
+  const { ok, status, data } = await postJson(`${GRAPH}/${commentId}/${edge}`, {
     message,
     access_token: pageToken,
   });
-  if (!data.__ok || data.error) throw graphError("Comment reply", data);
+  if (!ok || data.error) throw graphError("Comment reply", status, data);
   const id = typeof data.id === "string" ? data.id : null;
   if (!id) throw new Error("Comment reply sin id en la respuesta de Graph");
   return { id };
@@ -53,12 +59,12 @@ export async function sendPrivateReply(
   commentId: string,
   text: string
 ): Promise<{ messageId: string; recipientId: string | null }> {
-  const data = await postJson(`${GRAPH}/me/messages`, {
+  const { ok, status, data } = await postJson(`${GRAPH}/me/messages`, {
     recipient: { comment_id: commentId },
     message: { text },
     access_token: pageToken,
   });
-  if (!data.__ok || data.error) throw graphError("Private reply", data);
+  if (!ok || data.error) throw graphError("Private reply", status, data);
   const messageId = typeof data.message_id === "string" ? data.message_id : null;
   if (!messageId) throw new Error("Private reply sin message_id en la respuesta de Graph");
   return {

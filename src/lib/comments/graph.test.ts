@@ -85,3 +85,57 @@ describe("sendPrivateReply", () => {
     );
   });
 });
+
+describe("postJson — robustez (code review)", () => {
+  it("res.ok=true con error en el body (Graph miente con 200): debe lanzar, no resolver", async () => {
+    fetchMock.mockReturnValue(
+      ok({ error: { code: 200, message: "algo salió mal aunque status sea 200" } })
+    );
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment reply 200: algo salió mal aunque status sea 200"
+    );
+  });
+
+  it("error como string: se conserva el mensaje textual de Meta", async () => {
+    fetchMock.mockReturnValue(fail({ error: "algo salió mal" }, 400));
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment reply 400: algo salió mal"
+    );
+  });
+
+  it("respuesta que no es JSON con ok=false: lanza usando el status, sin reventar por el JSON", async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({
+        ok: false,
+        status: 503,
+        json: () => Promise.reject(new Error("Unexpected end of JSON input")),
+      })
+    );
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment reply 503"
+    );
+  });
+
+  it("Fix 1 (regresión): __ok:true en el body con res.ok=false no disfraza un fallo como éxito", async () => {
+    fetchMock.mockReturnValue(fail({ __ok: true, id: "FAKE-SUCCESS-ID" }, 400));
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow();
+  });
+
+  it("fallo de red: el error se propaga y su mensaje no contiene el token", async () => {
+    fetchMock.mockReturnValue(Promise.reject(new Error("network error")));
+    let caught: unknown;
+    try {
+      await replyToComment("INSTAGRAM", "TOKEN-SECRETO", "C1", "hola");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(String((caught as Error).message)).not.toContain("TOKEN-SECRETO");
+  });
+
+  it("el fetch recibe un signal (AbortSignal) para que nadie borre el timeout en silencio", async () => {
+    fetchMock.mockReturnValue(ok({ id: "x" }));
+    await replyToComment("INSTAGRAM", "T", "C1", "hola");
+    expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});

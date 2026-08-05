@@ -1262,7 +1262,66 @@ describe("sendPrivateReply", () => {
     );
   });
 });
+
+describe("postJson — robustez (code review)", () => {
+  it("res.ok=true con error en el body (Graph miente con 200): debe lanzar, no resolver", async () => {
+    fetchMock.mockReturnValue(
+      ok({ error: { code: 200, message: "algo salió mal aunque status sea 200" } })
+    );
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment reply 200: algo salió mal aunque status sea 200"
+    );
+  });
+
+  it("error como string: se conserva el mensaje textual de Meta", async () => {
+    fetchMock.mockReturnValue(fail({ error: "algo salió mal" }, 400));
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment reply 400: algo salió mal"
+    );
+  });
+
+  it("respuesta que no es JSON con ok=false: lanza usando el status, sin reventar por el JSON", async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({
+        ok: false,
+        status: 503,
+        json: () => Promise.reject(new Error("Unexpected end of JSON input")),
+      })
+    );
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment reply 503"
+    );
+  });
+
+  it("Fix 1 (regresión): __ok:true en el body con res.ok=false no disfraza un fallo como éxito", async () => {
+    fetchMock.mockReturnValue(fail({ __ok: true, id: "FAKE-SUCCESS-ID" }, 400));
+    await expect(replyToComment("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow();
+  });
+
+  it("fallo de red: el error se propaga y su mensaje no contiene el token", async () => {
+    fetchMock.mockReturnValue(Promise.reject(new Error("network error")));
+    let caught: unknown;
+    try {
+      await replyToComment("INSTAGRAM", "TOKEN-SECRETO", "C1", "hola");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(String((caught as Error).message)).not.toContain("TOKEN-SECRETO");
+  });
+
+  it("el fetch recibe un signal (AbortSignal) para que nadie borre el timeout en silencio", async () => {
+    fetchMock.mockReturnValue(ok({ id: "x" }));
+    await replyToComment("INSTAGRAM", "T", "C1", "hola");
+    expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});
 ```
+
+> Nota (code review post-Task 5): los 6 tests de `postJson — robustez` se agregaron
+> en una segunda pasada TDD tras detectar 3 fallas reales en la primera implementación
+> (mezcla de namespace `__ok`/`__status` con el body de Graph, `error` como string
+> descartado, y ausencia de timeout). Ver Fix 1-3 abajo.
 
 - [ ] **Step 2: Correr el test y verificar que falla**
 
@@ -1278,23 +1337,29 @@ Expected: FAIL — `Failed to resolve import "./graph"`
 
 const GRAPH = "https://graph.facebook.com/v24.0";
 
-interface GraphError {
-  error?: { code?: number; message?: string };
-}
+// Dos llamadas secuenciales (respuesta pública + private reply) más escrituras
+// de log caben en el maxDuration de 30s del webhook; 8s por llamada deja margen
+// para ambas sin arriesgar que un cuelgue de Graph deje el registro en PENDING.
+const TIMEOUT_MS = 8000;
 
-async function postJson(url: string, payload: unknown): Promise<Record<string, unknown>> {
+async function postJson(
+  url: string,
+  payload: unknown
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & GraphError;
-  return { __ok: res.ok, __status: res.status, ...data };
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, data };
 }
 
-function graphError(prefix: string, data: Record<string, unknown>): Error {
+function graphError(prefix: string, status: number, data: Record<string, unknown>): Error {
+  if (typeof data.error === "string") return new Error(`${prefix} ${status}: ${data.error}`);
   const err = (data.error ?? {}) as { code?: number; message?: string };
-  return new Error(`${prefix} ${err.code ?? data.__status}: ${err.message ?? "error"}`);
+  return new Error(`${prefix} ${err.code ?? status}: ${err.message ?? "error"}`);
 }
 
 /**
@@ -1308,11 +1373,11 @@ export async function replyToComment(
   message: string
 ): Promise<{ id: string }> {
   const edge = platform === "INSTAGRAM" ? "replies" : "comments";
-  const data = await postJson(`${GRAPH}/${commentId}/${edge}`, {
+  const { ok, status, data } = await postJson(`${GRAPH}/${commentId}/${edge}`, {
     message,
     access_token: pageToken,
   });
-  if (!data.__ok || data.error) throw graphError("Comment reply", data);
+  if (!ok || data.error) throw graphError("Comment reply", status, data);
   const id = typeof data.id === "string" ? data.id : null;
   if (!id) throw new Error("Comment reply sin id en la respuesta de Graph");
   return { id };
@@ -1328,12 +1393,12 @@ export async function sendPrivateReply(
   commentId: string,
   text: string
 ): Promise<{ messageId: string; recipientId: string | null }> {
-  const data = await postJson(`${GRAPH}/me/messages`, {
+  const { ok, status, data } = await postJson(`${GRAPH}/me/messages`, {
     recipient: { comment_id: commentId },
     message: { text },
     access_token: pageToken,
   });
-  if (!data.__ok || data.error) throw graphError("Private reply", data);
+  if (!ok || data.error) throw graphError("Private reply", status, data);
   const messageId = typeof data.message_id === "string" ? data.message_id : null;
   if (!messageId) throw new Error("Private reply sin message_id en la respuesta de Graph");
   return {
@@ -1346,7 +1411,7 @@ export async function sendPrivateReply(
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/graph.test.ts`
-Expected: PASS — 8 tests
+Expected: PASS — 14 tests (8 originales + 6 de robustez agregados en code review)
 
 - [ ] **Step 5: Commit**
 
