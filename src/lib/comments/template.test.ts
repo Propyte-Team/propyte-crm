@@ -18,6 +18,19 @@ describe("renderTemplate", () => {
   it("deja intactas las variables que no conoce", () => {
     expect(renderTemplate("Hola {{otra}}", { usuario: "x" })).toBe("Hola {{otra}}");
   });
+
+  it("no interpreta patrones de reemplazo especiales en el usuario ($&)", () => {
+    expect(renderTemplate("Hola {{usuario}}, gracias", { usuario: "$&" })).toBe("Hola $&, gracias");
+  });
+
+  it("no interpreta patrones de reemplazo especiales en el usuario ($`)", () => {
+    expect(renderTemplate("{{usuario}} y {{usuario}}", { usuario: "$`" })).toBe("$` y $`");
+  });
+
+  it("sin usuario y placeholder al inicio no deja coma colgante", () => {
+    expect(renderTemplate("{{usuario}}, bienvenido a Propyte!", { usuario: null }))
+      .toBe("bienvenido a Propyte!");
+  });
 });
 
 describe("pickVariant", () => {
@@ -34,5 +47,9 @@ describe("pickVariant", () => {
 
   it("lista vacía devuelve null", () => {
     expect(pickVariant([], 0)).toBeNull();
+  });
+
+  it("firedCount no entero (NaN) devuelve null, no undefined", () => {
+    expect(pickVariant(["a", "b"], NaN)).toBeNull();
   });
 });

@@ -303,6 +303,19 @@ describe("renderTemplate", () => {
   it("deja intactas las variables que no conoce", () => {
     expect(renderTemplate("Hola {{otra}}", { usuario: "x" })).toBe("Hola {{otra}}");
   });
+
+  it("no interpreta patrones de reemplazo especiales en el usuario ($&)", () => {
+    expect(renderTemplate("Hola {{usuario}}, gracias", { usuario: "$&" })).toBe("Hola $&, gracias");
+  });
+
+  it("no interpreta patrones de reemplazo especiales en el usuario ($`)", () => {
+    expect(renderTemplate("{{usuario}} y {{usuario}}", { usuario: "$`" })).toBe("$` y $`");
+  });
+
+  it("sin usuario y placeholder al inicio no deja coma colgante", () => {
+    expect(renderTemplate("{{usuario}}, bienvenido a Propyte!", { usuario: null }))
+      .toBe("bienvenido a Propyte!");
+  });
 });
 
 describe("pickVariant", () => {
@@ -319,6 +332,10 @@ describe("pickVariant", () => {
 
   it("lista vacía devuelve null", () => {
     expect(pickVariant([], 0)).toBeNull();
+  });
+
+  it("firedCount no entero (NaN) devuelve null, no undefined", () => {
+    expect(pickVariant(["a", "b"], NaN)).toBeNull();
   });
 });
 ```
@@ -341,20 +358,31 @@ export interface TemplateVars {
 }
 
 /**
- * Sustituye {{usuario}} (con o sin espacios). Si no hay usuario, quita también
- * la coma o el espacio que quedaría colgando: "Hola , gracias" se ve mal y se
- * publica en un post real.
+ * Sustituye {{usuario}} (con o sin espacios). `usuario` viene de `from.name`
+ * de Facebook/Instagram, un display name sin restricción de caracteres: usar
+ * función de reemplazo, no string, para que `$&`, `` $` ``, `$'`, `$$`, `$N`
+ * no se interpreten como patrones especiales de `String.replace`.
+ *
+ * Si no hay usuario, quita el placeholder y limpia lo que quedaría colgando
+ * (coma/espacio antes, o puntuación al inicio de la frase): "Hola , gracias"
+ * o ", bienvenido!" se ven mal y se publican en un post real.
  */
 export function renderTemplate(template: string, vars: TemplateVars): string {
   const usuario = vars.usuario?.trim();
   if (usuario) {
-    return template.replace(/\{\{\s*usuario\s*\}\}/g, usuario);
+    return template.replace(/\{\{\s*usuario\s*\}\}/g, () => usuario);
   }
-  return template.replace(/\s*,?\s*\{\{\s*usuario\s*\}\}/g, "");
+  return template
+    .replace(/\{\{\s*usuario\s*\}\}/g, "")
+    .replace(/[ \t]{2,}/g, " ") // espacios dobles, sin tocar saltos de línea
+    .replace(/\s+([,;:.!?])/g, "$1") // " ," -> ","
+    .replace(/^[\s,;:]+/, "") // puntuación colgando al inicio
+    .trim();
 }
 
 /** Variante que corresponde según cuántas veces ya disparó la regla. */
 export function pickVariant(variants: string[], firedCount: number): string | null {
+  if (!Number.isInteger(firedCount)) return null;
   if (variants.length === 0) return null;
   const index = ((firedCount % variants.length) + variants.length) % variants.length;
   return variants[index];
@@ -364,7 +392,7 @@ export function pickVariant(variants: string[], firedCount: number): string | nu
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/template.test.ts`
-Expected: PASS — 7 tests
+Expected: PASS — 11 tests
 
 - [ ] **Step 5: Commit**
 
