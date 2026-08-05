@@ -392,3 +392,10 @@ el código no hace nada. Para encenderla, en la app *CRM Propyte* de Meta:
 | Dos reglas con la misma frase, una nunca dispara | Aviso de colisión en la UI al escribir la frase |
 | Bifurcar el webhook rompe el inbox social | Test de regresión del camino `messaging` antes de tocar la ruta |
 | App Review demora | La feature queda dormida sin bloquear nada más del CRM |
+
+### Riesgos aceptados (code review, 2026-08-05)
+
+| Riesgo | Mitigación real | Por qué se acepta |
+|---|---|---|
+| **Carrera de cuota entre webhooks distintos.** El índice `(connectorId, postId, authorId)` no es único (no puede serlo: el caso "cuota consumida" inserta a propósito una segunda fila `SKIPPED`). Dos comentarios distintos de la misma persona en el mismo post, entregados por Meta en **dos peticiones HTTP separadas** casi simultáneas, pueden pasar ambos el chequeo de cuota antes de que cualquiera cree su log → se responde dos veces en público. Dentro de un mismo batch no pasa (el handler procesa los comentarios en serie). | Cerrarlo requeriría un advisory lock de Postgres alrededor del check-then-create. | Probabilidad baja (exige dos requests HTTP casi simultáneas del webhook de Meta). Consecuencia visible pero benigna: una respuesta pública de más, sin daño de datos ni destinatario equivocado. |
+| **Presupuesto de tiempo del batch.** El webhook tiene `maxDuration = 30` y cada comentario hace hasta dos llamadas a Graph de 8 s de timeout cada una, en serie (`TIMEOUT_MS` en `src/lib/comments/graph.ts`). Con un batch de 2+ comentarios en el peor caso (Graph colgado en ambas llamadas de cada uno) la función puede morir a mitad del bucle, y los comentarios que faltaban se pierden **sin log y sin rastro**, porque el log de cada uno se crea solo cuando le toca su iteración. | Si se vuelve real: lanzar la respuesta pública y el DM con `Promise.allSettled` (baja el peor caso por comentario de ~16 s a ~8 s), o mover el bucle de comentarios a la cola de acciones. | Probabilidad baja: requiere que Graph cuelgue (llegue al timeout), no que simplemente falle rápido con error. |

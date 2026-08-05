@@ -1904,6 +1904,42 @@ git commit -m "feat(comments): motor de reglas con cuota, idempotencia y log"
 > publicReplies vacío deja el log en SKIPPED (no PENDING eterno)...", con una
 > regla `{ ...RULE, publicReplies: [] }`. 18 tests en total (17 originales + 1).
 
+> **Nota (code review posterior, Fix 1 y Fix 2 — 2026-08-05):**
+>
+> **Fix 1 (el importante):** la llamada a Graph y el `update` de Prisma que la
+> registra vivían en el **mismo** `try`. Si `replyToComment` o
+> `sendPrivateReply` tenían éxito pero el `update` inmediatamente posterior
+> lanzaba (blip de la base), el `catch` escribía `FAILED` con el mensaje de
+> Prisma — mintiendo: el comentario ya estaba respondido en público, o el DM ya
+> estaba en el chat del cliente. Para el DM era peor: sin
+> `dmExternalMessageId` persistido, el guard que `handleEchoMessage` usa para
+> no aplicar el takeover (`lib/messaging/core.ts`, busca el log por
+> `dmExternalMessageId`) no encontraba nada, caía al camino viejo, registraba
+> el eco como `ADVISOR` y enmudecía al bot — la misma carrera que ya se había
+> cerrado.
+>
+> Se separó cada bloque en dos `try` independientes: uno para la llamada a
+> Graph (si falla, `FAILED` con el mensaje textual de Meta — sin cambios) y
+> otro para el `update` posterior (si Graph tuvo éxito pero el `update` falla,
+> **no** se escribe `FAILED`; se emite un `console.error` con el prefijo
+> `"ALERTA reconciliación manual"` con el `logId`, el id que devolvió Graph
+> (`publicReplyId` / `dmExternalMessageId`+`dmRecipientId`) y el error de
+> Prisma, para reconciliar a mano; el resultado sigue siendo `procesado`). En
+> el DM, `persistOpenerForKnownContact` se intenta igual aunque el `update` del
+> `dmStatus` haya fallado — son defensas independientes. Tests agregados: "Fix
+> 1: replyToComment tiene éxito pero el update posterior falla..." y "Fix 1:
+> sendPrivateReply tiene éxito pero el update posterior falla...".
+>
+> **Fix 2:** de los tests con `platform: "FACEBOOK"` solo existía el descarte
+> "propio"; nunca se ejercitaba el camino feliz completo de Facebook (conector
+> resuelto por `resolveConnectorByPageId`, match → cuota → log →
+> `replyToComment("FACEBOOK", ...)` → `sendPrivateReply` → `procesado`). Se
+> agregó el describe `"handleComment — Facebook camino feliz"` con ese
+> end-to-end. No requirió cambios de código, solo cobertura.
+>
+> 21 tests en total (18 + 2 de Fix 1 + 1 de Fix 2). Ver
+> `src/lib/comments/handle-comment.ts` y `.test.ts` para el detalle.
+
 ---
 
 ## Task 7: `link-comment-origin.ts` — puente al contacto

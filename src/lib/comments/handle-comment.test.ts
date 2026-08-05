@@ -274,4 +274,100 @@ describe("handleComment — envíos", () => {
       })
     );
   });
+
+  // Fix 1 (code review, Task 6): la llamada a Graph y el update de Prisma que
+  // la registra vivían en el mismo try. Si Graph tiene éxito pero el update
+  // inmediatamente posterior revienta (blip de la base), el catch escribía
+  // FAILED con el mensaje de Prisma — mintiendo: el comentario ya salió en
+  // público, o el DM ya está en el chat del cliente. Para el DM es peor: sin
+  // dmExternalMessageId persistido, el guard de handleEchoMessage
+  // (lib/messaging/core.ts) no encuentra el log, cae al camino viejo, registra
+  // el eco como ADVISOR y dispara el takeover que enmudece al bot.
+  it("Fix 1: replyToComment tiene éxito pero el update posterior falla — no marca FAILED, avisa por consola, sigue procesado", async () => {
+    const writeErr = new Error("Prisma blip");
+    logUpdate.mockRejectedValueOnce(writeErr);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const out = await handleComment(comment());
+
+    expect(out.status).toBe("procesado");
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).not.toContainEqual(expect.objectContaining({ publicReplyStatus: "FAILED" }));
+
+    const alert = errSpy.mock.calls.find(
+      ([msg]) => typeof msg === "string" && msg.includes("ALERTA reconciliación manual")
+    );
+    expect(alert).toBeDefined();
+    expect(alert?.[0]).toContain("log-1");
+    expect(alert?.[0]).toContain("IGREPLY-1");
+    expect(alert?.[1]).toBe(writeErr);
+
+    errSpy.mockRestore();
+  });
+
+  it("Fix 1: sendPrivateReply tiene éxito pero el update posterior falla — no marca dmStatus FAILED, intenta persistOpener igual, sigue procesado", async () => {
+    const writeErr = new Error("Prisma blip DM");
+    logUpdate.mockResolvedValueOnce({ id: "log-1" }); // update SENT de la pública: ok
+    logUpdate.mockRejectedValueOnce(writeErr); // update SENT del DM: falla
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const out = await handleComment(comment());
+
+    expect(out.status).toBe("procesado");
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
+    expect(persistOpener).toHaveBeenCalledWith({
+      platform: "INSTAGRAM",
+      connectorId: "conn-ig",
+      recipientId: "IGSID-1",
+      text: "Hola luisf, aquí va la info.",
+      externalMessageId: "mid-1",
+    });
+
+    const alert = errSpy.mock.calls.find(
+      ([msg]) => typeof msg === "string" && msg.includes("ALERTA reconciliación manual")
+    );
+    expect(alert).toBeDefined();
+    expect(alert?.[0]).toContain("log-1");
+    expect(alert?.[0]).toContain("mid-1");
+    expect(alert?.[1]).toBe(writeErr);
+
+    errSpy.mockRestore();
+  });
+
+  // Regresión: si Graph falla de verdad (no el update), el log sí debe seguir
+  // terminando en FAILED con el mensaje textual de Meta. Cubierto arriba por
+  // "si falla la pública..." y "si falla el DM..." — se dejan intactos.
+});
+
+describe("handleComment — Facebook camino feliz", () => {
+  it("Facebook: resuelto por resolveConnectorByPageId, match → cuota → log → replyToComment('FACEBOOK', ...) → sendPrivateReply → procesado", async () => {
+    resolveByIg.mockResolvedValue(null);
+    resolveByPage.mockResolvedValue({
+      id: "conn-fb",
+      provider: "FACEBOOK",
+      config: { pageId: "PAGE-1" },
+    });
+    replyToComment.mockResolvedValue({ id: "FBREPLY-1" });
+    sendPrivateReply.mockResolvedValue({ messageId: "fb-mid-1", recipientId: "PSID-1" });
+
+    const out = await handleComment(
+      comment({
+        platform: "FACEBOOK",
+        accountId: "PAGE-1",
+        authorId: "PSID-1",
+        externalCommentId: "FBCOMMENT-1",
+      })
+    );
+
+    expect(resolveByPage).toHaveBeenCalledWith("PAGE-1");
+    expect(out.status).toBe("procesado");
+    expect(replyToComment).toHaveBeenCalledWith(
+      "FACEBOOK",
+      "TOKEN",
+      "FBCOMMENT-1",
+      expect.any(String)
+    );
+    expect(sendPrivateReply).toHaveBeenCalledWith("TOKEN", "FBCOMMENT-1", expect.any(String));
+  });
 });

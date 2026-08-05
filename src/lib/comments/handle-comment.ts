@@ -125,23 +125,40 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
   });
 
   if (publicText) {
+    // Fix 1 (code review, Task 6): la llamada a Graph y el update que la
+    // registra viven en tries separados. Si Graph falla, FAILED es correcto
+    // (comportamiento sin cambios, catch de abajo). Pero si Graph tiene éxito
+    // y es el update el que revienta (blip de la base), NO se puede escribir
+    // FAILED — el comentario YA está respondido en público; marcarlo FAILED
+    // sería mentir. Se deja el log sin actualizar y se avisa fuerte por
+    // consola con los IDs necesarios para reconciliar a mano.
+    let reply: { id: string } | undefined;
     try {
-      const reply = await replyToComment(
+      reply = await replyToComment(
         comment.platform,
         token,
         comment.externalCommentId,
         publicText
       );
-      await prisma.commentRuleLog.update({
-        where: { id: log.id },
-        data: { publicReplyStatus: "SENT", publicReplyId: reply.id },
-      });
     } catch (err) {
       console.error("[comments] respuesta pública falló:", err);
       await prisma.commentRuleLog.update({
         where: { id: log.id },
         data: { publicReplyStatus: "FAILED", publicReplyError: errorText(err) },
       });
+    }
+    if (reply) {
+      try {
+        await prisma.commentRuleLog.update({
+          where: { id: log.id },
+          data: { publicReplyStatus: "SENT", publicReplyId: reply.id },
+        });
+      } catch (err) {
+        console.error(
+          `[comments] ALERTA reconciliación manual: respuesta pública SÍ salió (logId=${log.id}, publicReplyId=${reply.id}) pero no se pudo marcar SENT en el log:`,
+          err
+        );
+      }
     }
   } else {
     // Sin esto, un publicReplies vacío (pickVariant devuelve null → publicText
@@ -160,18 +177,35 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
 
   try {
     const dm = await sendPrivateReply(token, comment.externalCommentId, dmText);
-    await prisma.commentRuleLog.update({
-      where: { id: log.id },
-      data: {
-        dmStatus: "SENT",
-        dmRecipientId: dm.recipientId,
-        dmExternalMessageId: dm.messageId,
-      },
-    });
+
+    // Fix 1 (code review, Task 6): mismo criterio que la respuesta pública,
+    // pero aquí es más grave. Si el DM sale y el update de dmStatus/
+    // dmExternalMessageId falla, NO se marca FAILED (mentiría: el DM ya está
+    // en el chat del cliente). Y sin dmExternalMessageId persistido, el guard
+    // que handleEchoMessage usa para no aplicar el takeover (busca el log por
+    // dmExternalMessageId) no encuentra nada, cae al camino viejo, registra
+    // el eco como ADVISOR y enmudece al bot — la carrera que ya se cerró.
+    try {
+      await prisma.commentRuleLog.update({
+        where: { id: log.id },
+        data: {
+          dmStatus: "SENT",
+          dmRecipientId: dm.recipientId,
+          dmExternalMessageId: dm.messageId,
+        },
+      });
+    } catch (err) {
+      console.error(
+        `[comments] ALERTA reconciliación manual: DM SÍ salió (logId=${log.id}, dmExternalMessageId=${dm.messageId}, dmRecipientId=${dm.recipientId ?? "null"}) pero no se pudo marcar SENT en el log:`,
+        err
+      );
+    }
 
     // Si ya es contacto, el opener se persiste en su hilo AHORA. Si no se hace,
     // el eco del propio DM entra como ADVISOR y dispara el takeover que
-    // enmudece al bot (lib/messaging/core.ts, handleEchoMessage).
+    // enmudece al bot (lib/messaging/core.ts, handleEchoMessage). Se intenta
+    // aunque el update de arriba haya fallado: son defensas independientes,
+    // que falle una escritura no debe arrastrar a la otra.
     if (dm.recipientId) {
       try {
         const { persistOpenerForKnownContact } = await import("./link-comment-origin");
