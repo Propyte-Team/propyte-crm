@@ -934,7 +934,7 @@ export function parseCommentWebhook(body: unknown): IncomingComment[] {
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/parse.test.ts`
-Expected: PASS — 11 tests
+Expected: PASS — 10 tests
 
 - [ ] **Step 5: Commit**
 
@@ -1954,7 +1954,7 @@ export async function linkCommentOrigin(
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/link-comment-origin.test.ts`
-Expected: PASS — 11 tests
+Expected: PASS — 10 tests
 
 - [ ] **Step 5: Enganchar en el intake**
 

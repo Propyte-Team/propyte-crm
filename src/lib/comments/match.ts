@@ -45,8 +45,14 @@ export function containsPhrase(text: string, phrase: string): boolean {
 }
 
 /**
- * Primera regla que coincide gana: orden por priority asc y luego antiguedad.
+ * Primera regla que coincide gana: orden por priority asc, luego antiguedad y
+ * por ultimo `id`. El tercer criterio no es adorno: con priority y createdAt
+ * iguales el orden dependia de como viniera el arreglo de Prisma (findMany sin
+ * orderBy), asi que la misma palabra podia responder con reglas distintas.
  * Las demas no se evaluan (una respuesta por comentario, nunca dos).
+ *
+ * Generico en `T` para que quien pase el objeto completo de Prisma recupere sus
+ * campos desde `match.rule` sin castear ni volver a buscarlo en el arreglo.
  */
 export function matchRule<T extends CommentRuleLike>(
   rules: T[],
