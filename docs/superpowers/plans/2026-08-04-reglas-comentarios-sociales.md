@@ -2553,7 +2553,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 - [ ] **Step 7: Verificar tipos**
 
 Run: `npx tsc --noEmit`
-Expected: sin errores nuevos. Los 2 preexistentes de `builder-model` siguen ahí — no son de esta rama.
+Expected: **cero errores**. Verificado el 2026-08-05 en esta rama: `npx tsc --noEmit` sale limpio con exit 0. No hay errores preexistentes que tolerar, así que cualquier error que aparezca es de tu cambio.
 
 - [ ] **Step 8: Commit**
 
@@ -2896,7 +2896,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 - [ ] **Step 7: Verificar tipos y toda la suite**
 
 Run: `npx tsc --noEmit && npx vitest run src/lib/comments src/app/api/admin/comment-rules`
-Expected: sin errores nuevos de tipos; todos los tests de comentarios en verde.
+Expected: `tsc` con **cero errores** (exit 0); todos los tests de comentarios en verde.
 
 - [ ] **Step 8: Commit**
 
@@ -3638,7 +3638,7 @@ En el import de `lucide-react`, agregar `MessageCircle`. En el grupo `"Bot conve
 - [ ] **Step 7: Verificar tipos y build**
 
 Run: `npx tsc --noEmit`
-Expected: sin errores nuevos.
+Expected: **cero errores** (exit 0).
 
 Run: `npm run build`
 Expected: `exit 0`. Si aparece un error de caché stale, borrar `.next/cache` y repetir.
@@ -3665,7 +3665,7 @@ Expected: PASS. El total sube ~78 tests respecto a `main`. Cero fallos nuevos; s
 - [ ] **Step 2: Typecheck y build**
 
 Run: `npx tsc --noEmit && npm run build`
-Expected: sin errores nuevos de tipos y build con exit 0.
+Expected: `tsc` con **cero errores** y build con exit 0.
 
 - [ ] **Step 3: Escribir el checklist de smoke**
 
