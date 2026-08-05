@@ -302,6 +302,17 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     console.error(`[messaging] activity inbound (${msg.channel}) falló:`, err);
   }
 
+  // Origen por comentario: si este remitente recibió un DM disparado por una
+  // regla de comentarios, se cierra el vínculo. Side-effect: jamás mata la ingesta.
+  if (msg.channel !== "WHATSAPP") {
+    try {
+      const { linkCommentOrigin } = await import("@/lib/comments/link-comment-origin");
+      await linkCommentOrigin(contact.id, msg.channel, msg.senderId);
+    } catch (err) {
+      console.error(`[messaging] linkCommentOrigin falló:`, err);
+    }
+  }
+
   try {
     const { meetSlaTimers } = await import("@/lib/workflows/sla");
     await meetSlaTimers(contact.id);
