@@ -9,8 +9,8 @@ export interface CommentRuleLike {
   createdAt: Date;
 }
 
-export interface MatchResult {
-  rule: CommentRuleLike;
+export interface MatchResult<T extends CommentRuleLike = CommentRuleLike> {
+  rule: T;
   phrase: string;
 }
 
@@ -30,14 +30,17 @@ function escapeRegExp(input: string): string {
 
 /**
  * Palabra completa: el caracter pegado a cada extremo no puede ser letra ni
- * digito. Asi "info" dispara con "¿info?" y "info 🙏" pero NO con "informal"
- * ni "informacion" -- el falso positivo que haria ver mal la respuesta publica.
- * Espera `text` ya normalizado; normaliza `phrase` por su cuenta.
+ * digito ni guion bajo (`_` cuenta como caracter de palabra, igual que en
+ * `\w`). Asi "info" dispara con "¿info?" y "info 🙏" pero NO con "informal",
+ * "informacion", "@promo_info" (mencion de otra cuenta) ni "#info_venta"
+ * (hashtag compuesto) -- el falso positivo que publicaria una respuesta a
+ * quien no pidio informacion. Espera `text` ya normalizado; normaliza
+ * `phrase` por su cuenta.
  */
 export function containsPhrase(text: string, phrase: string): boolean {
   const needle = normalize(phrase);
   if (!needle) return false;
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(needle)}(?![\\p{L}\\p{N}])`, "u");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(needle)}(?![\\p{L}\\p{N}_])`, "u");
   return re.test(text);
 }
 
@@ -45,16 +48,19 @@ export function containsPhrase(text: string, phrase: string): boolean {
  * Primera regla que coincide gana: orden por priority asc y luego antiguedad.
  * Las demas no se evaluan (una respuesta por comentario, nunca dos).
  */
-export function matchRule(
-  rules: CommentRuleLike[],
+export function matchRule<T extends CommentRuleLike>(
+  rules: T[],
   commentText: string,
   postId: string
-): MatchResult | null {
+): MatchResult<T> | null {
   const text = normalize(commentText);
   if (!text) return null;
 
   const ordered = [...rules].sort(
-    (a, b) => a.priority - b.priority || a.createdAt.getTime() - b.createdAt.getTime()
+    (a, b) =>
+      a.priority - b.priority ||
+      a.createdAt.getTime() - b.createdAt.getTime() ||
+      a.id.localeCompare(b.id)
   );
 
   for (const rule of ordered) {

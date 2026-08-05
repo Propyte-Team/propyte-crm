@@ -43,6 +43,17 @@ describe("containsPhrase", () => {
   it("no interpreta la frase como regex", () => {
     expect(containsPhrase(normalize("precio (2 recamaras)"), "(2 recamaras)")).toBe(true);
   });
+
+  it("el guion bajo cuenta como caracter de palabra: NO dispara en mencion ni hashtag compuesto", () => {
+    expect(containsPhrase(normalize("@promo_info"), "info")).toBe(false);
+    expect(containsPhrase(normalize("#info_venta"), "info")).toBe(false);
+    expect(containsPhrase(normalize("mi_info_x"), "info")).toBe(false);
+  });
+
+  it("sigue disparando con hashtag simple y mencion seguida de espacio", () => {
+    expect(containsPhrase(normalize("#info"), "info")).toBe(true);
+    expect(containsPhrase(normalize("@juan info?"), "info")).toBe(true);
+  });
 });
 
 describe("matchRule", () => {
@@ -90,5 +101,18 @@ describe("matchRule", () => {
     const rules = [rule({ id: "b", priority: 200 }), rule({ id: "a", priority: 1 })];
     matchRule(rules, "info", "POST-1");
     expect(rules.map((r) => r.id)).toEqual(["b", "a"]);
+  });
+
+  it("empate total en priority y createdAt: gana el id menor, sin importar el orden de entrada", () => {
+    const a = rule({ id: "a" });
+    const b = rule({ id: "b" });
+    expect(matchRule([b, a], "info", "POST-1")?.rule.id).toBe("a");
+    expect(matchRule([a, b], "info", "POST-1")?.rule.id).toBe("a");
+  });
+
+  it("generico: preserva el tipo completo de la regla recibida, sin castear", () => {
+    const withExtra = [{ ...rule(), dmTemplate: "x" }];
+    const out = matchRule(withExtra, "info", "POST-1");
+    expect(out?.rule.dmTemplate).toBe("x");
   });
 });

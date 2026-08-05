@@ -527,7 +527,35 @@ describe("matchRule", () => {
     matchRule(rules, "info", "POST-1");
     expect(rules.map((r) => r.id)).toEqual(["b", "a"]);
   });
+
+  it("empate total en priority y createdAt: gana el id menor, sin importar el orden de entrada", () => {
+    const a = rule({ id: "a" });
+    const b = rule({ id: "b" });
+    expect(matchRule([b, a], "info", "POST-1")?.rule.id).toBe("a");
+    expect(matchRule([a, b], "info", "POST-1")?.rule.id).toBe("a");
+  });
+
+  it("genérico: preserva el tipo completo de la regla recibida, sin castear", () => {
+    const withExtra = [{ ...rule(), dmTemplate: "x" }];
+    const out = matchRule(withExtra, "info", "POST-1");
+    expect(out?.rule.dmTemplate).toBe("x");
+  });
 });
+```
+
+Además, dentro de `describe("containsPhrase", ...)`, dos casos que fijan que `_` cuenta como carácter de palabra (menciones y hashtags compuestos no deben disparar, hashtag simple y mención con espacio sí):
+
+```ts
+  it("el guion bajo cuenta como carácter de palabra: NO dispara en mención ni hashtag compuesto", () => {
+    expect(containsPhrase(normalize("@promo_info"), "info")).toBe(false);
+    expect(containsPhrase(normalize("#info_venta"), "info")).toBe(false);
+    expect(containsPhrase(normalize("mi_info_x"), "info")).toBe(false);
+  });
+
+  it("sigue disparando con hashtag simple y mención seguida de espacio", () => {
+    expect(containsPhrase(normalize("#info"), "info")).toBe(true);
+    expect(containsPhrase(normalize("@juan info?"), "info")).toBe(true);
+  });
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -550,8 +578,8 @@ export interface CommentRuleLike {
   createdAt: Date;
 }
 
-export interface MatchResult {
-  rule: CommentRuleLike;
+export interface MatchResult<T extends CommentRuleLike = CommentRuleLike> {
+  rule: T;
   phrase: string;
 }
 
@@ -571,31 +599,42 @@ function escapeRegExp(input: string): string {
 
 /**
  * Palabra completa: el carácter pegado a cada extremo no puede ser letra ni
- * dígito. Así "info" dispara con "¿info?" y "info 🙏" pero NO con "informal"
- * ni "información" — el falso positivo que haría ver mal la respuesta pública.
- * Espera `text` ya normalizado; normaliza `phrase` por su cuenta.
+ * dígito ni guion bajo (`_` cuenta como carácter de palabra, igual que en
+ * `\w`). Así "info" dispara con "¿info?" y "info 🙏" pero NO con "informal",
+ * "información", "@promo_info" (mención de otra cuenta) ni "#info_venta"
+ * (hashtag compuesto) — el falso positivo que publicaría una respuesta a
+ * quien no pidió información. Espera `text` ya normalizado; normaliza
+ * `phrase` por su cuenta.
  */
 export function containsPhrase(text: string, phrase: string): boolean {
   const needle = normalize(phrase);
   if (!needle) return false;
-  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(needle)}(?![\\p{L}\\p{N}])`, "u");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(needle)}(?![\\p{L}\\p{N}_])`, "u");
   return re.test(text);
 }
 
 /**
- * Primera regla que coincide gana: orden por priority asc y luego antigüedad.
+ * Primera regla que coincide gana: orden por priority asc, luego antigüedad,
+ * y por último `id` — desempate determinista cuando `priority` y `createdAt`
+ * coinciden y el orden de llegada de Prisma no está garantizado sin `orderBy`.
  * Las demás no se evalúan (una respuesta por comentario, nunca dos).
+ * Genérico en `T`: el consumidor recibe de vuelta el objeto completo que pasó
+ * (p. ej. el `CommentRule` de Prisma con todos sus campos), sin tener que
+ * volver a buscarlo por id.
  */
-export function matchRule(
-  rules: CommentRuleLike[],
+export function matchRule<T extends CommentRuleLike>(
+  rules: T[],
   commentText: string,
   postId: string
-): MatchResult | null {
+): MatchResult<T> | null {
   const text = normalize(commentText);
   if (!text) return null;
 
   const ordered = [...rules].sort(
-    (a, b) => a.priority - b.priority || a.createdAt.getTime() - b.createdAt.getTime()
+    (a, b) =>
+      a.priority - b.priority ||
+      a.createdAt.getTime() - b.createdAt.getTime() ||
+      a.id.localeCompare(b.id)
   );
 
   for (const rule of ordered) {
@@ -611,7 +650,7 @@ export function matchRule(
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run src/lib/comments/match.test.ts`
-Expected: PASS — 13 tests
+Expected: PASS — 17 tests
 
 - [ ] **Step 5: Commit**
 
@@ -1440,12 +1479,11 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
   const match = matchRule(rules, comment.text, comment.postId);
   if (!match) return { status: "sin-match" };
 
-  const rule = rules.find((r) => r.id === match.rule.id)!;
   const vars = { usuario: comment.authorHandle };
-  const dmText = renderTemplate(rule.dmTemplate, vars);
+  const dmText = renderTemplate(match.rule.dmTemplate, vars);
 
   const base = {
-    ruleId: rule.id,
+    ruleId: match.rule.id,
     connectorId: connector.id,
     platform: comment.platform,
     externalCommentId: comment.externalCommentId,
@@ -1484,9 +1522,9 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
 
   // Rotación: cuántas veces ya salió esta regla en público.
   const fired = await prisma.commentRuleLog.count({
-    where: { ruleId: rule.id, publicReplyStatus: "SENT" },
+    where: { ruleId: match.rule.id, publicReplyStatus: "SENT" },
   });
-  const publicText = renderTemplate(pickVariant(rule.publicReplies, fired) ?? "", vars);
+  const publicText = renderTemplate(pickVariant(match.rule.publicReplies, fired) ?? "", vars);
 
   // El log se crea ANTES de Graph: el índice único de externalCommentId es el
   // candado contra los reintentos concurrentes del webhook de Meta.
@@ -2685,29 +2723,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       match: null,
       pausedMatch: paused
-        ? {
-            ruleId: paused.rule.id,
-            ruleName: rules.find((r) => r.id === paused.rule.id)?.name ?? "",
-            phrase: paused.phrase,
-          }
+        ? { ruleId: paused.rule.id, ruleName: paused.rule.name, phrase: paused.phrase }
         : null,
     });
   }
 
-  const rule = rules.find((r) => r.id === hit.rule.id)!;
   // Mismo conteo que usa el motor: el probador enseña la variante real.
   const fired = await prisma.commentRuleLog.count({
-    where: { ruleId: rule.id, publicReplyStatus: "SENT" },
+    where: { ruleId: hit.rule.id, publicReplyStatus: "SENT" },
   });
   const vars = { usuario: usuario ?? null };
 
   return NextResponse.json({
     match: {
-      ruleId: rule.id,
-      ruleName: rule.name,
+      ruleId: hit.rule.id,
+      ruleName: hit.rule.name,
       phrase: hit.phrase,
-      publicText: renderTemplate(pickVariant(rule.publicReplies, fired) ?? "", vars),
-      dmText: renderTemplate(rule.dmTemplate, vars),
+      publicText: renderTemplate(pickVariant(hit.rule.publicReplies, fired) ?? "", vars),
+      dmText: renderTemplate(hit.rule.dmTemplate, vars),
     },
     pausedMatch: null,
   });
