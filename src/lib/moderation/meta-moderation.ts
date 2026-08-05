@@ -100,3 +100,24 @@ export async function blockOnMeta(args: BlockOnMetaArgs): Promise<MetaModeration
     return { blockStatus: "FAILED", spamStatus: "SKIPPED", error: message.slice(0, ERROR_MAX) };
   }
 }
+
+/** Deshace el bloqueo. Nunca lanza: el desbloqueo del CRM no depende de que Meta responda. */
+export async function unblockOnMeta(args: BlockOnMetaArgs): Promise<{ ok: boolean; error?: string }> {
+  const { channel, pageId, token, identifier } = args;
+  const fetchImpl = args.fetchImpl ?? fetch;
+
+  if (channel === "WHATSAPP" || channel === "SMS") return { ok: true };
+  if (!token || !pageId) return { ok: false, error: "conector sin token o sin pageId" };
+
+  try {
+    if (channel === "MESSENGER") {
+      const url = new URL(`https://graph.facebook.com/${V}/${pageId}/blocked`);
+      url.searchParams.set("psid", JSON.stringify([identifier]));
+      url.searchParams.set("access_token", token);
+      return await post(url.toString(), { method: "DELETE" }, fetchImpl);
+    }
+    return await moderateIg(pageId, token, identifier, "unblock_user", fetchImpl);
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, ERROR_MAX) };
+  }
+}
