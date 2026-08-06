@@ -65,6 +65,11 @@ describe("assignContact — permisos", () => {
       })
     );
     expect(activityCreate).toHaveBeenCalled();
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ subject: "Asignó la conversación a Pedro Ruiz" }),
+      })
+    );
   });
 
   it("mando reasigna un contacto que ya tenía dueño", async () => {
@@ -82,6 +87,20 @@ describe("assignContact — permisos", () => {
     );
     expect(notificationCreate).not.toHaveBeenCalled();
     expect(userFindFirst).not.toHaveBeenCalled(); // no valida usuario al desasignar
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ subject: "Quitó la asignación de la conversación" }),
+      })
+    );
+  });
+
+  it("mando reasigna al MISMO dueño actual → ok idempotente, sin update ni Notification", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-2" });
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-2", name: "Pedro Ruiz" } });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+    expect(notificationCreate).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
   });
 
   it("asesor reclama contacto libre: ok y SIN Notification (es para sí mismo)", async () => {
@@ -89,6 +108,11 @@ describe("assignContact — permisos", () => {
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-1", actor: ASESOR });
     expect(r.ok).toBe(true);
     expect(notificationCreate).not.toHaveBeenCalled();
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ subject: "Reclamó la conversación" }),
+      })
+    );
   });
 
   it("asesor reclama contacto ya asignado a OTRO → ya-asignado, sin update", async () => {
@@ -98,10 +122,11 @@ describe("assignContact — permisos", () => {
     expect(txContactUpdate).not.toHaveBeenCalled();
   });
 
-  it("asesor reclama un contacto que YA es suyo → ok idempotente sin escribir", async () => {
+  it("asesor reclama un contacto que YA es suyo → ok idempotente sin escribir, con nombre real", async () => {
     contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-1" });
+    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com" });
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-1", actor: ASESOR });
-    expect(r.ok).toBe(true);
+    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-1", name: "Luisa" } });
     expect(txContactUpdate).not.toHaveBeenCalled();
   });
 
@@ -121,12 +146,14 @@ describe("assignContact — validación del asignado", () => {
     userFindFirst.mockResolvedValue(null);
     const r = await assignContact({ contactId: "c1", assigneeId: "nadie", actor: MANDO });
     expect(r).toEqual({ ok: false, code: "usuario-invalido" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
   });
 
   it("usuario con email .local (QA) → usuario-invalido, también a mano (espíritu AUD-09)", async () => {
     userFindFirst.mockResolvedValue({ id: "qa-1", name: "QA", email: "qa-asesor@propyte.local" });
     const r = await assignContact({ contactId: "c1", assigneeId: "qa-1", actor: MANDO });
     expect(r).toEqual({ ok: false, code: "usuario-invalido" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -140,10 +167,17 @@ describe("assignContact — contacto y concurrencia", () => {
     );
   });
 
-  it("update falla por lock optimista → conflicto", async () => {
-    txContactUpdate.mockRejectedValue(new Error("P2025"));
+  it("update falla por lock optimista (P2025) → conflicto", async () => {
+    txContactUpdate.mockRejectedValue(Object.assign(new Error("Record not found"), { code: "P2025" }));
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
     expect(r).toEqual({ ok: false, code: "conflicto" });
+  });
+
+  it("update falla por otra razón (BD caída, sin code P2025) → propaga el error, NO conflicto", async () => {
+    txContactUpdate.mockRejectedValue(new Error("connection refused"));
+    await expect(
+      assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO })
+    ).rejects.toThrow("connection refused");
   });
 });
 
@@ -165,5 +199,12 @@ describe("assignContact — cronología y side-effects", () => {
     activityCreate.mockRejectedValue(new Error("boom"));
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
     expect(r.ok).toBe(true);
+  });
+
+  it("Activity revienta pero Notification SÍ se crea (son try/catch independientes)", async () => {
+    activityCreate.mockRejectedValue(new Error("boom"));
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+    expect(r.ok).toBe(true);
+    expect(notificationCreate).toHaveBeenCalled();
   });
 });

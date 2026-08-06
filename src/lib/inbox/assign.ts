@@ -31,13 +31,13 @@ export async function assignContact(opts: {
 
   const manager = isInboxManager(actor.role);
   if (!manager) {
-    // No-mando: solo claim a sí mismo sobre contacto libre.
+    // No-mando: solo claim a sí mismo. Si el dueño actual es OTRO → sin cupo (ya-asignado).
+    // Si el dueño actual ES el actor, se deja pasar: el guard de idempotencia de abajo
+    // (válido para cualquier rol) lo resuelve sin escribir.
     if (assigneeId !== actor.id) return { ok: false, code: "sin-permiso" };
-    if (contact.assignedToId === actor.id) {
-      // Ya era suyo: idempotente, sin escribir (cubre carreras del auto-claim).
-      return { ok: true, assignedTo: { id: actor.id, name: "" } };
+    if (contact.assignedToId !== null && contact.assignedToId !== actor.id) {
+      return { ok: false, code: "ya-asignado" };
     }
-    if (contact.assignedToId !== null) return { ok: false, code: "ya-asignado" };
   }
 
   // Validar al asignado: activo y sin email .local — los usuarios QA no reciben
@@ -52,6 +52,13 @@ export async function assignContact(opts: {
     assignee = { id: user.id, name: user.name };
   }
 
+  // Idempotencia unificada (cualquier rol, no solo claim): el asignado destino ya es
+  // el dueño actual → ok sin escribir ni disparar side-effects (evita spam en doble
+  // submit, sea claim del asesor o reasignación del mando al mismo dueño).
+  if (assigneeId !== null && contact.assignedToId === assigneeId) {
+    return { ok: true, assignedTo: assignee };
+  }
+
   // Escritura con lock optimista sobre el updatedAt leído: si el contacto cambió
   // entre lectura y update (otro claim ganó), el update no matchea → conflicto.
   try {
@@ -63,8 +70,12 @@ export async function assignContact(opts: {
           data: { assignedToId: assigneeId },
         })
     );
-  } catch {
-    return { ok: false, code: "conflicto" };
+  } catch (e) {
+    // Solo el miss del lock optimista es "conflicto"; cualquier otro fallo (BD caída,
+    // trigger de cronología roto) debe propagarse — reportarlo como conflicto haría
+    // que el usuario reintente contra una base caída y ops nunca vea el error real.
+    if ((e as { code?: string }).code === "P2025") return { ok: false, code: "conflicto" };
+    throw e;
   }
 
   // Side-effects: jamás tumban la operación (lección 2026-07-24).
@@ -86,7 +97,9 @@ export async function assignContact(opts: {
         completedAt: new Date(),
       },
     });
-  } catch { /* side-effect: silencioso */ }
+  } catch (e) {
+    console.error("[inbox] no se pudo crear la actividad de asignación", e);
+  }
 
   if (assignee && assignee.id !== actor.id) {
     try {
@@ -99,7 +112,9 @@ export async function assignContact(opts: {
           link: opts.conversationId ? `/inbox?focus=${opts.conversationId}` : "/inbox",
         },
       });
-    } catch { /* side-effect: silencioso */ }
+    } catch (e) {
+      console.error("[inbox] no se pudo notificar al asignado", e);
+    }
   }
 
   return { ok: true, assignedTo: assignee };
