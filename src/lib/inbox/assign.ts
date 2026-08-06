@@ -52,10 +52,13 @@ export async function assignContact(opts: {
     assignee = { id: user.id, name: user.name };
   }
 
-  // Idempotencia unificada (cualquier rol, no solo claim): el asignado destino ya es
-  // el dueño actual → ok sin escribir ni disparar side-effects (evita spam en doble
-  // submit, sea claim del asesor o reasignación del mando al mismo dueño).
-  if (assigneeId !== null && contact.assignedToId === assigneeId) {
+  // Idempotencia unificada (cualquier rol, no solo claim; incluye desasignar sobre un
+  // contacto YA libre): el destino ya es el dueño actual → ok sin escribir ni disparar
+  // side-effects (evita spam en doble submit y bumps de updatedAt que invalidarían locks
+  // optimistas en vuelo de otros). Va DESPUÉS del bloque de permisos a propósito: si
+  // corriera antes, un no-mando podría "reasignar" con éxito un contacto que ya es de
+  // un tercero, filtrando el nombre de ese tercero sin tener permiso real.
+  if (contact.assignedToId === assigneeId) {
     return { ok: true, assignedTo: assignee };
   }
 

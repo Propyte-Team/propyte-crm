@@ -103,6 +103,25 @@ describe("assignContact — permisos", () => {
     expect(activityCreate).not.toHaveBeenCalled();
   });
 
+  it("mando desasigna un contacto que YA estaba libre → ok idempotente, sin update ni Activity", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: null });
+    const r = await assignContact({ contactId: "c1", assigneeId: null, actor: MANDO });
+    expect(r).toEqual({ ok: true, assignedTo: null });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
+  });
+
+  it("el guard de idempotencia va DESPUÉS de permisos: asesor manda el id de un tercero que YA lo posee → sin-permiso", async () => {
+    // Fija el ORDEN, no solo el resultado: si el guard de idempotencia (assignedToId===assigneeId)
+    // se evaluara ANTES del bloque de permisos, este caso calzaría con "ya es el dueño actual" y
+    // devolvería {ok:true, assignedTo:{id:"ase-2",...}} — éxito indebido que filtra el nombre de
+    // un tercero a un asesor sin permiso real para tocar esa asignación.
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-2" });
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: ASESOR });
+    expect(r).toEqual({ ok: false, code: "sin-permiso" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+  });
+
   it("asesor reclama contacto libre: ok y SIN Notification (es para sí mismo)", async () => {
     userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com" });
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-1", actor: ASESOR });
