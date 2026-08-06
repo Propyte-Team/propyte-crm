@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/constants";
 import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/messaging/media";
 import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
 import { canMarkSpam } from "@/lib/moderation/roles";
+import { AssignControl } from "./assign-control";
 
 interface ConversationListItem {
   id: string;
@@ -194,6 +195,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  // Último thread.id cargado con éxito. loadThread es un useCallback con deps [] (para
+  // no reventar los efectos de polling que dependen de su identidad), así que no puede
+  // leer `thread` del closure sin quedarse con el valor de la primera render — este ref
+  // sí se mantiene al día vía el effect de abajo.
+  const threadIdRef = useRef<string | null>(null);
 
   // Plantillas de chat (las WHATSAPP sirven igual en IG/Messenger; EMAIL fuera por subject)
   useEffect(() => {
@@ -303,12 +309,30 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const loadThread = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/conversations/${id}`);
+      // 404 = perdimos el alcance sobre el hilo (lo asignaron a otro, lo cerraron, o nos
+      // lo reasignaron por debajo). Sin esto el panel se quedaba con el hilo viejo — que
+      // la lista ya no muestra — y el polling de 5s seguía 404eando para siempre.
+      if (res.status === 404) {
+        // Avisar solo si HABÍA un hilo cargado con este mismo id (threadIdRef, no el
+        // `thread` de más arriba: closure de deps [] se congelaría en null). Así no se
+        // dispara desde el polling de forma repetida: en cuanto se limpia el panel,
+        // selectedId pasa a null y el siguiente tick ya no vuelve a llamar loadThread
+        // para este id.
+        if (threadIdRef.current === id) {
+          alert("Ya no tienes acceso a esta conversación (se asignó a otra persona)");
+        }
+        setThread(null);
+        setSelectedId(null);
+        return;
+      }
       if (res.ok) {
         setThread((await res.json()).data);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 50);
       }
     } catch { /* silencioso */ }
   }, []);
+
+  useEffect(() => { threadIdRef.current = thread?.id ?? null; }, [thread]);
 
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => {
@@ -340,6 +364,37 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
     } else {
       const data = await res.json().catch(() => ({}));
       alert(data.error ?? "Error");
+    }
+  }
+
+  /**
+   * assigneeId: string = asignar/reclamar · null = quitar asignación.
+   * El try/catch no es decorativo: AssignControl deja su menú abierto para reintentar
+   * cuando esto falla, así que un fetch rechazado (offline, DNS, abort) tiene que avisar
+   * igual que un !res.ok — si no, el usuario ve el menú abierto y ningún error.
+   */
+  async function doAssign(assigneeId: string | null) {
+    if (!selectedId) return;
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assign", assigneeId }),
+      });
+      if (res.ok) {
+        await loadThread(selectedId);
+        await loadList();
+      } else if (res.status === 404) {
+        // Mismo criterio que el envío: el 404 del server es opaco a propósito; loadThread
+        // traduce "fuera de alcance" a un aviso humano y limpia el panel.
+        await loadThread(selectedId);
+        await loadList();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(typeof data.error === "string" ? data.error : "No se pudo cambiar la asignación");
+      }
+    } catch {
+      alert("No se pudo asignar");
     }
   }
 
@@ -395,6 +450,15 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
         setComposer("");
         setAsNote(false);
         clearPendingMedia();
+        await loadThread(selectedId);
+        // El envío puede disparar auto-claim (POST .../messages en el server); sin
+        // refrescar la lista, el badge "Sin asignar" del listado queda obsoleto hasta
+        // el próximo poll de 5s.
+        await loadList();
+      } else if (res.status === 404) {
+        // El server unificó en 404 todo lo que está fuera de alcance, así que su cuerpo
+        // ("No existe") no dice nada útil a propósito. loadThread ya sabe reaccionar:
+        // avisa con lenguaje humano y limpia el panel en vez de mostrar ese literal.
         await loadThread(selectedId);
       } else {
         const data = await res.json().catch(() => ({}));
@@ -497,6 +561,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                     <span className="badge badge-neutral !text-[10px] !py-0 whitespace-nowrap">
                       {channelAccountLabel(c.channel, c.connector)}
                     </span>
+                    {!c.contact.assignedTo && (
+                      <span className="badge badge-neutral !text-[10px] !py-0 shrink-0 whitespace-nowrap">
+                        Sin asignar
+                      </span>
+                    )}
                     <p className="truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
                       {c.messages[0]?.body ?? "—"}
                     </p>
@@ -535,6 +604,12 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                 {thread.contact.whatsappOptOut && <span className="badge badge-error">Opt-out</span>}
               </div>
               <div className="flex items-center gap-1.5">
+                <AssignControl
+                  assignedTo={thread.contact.assignedTo}
+                  userId={userId}
+                  userRole={userRole}
+                  onAssign={doAssign}
+                />
                 {thread.status === "BOT" ? (
                   <button className="btn-primary !py-1.5 !px-3 text-[12px]" onClick={() => doAction("takeover")}>
                     <User className="h-3.5 w-3.5" /> Tomar control

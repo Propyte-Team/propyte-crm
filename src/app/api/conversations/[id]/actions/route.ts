@@ -1,18 +1,44 @@
-// Acciones del hilo (Anexo B §I.5): takeover · release · close · snooze · toggle-bot · mark-spam.
-// POST { action: "takeover"|"release"|"close"|"snooze"|"toggle_bot"|"mark_spam", until?, reason? }
+// Acciones del hilo (Anexo B §I.5): takeover · release · close · snooze · toggle-bot · mark-spam · assign.
+// POST { action: "takeover"|"release"|"close"|"snooze"|"toggle_bot"|"mark_spam"|"assign", until?, reason?, assigneeId? }
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { canMarkSpam } from "@/lib/moderation/roles";
-
-const MANAGER_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER"];
+import { isInboxManager } from "@/lib/inbox/roles";
+import { canViewInboxContact } from "@/lib/inbox/scope";
 
 const actionSchema = z.object({
-  action: z.enum(["takeover", "release", "close", "snooze", "toggle_bot", "mark_spam"]),
+  action: z.enum(["takeover", "release", "close", "snooze", "toggle_bot", "mark_spam", "assign"]),
   until: z.string().datetime().optional(),
   reason: z.string().max(500).optional(),
+  // string = asignar/reclamar · null = quitar asignación · ausente solo válido si action ≠ assign
+  // .trim() antes de .min(1): un valor de solo espacios no debe llegar al módulo (que lo
+  // afirmaría como "usuario no activo", más de lo que sabe) — debe fallar aquí, en 400.
+  assigneeId: z.string().trim().min(1).nullable().optional(),
 });
+
+// Mapas de la acción assign: constantes puras a nivel de módulo. Las claves están
+// fijadas por AssignResult (@/lib/inbox/assign) — si ahí se agrega un código nuevo sin
+// actualizar estos dos mapas, indexar con `result.code` deja de tipar y tsc rompe
+// (exhaustividad en tiempo de compilación, a propósito).
+const ASSIGN_HTTP_BY_CODE = {
+  "sin-permiso": 403,
+  "ya-asignado": 409,
+  "no-existe": 404,
+  "usuario-invalido": 422,
+  "conflicto": 409,
+} as const;
+
+const ASSIGN_MSG_BY_CODE = {
+  "sin-permiso": "No tienes permiso para asignar este hilo",
+  "ya-asignado": "El contacto ya está asignado a otro asesor",
+  // Diferenciado del 404 de "conversación inexistente": este es el contacto DEL hilo,
+  // que ya existía pero se borró entre la lectura de la conversación y el assign.
+  "no-existe": "El contacto de este hilo ya no existe",
+  "usuario-invalido": "El usuario elegido no está activo",
+  "conflicto": "El hilo cambió, recarga",
+} as const;
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession();
@@ -69,15 +95,76 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ data: { blockedSenderId: result.blockedSenderId, meta } });
   }
 
+  // assign se resuelve ANTES del gate genérico a propósito: un hilo sin asignar no
+  // tiene dueño (el gate daría 403 al claim). El permiso real vive en assignContact.
+  if (parsed.data.action === "assign") {
+    if (parsed.data.assigneeId === undefined) {
+      return NextResponse.json({ error: "Falta assigneeId (id de usuario o null)" }, { status: 400 });
+    }
+    const conv = await prisma.conversation.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        contactId: true,
+        // El alcance se decide aquí, no en assignContact: teamLeaderId alimenta la regla
+        // del TEAM_LEADER (ver scope.ts).
+        contact: { select: { assignedToId: true, assignedTo: { select: { teamLeaderId: true } } } },
+      },
+    });
+    if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+    // Fuera de alcance → 404 con el mismo cuerpo que "no existe". Sin esto, un hilo que
+    // el usuario ni ve en la lista le respondía 409 "ya está asignado a otro asesor":
+    // confirmación gratis de que existe y de su estado. Con el chequeo aquí, del módulo
+    // solo pueden llegar sin-permiso (403, el ROL no puede ser dueño) y ya-asignado (409,
+    // sobre un hilo que el usuario SÍ ve).
+    if (!canViewInboxContact(conv.contact, session.user)) {
+      return NextResponse.json({ error: "No existe" }, { status: 404 });
+    }
+
+    const { assignContact } = await import("@/lib/inbox/assign");
+    const result = await assignContact({
+      contactId: conv.contactId,
+      assigneeId: parsed.data.assigneeId,
+      actor: { id: session.user.id, role: session.user.role },
+      conversationId: conv.id,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: ASSIGN_MSG_BY_CODE[result.code] },
+        { status: ASSIGN_HTTP_BY_CODE[result.code] }
+      );
+    }
+    return NextResponse.json({ data: { assignedTo: result.assignedTo } });
+  }
+
   const conv = await prisma.conversation.findUnique({
     where: { id: params.id },
-    include: { contact: { select: { id: true, assignedToId: true, whatsappOptOut: true, firstName: true, lastName: true } } },
+    include: {
+      contact: {
+        select: {
+          id: true, assignedToId: true, whatsappOptOut: true, firstName: true, lastName: true,
+          // teamLeaderId: lo necesita el alcance del TEAM_LEADER (ver scope.ts).
+          assignedTo: { select: { teamLeaderId: true } },
+        },
+      },
+    },
   });
   if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
 
+  // Alcance ANTES que permiso, y 404 antes que 403: las tres puertas del inbox (leer el
+  // hilo, escribir en él y comandarlo) comparten ya la misma definición — @/lib/inbox/scope.
+  // Un hilo invisible no acepta comandos: sin esto, un mando sin vista completa
+  // (TEAM_LEADER) podía cerrar o tomar control de un hilo que su GET devuelve como 404.
+  // El orden importa: un 403 "sin permiso" aquí ya confirmaría que el hilo existe a quien
+  // ni siquiera debería saberlo, que es justo lo que el 404 unificado evita.
+  if (!canViewInboxContact(conv.contact, session.user)) {
+    return NextResponse.json({ error: "No existe" }, { status: 404 });
+  }
+
   // Permiso: asesor asignado, quien controla, o management (§I.5)
   const isOwner = conv.contact.assignedToId === session.user.id || conv.controlledById === session.user.id;
-  if (!isOwner && !MANAGER_ROLES.includes(session.user.role)) {
+  if (!isOwner && !isInboxManager(session.user.role)) {
     return NextResponse.json({ error: "Sin permiso sobre este hilo" }, { status: 403 });
   }
 

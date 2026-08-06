@@ -6,6 +6,9 @@ import { getServerSession } from "@/lib/auth/session";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { CHAT_MEDIA_TYPES, type ChatMediaType } from "@/lib/messaging/media";
+import { isInboxManager, canOwnInboxContact } from "@/lib/inbox/roles";
+import { canViewInboxContact } from "@/lib/inbox/scope";
+import { assignContact } from "@/lib/inbox/assign";
 
 const sendSchema = z
   .object({
@@ -34,7 +37,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const conv = await prisma.conversation.findUnique({
     where: { id: params.id },
-    include: { contact: { select: { id: true, phone: true, doNotContact: true } } },
+    include: {
+      contact: {
+        select: {
+          id: true, phone: true, doNotContact: true, assignedToId: true,
+          // teamLeaderId: lo necesita el alcance del TEAM_LEADER (ver scope.ts).
+          assignedTo: { select: { teamLeaderId: true } },
+        },
+      },
+    },
   });
   if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
 
@@ -57,6 +68,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     });
     return NextResponse.json({ data: note }, { status: 201 });
+  }
+
+  // Aislamiento: escribir exige el MISMO alcance que leer (@/lib/inbox/scope), así el
+  // gate no puede divergir del que decide qué hilos existen para este usuario.
+  // 404 y no 403: el mensaje viejo ("asignado a otro asesor") confirmaba por URL directa
+  // que el hilo existe Y su estado a alguien que ni siquiera lo ve en la lista. Mismo
+  // cuerpo que el "No existe" de arriba: indistinguible a propósito.
+  const esMando = isInboxManager(session.user.role);
+  if (!canViewInboxContact(conv.contact, session.user)) {
+    return NextResponse.json({ error: "No existe" }, { status: 404 });
   }
 
   if (conv.contact.doNotContact) {
@@ -84,6 +105,36 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       where: { id: conv.id },
       data: { status: "HUMAN", controlledById: session.user.id, takeoverAt: new Date() },
     });
+  }
+
+  // Auto-claim: el primer no-mando que responde un hilo libre se queda el contacto.
+  // Post-envío y best-effort: si el claim pierde una carrera, el mensaje ya salió
+  // y el siguiente envío re-evalúa. Mando NO reclama (triagea sin quedarse leads).
+  // canOwnInboxContact: el permiso REAL vive en assignContact (assign.ts), que ya
+  // devuelve sin-permiso para roles como BROKER/HOSTESS/MARKETING — pero sin este
+  // check cada mensaje suyo a un hilo libre garantiza esa llamada (y su console.error)
+  // aunque el resultado sea el esperado por diseño: ruido, no un fallo real. Esto es
+  // defensa en profundidad para no ejercitar una llamada condenada de antemano, no la
+  // única barrera — si el criterio de assign.ts cambia y este no se actualiza, el peor
+  // caso es una llamada de más, no un permiso de más.
+  if (!conv.contact.assignedToId && !esMando && canOwnInboxContact(session.user.role)) {
+    try {
+      // assignContact NO lanza en sus fallos normales (conflicto de carrera,
+      // usuario-invalido, etc.) — devuelve { ok: false, code }. Si se descarta el
+      // resultado, esos fallos (los más probables) desaparecen sin rastro y el hilo
+      // queda sin asignar para siempre.
+      const res = await assignContact({
+        contactId: conv.contact.id,
+        assigneeId: session.user.id,
+        actor: { id: session.user.id, role: session.user.role },
+        conversationId: conv.id,
+        source: "inbox_autoclaim",
+      });
+      if (!res.ok) console.error("[inbox] auto-claim no aplicado", res.code);
+    } catch (e) {
+      // Best-effort: el mensaje ya salió, no se revierte. Log consistente con assign.ts.
+      console.error("[inbox] no se pudo auto-reclamar el contacto", e);
+    }
   }
 
   return NextResponse.json({ data: message }, { status: 201 });
