@@ -6,6 +6,8 @@ import { getServerSession } from "@/lib/auth/session";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { CHAT_MEDIA_TYPES, type ChatMediaType } from "@/lib/messaging/media";
+import { isInboxManager } from "@/lib/inbox/roles";
+import { assignContact } from "@/lib/inbox/assign";
 
 const sendSchema = z
   .object({
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const conv = await prisma.conversation.findUnique({
     where: { id: params.id },
-    include: { contact: { select: { id: true, phone: true, doNotContact: true } } },
+    include: { contact: { select: { id: true, phone: true, doNotContact: true, assignedToId: true } } },
   });
   if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
 
@@ -57,6 +59,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     });
     return NextResponse.json({ data: note }, { status: 201 });
+  }
+
+  // Aislamiento: un hilo asignado a otro asesor no acepta envíos de no-mando.
+  // La lista nunca le mostró este hilo; esto cierra el acceso por URL directa.
+  const esMando = isInboxManager(session.user.role);
+  if (conv.contact.assignedToId && conv.contact.assignedToId !== session.user.id && !esMando) {
+    return NextResponse.json({ error: "El contacto está asignado a otro asesor" }, { status: 403 });
   }
 
   if (conv.contact.doNotContact) {
@@ -84,6 +93,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       where: { id: conv.id },
       data: { status: "HUMAN", controlledById: session.user.id, takeoverAt: new Date() },
     });
+  }
+
+  // Auto-claim: el primer no-mando que responde un hilo libre se queda el contacto.
+  // Post-envío y best-effort: si el claim pierde una carrera, el mensaje ya salió
+  // y el siguiente envío re-evalúa. Mando NO reclama (triagea sin quedarse leads).
+  if (!conv.contact.assignedToId && !esMando) {
+    try {
+      await assignContact({
+        contactId: conv.contact.id,
+        assigneeId: session.user.id,
+        actor: { id: session.user.id, role: session.user.role },
+        conversationId: conv.id,
+        source: "inbox_autoclaim",
+      });
+    } catch (e) {
+      // Best-effort: el mensaje ya salió, no se revierte. Log consistente con assign.ts.
+      console.error("[inbox] no se pudo auto-reclamar el contacto", e);
+    }
   }
 
   return NextResponse.json({ data: message }, { status: 201 });
