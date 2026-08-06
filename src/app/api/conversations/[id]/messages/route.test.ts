@@ -195,28 +195,22 @@ describe("gate de asignación + auto-claim", () => {
     expect(assignContact).not.toHaveBeenCalled();
   });
 
-  // Decisión a propósito: la ruta NO filtra por rol quién puede reclamar — solo mira
-  // "es mando o no". HOSTESS no es mando, así que la ruta SÍ invoca assignContact en
-  // hilo libre; es el módulo (canOwnInboxContact adentro de assign.ts) quien decide que
-  // HOSTESS no puede ser dueño y devuelve sin-permiso. La ruta solo loguea ese código
-  // (FIX 1) — no intenta adivinar el permiso de antemano.
-  it("HOSTESS (no puede ser dueño) en hilo libre → 201, la ruta SÍ llama assignContact y loguea sin-permiso", async () => {
+  // Decisión (FIX 3): la ruta ahora SÍ evita de antemano una llamada garantizada a
+  // fallar — importa canOwnInboxContact para no invocar assignContact cuando el ROL del
+  // remitente no puede ser dueño de un contacto (antes, cada mensaje de HOSTESS/BROKER/
+  // MARKETING a un hilo libre escribía un console.error, aunque "sin-permiso" fuera el
+  // resultado esperado por diseño). El permiso REAL sigue viviendo en el módulo
+  // (assign.ts) — esto es defensa en profundidad, no la única barrera.
+  it("HOSTESS (no puede ser dueño) en hilo libre → 201, no llama assignContact ni loguea error", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       getServerSession.mockResolvedValue({ user: { id: "h1", role: "HOSTESS" } });
       findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
-      assignContact.mockResolvedValue({ ok: false, code: "sin-permiso" });
       const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
       const res = await POST(r, { params: { id: "conv1" } });
       expect(res.status).toBe(201);
-      expect(assignContact).toHaveBeenCalledWith({
-        contactId: "c1",
-        assigneeId: "h1",
-        actor: { id: "h1", role: "HOSTESS" },
-        conversationId: "conv1",
-        source: "inbox_autoclaim",
-      });
-      expect(errSpy).toHaveBeenCalledWith("[inbox] auto-claim no aplicado", "sin-permiso");
+      expect(assignContact).not.toHaveBeenCalled();
+      expect(errSpy).not.toHaveBeenCalled();
     } finally {
       errSpy.mockRestore();
     }

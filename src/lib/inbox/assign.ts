@@ -74,14 +74,37 @@ export async function assignContact(opts: {
 
   // Escritura con lock optimista sobre el updatedAt leído: si el contacto cambió
   // entre lectura y update (otro claim ganó), el update no matchea → conflicto.
+  // Liberar el control (abajo) va en la MISMA transacción: es parte atómica de
+  // reasignar, no un side-effect best-effort aparte (esos van después, fuera del try).
   try {
     await withChangeSource(
       { source: opts.source ?? "inbox_assign", actorId: actor.id },
-      (tx) =>
-        tx.contact.update({
+      async (tx) => {
+        await tx.contact.update({
           where: { id: contact.id, updatedAt: contact.updatedAt },
           data: { assignedToId: assigneeId },
-        })
+        });
+        // El dueño cambió (ya pasamos el guard de idempotencia de arriba) → cualquier
+        // hilo de este contacto controlado por alguien que NO sea el nuevo dueño pierde
+        // el control. Sin esto, el asesor saliente conservaba controlledById y con eso
+        // permisos de close/snooze/toggle_bot/release (gate de POST /api/conversations/
+        // [id]/actions:132) sobre un hilo que ya no puede ni leer (404 en GET) ni
+        // escribir (403 en messages) — combinación nueva de esta rama: antes, nada
+        // cambiaba assignedToId desde el inbox.
+        // "not: assigneeId" en vez de comparar contra el controlador saliente puntual:
+        // assignedToId aplica al contacto en TODOS sus hilos (puede tener uno por
+        // canal), y si el nuevo dueño YA controlaba alguno, ese hilo queda intacto —
+        // no se le quita algo que ya es suyo.
+        // NO tocamos `status`: un hilo HUMAN con controlledById null ya es un estado
+        // alcanzable hoy sin esta rama — ver el takeover suave de sendChannelMessage
+        // en src/lib/messaging/core.ts:166-169, que deja controlledById en null cuando
+        // el contacto está sin asignar. La UI ya lo renderiza como "Controla —"
+        // (src/components/inbox/inbox-view.tsx:573), así que es coherente.
+        await tx.conversation.updateMany({
+          where: { contactId: contact.id, controlledById: { not: assigneeId } },
+          data: { controlledById: null },
+        });
+      }
     );
   } catch (e) {
     // Solo el miss del lock optimista es "conflicto"; cualquier otro fallo (BD caída,
@@ -122,7 +145,10 @@ export async function assignContact(opts: {
           type: ASSIGN_NOTIFICATION_TYPE,
           title: "Conversación asignada",
           message: `Te asignaron la conversación con ${contactName || "un contacto"}`,
-          link: opts.conversationId ? `/inbox?focus=${opts.conversationId}` : "/inbox",
+          // Acoplado a src/components/inbox/inbox-view.tsx: lee useSearchParams().get("c")
+          // para preseleccionar el hilo al abrir. Si ese nombre de parámetro cambia ahí,
+          // cambia aquí también (o el deep-link vuelve a quedar muerto).
+          link: opts.conversationId ? `/inbox?c=${opts.conversationId}` : "/inbox",
         },
       });
     } catch (e) {

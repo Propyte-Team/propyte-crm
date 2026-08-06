@@ -6,6 +6,7 @@ const userFindFirst = vi.fn();
 const activityCreate = vi.fn();
 const notificationCreate = vi.fn();
 const txContactUpdate = vi.fn();
+const txConversationUpdateMany = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     contact: { findFirst: (...a: unknown[]) => contactFindFirst(...a) },
@@ -15,12 +16,16 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-// withChangeSource: capturamos opts y corremos fn con un tx falso que expone contact.update
+// withChangeSource: capturamos opts y corremos fn con un tx falso que expone
+// contact.update y conversation.updateMany (FIX 1: liberar control va en la misma tx).
 const changeSourceCalls: unknown[] = [];
 vi.mock("@/lib/audit/change-context", () => ({
   withChangeSource: async (opts: unknown, fn: (tx: unknown) => Promise<unknown>) => {
     changeSourceCalls.push(opts);
-    return fn({ contact: { update: (...a: unknown[]) => txContactUpdate(...a) } });
+    return fn({
+      contact: { update: (...a: unknown[]) => txContactUpdate(...a) },
+      conversation: { updateMany: (...a: unknown[]) => txConversationUpdateMany(...a) },
+    });
   },
 }));
 
@@ -37,12 +42,15 @@ const CONTACTO_LIBRE = {
 const USUARIO_OK = { id: "ase-2", name: "Pedro Ruiz", email: "pedro@propyte.com", role: "ASESOR" };
 
 beforeEach(() => {
-  [contactFindFirst, userFindFirst, activityCreate, notificationCreate, txContactUpdate]
-    .forEach((m) => m.mockReset());
+  [
+    contactFindFirst, userFindFirst, activityCreate, notificationCreate,
+    txContactUpdate, txConversationUpdateMany,
+  ].forEach((m) => m.mockReset());
   changeSourceCalls.length = 0;
   contactFindFirst.mockResolvedValue(CONTACTO_LIBRE);
   userFindFirst.mockResolvedValue(USUARIO_OK);
   txContactUpdate.mockResolvedValue({});
+  txConversationUpdateMany.mockResolvedValue({ count: 0 });
   activityCreate.mockResolvedValue({});
   notificationCreate.mockResolvedValue({});
 });
@@ -62,7 +70,8 @@ describe("assignContact — permisos", () => {
         data: expect.objectContaining({
           userId: "ase-2",
           type: "conversation_assigned",
-          link: "/inbox?focus=conv-1",
+          // inbox-view.tsx lee useSearchParams().get("c"), no "focus" (FIX 2).
+          link: "/inbox?c=conv-1",
         }),
       })
     );
@@ -262,5 +271,46 @@ describe("assignContact — cronología y side-effects", () => {
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
     expect(r.ok).toBe(true);
     expect(notificationCreate).toHaveBeenCalled();
+  });
+});
+
+describe("assignContact — libera el control al reasignar (FIX 1)", () => {
+  it("al reasignar, libera el control con el filtro correcto y DENTRO de la transacción", async () => {
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+    expect(r.ok).toBe(true);
+    // Solo existe porque el mock de withChangeSource ejecuta fn(tx) y expone
+    // conversation.updateMany en ESE tx falso — si assign.ts lo llamara fuera de la
+    // transacción (p.ej. contra prisma directo), este mock nunca vería la llamada.
+    expect(txConversationUpdateMany).toHaveBeenCalledWith({
+      where: { contactId: "c1", controlledById: { not: "ase-2" } },
+      data: { controlledById: null },
+    });
+  });
+
+  it("camino idempotente (mismo dueño): no toca el control", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-2" });
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+    expect(r.ok).toBe(true);
+    expect(txContactUpdate).not.toHaveBeenCalled();
+    expect(txConversationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("si el nuevo dueño ya era el controlador, el filtro lo excluye (no se le quita el control)", async () => {
+    // El propio filtro "controlledById: { not: assigneeId }" es la garantía: cualquier
+    // hilo donde controlledById YA es el nuevo dueño no matchea el where y queda intacto.
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+    expect(r.ok).toBe(true);
+    const [{ where }] = txConversationUpdateMany.mock.calls[0];
+    expect(where).toEqual({ contactId: "c1", controlledById: { not: "ase-2" } });
+  });
+
+  it("también libera el control al quitar la asignación (assigneeId null)", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "otro" });
+    const r = await assignContact({ contactId: "c1", assigneeId: null, actor: MANDO });
+    expect(r.ok).toBe(true);
+    expect(txConversationUpdateMany).toHaveBeenCalledWith({
+      where: { contactId: "c1", controlledById: { not: null } },
+      data: { controlledById: null },
+    });
   });
 });

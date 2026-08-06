@@ -6,7 +6,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { CHAT_MEDIA_TYPES, type ChatMediaType } from "@/lib/messaging/media";
-import { isInboxManager } from "@/lib/inbox/roles";
+import { isInboxManager, canOwnInboxContact } from "@/lib/inbox/roles";
 import { assignContact } from "@/lib/inbox/assign";
 
 const sendSchema = z
@@ -98,12 +98,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // Auto-claim: el primer no-mando que responde un hilo libre se queda el contacto.
   // Post-envío y best-effort: si el claim pierde una carrera, el mensaje ya salió
   // y el siguiente envío re-evalúa. Mando NO reclama (triagea sin quedarse leads).
-  if (!conv.contact.assignedToId && !esMando) {
+  // canOwnInboxContact: el permiso REAL vive en assignContact (assign.ts), que ya
+  // devuelve sin-permiso para roles como BROKER/HOSTESS/MARKETING — pero sin este
+  // check cada mensaje suyo a un hilo libre garantiza esa llamada (y su console.error)
+  // aunque el resultado sea el esperado por diseño: ruido, no un fallo real. Esto es
+  // defensa en profundidad para no ejercitar una llamada condenada de antemano, no la
+  // única barrera — si el criterio de assign.ts cambia y este no se actualiza, el peor
+  // caso es una llamada de más, no un permiso de más.
+  if (!conv.contact.assignedToId && !esMando && canOwnInboxContact(session.user.role)) {
     try {
       // assignContact NO lanza en sus fallos normales (conflicto de carrera,
-      // sin-permiso para roles que no pueden ser dueños, etc.) — devuelve
-      // { ok: false, code }. Si se descarta el resultado, esos fallos (los más
-      // probables) desaparecen sin rastro y el hilo queda sin asignar para siempre.
+      // usuario-invalido, etc.) — devuelve { ok: false, code }. Si se descarta el
+      // resultado, esos fallos (los más probables) desaparecen sin rastro y el hilo
+      // queda sin asignar para siempre.
       const res = await assignContact({
         contactId: conv.contact.id,
         assigneeId: session.user.id,

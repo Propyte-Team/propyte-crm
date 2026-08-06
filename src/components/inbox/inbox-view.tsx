@@ -195,6 +195,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  // Último thread.id cargado con éxito. loadThread es un useCallback con deps [] (para
+  // no reventar los efectos de polling que dependen de su identidad), así que no puede
+  // leer `thread` del closure sin quedarse con el valor de la primera render — este ref
+  // sí se mantiene al día vía el effect de abajo.
+  const threadIdRef = useRef<string | null>(null);
 
   // Plantillas de chat (las WHATSAPP sirven igual en IG/Messenger; EMAIL fuera por subject)
   useEffect(() => {
@@ -308,6 +313,14 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
       // lo reasignaron por debajo). Sin esto el panel se quedaba con el hilo viejo — que
       // la lista ya no muestra — y el polling de 5s seguía 404eando para siempre.
       if (res.status === 404) {
+        // Avisar solo si HABÍA un hilo cargado con este mismo id (threadIdRef, no el
+        // `thread` de más arriba: closure de deps [] se congelaría en null). Así no se
+        // dispara desde el polling de forma repetida: en cuanto se limpia el panel,
+        // selectedId pasa a null y el siguiente tick ya no vuelve a llamar loadThread
+        // para este id.
+        if (threadIdRef.current === id) {
+          alert("Ya no tienes acceso a esta conversación (se asignó a otra persona)");
+        }
         setThread(null);
         setSelectedId(null);
         return;
@@ -318,6 +331,8 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
       }
     } catch { /* silencioso */ }
   }, []);
+
+  useEffect(() => { threadIdRef.current = thread?.id ?? null; }, [thread]);
 
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => {
@@ -431,6 +446,10 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
         setAsNote(false);
         clearPendingMedia();
         await loadThread(selectedId);
+        // El envío puede disparar auto-claim (POST .../messages en el server); sin
+        // refrescar la lista, el badge "Sin asignar" del listado queda obsoleto hasta
+        // el próximo poll de 5s.
+        await loadList();
       } else {
         const data = await res.json().catch(() => ({}));
         alert(typeof data.error === "string" ? data.error : "Error al enviar");
