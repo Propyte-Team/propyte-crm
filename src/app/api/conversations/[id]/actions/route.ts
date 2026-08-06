@@ -1,17 +1,18 @@
-// Acciones del hilo (Anexo B §I.5): takeover · release · close · snooze · toggle-bot · mark-spam.
-// POST { action: "takeover"|"release"|"close"|"snooze"|"toggle_bot"|"mark_spam", until?, reason? }
+// Acciones del hilo (Anexo B §I.5): takeover · release · close · snooze · toggle-bot · mark-spam · assign.
+// POST { action: "takeover"|"release"|"close"|"snooze"|"toggle_bot"|"mark_spam"|"assign", until?, reason?, assigneeId? }
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { canMarkSpam } from "@/lib/moderation/roles";
-
-const MANAGER_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER"];
+import { isInboxManager } from "@/lib/inbox/roles";
 
 const actionSchema = z.object({
-  action: z.enum(["takeover", "release", "close", "snooze", "toggle_bot", "mark_spam"]),
+  action: z.enum(["takeover", "release", "close", "snooze", "toggle_bot", "mark_spam", "assign"]),
   until: z.string().datetime().optional(),
   reason: z.string().max(500).optional(),
+  // string = asignar/reclamar · null = quitar asignación · ausente solo válido si action ≠ assign
+  assigneeId: z.string().min(1).nullable().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -69,6 +70,39 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ data: { blockedSenderId: result.blockedSenderId, meta } });
   }
 
+  // assign se resuelve ANTES del gate genérico a propósito: un hilo sin asignar no
+  // tiene dueño (el gate daría 403 al claim). El permiso real vive en assignContact.
+  if (parsed.data.action === "assign") {
+    if (parsed.data.assigneeId === undefined) {
+      return NextResponse.json({ error: "Falta assigneeId (id de usuario o null)" }, { status: 400 });
+    }
+    const conv = await prisma.conversation.findUnique({
+      where: { id: params.id },
+      select: { id: true, contactId: true },
+    });
+    if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+    const { assignContact } = await import("@/lib/inbox/assign");
+    const result = await assignContact({
+      contactId: conv.contactId,
+      assigneeId: parsed.data.assigneeId,
+      actor: { id: session.user.id, role: session.user.role },
+      conversationId: conv.id,
+    });
+    if (!result.ok) {
+      const httpByCode = { "sin-permiso": 403, "ya-asignado": 409, "no-existe": 404, "usuario-invalido": 422, "conflicto": 409 } as const;
+      const msgByCode = {
+        "sin-permiso": "No tienes permiso para asignar este hilo",
+        "ya-asignado": "El contacto ya está asignado a otro asesor",
+        "no-existe": "No existe",
+        "usuario-invalido": "El usuario elegido no está activo",
+        "conflicto": "El hilo cambió, recarga",
+      } as const;
+      return NextResponse.json({ error: msgByCode[result.code] }, { status: httpByCode[result.code] });
+    }
+    return NextResponse.json({ data: { assignedTo: result.assignedTo } });
+  }
+
   const conv = await prisma.conversation.findUnique({
     where: { id: params.id },
     include: { contact: { select: { id: true, assignedToId: true, whatsappOptOut: true, firstName: true, lastName: true } } },
@@ -77,7 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // Permiso: asesor asignado, quien controla, o management (§I.5)
   const isOwner = conv.contact.assignedToId === session.user.id || conv.controlledById === session.user.id;
-  if (!isOwner && !MANAGER_ROLES.includes(session.user.role)) {
+  if (!isOwner && !isInboxManager(session.user.role)) {
     return NextResponse.json({ error: "Sin permiso sobre este hilo" }, { status: 403 });
   }
 
