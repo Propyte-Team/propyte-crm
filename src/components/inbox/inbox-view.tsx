@@ -304,6 +304,14 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const loadThread = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/conversations/${id}`);
+      // 404 = perdimos el alcance sobre el hilo (lo asignaron a otro, lo cerraron, o nos
+      // lo reasignaron por debajo). Sin esto el panel se quedaba con el hilo viejo — que
+      // la lista ya no muestra — y el polling de 5s seguía 404eando para siempre.
+      if (res.status === 404) {
+        setThread(null);
+        setSelectedId(null);
+        return;
+      }
       if (res.ok) {
         setThread((await res.json()).data);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 50);
@@ -344,20 +352,29 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
     }
   }
 
-  /** assigneeId: string = asignar/reclamar · null = quitar asignación. */
+  /**
+   * assigneeId: string = asignar/reclamar · null = quitar asignación.
+   * El try/catch no es decorativo: AssignControl deja su menú abierto para reintentar
+   * cuando esto falla, así que un fetch rechazado (offline, DNS, abort) tiene que avisar
+   * igual que un !res.ok — si no, el usuario ve el menú abierto y ningún error.
+   */
   async function doAssign(assigneeId: string | null) {
     if (!selectedId) return;
-    const res = await fetch(`/api/conversations/${selectedId}/actions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "assign", assigneeId }),
-    });
-    if (res.ok) {
-      await loadThread(selectedId);
-      await loadList();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      alert(typeof data.error === "string" ? data.error : "No se pudo cambiar la asignación");
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assign", assigneeId }),
+      });
+      if (res.ok) {
+        await loadThread(selectedId);
+        await loadList();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(typeof data.error === "string" ? data.error : "No se pudo cambiar la asignación");
+      }
+    } catch {
+      alert("No se pudo asignar");
     }
   }
 

@@ -11,6 +11,7 @@ import { canOwnInboxContact, isInboxManager } from "@/lib/inbox/roles";
 interface BasicUser {
   id: string;
   name: string;
+  email: string;
   role: string;
   isActive: boolean;
 }
@@ -28,6 +29,7 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
   const [users, setUsers] = useState<BasicUser[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const fetchedRef = useRef(false);
 
   // Cierre por click fuera / Escape. Los listeners solo viven mientras el menú
@@ -38,7 +40,12 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      // Escape devuelve el foco al disparador: si no, al desmontarse el ítem enfocado
+      // el foco se cae al <body> y quien navega con teclado pierde el sitio.
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -50,6 +57,9 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
 
   // Carga perezosa: una sola vez, al abrir el menú. Si falla se libera el flag
   // para poder reintentar al reabrir.
+  // Acoplado al scoping de /api/users: a un TEAM_LEADER solo le devuelve su equipo + él
+  // mismo, así que su menú es más chico que lo que el backend le permitiría asignar. Es
+  // a propósito — el error cae del lado seguro (de menos, nunca de más).
   const loadUsers = useCallback(async () => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
@@ -58,9 +68,13 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
       const res = await fetch("/api/users?basic=true&isActive=true");
       if (!res.ok) throw new Error(String(res.status));
       const json = (await res.json()) as { data?: BasicUser[] };
-      // El backend rechaza (422) a quien no puede ser dueño de un contacto:
-      // filtramos con la misma regla para no ofrecer opciones que siempre fallan.
-      setUsers((json.data ?? []).filter((u) => canOwnInboxContact(u.role)));
+      // Espejo de las dos reglas que aplica assignContact (lib/inbox/assign.ts:59) antes
+      // de devolver 422: rol que pueda ser dueño, y nada de cuentas QA (.local). Filtrar
+      // aquí evita ofrecer opciones que siempre fallan — y con un mensaje que además
+      // miente ("El usuario elegido no está activo" para una cuenta que sí lo está).
+      setUsers(
+        (json.data ?? []).filter((u) => canOwnInboxContact(u.role) && !u.email.endsWith(".local"))
+      );
     } catch {
       fetchedRef.current = false;
       setLoadError(true);
@@ -74,7 +88,9 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
       await onAssign(assigneeId);
       setOpen(false);
     } catch {
-      // El llamador ya reporta el error; el menú queda abierto para reintentar.
+      // Red de seguridad: el menú queda abierto para reintentar y no dejamos busy pegado.
+      // Avisar al usuario es responsabilidad de onAssign (doAssign ya alerta también
+      // cuando el fetch rechaza), no de aquí: no tenemos el error del backend.
     } finally {
       setBusy(false);
     }
@@ -120,6 +136,7 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
   return (
     <div className="relative" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="btn-secondary !py-1.5 !px-3 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-teal)]"
         aria-haspopup="menu"
@@ -136,9 +153,13 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
       </button>
 
       {open && (
+        // Sin role="menu"/"menuitem" a propósito: ese contrato exige navegación con
+        // flechas y solo admite menuitems como hijos (los estados de carga/error no lo
+        // son). Botones reales navegables con Tab cumplen sin mentirle al lector de
+        // pantalla; el disparador conserva aria-haspopup/aria-expanded.
+        // (aria-label iría aquí, pero en un div sin role los lectores lo ignoran: el
+        // disparador ya anuncia de qué es este popup.)
         <div
-          role="menu"
-          aria-label="Asignar conversación"
           className="absolute right-0 top-full z-30 mt-1 max-h-64 w-56 overflow-y-auto rounded-lg shadow-lg"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
         >
@@ -159,7 +180,6 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
               <button
                 key={u.id}
                 type="button"
-                role="menuitem"
                 className={cn(
                   "block w-full truncate px-3 py-2 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-teal)]",
                   u.id === assignedTo?.id && "font-semibold"
@@ -184,7 +204,6 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
           {assignedTo && (
             <button
               type="button"
-              role="menuitem"
               className="block w-full px-3 py-2 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-teal)]"
               style={{ color: "var(--text-secondary)", borderTop: "1px solid var(--border-subtle)" }}
               disabled={busy}
