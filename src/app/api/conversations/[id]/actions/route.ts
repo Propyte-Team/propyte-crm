@@ -140,9 +140,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const conv = await prisma.conversation.findUnique({
     where: { id: params.id },
-    include: { contact: { select: { id: true, assignedToId: true, whatsappOptOut: true, firstName: true, lastName: true } } },
+    include: {
+      contact: {
+        select: {
+          id: true, assignedToId: true, whatsappOptOut: true, firstName: true, lastName: true,
+          // teamLeaderId: lo necesita el alcance del TEAM_LEADER (ver scope.ts).
+          assignedTo: { select: { teamLeaderId: true } },
+        },
+      },
+    },
   });
   if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+  // Alcance ANTES que permiso, y 404 antes que 403: las tres puertas del inbox (leer el
+  // hilo, escribir en él y comandarlo) comparten ya la misma definición — @/lib/inbox/scope.
+  // Un hilo invisible no acepta comandos: sin esto, un mando sin vista completa
+  // (TEAM_LEADER) podía cerrar o tomar control de un hilo que su GET devuelve como 404.
+  // El orden importa: un 403 "sin permiso" aquí ya confirmaría que el hilo existe a quien
+  // ni siquiera debería saberlo, que es justo lo que el 404 unificado evita.
+  if (!canViewInboxContact(conv.contact, session.user)) {
+    return NextResponse.json({ error: "No existe" }, { status: 404 });
+  }
 
   // Permiso: asesor asignado, quien controla, o management (§I.5)
   const isOwner = conv.contact.assignedToId === session.user.id || conv.controlledById === session.user.id;
