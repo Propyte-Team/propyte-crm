@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
+import { hasInboxFullView } from "@/lib/inbox/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           id: true, firstName: true, lastName: true, phone: true, email: true,
           temperature: true, score: true, preferredLanguage: true, budgetMin: true,
           budgetMax: true, preferredZone: true, purchaseTimeline: true, whatsappOptOut: true,
-          custom: true,
+          custom: true, assignedToId: true,
           assignedTo: { select: { id: true, name: true } },
           deals: {
             where: { deletedAt: null, stage: { notIn: ["WON", "LOST"] } },
@@ -38,6 +39,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     },
   });
   if (!conversation) return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+  // Alcance idéntico al de la lista (GET /api/conversations): mando con vista completa
+  // ve cualquier hilo; el resto (incluido TEAM_LEADER) solo si el contacto es suyo o
+  // está sin asignar. 404 y no 403: la lista tampoco le muestra este hilo a quien está
+  // fuera de su alcance, así que un 403 confirmaría por URL directa que el hilo existe
+  // a alguien que no debe saberlo — ver el comentario espejo en messages/route.ts:64-65.
+  const { assignedToId } = conversation.contact;
+  const fueraDeAlcance =
+    !hasInboxFullView(session.user.role) && assignedToId !== null && assignedToId !== session.user.id;
+  if (fueraDeAlcance) return NextResponse.json({ error: "No existe" }, { status: 404 });
 
   // Marcar leído al abrir (solo si no es polling incremental)
   if (!since && conversation.unreadCount > 0) {
