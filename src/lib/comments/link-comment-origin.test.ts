@@ -146,8 +146,16 @@ describe("persistOpenerCreatingContact", () => {
           lastName: PLACEHOLDER_LASTNAME,
           instagramId: "IGSID-1",
         },
-        { connectorId: "conn-ig" }
+        { connectorId: "conn-ig", provisional: true }
       );
+    });
+
+    // Un comentarista no es un lead: le escribimos nosotros primero. Sin
+    // provisional, cada persona que comenta entra ruteada, con SLA de primer
+    // toque y con un evento Lead hacia Meta.
+    it("el alta es provisional: nada de ruteo, SLA, MQL ni CAPI hasta que conteste", async () => {
+      await persistOpenerCreatingContact(args);
+      expect(captureLead.mock.calls[0][1]).toMatchObject({ provisional: true });
     });
 
     it("Facebook: source MESSENGER y messengerPsid", async () => {

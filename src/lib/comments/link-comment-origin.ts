@@ -241,7 +241,9 @@ export async function persistOpenerCreatingContact(args: {
           lastName: PLACEHOLDER_LASTNAME,
           ...idField,
         },
-        { connectorId: args.connectorId }
+        // provisional: le escribimos nosotros primero, no levantó la mano — se
+        // vuelve lead (ruteo, SLA, MQL, CAPI) cuando conteste.
+        { connectorId: args.connectorId, provisional: true }
       );
     } catch (err) {
       console.error(
