@@ -3,10 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma } from "@prisma/client";
+import { hasInboxFullView } from "@/lib/inbox/roles";
 
 export const dynamic = "force-dynamic";
-
-const MANAGER_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession();
@@ -17,35 +16,38 @@ export async function GET(req: NextRequest) {
 
   const where: Prisma.ConversationWhereInput = { status: { not: "CLOSED" } };
 
-  // Alcance por rol: asesores ven sus contactos + sin asignar; dirección ve todo
-  if (!MANAGER_ROLES.includes(session.user.role)) {
-    where.contact = {
-      OR: [{ assignedToId: session.user.id }, { assignedToId: null }],
-    };
+  // El where.contact se COMPONE con AND — nunca sobreescribir: el search pisaba
+  // el OR del aislamiento y un asesor buscando veía hilos ajenos (fuga, ago-2026).
+  const contactConds: Prisma.ContactWhereInput[] = [];
+
+  // Alcance por rol: asesores (y TEAM_LEADER) ven sus contactos + sin asignar
+  if (!hasInboxFullView(session.user.role)) {
+    contactConds.push({ OR: [{ assignedToId: session.user.id }, { assignedToId: null }] });
   }
 
   if (filter === "mine") {
-    where.contact = { assignedToId: session.user.id };
+    contactConds.push({ assignedToId: session.user.id });
+  } else if (filter === "unassigned") {
+    contactConds.push({ assignedToId: null });
   } else if (filter === "bot") {
     where.status = "BOT";
   } else if (filter === "human") {
     where.status = "HUMAN";
   } else if (filter === "unread") {
     where.unreadCount = { gt: 0 };
-  } else if (filter === "unassigned") {
-    where.contact = { assignedToId: null };
   }
 
   if (search) {
-    where.contact = {
-      ...(where.contact as object ?? {}),
+    contactConds.push({
       OR: [
         { firstName: { contains: search, mode: "insensitive" } },
         { lastName: { contains: search, mode: "insensitive" } },
         { phone: { contains: search } },
       ],
-    };
+    });
   }
+
+  if (contactConds.length > 0) where.contact = { AND: contactConds };
 
   const conversations = await prisma.conversation.findMany({
     where,
