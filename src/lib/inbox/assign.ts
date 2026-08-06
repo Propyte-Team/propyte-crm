@@ -3,10 +3,13 @@
 // Contact.assignedToId — asignar en el inbox = asignar el contacto en todo el CRM.
 // Permisos ADENTRO del módulo (la ruta solo mapea códigos a HTTP):
 //   mando (INBOX_MANAGERS) → asigna / reasigna / quita a cualquier usuario válido
-//   no-mando → solo claim: a sí mismo y solo si el contacto está libre
+//   no-mando → solo claim: a sí mismo, solo si el contacto está libre, y solo si su
+//              propio rol puede ser dueño de un contacto (canOwnInboxContact)
+// En ambos casos el ASIGNADO final también debe poder ser dueño (mismo gate) —
+// el mando no puede colgarle un lead a un rol que no lo atiende (p.ej. HOSTESS).
 import prisma from "@/lib/db";
 import { withChangeSource } from "@/lib/audit/change-context";
-import { isInboxManager } from "./roles";
+import { isInboxManager, canOwnInboxContact } from "./roles";
 
 export const ASSIGN_NOTIFICATION_TYPE = "conversation_assigned";
 
@@ -31,7 +34,11 @@ export async function assignContact(opts: {
 
   const manager = isInboxManager(actor.role);
   if (!manager) {
-    // No-mando: solo claim a sí mismo. Si el dueño actual es OTRO → sin cupo (ya-asignado).
+    // No-mando: solo claim, y solo si el ROL del actor puede ser dueño de un contacto.
+    // Sin este check, un rol como HOSTESS/MARKETING podía "reclamar" mandando su propio
+    // id — el gate genérico de la ruta ya no los detiene porque assign se resuelve antes.
+    if (!canOwnInboxContact(actor.role)) return { ok: false, code: "sin-permiso" };
+    // Solo claim a sí mismo. Si el dueño actual es OTRO → sin cupo (ya-asignado).
     // Si el dueño actual ES el actor, se deja pasar: el guard de idempotencia de abajo
     // (válido para cualquier rol) lo resuelve sin escribir.
     if (assigneeId !== actor.id) return { ok: false, code: "sin-permiso" };
@@ -40,15 +47,18 @@ export async function assignContact(opts: {
     }
   }
 
-  // Validar al asignado: activo y sin email .local — los usuarios QA no reciben
-  // leads ni a mano (espíritu del gate anti-test AUD-09 del routing).
+  // Validar al asignado: activo, sin email .local (los usuarios QA no reciben leads ni
+  // a mano — espíritu del gate anti-test AUD-09 del routing) y con un ROL que pueda ser
+  // dueño de un contacto — el mando tampoco puede colgarle un lead a HOSTESS/MARKETING.
   let assignee: { id: string; name: string } | null = null;
   if (assigneeId !== null) {
     const user = await prisma.user.findFirst({
       where: { id: assigneeId, isActive: true, deletedAt: null },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, role: true },
     });
-    if (!user || user.email.endsWith(".local")) return { ok: false, code: "usuario-invalido" };
+    if (!user || user.email.endsWith(".local") || !canOwnInboxContact(user.role)) {
+      return { ok: false, code: "usuario-invalido" };
+    }
     assignee = { id: user.id, name: user.name };
   }
 

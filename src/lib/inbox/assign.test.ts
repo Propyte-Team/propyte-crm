@@ -24,7 +24,9 @@ vi.mock("@/lib/audit/change-context", () => ({
   },
 }));
 
+import { UserRole } from "@prisma/client";
 import { assignContact } from "./assign";
+import { canOwnInboxContact } from "./roles";
 
 const MANDO = { id: "boss-1", role: "GERENTE" } as const;
 const ASESOR = { id: "ase-1", role: "ASESOR_SR" } as const;
@@ -32,7 +34,7 @@ const CONTACTO_LIBRE = {
   id: "c1", assignedToId: null, updatedAt: new Date("2026-08-06T00:00:00Z"),
   firstName: "Ana", lastName: "López",
 };
-const USUARIO_OK = { id: "ase-2", name: "Pedro Ruiz", email: "pedro@propyte.com" };
+const USUARIO_OK = { id: "ase-2", name: "Pedro Ruiz", email: "pedro@propyte.com", role: "ASESOR" };
 
 beforeEach(() => {
   [contactFindFirst, userFindFirst, activityCreate, notificationCreate, txContactUpdate]
@@ -123,7 +125,7 @@ describe("assignContact — permisos", () => {
   });
 
   it("asesor reclama contacto libre: ok y SIN Notification (es para sí mismo)", async () => {
-    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com" });
+    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com", role: "ASESOR_SR" });
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-1", actor: ASESOR });
     expect(r.ok).toBe(true);
     expect(notificationCreate).not.toHaveBeenCalled();
@@ -143,7 +145,7 @@ describe("assignContact — permisos", () => {
 
   it("asesor reclama un contacto que YA es suyo → ok idempotente sin escribir, con nombre real", async () => {
     contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-1" });
-    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com" });
+    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com", role: "ASESOR_SR" });
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-1", actor: ASESOR });
     expect(r).toEqual({ ok: true, assignedTo: { id: "ase-1", name: "Luisa" } });
     expect(txContactUpdate).not.toHaveBeenCalled();
@@ -158,6 +160,34 @@ describe("assignContact — permisos", () => {
     const r = await assignContact({ contactId: "c1", assigneeId: null, actor: ASESOR });
     expect(r).toEqual({ ok: false, code: "sin-permiso" });
   });
+
+  it("rol sin claim (MARKETING) no puede reclamar aunque mande su propio id — el gate genérico de la ruta ya no lo detiene", async () => {
+    const MARKETING = { id: "mkt-1", role: "MARKETING" } as const;
+    const r = await assignContact({ contactId: "c1", assigneeId: "mkt-1", actor: MARKETING });
+    expect(r).toEqual({ ok: false, code: "sin-permiso" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+  });
+
+  it("ASESOR_JR sí puede reclamar un contacto libre", async () => {
+    const JR = { id: "jr-1", role: "ASESOR_JR" } as const;
+    userFindFirst.mockResolvedValue({ id: "jr-1", name: "Junior", email: "jr@propyte.com", role: "ASESOR_JR" });
+    const r = await assignContact({ contactId: "c1", assigneeId: "jr-1", actor: JR });
+    expect(r.ok).toBe(true);
+    expect(txContactUpdate).toHaveBeenCalled();
+  });
+
+  it("anti-clase: cada rol del enum UserRole o puede ser dueño (claim ok) o recibe sin-permiso — ninguno queda en limbo", async () => {
+    for (const role of Object.values(UserRole)) {
+      contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: null });
+      userFindFirst.mockResolvedValue({ id: "u-1", name: "Quien sea", email: "quien@propyte.com", role });
+      const r = await assignContact({ contactId: "c1", assigneeId: "u-1", actor: { id: "u-1", role } });
+      if (canOwnInboxContact(role)) {
+        expect(r.ok, `rol ${role} debería poder reclamar`).toBe(true);
+      } else {
+        expect(r, `rol ${role} debería quedar sin-permiso, no en limbo`).toEqual({ ok: false, code: "sin-permiso" });
+      }
+    }
+  });
 });
 
 describe("assignContact — validación del asignado", () => {
@@ -171,6 +201,13 @@ describe("assignContact — validación del asignado", () => {
   it("usuario con email .local (QA) → usuario-invalido, también a mano (espíritu AUD-09)", async () => {
     userFindFirst.mockResolvedValue({ id: "qa-1", name: "QA", email: "qa-asesor@propyte.local" });
     const r = await assignContact({ contactId: "c1", assigneeId: "qa-1", actor: MANDO });
+    expect(r).toEqual({ ok: false, code: "usuario-invalido" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+  });
+
+  it("mando asigna a un usuario cuyo ROL no puede ser dueño (HOSTESS) → usuario-invalido", async () => {
+    userFindFirst.mockResolvedValue({ id: "host-1", name: "Hostess", email: "host@propyte.com", role: "HOSTESS" });
+    const r = await assignContact({ contactId: "c1", assigneeId: "host-1", actor: MANDO });
     expect(r).toEqual({ ok: false, code: "usuario-invalido" });
     expect(txContactUpdate).not.toHaveBeenCalled();
   });
@@ -205,7 +242,7 @@ describe("assignContact — cronología y side-effects", () => {
     await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
     expect(changeSourceCalls[0]).toEqual({ source: "inbox_assign", actorId: "boss-1" });
 
-    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com" });
+    userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com", role: "ASESOR_SR" });
     await assignContact({
       contactId: "c1", assigneeId: "ase-1",
       actor: ASESOR, source: "inbox_autoclaim",
