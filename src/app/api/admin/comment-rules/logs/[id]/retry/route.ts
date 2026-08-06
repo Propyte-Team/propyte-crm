@@ -9,7 +9,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
 import { replyToComment, sendPrivateReply } from "@/lib/comments/graph";
-import { persistOpenerForKnownContact } from "@/lib/comments/link-comment-origin";
+import { persistOpenerCreatingContact } from "@/lib/comments/link-comment-origin";
 
 // Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
 // GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
@@ -74,7 +74,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Conector sin pageAccessToken" }, { status: 400 });
   }
 
-  // Candado atómico sin transacción, mismo patrón que persistOpenerForKnownContact
+  // Candado atómico sin transacción, mismo patrón que persistOpenerCreatingContact
   // / linkCommentOrigin en link-comment-origin.ts: reclama cada acción
   // condicionando el `where` al estado que justificó el reintento y
   // moviéndola a PENDING. Dos clicks casi simultáneos (o dos pestañas) que
@@ -137,10 +137,17 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       data.dmExternalMessageId = dm.messageId;
       data.dmError = null;
       if (dm.recipientId) {
-        await persistOpenerForKnownContact({
+        // Mismo trato que el envío original: crea el contacto si no existe y
+        // deja el hilo visible en el Inbox. Si el log ya venía estampado, el
+        // candado interno evita la segunda nota de origen.
+        await persistOpenerCreatingContact({
+          logId: log.id,
           platform: log.platform,
           connectorId: log.connectorId,
           recipientId: dm.recipientId,
+          authorHandle: log.authorHandle,
+          postId: log.postId,
+          matchedPhrase: log.matchedPhrase,
           text: log.dmText,
           externalMessageId: dm.messageId,
         }).catch((err) => console.error("[comments] opener en reintento:", err));

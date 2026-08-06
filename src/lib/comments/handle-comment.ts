@@ -211,23 +211,33 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
       );
     }
 
-    // Si ya es contacto, el opener se persiste en su hilo AHORA. Si no se hace,
-    // el eco del propio DM entra como ADVISOR y dispara el takeover que
-    // enmudece al bot (lib/messaging/core.ts, handleEchoMessage). Se intenta
-    // aunque el update de arriba haya fallado: son defensas independientes,
-    // que falle una escritura no debe arrastrar a la otra.
+    // El hilo se materializa AHORA: contacto (creándolo si hace falta), opener
+    // en su conversación, log estampado y nota de origen. Dos razones:
+    //  1) Producto: el DM debe verse en el Inbox desde el envío, no cuando la
+    //     persona conteste (antes nacía ahí y los DMs sin respuesta eran
+    //     invisibles).
+    //  2) Técnica: si no guardamos el opener, el eco del propio DM entra como
+    //     ADVISOR y dispara el takeover que enmudece al bot
+    //     (lib/messaging/core.ts, handleEchoMessage).
+    // Se intenta aunque el update de arriba haya fallado: son defensas
+    // independientes, que falle una escritura no debe arrastrar a la otra. Y
+    // todo va en try/catch: el DM ya salió, nada de esto puede tumbar la regla.
     if (dm.recipientId) {
       try {
-        const { persistOpenerForKnownContact } = await import("./link-comment-origin");
-        await persistOpenerForKnownContact({
+        const { persistOpenerCreatingContact } = await import("./link-comment-origin");
+        await persistOpenerCreatingContact({
+          logId: log.id,
           platform: comment.platform,
           connectorId: connector.id,
           recipientId: dm.recipientId,
+          authorHandle: comment.authorHandle,
+          postId: comment.postId,
+          matchedPhrase: match.phrase,
           text: dmText,
           externalMessageId: dm.messageId,
         });
       } catch (err) {
-        console.error("[comments] persistOpenerForKnownContact falló:", err);
+        console.error("[comments] persistOpenerCreatingContact falló:", err);
       }
     }
   } catch (err) {

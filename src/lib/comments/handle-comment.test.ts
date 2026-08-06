@@ -38,7 +38,7 @@ vi.mock("./graph", () => ({
 
 const persistOpener = vi.fn();
 vi.mock("./link-comment-origin", () => ({
-  persistOpenerForKnownContact: (...a: unknown[]) => persistOpener(...a),
+  persistOpenerCreatingContact: (...a: unknown[]) => persistOpener(...a),
 }));
 
 const isSenderBlocked = vi.fn();
@@ -246,20 +246,36 @@ describe("handleComment — envíos", () => {
     });
   });
 
-  it("intenta enganchar el opener al hilo si la persona ya es contacto", async () => {
+  // Cambio de producto 2026-08-06: el hilo se materializa con el envío, así que
+  // se le pasa todo lo que hace falta para dar de alta al contacto (handle) y
+  // para estampar el log + la nota de origen (logId, postId, matchedPhrase).
+  it("engancha el opener al hilo pasando el log y el handle para poder crear el contacto", async () => {
     await handleComment(comment());
     expect(persistOpener).toHaveBeenCalledWith({
+      logId: "log-1",
       platform: "INSTAGRAM",
       connectorId: "conn-ig",
       recipientId: "IGSID-1",
+      authorHandle: "luisf",
+      postId: "MEDIA-1",
+      matchedPhrase: "info",
       text: "Hola luisf, aquí va la info.",
       externalMessageId: "mid-1",
     });
   });
 
-  it("si persistOpener falla, el resultado sigue siendo procesado", async () => {
+  it("si persistOpener falla (contacto u opener), el resultado sigue siendo procesado", async () => {
     persistOpener.mockRejectedValue(new Error("boom"));
     expect((await handleComment(comment())).status).toBe("procesado");
+  });
+
+  it("el DM sigue contando como enviado aunque el contacto no sea capturable (opener devuelve null)", async () => {
+    persistOpener.mockResolvedValue(null);
+    const out = await handleComment(comment());
+    expect(out.status).toBe("procesado");
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).toContainEqual(expect.objectContaining({ dmStatus: "SENT" }));
+    expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
   });
 
   // Fix 5 (code review, detectado por el implementer de la Task 6): si
@@ -325,9 +341,13 @@ describe("handleComment — envíos", () => {
     const updates = logUpdate.mock.calls.map((c) => c[0].data);
     expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
     expect(persistOpener).toHaveBeenCalledWith({
+      logId: "log-1",
       platform: "INSTAGRAM",
       connectorId: "conn-ig",
       recipientId: "IGSID-1",
+      authorHandle: "luisf",
+      postId: "MEDIA-1",
+      matchedPhrase: "info",
       text: "Hola luisf, aquí va la info.",
       externalMessageId: "mid-1",
     });

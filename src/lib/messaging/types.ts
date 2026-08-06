@@ -3,6 +3,17 @@ import type { ConversationChannel } from "@prisma/client";
 /** Canales sociales/mensajería soportados por el core agnóstico. */
 export type MessagingChannel = Extract<ConversationChannel, "WHATSAPP" | "INSTAGRAM" | "MESSENGER">;
 
+/**
+ * Apellido provisional cuando el canal no da uno real (IG/Messenger casi nunca
+ * lo dan). Vive en este módulo hoja —sin dependencias de runtime— porque ya no
+ * lo usa solo el intake de DMs (lib/messaging/core.ts): también lo usa el alta
+ * de contacto del DM de una regla de comentarios
+ * (lib/comments/link-comment-origin.ts). Duplicar el literal rompería el
+ * chequeo `lastName === PLACEHOLDER_LASTNAME` que decide cuándo volver a pedir
+ * el perfil a Graph.
+ */
+export const PLACEHOLDER_LASTNAME = "(por identificar)";
+
 /** Mensaje entrante ya normalizado, agnóstico del proveedor. */
 export interface IncomingMessage {
   channel: MessagingChannel;

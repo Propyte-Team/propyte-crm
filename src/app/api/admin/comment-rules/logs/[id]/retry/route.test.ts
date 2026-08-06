@@ -34,7 +34,7 @@ vi.mock("@/lib/comments/graph", () => ({
 
 const persistOpener = vi.fn();
 vi.mock("@/lib/comments/link-comment-origin", () => ({
-  persistOpenerForKnownContact: (...a: unknown[]) => persistOpener(...a),
+  persistOpenerCreatingContact: (...a: unknown[]) => persistOpener(...a),
 }));
 
 import { POST } from "./route";
@@ -54,6 +54,9 @@ const LOG_BOTH_FAILED = {
   connectorId: "conn-1",
   platform: "INSTAGRAM",
   externalCommentId: "IGCOMMENT-1",
+  postId: "MEDIA-1",
+  authorHandle: "luisf",
+  matchedPhrase: "info",
   publicReplyStatus: "FAILED",
   publicText: "Texto público exacto",
   dmStatus: "FAILED",
@@ -83,6 +86,9 @@ beforeEach(() => {
   auditCreate.mockResolvedValue({});
   replyToComment.mockResolvedValue({ id: "IGREPLY-1" });
   sendPrivateReply.mockResolvedValue({ messageId: "mid-1", recipientId: "PSID-1" });
+  // La ruta encadena .catch() sobre el resultado: el mock tiene que devolver
+  // una promesa o el TypeError caería dentro del try del DM y lo marcaría FAILED.
+  persistOpener.mockResolvedValue({ contactId: "c-1", isNewContact: true, conversationId: "conv-1" });
 });
 
 describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
@@ -110,6 +116,26 @@ describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
       "Texto público exacto"
     );
     expect(sendPrivateReply).toHaveBeenCalledWith("TOKEN", "IGCOMMENT-1", "Texto DM exacto");
+  });
+
+  // Cambio de producto 2026-08-06: el reintento también materializa el hilo —
+  // crea el contacto si no existe y le engancha el opener, igual que el envío
+  // original. Necesita el logId y los campos del log para la nota de origen.
+  it("el DM reintentado también crea contacto e hilo, con el logId y los datos del comentario", async () => {
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(200);
+    expect(persistOpener).toHaveBeenCalledWith({
+      logId: "log-1",
+      platform: "INSTAGRAM",
+      connectorId: "conn-1",
+      recipientId: "PSID-1",
+      authorHandle: "luisf",
+      postId: "MEDIA-1",
+      matchedPhrase: "info",
+      text: "Texto DM exacto",
+      externalMessageId: "mid-1",
+    });
+    expect(logUpdate.mock.calls[0][0].data).toMatchObject({ dmStatus: "SENT" });
   });
 
   it("404 si el registro no existe", async () => {

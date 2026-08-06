@@ -1,9 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import type { IncomingMessage, MessagingChannel } from "./types";
+// El placeholder se movió a ./types (módulo hoja) para poder compartirlo con el
+// alta de contacto de las reglas de comentarios sin arrastrar todo este módulo.
+import { PLACEHOLDER_LASTNAME } from "./types";
 import type { SocialProfile } from "./profile";
-
-const PLACEHOLDER_LASTNAME = "(por identificar)";
 
 type ContactWithAssigned = NonNullable<Awaited<ReturnType<typeof findContactByChannel>>>;
 
@@ -111,7 +112,7 @@ async function handleEchoMessage(msg: IncomingMessage) {
 
   // Por qué existe esta comprobación: la defensa contra el eco del propio DM de
   // una regla de comentarios era escribir NOSOTROS el opener con el message_id de
-  // la Send API (persistOpenerForKnownContact → writeOpener, en
+  // la Send API (persistOpenerCreatingContact → writeOpener, en
   // lib/comments/link-comment-origin.ts), para que el eco de Meta chocara con
   // Message.externalMessageId @unique y se descartara. Eso es una CARRERA, no una
   // garantía: si el create() del eco de ABAJO commitea primero, ya se evaluó
