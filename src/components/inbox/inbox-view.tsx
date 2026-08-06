@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/constants";
 import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/messaging/media";
 import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
 import { canMarkSpam } from "@/lib/moderation/roles";
+import { AssignControl } from "./assign-control";
 
 interface ConversationListItem {
   id: string;
@@ -343,6 +344,23 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
     }
   }
 
+  /** assigneeId: string = asignar/reclamar · null = quitar asignación. */
+  async function doAssign(assigneeId: string | null) {
+    if (!selectedId) return;
+    const res = await fetch(`/api/conversations/${selectedId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "assign", assigneeId }),
+    });
+    if (res.ok) {
+      await loadThread(selectedId);
+      await loadList();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(typeof data.error === "string" ? data.error : "No se pudo cambiar la asignación");
+    }
+  }
+
   async function markSpam() {
     if (!selectedId || !thread) return;
     const nombre = `${thread.contact.firstName} ${thread.contact.lastName}`.trim();
@@ -497,6 +515,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                     <span className="badge badge-neutral !text-[10px] !py-0 whitespace-nowrap">
                       {channelAccountLabel(c.channel, c.connector)}
                     </span>
+                    {!c.contact.assignedTo && (
+                      <span className="badge badge-neutral !text-[10px] !py-0 shrink-0 whitespace-nowrap">
+                        Sin asignar
+                      </span>
+                    )}
                     <p className="truncate text-[12px]" style={{ color: "var(--text-tertiary)" }}>
                       {c.messages[0]?.body ?? "—"}
                     </p>
@@ -535,6 +558,12 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                 {thread.contact.whatsappOptOut && <span className="badge badge-error">Opt-out</span>}
               </div>
               <div className="flex items-center gap-1.5">
+                <AssignControl
+                  assignedTo={thread.contact.assignedTo}
+                  userId={userId}
+                  userRole={userRole}
+                  onAssign={doAssign}
+                />
                 {thread.status === "BOT" ? (
                   <button className="btn-primary !py-1.5 !px-3 text-[12px]" onClick={() => doAction("takeover")}>
                     <User className="h-3.5 w-3.5" /> Tomar control
