@@ -132,7 +132,7 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => router.push("/pipeline")}>
           <ArrowLeft className="mr-1 h-4 w-4" />
-          Pipeline
+          Negocios
         </Button>
       </div>
 
