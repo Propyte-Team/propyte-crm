@@ -6,6 +6,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { canMarkSpam } from "@/lib/moderation/roles";
 import { isInboxManager } from "@/lib/inbox/roles";
+import { canViewInboxContact } from "@/lib/inbox/scope";
 
 const actionSchema = z.object({
   action: z.enum(["takeover", "release", "close", "snooze", "toggle_bot", "mark_spam", "assign"]),
@@ -102,9 +103,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
     const conv = await prisma.conversation.findUnique({
       where: { id: params.id },
-      select: { id: true, contactId: true },
+      select: {
+        id: true,
+        contactId: true,
+        // El alcance se decide aquí, no en assignContact: teamLeaderId alimenta la regla
+        // del TEAM_LEADER (ver scope.ts).
+        contact: { select: { assignedToId: true, assignedTo: { select: { teamLeaderId: true } } } },
+      },
     });
     if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+    // Fuera de alcance → 404 con el mismo cuerpo que "no existe". Sin esto, un hilo que
+    // el usuario ni ve en la lista le respondía 409 "ya está asignado a otro asesor":
+    // confirmación gratis de que existe y de su estado. Con el chequeo aquí, del módulo
+    // solo pueden llegar sin-permiso (403, el ROL no puede ser dueño) y ya-asignado (409,
+    // sobre un hilo que el usuario SÍ ve).
+    if (!canViewInboxContact(conv.contact, session.user)) {
+      return NextResponse.json({ error: "No existe" }, { status: 404 });
+    }
 
     const { assignContact } = await import("@/lib/inbox/assign");
     const result = await assignContact({

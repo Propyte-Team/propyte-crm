@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { hasInboxFullView } from "@/lib/inbox/roles";
+import { canViewInboxContact } from "@/lib/inbox/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           temperature: true, score: true, preferredLanguage: true, budgetMin: true,
           budgetMax: true, preferredZone: true, purchaseTimeline: true, whatsappOptOut: true,
           custom: true, assignedToId: true,
-          assignedTo: { select: { id: true, name: true } },
+          // teamLeaderId lo pide el alcance del TEAM_LEADER; se quita del JSON más abajo.
+          assignedTo: { select: { id: true, name: true, teamLeaderId: true } },
           deals: {
             where: { deletedAt: null, stage: { notIn: ["WON", "LOST"] } },
             select: { id: true, stage: true, estimatedValue: true, dealType: true },
@@ -40,15 +41,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   });
   if (!conversation) return NextResponse.json({ error: "No existe" }, { status: 404 });
 
-  // Alcance idéntico al de la lista (GET /api/conversations): mando con vista completa
-  // ve cualquier hilo; el resto (incluido TEAM_LEADER) solo si el contacto es suyo o
-  // está sin asignar. 404 y no 403: la lista tampoco le muestra este hilo a quien está
-  // fuera de su alcance, así que un 403 confirmaría por URL directa que el hilo existe
-  // a alguien que no debe saberlo — ver el comentario espejo en messages/route.ts:64-65.
-  const { assignedToId } = conversation.contact;
-  const fueraDeAlcance =
-    !hasInboxFullView(session.user.role) && assignedToId !== null && assignedToId !== session.user.id;
-  if (fueraDeAlcance) return NextResponse.json({ error: "No existe" }, { status: 404 });
+  // Alcance idéntico al de la lista, al envío y a la asignación: los cuatro usan
+  // @/lib/inbox/scope (canViewInboxContact ≡ inboxScopeWhere). 404 y no 403: la lista
+  // tampoco le muestra este hilo a quien está fuera de su alcance, así que un 403
+  // confirmaría por URL directa que el hilo existe a alguien que no debe saberlo — la
+  // misma respuesta da hoy messages/route.ts (simetría real desde el 404 unificado).
+  if (!canViewInboxContact(conversation.contact, session.user)) {
+    return NextResponse.json({ error: "No existe" }, { status: 404 });
+  }
 
   // Marcar leído al abrir (solo si no es polling incremental)
   if (!since && conversation.unreadCount > 0) {
@@ -78,6 +78,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     contact: {
       ...contact,
       custom: undefined,
+      // teamLeaderId es dato interno de jerarquía (solo alimenta el alcance del TL):
+      // se reconstruye assignedTo con lo que la UI sí usa, igual que se corta custom.
+      assignedTo: contact.assignedTo ? { id: contact.assignedTo.id, name: contact.assignedTo.name } : null,
       avatarUrl: ((contact.custom as Record<string, unknown> | null)?.avatarUrl as string | undefined) ?? null,
     },
   };

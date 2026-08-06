@@ -7,6 +7,7 @@ import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { CHAT_MEDIA_TYPES, type ChatMediaType } from "@/lib/messaging/media";
 import { isInboxManager, canOwnInboxContact } from "@/lib/inbox/roles";
+import { canViewInboxContact } from "@/lib/inbox/scope";
 import { assignContact } from "@/lib/inbox/assign";
 
 const sendSchema = z
@@ -36,7 +37,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const conv = await prisma.conversation.findUnique({
     where: { id: params.id },
-    include: { contact: { select: { id: true, phone: true, doNotContact: true, assignedToId: true } } },
+    include: {
+      contact: {
+        select: {
+          id: true, phone: true, doNotContact: true, assignedToId: true,
+          // teamLeaderId: lo necesita el alcance del TEAM_LEADER (ver scope.ts).
+          assignedTo: { select: { teamLeaderId: true } },
+        },
+      },
+    },
   });
   if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
 
@@ -61,11 +70,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ data: note }, { status: 201 });
   }
 
-  // Aislamiento: un hilo asignado a otro asesor no acepta envíos de no-mando.
-  // La lista nunca le mostró este hilo; esto cierra el acceso por URL directa.
+  // Aislamiento: escribir exige el MISMO alcance que leer (@/lib/inbox/scope), así el
+  // gate no puede divergir del que decide qué hilos existen para este usuario.
+  // 404 y no 403: el mensaje viejo ("asignado a otro asesor") confirmaba por URL directa
+  // que el hilo existe Y su estado a alguien que ni siquiera lo ve en la lista. Mismo
+  // cuerpo que el "No existe" de arriba: indistinguible a propósito.
   const esMando = isInboxManager(session.user.role);
-  if (conv.contact.assignedToId && conv.contact.assignedToId !== session.user.id && !esMando) {
-    return NextResponse.json({ error: "El contacto está asignado a otro asesor" }, { status: 403 });
+  if (!canViewInboxContact(conv.contact, session.user)) {
+    return NextResponse.json({ error: "No existe" }, { status: 404 });
   }
 
   if (conv.contact.doNotContact) {

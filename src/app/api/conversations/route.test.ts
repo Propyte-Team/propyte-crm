@@ -61,12 +61,24 @@ describe("GET /api/conversations — aislamiento", () => {
     expect(whereUsed().contact).toBeUndefined();
   });
 
-  it("TEAM_LEADER NO tiene vista completa: lleva scope", async () => {
+  // TEAM_LEADER sigue SIN vista completa, pero su scope suma a su equipo: si no lo
+  // tuviera, repartir la cola sería un viaje sin retorno (asigna → pierde el hilo).
+  it("TEAM_LEADER NO tiene vista completa: lleva scope con su equipo", async () => {
     getServerSession.mockResolvedValue({ user: { id: "tl-1", role: "TEAM_LEADER" } });
     await GET(req());
     expect(whereUsed().contact.AND[0]).toEqual({
-      OR: [{ assignedToId: "tl-1" }, { assignedToId: null }],
+      OR: [
+        { assignedToId: "tl-1" },
+        { assignedToId: null },
+        { assignedTo: { is: { teamLeaderId: "tl-1" } } },
+      ],
     });
+  });
+
+  it("el término de equipo es SOLO del TEAM_LEADER: un asesor no lo lleva", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    await GET(req());
+    expect(JSON.stringify(whereUsed().contact)).not.toContain("teamLeaderId");
   });
 
   it("filtro mine compone con el scope del asesor", async () => {

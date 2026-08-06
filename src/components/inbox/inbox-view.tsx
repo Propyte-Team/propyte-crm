@@ -384,6 +384,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
       if (res.ok) {
         await loadThread(selectedId);
         await loadList();
+      } else if (res.status === 404) {
+        // Mismo criterio que el envío: el 404 del server es opaco a propósito; loadThread
+        // traduce "fuera de alcance" a un aviso humano y limpia el panel.
+        await loadThread(selectedId);
+        await loadList();
       } else {
         const data = await res.json().catch(() => ({}));
         alert(typeof data.error === "string" ? data.error : "No se pudo cambiar la asignación");
@@ -450,6 +455,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
         // refrescar la lista, el badge "Sin asignar" del listado queda obsoleto hasta
         // el próximo poll de 5s.
         await loadList();
+      } else if (res.status === 404) {
+        // El server unificó en 404 todo lo que está fuera de alcance, así que su cuerpo
+        // ("No existe") no dice nada útil a propósito. loadThread ya sabe reaccionar:
+        // avisa con lenguaje humano y limpia el panel en vez de mostrar ese literal.
+        await loadThread(selectedId);
       } else {
         const data = await res.json().catch(() => ({}));
         alert(typeof data.error === "string" ? data.error : "Error al enviar");

@@ -26,7 +26,14 @@ const baseConv = {
   channel: "INSTAGRAM" as string,
   status: "HUMAN" as string,
   connectorId: "conn_ig",
-  contact: { id: "c1", phone: null as string | null, doNotContact: false, assignedToId: null as string | null },
+  contact: {
+    id: "c1",
+    phone: null as string | null,
+    doNotContact: false,
+    assignedToId: null as string | null,
+    // Jerarquía del dueño: solo la usa el alcance del TEAM_LEADER (ver lib/inbox/scope.ts).
+    assignedTo: null as { teamLeaderId: string | null } | null,
+  },
 };
 
 function convWith(
@@ -78,12 +85,33 @@ it("rechaza mensaje sin texto NI media, nota interna con media, y media.path con
 });
 
 describe("gate de asignación + auto-claim", () => {
-  it("403 si el contacto está asignado a otro asesor y el remitente no es mando", async () => {
-    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u2" } }));
+  // Antes: 403 "El contacto está asignado a otro asesor" — confirmaba por URL directa la
+  // existencia Y el estado del hilo a quien ni lo ve en la lista. Ahora 404 unificado,
+  // con el MISMO cuerpo que la conversación inexistente.
+  it("404 si el contacto está asignado a otro asesor y el remitente no lo ve", async () => {
+    findUnique.mockResolvedValue(
+      convWith({ contact: { assignedToId: "u2", assignedTo: { teamLeaderId: "tl-x" } } })
+    );
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
     const res = await POST(r, { params: { id: "conv1" } });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(sendChannelMessage).not.toHaveBeenCalled();
+  });
+
+  it("ese 404 es INDISTINGUIBLE del de conversación inexistente (mismo status y cuerpo)", async () => {
+    findUnique.mockResolvedValueOnce(
+      convWith({ contact: { assignedToId: "u2", assignedTo: { teamLeaderId: "tl-x" } } })
+    );
+    const rPermiso = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+    const resPermiso = await POST(rPermiso, { params: { id: "conv1" } });
+
+    findUnique.mockResolvedValueOnce(null);
+    const rInexistente = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+    const resInexistente = await POST(rInexistente, { params: { id: "conv1" } });
+
+    expect(resPermiso.status).toBe(404);
+    expect(resPermiso.status).toBe(resInexistente.status);
+    expect(await resPermiso.json()).toEqual(await resInexistente.json());
   });
 
   it("mando (GERENTE) escribe en hilo ajeno → 201 y no reclama", async () => {
@@ -183,16 +211,29 @@ describe("gate de asignación + auto-claim", () => {
     expect(assignContact).not.toHaveBeenCalled();
   });
 
-  // TEAM_LEADER es el rol tramposo: está en INBOX_MANAGERS (isInboxManager → true, pasa
-  // el gate y no auto-reclama) pero NO en INBOX_FULL_VIEW (no ve todo el inbox en la
-  // lista). Este test cubre el wiring de mando en la ruta, no la lista.
-  it("TEAM_LEADER (mando) escribe en hilo asignado a otro → 201 y no reclama", async () => {
+  // TEAM_LEADER es el rol tramposo: está en INBOX_MANAGERS (no auto-reclama) pero NO en
+  // INBOX_FULL_VIEW. Escribir ahora exige el MISMO alcance que leer: su equipo sí, el
+  // resto no — antes ser mando le bastaba para escribir en CUALQUIER hilo.
+  it("TEAM_LEADER escribe en el hilo de un REPORTE DIRECTO → 201 y no reclama", async () => {
     getServerSession.mockResolvedValue({ user: { id: "tl1", role: "TEAM_LEADER" } });
-    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u2" } }));
+    findUnique.mockResolvedValue(
+      convWith({ contact: { assignedToId: "rep1", assignedTo: { teamLeaderId: "tl1" } } })
+    );
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
     const res = await POST(r, { params: { id: "conv1" } });
     expect(res.status).toBe(201);
     expect(assignContact).not.toHaveBeenCalled();
+  });
+
+  it("TEAM_LEADER en hilo de un asesor que NO le reporta → 404 (ser mando ya no basta)", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "tl1", role: "TEAM_LEADER" } });
+    findUnique.mockResolvedValue(
+      convWith({ contact: { assignedToId: "u2", assignedTo: { teamLeaderId: "otro-tl" } } })
+    );
+    const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+    const res = await POST(r, { params: { id: "conv1" } });
+    expect(res.status).toBe(404);
+    expect(sendChannelMessage).not.toHaveBeenCalled();
   });
 
   // Decisión (FIX 3): la ruta ahora SÍ evita de antemano una llamada garantizada a

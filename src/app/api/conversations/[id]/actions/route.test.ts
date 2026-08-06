@@ -46,6 +46,17 @@ function req(body: unknown) {
 
 const PARAMS = { params: { id: "conv-1" } };
 
+// Fixture del findUnique del bloque assign. Por default: hilo LIBRE (sin dueño), que es
+// lo que ve todo el mundo — el alcance se prueba explícitamente donde importa.
+function convAssign(
+  contact: { assignedToId: string | null; assignedTo?: { teamLeaderId: string | null } | null } = {
+    assignedToId: null,
+    assignedTo: null,
+  }
+) {
+  return { id: "conv-1", contactId: "c1", contact: { assignedTo: null, ...contact } };
+}
+
 beforeEach(() => {
   [
     getServerSession,
@@ -148,10 +159,10 @@ describe("POST mark_spam", () => {
 });
 
 describe("POST assign", () => {
-  it("se resuelve ANTES del gate genérico: asesor NO dueño puede intentar claim", async () => {
+  it("se resuelve ANTES del gate genérico: asesor NO dueño puede reclamar un hilo libre", async () => {
     getServerSession.mockResolvedValue({ user: { id: "ase-1", role: "ASESOR_SR" } });
-    // hilo cuyo contacto es de OTRO — el gate genérico habría dado 403 antes de llegar
-    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    // hilo SIN dueño — el gate genérico (isOwner || mando) lo habría rechazado con 403
+    convFindUnique.mockResolvedValue(convAssign());
     assignContact.mockResolvedValue({ ok: true, assignedTo: { id: "ase-1", name: "Luisa" } });
     const res = await POST(req({ action: "assign", assigneeId: "ase-1" }), PARAMS);
     expect(res.status).toBe(200);
@@ -167,19 +178,22 @@ describe("POST assign", () => {
 
   it("la dirección contraria sigue cerrada: sin-permiso del módulo → 403", async () => {
     getServerSession.mockResolvedValue({ user: { id: "ase-1", role: "ASESOR_SR" } });
-    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    convFindUnique.mockResolvedValue(convAssign());
     assignContact.mockResolvedValue({ ok: false, code: "sin-permiso" });
     const res = await POST(req({ action: "assign", assigneeId: "ase-9" }), PARAMS);
     expect(res.status).toBe(403);
   });
 
+  // Los códigos del módulo se mapean igual, pero ahora solo llegan desde hilos DENTRO del
+  // alcance (la sesión por default es ADMIN, vista completa): ya-asignado ya no puede
+  // aparecer en un hilo que el usuario ni ve — ese caso lo corta el 404 de abajo.
   it.each([
     ["ya-asignado", 409],
     ["no-existe", 404],
     ["usuario-invalido", 422],
     ["conflicto", 409],
   ])("mapea %s → %i", async (code, status) => {
-    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    convFindUnique.mockResolvedValue(convAssign());
     assignContact.mockResolvedValue({ ok: false, code });
     const res = await POST(req({ action: "assign", assigneeId: "ase-2" }), PARAMS);
     expect(res.status).toBe(status);
@@ -198,7 +212,7 @@ describe("POST assign", () => {
   });
 
   it("assigneeId null llega al módulo como null", async () => {
-    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    convFindUnique.mockResolvedValue(convAssign());
     assignContact.mockResolvedValue({ ok: true, assignedTo: null });
     const res = await POST(req({ action: "assign", assigneeId: null }), PARAMS);
     expect(res.status).toBe(200);
@@ -212,15 +226,72 @@ describe("POST assign", () => {
   });
 
   it("devuelve assignedTo para el update optimista de la UI", async () => {
-    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    convFindUnique.mockResolvedValue(convAssign());
     assignContact.mockResolvedValue({ ok: true, assignedTo: { id: "ase-2", name: "Pedro Ruiz" } });
     const res = await POST(req({ action: "assign", assigneeId: "ase-2" }), PARAMS);
     const body = await res.json();
     expect(body.data.assignedTo).toEqual({ id: "ase-2", name: "Pedro Ruiz" });
   });
 
+  // Alcance (mismo criterio que leer y escribir, @/lib/inbox/scope): fuera de alcance el
+  // hilo NO existe. Antes, un asesor que ni veía el hilo recibía 409 "ya está asignado a
+  // otro asesor" — confirmación gratis de existencia y estado.
+  it("asesor sobre hilo de OTRO → 404 y assignContact ni se llama", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "ase-1", role: "ASESOR_SR" } });
+    convFindUnique.mockResolvedValue(
+      convAssign({ assignedToId: "ase-9", assignedTo: { teamLeaderId: "tl-1" } })
+    );
+    const res = await POST(req({ action: "assign", assigneeId: "ase-1" }), PARAMS);
+    expect(res.status).toBe(404);
+    expect(assignContact).not.toHaveBeenCalled();
+  });
+
+  it("ese 404 es INDISTINGUIBLE del de conversación inexistente", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "ase-1", role: "ASESOR_SR" } });
+    convFindUnique.mockResolvedValueOnce(
+      convAssign({ assignedToId: "ase-9", assignedTo: { teamLeaderId: "tl-1" } })
+    );
+    const resAlcance = await POST(req({ action: "assign", assigneeId: "ase-1" }), PARAMS);
+    convFindUnique.mockResolvedValueOnce(null);
+    const resInexistente = await POST(req({ action: "assign", assigneeId: "ase-1" }), PARAMS);
+    expect(resAlcance.status).toBe(404);
+    expect(resAlcance.status).toBe(resInexistente.status);
+    expect(await resAlcance.json()).toEqual(await resInexistente.json());
+  });
+
+  it("TEAM_LEADER REASIGNA el hilo de un reporte directo → llega al módulo (200)", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "tl-1", role: "TEAM_LEADER" } });
+    convFindUnique.mockResolvedValue(
+      convAssign({ assignedToId: "rep-1", assignedTo: { teamLeaderId: "tl-1" } })
+    );
+    assignContact.mockResolvedValue({ ok: true, assignedTo: { id: "rep-2", name: "Otro" } });
+    const res = await POST(req({ action: "assign", assigneeId: "rep-2" }), PARAMS);
+    expect(res.status).toBe(200);
+    expect(assignContact).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: "c1", assigneeId: "rep-2" })
+    );
+  });
+
+  it("TEAM_LEADER sobre el hilo de un asesor que NO le reporta → 404", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "tl-1", role: "TEAM_LEADER" } });
+    convFindUnique.mockResolvedValue(
+      convAssign({ assignedToId: "ajeno-1", assignedTo: { teamLeaderId: "otro-tl" } })
+    );
+    const res = await POST(req({ action: "assign", assigneeId: "rep-2" }), PARAMS);
+    expect(res.status).toBe(404);
+    expect(assignContact).not.toHaveBeenCalled();
+  });
+
+  it("sin-permiso (403) queda solo para el ROL: hilo VISIBLE que el usuario no puede poseer", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "h-1", role: "HOSTESS" } });
+    convFindUnique.mockResolvedValue(convAssign()); // hilo libre: sí lo ve
+    assignContact.mockResolvedValue({ ok: false, code: "sin-permiso" });
+    const res = await POST(req({ action: "assign", assigneeId: "h-1" }), PARAMS);
+    expect(res.status).toBe(403);
+  });
+
   it("un throw del módulo NO se convierte en 4xx", async () => {
-    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    convFindUnique.mockResolvedValue(convAssign());
     assignContact.mockRejectedValue(new Error("BD caída"));
     await expect(POST(req({ action: "assign", assigneeId: "ase-2" }), PARAMS)).rejects.toThrow("BD caída");
   });

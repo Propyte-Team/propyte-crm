@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma } from "@prisma/client";
-import { hasInboxFullView } from "@/lib/inbox/roles";
+import { inboxScopeWhere } from "@/lib/inbox/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +20,10 @@ export async function GET(req: NextRequest) {
   // el OR del aislamiento y un asesor buscando veía hilos ajenos (fuga, ago-2026).
   const contactConds: Prisma.ContactWhereInput[] = [];
 
-  // Alcance por rol: asesores (y TEAM_LEADER) ven sus contactos + sin asignar
-  if (!hasInboxFullView(session.user.role)) {
-    contactConds.push({ OR: [{ assignedToId: session.user.id }, { assignedToId: null }] });
-  }
+  // Alcance por rol — definición única en @/lib/inbox/scope (misma regla que el detalle,
+  // el envío y la asignación). undefined = ve todo, no hay condición que agregar.
+  const alcance = inboxScopeWhere(session.user);
+  if (alcance) contactConds.push(alcance);
 
   if (filter === "mine") {
     contactConds.push({ assignedToId: session.user.id });

@@ -54,7 +54,8 @@ const baseConversation = {
     whatsappOptOut: false,
     custom: null as unknown,
     assignedToId: null as string | null,
-    assignedTo: null as { id: string; name: string } | null,
+    // teamLeaderId viene del select (alcance del TEAM_LEADER) y NO debe salir en el JSON.
+    assignedTo: null as { id: string; name: string; teamLeaderId: string | null } | null,
     deals: [] as unknown[],
   },
   controlledBy: null as { id: string; name: string } | null,
@@ -118,12 +119,50 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
     expect(update).toHaveBeenCalled();
   });
 
-  it("TEAM_LEADER: hilo de otro → 404 (no tiene vista completa, a propósito)", async () => {
+  it("TEAM_LEADER: hilo de un asesor que NO le reporta → 404 (sigue sin vista completa)", async () => {
     getServerSession.mockResolvedValue(TEAM_LEADER);
-    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "otro-asesor" } }));
+    findUnique.mockResolvedValue(
+      convWith({
+        contact: {
+          assignedToId: "otro-asesor",
+          assignedTo: { id: "otro-asesor", name: "Ajeno", teamLeaderId: "otro-tl" },
+        },
+      })
+    );
     const res = await GET(req(), { params: { id: "conv1" } });
     expect(res.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("TEAM_LEADER: hilo de un REPORTE DIRECTO → 200 (puede supervisar lo que repartió)", async () => {
+    getServerSession.mockResolvedValue(TEAM_LEADER);
+    findUnique.mockResolvedValue(
+      convWith({
+        contact: {
+          assignedToId: "rep-1",
+          assignedTo: { id: "rep-1", name: "Reporte", teamLeaderId: "tl1" },
+        },
+      })
+    );
+    const res = await GET(req(), { params: { id: "conv1" } });
+    expect(res.status).toBe(200);
+    expect(update).toHaveBeenCalled();
+  });
+
+  it("teamLeaderId NO viaja en el JSON: assignedTo solo lleva id y name", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    findUnique.mockResolvedValue(
+      convWith({
+        contact: {
+          assignedToId: "rep-1",
+          assignedTo: { id: "rep-1", name: "Reporte", teamLeaderId: "tl1" },
+        },
+      })
+    );
+    const res = await GET(req(), { params: { id: "conv1" } });
+    const body = await res.json();
+    expect(body.data.contact.assignedTo).toEqual({ id: "rep-1", name: "Reporte" });
+    expect(JSON.stringify(body)).not.toContain("teamLeaderId");
   });
 
   it("hilo inexistente → 404 (comportamiento previo intacto)", async () => {
