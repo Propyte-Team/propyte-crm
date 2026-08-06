@@ -56,7 +56,8 @@ Reglas, en orden:
    Si no → `usuario-invalido`. No aplica cuando `assigneeId: null`.
 5. Escritura con **lock optimista** sobre el `updatedAt` del contacto leído (si cambió entre
    lectura y update → `conflicto`, el cliente recarga). Envuelta en
-   `withChangeSource({ source: "inbox_assign", actorUserId: actor.id })` → la cronología
+   `withChangeSource({ source: "inbox_assign", actorId: actor.id }, fn)` (firma real en
+   `src/lib/audit/change-context.ts:24`) → la cronología
    del contacto lo registra sin trabajo extra (mismo mecanismo que `source='routing'`).
 6. **Side-effects post-escritura, cada uno en try/catch** (lección 2026-07-24: un side-effect
    jamás tumba la operación):
