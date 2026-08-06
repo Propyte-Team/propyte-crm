@@ -23,8 +23,8 @@ import { POST } from "./route";
 // en los gates de abajo, así que no se rompen).
 const baseConv = {
   id: "conv1",
-  channel: "INSTAGRAM" as const,
-  status: "HUMAN" as const,
+  channel: "INSTAGRAM" as string,
+  status: "HUMAN" as string,
   connectorId: "conn_ig",
   contact: { id: "c1", phone: null as string | null, doNotContact: false, assignedToId: null as string | null },
 };
@@ -45,14 +45,16 @@ beforeEach(() => {
 });
 
 it("pasa connectorId de la conversación a sendChannelMessage", async () => {
-  findUnique.mockResolvedValue({ id: "conv1", channel: "INSTAGRAM", status: "HUMAN", connectorId: "conn_ig", contact: { id: "c1", phone: null, doNotContact: false } });
+  // convWith() ya trae assignedToId: null — Prisma nunca devuelve undefined en un
+  // select, así que el fixture viejo (sin el campo) ejercitaba una forma inexistente.
+  findUnique.mockResolvedValue(convWith());
   const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
   await POST(r, { params: { id: "conv1" } });
   expect(sendChannelMessage).toHaveBeenCalledWith("INSTAGRAM", "c1", "hola", "u1", { connectorId: "conn_ig", media: null });
 });
 
 it("acepta media sin texto y lo pasa a sendChannelMessage", async () => {
-  findUnique.mockResolvedValue({ id: "conv1", channel: "MESSENGER", status: "HUMAN", connectorId: "conn_ms", contact: { id: "c1", phone: null, doNotContact: false } });
+  findUnique.mockResolvedValue(convWith({ channel: "MESSENGER", connectorId: "conn_ms" }));
   const media = { path: "2026-07/a.jpg", type: "image", filename: "a.jpg", mimeType: "image/jpeg" };
   const r = new Request("https://x", { method: "POST", body: JSON.stringify({ media }) }) as never;
   const res = await POST(r, { params: { id: "conv1" } });
@@ -61,7 +63,7 @@ it("acepta media sin texto y lo pasa a sendChannelMessage", async () => {
 });
 
 it("rechaza mensaje sin texto NI media, nota interna con media, y media.path con URL", async () => {
-  findUnique.mockResolvedValue({ id: "conv1", channel: "MESSENGER", status: "HUMAN", connectorId: "c", contact: { id: "c1", phone: null, doNotContact: false } });
+  findUnique.mockResolvedValue(convWith({ channel: "MESSENGER", connectorId: "c" }));
   const cases = [
     {},
     { body: "nota", internalNote: true, media: { path: "a.jpg", type: "image" } },
@@ -138,13 +140,37 @@ describe("gate de asignación + auto-claim", () => {
     expect(assignContact).not.toHaveBeenCalled();
   });
 
-  it("si assignContact falla (throw), el envío sigue en 201 (best-effort, no revierte)", async () => {
-    getServerSession.mockResolvedValue({ user: { id: "u3", role: "ASESOR_SR" } });
-    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
-    assignContact.mockRejectedValue(new Error("boom"));
-    const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
-    expect(res.status).toBe(201);
+  it("si assignContact falla (throw), el envío sigue en 201 (best-effort, no revierte) y se loguea", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      getServerSession.mockResolvedValue({ user: { id: "u3", role: "ASESOR_SR" } });
+      findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
+      assignContact.mockRejectedValue(new Error("boom"));
+      const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+      const res = await POST(r, { params: { id: "conv1" } });
+      expect(res.status).toBe(201);
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it("si assignContact devuelve { ok: false } (sin throw), el envío sigue en 201 y se loguea el código", async () => {
+    // assignContact no lanza en sus fallos normales (conflicto de carrera, sin-permiso,
+    // etc.) — devuelve { ok: false, code }. Si la ruta lo descarta, el fallo MÁS probable
+    // (perder la carrera del claim) desaparece sin rastro y el hilo queda sin asignar.
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      getServerSession.mockResolvedValue({ user: { id: "u3", role: "ASESOR_SR" } });
+      findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
+      assignContact.mockResolvedValue({ ok: false, code: "conflicto" });
+      const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+      const res = await POST(r, { params: { id: "conv1" } });
+      expect(res.status).toBe(201);
+      expect(errSpy).toHaveBeenCalledWith("[inbox] auto-claim no aplicado", "conflicto");
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("orden: si el envío falla, NO se intenta auto-claim (el claim va después del envío exitoso)", async () => {
@@ -155,5 +181,44 @@ describe("gate de asignación + auto-claim", () => {
     const res = await POST(r, { params: { id: "conv1" } });
     expect(res.status).toBe(422);
     expect(assignContact).not.toHaveBeenCalled();
+  });
+
+  // TEAM_LEADER es el rol tramposo: está en INBOX_MANAGERS (isInboxManager → true, pasa
+  // el gate y no auto-reclama) pero NO en INBOX_FULL_VIEW (no ve todo el inbox en la
+  // lista). Este test cubre el wiring de mando en la ruta, no la lista.
+  it("TEAM_LEADER (mando) escribe en hilo asignado a otro → 201 y no reclama", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "tl1", role: "TEAM_LEADER" } });
+    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u2" } }));
+    const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+    const res = await POST(r, { params: { id: "conv1" } });
+    expect(res.status).toBe(201);
+    expect(assignContact).not.toHaveBeenCalled();
+  });
+
+  // Decisión a propósito: la ruta NO filtra por rol quién puede reclamar — solo mira
+  // "es mando o no". HOSTESS no es mando, así que la ruta SÍ invoca assignContact en
+  // hilo libre; es el módulo (canOwnInboxContact adentro de assign.ts) quien decide que
+  // HOSTESS no puede ser dueño y devuelve sin-permiso. La ruta solo loguea ese código
+  // (FIX 1) — no intenta adivinar el permiso de antemano.
+  it("HOSTESS (no puede ser dueño) en hilo libre → 201, la ruta SÍ llama assignContact y loguea sin-permiso", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      getServerSession.mockResolvedValue({ user: { id: "h1", role: "HOSTESS" } });
+      findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
+      assignContact.mockResolvedValue({ ok: false, code: "sin-permiso" });
+      const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
+      const res = await POST(r, { params: { id: "conv1" } });
+      expect(res.status).toBe(201);
+      expect(assignContact).toHaveBeenCalledWith({
+        contactId: "c1",
+        assigneeId: "h1",
+        actor: { id: "h1", role: "HOSTESS" },
+        conversationId: "conv1",
+        source: "inbox_autoclaim",
+      });
+      expect(errSpy).toHaveBeenCalledWith("[inbox] auto-claim no aplicado", "sin-permiso");
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });

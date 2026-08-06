@@ -100,13 +100,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // y el siguiente envío re-evalúa. Mando NO reclama (triagea sin quedarse leads).
   if (!conv.contact.assignedToId && !esMando) {
     try {
-      await assignContact({
+      // assignContact NO lanza en sus fallos normales (conflicto de carrera,
+      // sin-permiso para roles que no pueden ser dueños, etc.) — devuelve
+      // { ok: false, code }. Si se descarta el resultado, esos fallos (los más
+      // probables) desaparecen sin rastro y el hilo queda sin asignar para siempre.
+      const res = await assignContact({
         contactId: conv.contact.id,
         assigneeId: session.user.id,
         actor: { id: session.user.id, role: session.user.role },
         conversationId: conv.id,
         source: "inbox_autoclaim",
       });
+      if (!res.ok) console.error("[inbox] auto-claim no aplicado", res.code);
     } catch (e) {
       // Best-effort: el mensaje ya salió, no se revierte. Log consistente con assign.ts.
       console.error("[inbox] no se pudo auto-reclamar el contacto", e);
