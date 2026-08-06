@@ -203,26 +203,55 @@ export async function persistOpenerCreatingContact(args: {
     contactId = known.id;
     assignedToId = known.assignedToId;
   } else {
-    // Alta por el camino canónico: dedup, ruteo, SLA y eventos salen gratis.
+    // Alta por el camino canónico: ruteo, SLA y eventos salen gratis.
+    //
+    // El findFirst de arriba NO es redundante con el dedup interno de
+    // captureLead aunque el filtro sea idéntico: es el discriminante que
+    // mantiene intacto el camino del contacto conocido. Si se dejara todo en
+    // manos de captureLead, cada DM a alguien ya registrado entraría por su
+    // rama de duplicado y sembraría una nota "Lead repetido" y un
+    // lead.captured más en la cronología. Se paga una query de más solo en el
+    // alta, a cambio de no ensuciar el historial de los contactos existentes.
+    //
+    // Sin `message`: el contact.create del camino "contacto nuevo" no lo
+    // referencia, y la única rama de captureLead que lo usa (duplicado) es
+    // inalcanzable desde aquí por lo que se acaba de explicar. Pasarlo daba a
+    // entender que el texto del DM se guardaba en algún lado; el opener es
+    // quien lo guarda, unas líneas más abajo.
     const { captureLead } = await import("@/lib/intake/capture-lead");
     const idField =
       args.platform === "INSTAGRAM"
         ? { instagramId: args.recipientId }
         : { messengerPsid: args.recipientId };
-    const result = await captureLead(
-      {
-        source: CHANNEL[args.platform],
-        firstName: firstNameFromHandle(args.platform, args.authorHandle),
-        lastName: PLACEHOLDER_LASTNAME,
-        message: args.text,
-        ...idField,
-      },
-      { connectorId: args.connectorId }
-    );
+
+    // captureLead no solo devuelve contactId null: también puede LANZAR
+    // (contact.create, autoRouteLead, el workflowEvent.create de emitEvent).
+    // Caso concreto: un contacto soft-deleted o mergeado que conserve este
+    // instagramId es invisible para los dos dedups —ambos filtran deletedAt
+    // null y mergedIntoId null— pero sigue ocupando el índice único → P2002.
+    // Las dos formas de fallar degradan igual: el DM ya salió y el log ya
+    // quedó en SENT, así que se devuelve null y linkCommentOrigin lo recoge si
+    // la persona contesta.
+    let result;
+    try {
+      result = await captureLead(
+        {
+          source: CHANNEL[args.platform],
+          firstName: firstNameFromHandle(args.platform, args.authorHandle),
+          lastName: PLACEHOLDER_LASTNAME,
+          ...idField,
+        },
+        { connectorId: args.connectorId }
+      );
+    } catch (err) {
+      console.error(
+        `[comments] DM enviado a ${args.recipientId} pero el alta del contacto lanzó (el hilo no aparecerá hasta que respondan):`,
+        err
+      );
+      return null;
+    }
+
     if (!result.contactId) {
-      // El DM ya salió y el log ya quedó en SENT: no capturar el contacto es
-      // una degradación (el hilo no aparece hasta que respondan), no un fallo
-      // del envío. linkCommentOrigin lo recogerá si la persona contesta.
       console.warn(
         `[comments] DM enviado a ${args.recipientId} pero el lead no fue capturable: ${result.error ?? "captureLead devolvió contactId null"}`
       );

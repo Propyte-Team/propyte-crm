@@ -264,9 +264,16 @@ describe("handleComment — envíos", () => {
     });
   });
 
-  it("si persistOpener falla (contacto u opener), el resultado sigue siendo procesado", async () => {
+  // El try/catch que envuelve la llamada al opener es lo único que impide que
+  // el error caiga al catch exterior y marque dmStatus FAILED un DM que YA está
+  // en el chat del cliente. Sin la segunda aserción, quitar ese try/catch dejaba
+  // los 25 tests en verde: `procesado` se devuelve igual por las dos ramas.
+  it("si persistOpener falla (contacto u opener), sigue procesado y el DM NO se marca FAILED", async () => {
     persistOpener.mockRejectedValue(new Error("boom"));
     expect((await handleComment(comment())).status).toBe("procesado");
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
+    expect(updates).toContainEqual(expect.objectContaining({ dmStatus: "SENT" }));
   });
 
   it("el DM sigue contando como enviado aunque el contacto no sea capturable (opener devuelve null)", async () => {

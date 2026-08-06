@@ -135,6 +135,8 @@ describe("persistOpenerCreatingContact", () => {
       contactFindFirst.mockResolvedValue(null);
     });
 
+    // Sin `message`: el contact.create del alta no lo referencia y la rama de
+    // captureLead que sí lo usa (duplicado) es inalcanzable desde aquí.
     it("llama a captureLead con el handle, el placeholder de apellido y el connectorId", async () => {
       await persistOpenerCreatingContact(args);
       expect(captureLead).toHaveBeenCalledWith(
@@ -142,7 +144,6 @@ describe("persistOpenerCreatingContact", () => {
           source: "INSTAGRAM",
           firstName: "luisf",
           lastName: PLACEHOLDER_LASTNAME,
-          message: "Hola, aquí va la info",
           instagramId: "IGSID-1",
         },
         { connectorId: "conn-ig" }
@@ -225,6 +226,21 @@ describe("persistOpenerCreatingContact", () => {
       expect(activityCreate).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalled();
       warn.mockRestore();
+    });
+
+    // captureLead también puede LANZAR. Caso concreto: un contacto
+    // soft-deleted o mergeado que conserve este instagramId es invisible para
+    // los dos dedups (ambos filtran deletedAt null / mergedIntoId null) pero
+    // sigue ocupando el índice único → P2002 en contact.create.
+    it("captureLead lanza (P2002 de un contacto borrado que ocupa el índice): degrada igual, no revienta", async () => {
+      captureLead.mockRejectedValue(Object.assign(new Error("Unique constraint"), { code: "P2002" }));
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      await expect(persistOpenerCreatingContact(args)).resolves.toBeNull();
+      expect(messageCreate).not.toHaveBeenCalled();
+      expect(logUpdateMany).not.toHaveBeenCalled();
+      expect(activityCreate).not.toHaveBeenCalled();
+      expect(err).toHaveBeenCalled();
+      err.mockRestore();
     });
 
     // Si el opener revienta por un blip de la base, el log NO debe quedar
