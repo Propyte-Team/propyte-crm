@@ -12,8 +12,32 @@ const actionSchema = z.object({
   until: z.string().datetime().optional(),
   reason: z.string().max(500).optional(),
   // string = asignar/reclamar · null = quitar asignación · ausente solo válido si action ≠ assign
-  assigneeId: z.string().min(1).nullable().optional(),
+  // .trim() antes de .min(1): un valor de solo espacios no debe llegar al módulo (que lo
+  // afirmaría como "usuario no activo", más de lo que sabe) — debe fallar aquí, en 400.
+  assigneeId: z.string().trim().min(1).nullable().optional(),
 });
+
+// Mapas de la acción assign: constantes puras a nivel de módulo. Las claves están
+// fijadas por AssignResult (@/lib/inbox/assign) — si ahí se agrega un código nuevo sin
+// actualizar estos dos mapas, indexar con `result.code` deja de tipar y tsc rompe
+// (exhaustividad en tiempo de compilación, a propósito).
+const ASSIGN_HTTP_BY_CODE = {
+  "sin-permiso": 403,
+  "ya-asignado": 409,
+  "no-existe": 404,
+  "usuario-invalido": 422,
+  "conflicto": 409,
+} as const;
+
+const ASSIGN_MSG_BY_CODE = {
+  "sin-permiso": "No tienes permiso para asignar este hilo",
+  "ya-asignado": "El contacto ya está asignado a otro asesor",
+  // Diferenciado del 404 de "conversación inexistente": este es el contacto DEL hilo,
+  // que ya existía pero se borró entre la lectura de la conversación y el assign.
+  "no-existe": "El contacto de este hilo ya no existe",
+  "usuario-invalido": "El usuario elegido no está activo",
+  "conflicto": "El hilo cambió, recarga",
+} as const;
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession();
@@ -90,15 +114,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       conversationId: conv.id,
     });
     if (!result.ok) {
-      const httpByCode = { "sin-permiso": 403, "ya-asignado": 409, "no-existe": 404, "usuario-invalido": 422, "conflicto": 409 } as const;
-      const msgByCode = {
-        "sin-permiso": "No tienes permiso para asignar este hilo",
-        "ya-asignado": "El contacto ya está asignado a otro asesor",
-        "no-existe": "No existe",
-        "usuario-invalido": "El usuario elegido no está activo",
-        "conflicto": "El hilo cambió, recarga",
-      } as const;
-      return NextResponse.json({ error: msgByCode[result.code] }, { status: httpByCode[result.code] });
+      return NextResponse.json(
+        { error: ASSIGN_MSG_BY_CODE[result.code] },
+        { status: ASSIGN_HTTP_BY_CODE[result.code] }
+      );
     }
     return NextResponse.json({ data: { assignedTo: result.assignedTo } });
   }

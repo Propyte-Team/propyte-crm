@@ -191,6 +191,12 @@ describe("POST assign", () => {
     expect(assignContact).not.toHaveBeenCalled();
   });
 
+  it("assigneeId de solo espacios → 400 en el borde (zod .trim() antes de .min(1)), no llega al módulo", async () => {
+    const res = await POST(req({ action: "assign", assigneeId: "   " }), PARAMS);
+    expect(res.status).toBe(400);
+    expect(assignContact).not.toHaveBeenCalled();
+  });
+
   it("assigneeId null llega al módulo como null", async () => {
     convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
     assignContact.mockResolvedValue({ ok: true, assignedTo: null });
@@ -211,5 +217,11 @@ describe("POST assign", () => {
     const res = await POST(req({ action: "assign", assigneeId: "ase-2" }), PARAMS);
     const body = await res.json();
     expect(body.data.assignedTo).toEqual({ id: "ase-2", name: "Pedro Ruiz" });
+  });
+
+  it("un throw del módulo NO se convierte en 4xx", async () => {
+    convFindUnique.mockResolvedValue({ id: "conv-1", contactId: "c1" });
+    assignContact.mockRejectedValue(new Error("BD caída"));
+    await expect(POST(req({ action: "assign", assigneeId: "ase-2" }), PARAMS)).rejects.toThrow("BD caída");
   });
 });
