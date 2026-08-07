@@ -376,6 +376,14 @@ enum AuditAction {
   @@schema("propyte_crm")
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+
+  @@schema("propyte_crm")
+}
+
 // Categoría de fuente del lead (para reglas de comisión)
 enum LeadSourceCategory {
   PROPYTE_LEAD
@@ -674,6 +682,14 @@ model User {
   sedetusNumber String?
   sedetusExpiry DateTime?
   isActive      Boolean     @default(true)
+  status            UserStatus @default(ACTIVE)
+  suspendedAt       DateTime?
+  suspensionReason  String?
+  statusChangedById String?
+  statusChangedBy   User?      @relation("UserStatusChanges", fields: [statusChangedById], references: [id])
+  statusChangesMade User[]     @relation("UserStatusChanges")
+  statusChangedAt   DateTime?
+  passwordChangedAt DateTime?
   avatarUrl     String?
   phone         String?
   passwordHash  String
@@ -721,6 +737,7 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([status])
   @@map("users")
   @@schema("propyte_crm")
 }
