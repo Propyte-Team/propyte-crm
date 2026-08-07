@@ -34,7 +34,13 @@ export function candidateStageForSignal(
       return contact.score >= qualifiedThreshold ? "SQL"
         : contact.score >= Math.ceil(qualifiedThreshold / 2) ? "MQL"
         : null;
+    // Responder es responder, venga por donde venga: social.replied (IG/
+    // Messenger) pesa lo mismo que whatsapp.replied. Sin este caso, un contacto
+    // que solo habla por IG se quedaba clavado en LEAD para siempre — y desde
+    // el alta provisional de las reglas de comentarios, también los
+    // comentaristas que sí acaban conversando.
     case "whatsapp.replied":
+    case "social.replied":
     case "lead.captured":
       return "MQL";
     default:

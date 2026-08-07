@@ -719,3 +719,73 @@ describe("handleInboundMessage — remitente bloqueado", () => {
     expect(contactFindFirst).toHaveBeenCalled();
   });
 });
+
+// Paridad con WhatsApp: responder por IG/Messenger emite la misma señal de "el
+// lead respondió" y asciende a MQL igual (lib/lifecycle/transitions.ts). Sin
+// esto, un contacto que solo habla por IG se quedaba clavado en LEAD para
+// siempre — incluido el comentarista que el DM de una regla da de alta como
+// provisional, que ya no pasa por captureLead cuando contesta.
+describe("handleInboundMessage — señal 'el lead respondió'", () => {
+  const known = { id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" };
+
+  /** Todas las señales de respuesta emitidas, sea cual sea el canal. */
+  function repliedCalls() {
+    return emitEvent.mock.calls.filter(
+      (c) => c[0] === "social.replied" || c[0] === "whatsapp.replied"
+    );
+  }
+
+  it("INSTAGRAM: emite social.replied sobre la conversación", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage(base);
+    expect(emitEvent).toHaveBeenCalledWith("social.replied", "conversation", "conv1", {
+      contactId: "c1",
+      channel: "INSTAGRAM",
+      body: "hola",
+    });
+  });
+
+  it("MESSENGER: emite social.replied con su propio canal", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage({
+      ...base,
+      channel: "MESSENGER" as const,
+      senderId: "PSID-1",
+      externalMessageId: "mid-ms-1",
+    });
+    expect(emitEvent).toHaveBeenCalledWith("social.replied", "conversation", "conv1", {
+      contactId: "c1",
+      channel: "MESSENGER",
+      body: "hola",
+    });
+  });
+
+  // El nombre viejo NO se reusa: hay un agente sembrado escuchando
+  // whatsapp.replied (scripts/seed-agentes.ts) que se ampliaría en silencio.
+  it("IG/Messenger NO emiten whatsapp.replied", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage(base);
+    expect(emitEvent).not.toHaveBeenCalledWith(
+      "whatsapp.replied", expect.anything(), expect.anything(), expect.anything()
+    );
+  });
+
+  it("WHATSAPP no emite social.replied: sigue con la suya (no-regresión)", async () => {
+    contactFindFirst.mockResolvedValue({ ...known, whatsappOptOut: false });
+    await handleInboundMessage(wa);
+    expect(emitEvent).toHaveBeenCalledWith(
+      "whatsapp.replied", "conversation", "conv1", expect.objectContaining({ contactId: "c1" })
+    );
+    expect(emitEvent).not.toHaveBeenCalledWith(
+      "social.replied", expect.anything(), expect.anything(), expect.anything()
+    );
+  });
+
+  it("un echo NO emite ninguna señal de respuesta: no respondió el lead, respondió la Página", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue(known);
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(repliedCalls()).toHaveLength(0);
+  });
+});

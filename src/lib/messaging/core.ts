@@ -360,16 +360,25 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     console.error(`[messaging] meetSlaTimers falló:`, err);
   }
 
-  if (msg.channel === "WHATSAPP") {
-    try {
-      const { emitEvent } = await import("@/lib/workflows/events");
-      await emitEvent("whatsapp.replied", "conversation", conversation.id, {
-        contactId: contact.id,
-        body: msg.text.slice(0, 500),
-      });
-    } catch (err) {
-      console.error(`[messaging] emitEvent whatsapp.replied falló:`, err);
-    }
+  // "El lead respondió" — misma señal para los tres canales, en el mismo punto
+  // del flujo de siempre. Solo llega aquí el inbound real: los echoes salieron
+  // arriba por handleEchoMessage y los remitentes bloqueados antes todavía.
+  //
+  // Se emite social.replied para IG/Messenger en vez de reusar whatsapp.replied
+  // porque ese nombre ya tiene consumidores configurados (el agente sembrado en
+  // scripts/seed-agentes.ts, y la comprobación de docs/qa/inbox-social-smoke.md):
+  // reusarlo los ampliaría a dos canales más sin que nadie lo pidiera.
+  // lifecycle/transitions.ts trata las dos señales igual → ascenso a MQL.
+  const repliedEvent = msg.channel === "WHATSAPP" ? "whatsapp.replied" : "social.replied";
+  try {
+    const { emitEvent } = await import("@/lib/workflows/events");
+    await emitEvent(repliedEvent, "conversation", conversation.id, {
+      contactId: contact.id,
+      channel: msg.channel,
+      body: msg.text.slice(0, 500),
+    });
+  } catch (err) {
+    console.error(`[messaging] emitEvent ${repliedEvent} falló:`, err);
   }
 
   if (conversation.status === "HUMAN") {
