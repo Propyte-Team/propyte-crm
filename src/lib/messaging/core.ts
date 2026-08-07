@@ -360,6 +360,37 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     console.error(`[messaging] meetSlaTimers falló:`, err);
   }
 
+  // ── El provisional deja de serlo: este es su primer reply ──────────────────
+  // Un contacto creado por una regla de comentarios nace sin dueño a propósito
+  // (no era un lead, le escribimos nosotros). Cuando CONTESTA sí lo es, y como
+  // el contacto ya existe el intake no vuelve a pasar por captureLead: si no se
+  // enruta aquí, se queda huérfano para siempre — sin dueño, sin SLA y sin
+  // notificación. Y si Sage escala, escalateToHuman deja la conversación en
+  // HUMAN con controlledById null y se salta el aviso, así que el lead más
+  // caliente que produce la feature acaba en silencio.
+  //
+  // El guard es "sin dueño Y con marca de origen-comentario", no solo "sin
+  // dueño": un gerente puede haber desasignado a alguien a propósito y no se le
+  // deshace la decisión.
+  //
+  // DESPUÉS de meetSlaTimers a propósito: ese updateMany cierra TODOS los
+  // timers RUNNING del contacto, así que enrutar antes mataría el FIRST_TOUCH
+  // recién creado y el asesor no tendría reloj.
+  if (!contact.assignedToId) {
+    try {
+      const { isCommentOriginDetail } = await import("@/lib/comments/link-comment-origin");
+      if (isCommentOriginDetail(contact.leadSourceDetail)) {
+        const { autoRouteLead } = await import("@/lib/workflows/routing");
+        const routedTo = await autoRouteLead(contact.id, { reason: "primer reply de comentario" });
+        // Refleja el dueño nuevo en memoria: lo leen el aviso de hilo HUMAN de
+        // más abajo y, vía re-fetch, el escalamiento del bot.
+        if (routedTo) contact = { ...contact, assignedToId: routedTo };
+      }
+    } catch (err) {
+      console.error(`[messaging] ruteo del primer reply de comentario falló:`, err);
+    }
+  }
+
   // "El lead respondió" — misma señal para los tres canales, en el mismo punto
   // del flujo de siempre. Solo llega aquí el inbound real: los echoes salieron
   // arriba por handleEchoMessage y los remitentes bloqueados antes todavía.

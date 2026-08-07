@@ -39,12 +39,24 @@ const DEFAULT_FIRST_NAME: Record<Platform, string> = {
   FACEBOOK: "Messenger",
 };
 
-/** Resultado del opener: a qué contacto quedó enganchado y si lo acabamos de crear. */
-export interface OpenerResult {
-  contactId: string;
-  isNewContact: boolean;
-  /** null si el eco de Meta ya había guardado ese mid antes que nosotros (P2002). */
-  conversationId: string | null;
+// Marca de origen que se guarda en Contact.leadSourceDetail al dar de alta un
+// contacto provisional. Es el único rastro propio del contacto que dice "esto
+// nació de un comentario, todavía no ha hablado": sin ella, un provisional es
+// indistinguible de cualquier otro contacto sin dueño. Sirve para dos cosas:
+//   1) el intake sabe a quién enrutar en su primer reply (lib/messaging/core.ts);
+//   2) queda filtrable y reportable en el CRM.
+// NO se limpia al enrutar: es dato de procedencia, no un flag de estado. El
+// candado contra el re-enrutado es tener dueño, no la marca.
+const COMMENT_ORIGIN_PREFIX = "comentario:";
+
+/** `leadSourceDetail` de un contacto nacido de un comentario en `postId`. */
+export function commentOriginDetail(postId: string): string {
+  return `${COMMENT_ORIGIN_PREFIX}${postId}`.slice(0, 200); // límite de incomingLeadSchema
+}
+
+/** true si ese `leadSourceDetail` viene de una regla de comentarios. */
+export function isCommentOriginDetail(leadSourceDetail: string | null | undefined): boolean {
+  return typeof leadSourceDetail === "string" && leadSourceDetail.startsWith(COMMENT_ORIGIN_PREFIX);
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -178,6 +190,9 @@ async function claimLogForContact(logId: string, contactId: string): Promise<boo
  *
  * La conversación queda como la deja ensureConversation (nace en BOT): cuando
  * la persona responda, Sage sigue el hilo. Aquí NO se toca `status`.
+ *
+ * Devuelve el id del contacto al que quedó enganchado el hilo, o null si no se
+ * pudo dar de alta (el DM ya salió igual: eso no se deshace).
  */
 export async function persistOpenerCreatingContact(args: {
   /** CommentRuleLog al que pertenece este DM: se estampa con el contactId. */
@@ -191,19 +206,19 @@ export async function persistOpenerCreatingContact(args: {
   matchedPhrase: string;
   text: string;
   externalMessageId: string;
-}): Promise<OpenerResult | null> {
+}): Promise<string | null> {
   const channel = CHANNEL[args.platform];
 
   let contactId: string;
   let assignedToId: string | null;
-  let isNewContact = false;
 
   const known = await findContactByRecipient(args.platform, args.recipientId);
   if (known) {
     contactId = known.id;
     assignedToId = known.assignedToId;
   } else {
-    // Alta por el camino canónico: ruteo, SLA y eventos salen gratis.
+    // Alta por el camino canónico (dedup y contact.created), pero PROVISIONAL:
+    // ver el comentario sobre `provisional` unas líneas más abajo.
     //
     // El findFirst de arriba NO es redundante con el dedup interno de
     // captureLead aunque el filtro sea idéntico: es el discriminante que
@@ -239,10 +254,17 @@ export async function persistOpenerCreatingContact(args: {
           source: CHANNEL[args.platform],
           firstName: firstNameFromHandle(args.platform, args.authorHandle),
           lastName: PLACEHOLDER_LASTNAME,
+          // Marca de origen: es lo que deja al intake enrutarlo en su primer
+          // reply sin tocar a los contactos que un gerente desasignó a mano.
+          sourceDetail: commentOriginDetail(args.postId),
           ...idField,
         },
-        // provisional: le escribimos nosotros primero, no levantó la mano — se
-        // vuelve lead (ruteo, SLA, MQL, CAPI) cuando conteste.
+        // provisional: le escribimos nosotros primero, no levantó la mano. Al
+        // contestar sí se le enruta (dueño + SLA + notificación, en
+        // lib/messaging/core.ts) y sube a MQL por social.replied. Lo que NO
+        // ocurre nunca —ni al comentar ni al responder— es el evento Lead de
+        // Meta CAPI: hay una medición de calidad de leads corriendo y un
+        // comentarista no debe contar como lead en ella.
         { connectorId: args.connectorId, provisional: true }
       );
     } catch (err) {
@@ -261,14 +283,13 @@ export async function persistOpenerCreatingContact(args: {
     }
     contactId = result.contactId;
     assignedToId = result.assignedToId;
-    isNewContact = result.isNew;
   }
 
   // Orden deliberado: opener → estampado → nota. Si el opener revienta por un
   // blip de la base, el log se queda con contactId null y linkCommentOrigin
   // vuelve a intentarlo todo cuando la persona responda (el comportamiento de
   // antes de este cambio). Estampar primero nos dejaría sin ese repesque.
-  const conversationId = await writeOpener({
+  await writeOpener({
     contactId,
     assignedToId,
     channel,
@@ -291,7 +312,7 @@ export async function persistOpenerCreatingContact(args: {
     }
   }
 
-  return { contactId, isNewContact, conversationId };
+  return contactId;
 }
 
 /**

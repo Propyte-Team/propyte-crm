@@ -84,7 +84,7 @@ describe("persistOpenerCreatingContact", () => {
     contactFindFirst.mockResolvedValue({ id: "c-1", assignedToId: "u-1" });
     const out = await persistOpenerCreatingContact(args);
     expect(captureLead).not.toHaveBeenCalled();
-    expect(out).toEqual({ contactId: "c-1", isNewContact: false, conversationId: "conv-1" });
+    expect(out).toBe("c-1");
   });
 
   it("busca por instagramId en IG y por messengerPsid en Facebook", async () => {
@@ -122,10 +122,7 @@ describe("persistOpenerCreatingContact", () => {
   it("mid repetido (P2002) no revienta: el eco ya lo había guardado", async () => {
     contactFindFirst.mockResolvedValue({ id: "c-1", assignedToId: null });
     messageCreate.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
-    await expect(persistOpenerCreatingContact(args)).resolves.toMatchObject({
-      contactId: "c-1",
-      conversationId: null,
-    });
+    await expect(persistOpenerCreatingContact(args)).resolves.toBe("c-1");
   });
 
   // --- Cambio de producto 2026-08-06: el hilo nace con el envío ---
@@ -144,6 +141,7 @@ describe("persistOpenerCreatingContact", () => {
           source: "INSTAGRAM",
           firstName: "luisf",
           lastName: PLACEHOLDER_LASTNAME,
+          sourceDetail: "comentario:MEDIA-1",
           instagramId: "IGSID-1",
         },
         { connectorId: "conn-ig", provisional: true }
@@ -189,7 +187,7 @@ describe("persistOpenerCreatingContact", () => {
         aiGenerated: false,
         externalMessageId: "mid-1",
       });
-      expect(out).toEqual({ contactId: "c-new", isNewContact: true, conversationId: "conv-1" });
+      expect(out).toBe("c-new");
     });
 
     it("estampa el contactId en el log en el momento del envío", async () => {

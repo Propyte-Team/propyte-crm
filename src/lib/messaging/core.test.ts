@@ -47,8 +47,16 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a) }));
+const autoRouteLead = vi.fn();
+vi.mock("@/lib/workflows/routing", () => ({
+  autoRouteLead: (...a: unknown[]) => autoRouteLead(...a),
+}));
 const linkCommentOrigin = vi.fn();
-vi.mock("@/lib/comments/link-comment-origin", () => ({
+// Solo se stubea linkCommentOrigin: isCommentOriginDetail se deja REAL para que
+// el ruteo del primer reply se rompa aquí —y no en producción— si alguien
+// cambia el prefijo de la marca de origen.
+vi.mock("@/lib/comments/link-comment-origin", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/comments/link-comment-origin")>()),
   linkCommentOrigin: (...a: unknown[]) => linkCommentOrigin(...a),
 }));
 const emitEvent = vi.fn();
@@ -82,8 +90,9 @@ beforeEach(() => {
     convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate,
     notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
-    commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin,
+    commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
   ].forEach((m) => m.mockReset());
+  autoRouteLead.mockResolvedValue("u-nuevo");
   contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
   commentRuleLogFindFirst.mockResolvedValue(null);
   linkCommentOrigin.mockResolvedValue(null);
@@ -787,5 +796,72 @@ describe("handleInboundMessage — señal 'el lead respondió'", () => {
     convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
     await handleInboundMessage(echo);
     expect(repliedCalls()).toHaveLength(0);
+  });
+});
+
+// El contacto que crea una regla de comentarios nace SIN dueño (provisional).
+// Cuando contesta ya es un lead de verdad, pero como el contacto existe el
+// intake no vuelve a pasar por captureLead: si no se enruta en este punto, se
+// queda huérfano — sin dueño, sin SLA y sin notificación — y si Sage escala,
+// escalateToHuman lo deja en HUMAN con controlledById null y sin aviso.
+describe("handleInboundMessage — el provisional deja de serlo al responder", () => {
+  const MARCA = "comentario:MEDIA-1";
+  const provisional = {
+    id: "c1", assignedToId: null, firstName: "luisf", lastName: "(por identificar)",
+    leadSourceDetail: MARCA,
+  };
+
+  it("sin dueño + marca de comentario → se enruta, con un reason que lo explica", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    await handleInboundMessage(base);
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "primer reply de comentario" });
+  });
+
+  it("CON dueño no se re-enruta (aunque conserve la marca de origen)", async () => {
+    contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u1" });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  // Un gerente pudo desasignar a propósito: sin marca de origen no se le
+  // deshace la decisión.
+  it("sin dueño pero SIN marca (desasignado a mano) NO se enruta", async () => {
+    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+
+    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: "web:landing-tulum" });
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  it("el segundo inbound ya no enruta: el primero le puso dueño", async () => {
+    contactFindFirst.mockResolvedValueOnce(provisional);
+    contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u-nuevo" });
+
+    await handleInboundMessage(base);
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+  });
+
+  // El pago de todo esto: el aviso deja de irse al vacío.
+  it("hilo en HUMAN sin controlledById: el aviso va al dueño recién enrutado, no se pierde", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true, controlledById: null });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true, controlledById: null });
+
+    await handleInboundMessage(base);
+
+    expect(notifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: "u-nuevo" }) })
+    );
+  });
+
+  it("si el ruteo truena, la ingesta sigue: el mensaje ya está en el hilo", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    autoRouteLead.mockRejectedValue(new Error("boom"));
+    await expect(handleInboundMessage(base)).resolves.toBeTruthy();
   });
 });
