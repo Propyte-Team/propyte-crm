@@ -79,7 +79,6 @@ const updateUserSchema = z.object({
   phone: z.string().nullable().optional(),
   sedetusNumber: z.string().nullable().optional(),
   sedetusExpiry: z.string().nullable().optional(),
-  isActive: z.boolean().optional(),
 });
 
 const createCommissionRuleSchema = z.object({
@@ -247,7 +246,6 @@ export async function updateUser(
     phone?: string | null;
     sedetusNumber?: string | null;
     sedetusExpiry?: string | null;
-    isActive?: boolean;
   }
 ) {
   await requireAdminRole();
@@ -284,7 +282,6 @@ export async function updateUser(
       ? new Date(validated.sedetusExpiry)
       : null;
   }
-  if (validated.isActive !== undefined) updateData.isActive = validated.isActive;
 
   const user = await prisma.user.update({
     where: { id },
@@ -296,28 +293,7 @@ export async function updateUser(
       role: true,
       plaza: true,
       careerLevel: true,
-      isActive: true,
     },
-  });
-
-  return user;
-}
-
-/**
- * Desactiva un usuario (soft deactivate, no borra).
- */
-export async function deactivateUser(id: string) {
-  await requireAdminRole();
-
-  const existing = await prisma.user.findUnique({
-    where: { id, deletedAt: null },
-  });
-  if (!existing) throw new Error("Usuario no encontrado");
-
-  const user = await prisma.user.update({
-    where: { id },
-    data: { isActive: false },
-    select: { id: true, name: true, isActive: true },
   });
 
   return user;
