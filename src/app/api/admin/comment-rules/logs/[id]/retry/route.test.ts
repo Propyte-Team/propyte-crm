@@ -34,7 +34,7 @@ vi.mock("@/lib/comments/graph", () => ({
 
 const persistOpener = vi.fn();
 vi.mock("@/lib/comments/link-comment-origin", () => ({
-  persistOpenerForKnownContact: (...a: unknown[]) => persistOpener(...a),
+  persistOpenerCreatingContact: (...a: unknown[]) => persistOpener(...a),
 }));
 
 import { POST } from "./route";
@@ -54,6 +54,9 @@ const LOG_BOTH_FAILED = {
   connectorId: "conn-1",
   platform: "INSTAGRAM",
   externalCommentId: "IGCOMMENT-1",
+  postId: "MEDIA-1",
+  authorHandle: "luisf",
+  matchedPhrase: "info",
   publicReplyStatus: "FAILED",
   publicText: "Texto público exacto",
   dmStatus: "FAILED",
@@ -83,6 +86,9 @@ beforeEach(() => {
   auditCreate.mockResolvedValue({});
   replyToComment.mockResolvedValue({ id: "IGREPLY-1" });
   sendPrivateReply.mockResolvedValue({ messageId: "mid-1", recipientId: "PSID-1" });
+  // La ruta encadena .catch() sobre el resultado: el mock tiene que devolver
+  // una promesa o el TypeError caería dentro del try del DM y lo marcaría FAILED.
+  persistOpener.mockResolvedValue({ contactId: "c-1", isNewContact: true, conversationId: "conv-1" });
 });
 
 describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
@@ -110,6 +116,56 @@ describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
       "Texto público exacto"
     );
     expect(sendPrivateReply).toHaveBeenCalledWith("TOKEN", "IGCOMMENT-1", "Texto DM exacto");
+  });
+
+  // Cambio de producto 2026-08-06: el reintento también materializa el hilo —
+  // crea el contacto si no existe y le engancha el opener, igual que el envío
+  // original. Necesita el logId y los campos del log para la nota de origen.
+  it("el DM reintentado también crea contacto e hilo, con el logId y los datos del comentario", async () => {
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(200);
+    expect(persistOpener).toHaveBeenCalledWith({
+      logId: "log-1",
+      platform: "INSTAGRAM",
+      connectorId: "conn-1",
+      recipientId: "PSID-1",
+      authorHandle: "luisf",
+      postId: "MEDIA-1",
+      matchedPhrase: "info",
+      text: "Texto DM exacto",
+      externalMessageId: "mid-1",
+    });
+    expect(logUpdate.mock.calls[0][0].data).toMatchObject({ dmStatus: "SENT" });
+  });
+
+  // El mid tiene que estar EN LA BASE antes de que el opener empiece: si no,
+  // el eco de Meta que llegue mientras persistOpenerCreatingContact crea el
+  // contacto (cientos de ms) no encuentra ni el opener ni el log, entra como
+  // ADVISOR y aplica el takeover — el bot se calla. Ver el comentario largo en
+  // la ruta.
+  it("persiste dmExternalMessageId en el log ANTES de llamar al opener (si no, el eco enmudece al bot)", async () => {
+    await POST(req(), ctx());
+
+    expect(logUpdate.mock.calls[0][0]).toMatchObject({
+      where: { id: "log-1" },
+      data: { dmStatus: "SENT", dmRecipientId: "PSID-1", dmExternalMessageId: "mid-1" },
+    });
+    expect(logUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      persistOpener.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("si el opener falla, el DM NO se marca FAILED (ya está en el chat del cliente)", async () => {
+    persistOpener.mockRejectedValue(new Error("boom"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(200);
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
+    expect(updates).toContainEqual(expect.objectContaining({ dmStatus: "SENT" }));
+    errSpy.mockRestore();
   });
 
   it("404 si el registro no existe", async () => {
@@ -192,7 +248,9 @@ describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
   it("si falla la llamada a Graph tras reclamar el candado, el estado vuelve a FAILED (no queda PENDING colgado)", async () => {
     replyToComment.mockRejectedValue(new Error("Invalid OAuth access token"));
     await POST(req(), ctx());
-    expect(logUpdate.mock.calls[0][0].data).toMatchObject({
+    // El último update es el consolidado del final: el primero ya no lo es
+    // desde que el mid del DM se persiste por adelantado (ver test del orden).
+    expect(logUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({
       publicReplyStatus: "FAILED",
       publicReplyError: "Invalid OAuth access token",
     });

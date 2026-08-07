@@ -1,9 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import type { IncomingMessage, MessagingChannel } from "./types";
+// El placeholder se movió a ./types (módulo hoja) para poder compartirlo con el
+// alta de contacto de las reglas de comentarios sin arrastrar todo este módulo.
+import { PLACEHOLDER_LASTNAME } from "./types";
 import type { SocialProfile } from "./profile";
-
-const PLACEHOLDER_LASTNAME = "(por identificar)";
 
 type ContactWithAssigned = NonNullable<Awaited<ReturnType<typeof findContactByChannel>>>;
 
@@ -111,7 +112,7 @@ async function handleEchoMessage(msg: IncomingMessage) {
 
   // Por qué existe esta comprobación: la defensa contra el eco del propio DM de
   // una regla de comentarios era escribir NOSOTROS el opener con el message_id de
-  // la Send API (persistOpenerForKnownContact → writeOpener, en
+  // la Send API (persistOpenerCreatingContact → writeOpener, en
   // lib/comments/link-comment-origin.ts), para que el eco de Meta chocara con
   // Message.externalMessageId @unique y se descartara. Eso es una CARRERA, no una
   // garantía: si el create() del eco de ABAJO commitea primero, ya se evaluó
@@ -359,16 +360,77 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     console.error(`[messaging] meetSlaTimers falló:`, err);
   }
 
-  if (msg.channel === "WHATSAPP") {
+  // ── El provisional deja de serlo: este es su primer reply ──────────────────
+  // Un contacto creado por una regla de comentarios nace sin dueño a propósito
+  // (no era un lead, le escribimos nosotros). Cuando CONTESTA sí lo es, y como
+  // el contacto ya existe el intake no vuelve a pasar por captureLead: si no se
+  // enruta aquí, se queda huérfano para siempre — sin dueño, sin SLA y sin
+  // notificación. Y si Sage escala, escalateToHuman deja la conversación en
+  // HUMAN con controlledById null y se salta el aviso, así que el lead más
+  // caliente que produce la feature acaba en silencio.
+  //
+  // El guard tiene tres tramos, en orden de coste creciente:
+  //   1. sin dueño,
+  //   2. con marca de origen-comentario (un gerente pudo desasignar a alguien
+  //      que nunca vino de un comentario, y no se le deshace la decisión),
+  //   3. sin FIRST_TOUCH previo — la query solo corre si 1 y 2 ya pasaron.
+  //
+  // El tramo 3 cierra el hueco que dejaban los otros dos: la marca es dato de
+  // procedencia y no se borra, así que un contacto que SÍ vino de un comentario
+  // y al que un gerente desasignó a mano (feature de asignación del Inbox)
+  // volvería a enrutarse con su siguiente mensaje. Un FIRST_TOUCH existente —en
+  // cualquier estado: MET y BREACHED también prueban que hubo ruteo— significa
+  // "a este ya se le asignó dueño alguna vez", así que quedarse sin dueño ahora
+  // es decisión de alguien.
+  //
+  // Y conserva el reintento: autoRouteLead sale con `if (!assigneeId) return
+  // null` ANTES de createSlaTimer (routing.ts), así que un ruteo que no
+  // encontró candidato no deja timer y se vuelve a intentar en el siguiente
+  // inbound.
+  //
+  // Todo esto va DESPUÉS de meetSlaTimers a propósito: ese updateMany cierra
+  // TODOS los timers RUNNING del contacto, así que enrutar antes mataría el
+  // FIRST_TOUCH recién creado y el asesor no tendría reloj.
+  if (!contact.assignedToId) {
     try {
-      const { emitEvent } = await import("@/lib/workflows/events");
-      await emitEvent("whatsapp.replied", "conversation", conversation.id, {
-        contactId: contact.id,
-        body: msg.text.slice(0, 500),
-      });
+      const { isCommentOriginDetail } = await import("@/lib/comments/link-comment-origin");
+      if (isCommentOriginDetail(contact.leadSourceDetail)) {
+        const routedBefore = await prisma.slaTimer.findFirst({
+          where: { contactId: contact.id, type: "FIRST_TOUCH" },
+          select: { id: true },
+        });
+        if (!routedBefore) {
+          const { autoRouteLead } = await import("@/lib/workflows/routing");
+          const routedTo = await autoRouteLead(contact.id, { reason: "primer reply de comentario" });
+          // Refleja el dueño nuevo en memoria: lo leen el aviso de hilo HUMAN de
+          // más abajo y, vía re-fetch, el escalamiento del bot.
+          if (routedTo) contact = { ...contact, assignedToId: routedTo };
+        }
+      }
     } catch (err) {
-      console.error(`[messaging] emitEvent whatsapp.replied falló:`, err);
+      console.error(`[messaging] ruteo del primer reply de comentario falló:`, err);
     }
+  }
+
+  // "El lead respondió" — misma señal para los tres canales, en el mismo punto
+  // del flujo de siempre. Solo llega aquí el inbound real: los echoes salieron
+  // arriba por handleEchoMessage y los remitentes bloqueados antes todavía.
+  //
+  // Se emite social.replied para IG/Messenger en vez de reusar whatsapp.replied
+  // porque ese nombre ya tiene consumidores configurados (el agente sembrado en
+  // scripts/seed-agentes.ts, y la comprobación de docs/qa/inbox-social-smoke.md):
+  // reusarlo los ampliaría a dos canales más sin que nadie lo pidiera.
+  // lifecycle/transitions.ts trata las dos señales igual → ascenso a MQL.
+  const repliedEvent = msg.channel === "WHATSAPP" ? "whatsapp.replied" : "social.replied";
+  try {
+    const { emitEvent } = await import("@/lib/workflows/events");
+    await emitEvent(repliedEvent, "conversation", conversation.id, {
+      contactId: contact.id,
+      channel: msg.channel,
+      body: msg.text.slice(0, 500),
+    });
+  } catch (err) {
+    console.error(`[messaging] emitEvent ${repliedEvent} falló:`, err);
   }
 
   if (conversation.status === "HUMAN") {

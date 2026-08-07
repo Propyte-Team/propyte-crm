@@ -18,6 +18,11 @@ export type DomainEventType =
   | "deal.lost"
   | "quote.opened"
   | "whatsapp.replied"
+  // Equivalente de whatsapp.replied para Instagram/Messenger: "el lead
+  // respondió". Evento aparte y no reuso de whatsapp.replied porque hay reglas
+  // y agentes ya configurados escuchando ese nombre (scripts/seed-agentes.ts):
+  // reusarlo los ampliaría en silencio a dos canales más.
+  | "social.replied"
   | "payment.overdue"
   | "visit.completed"
   | "sla.breach"

@@ -25,6 +25,8 @@ describe("lifecycle transitions (pure)", () => {
 
   it("candidateStageForSignal mapea señal→etapa", () => {
     expect(candidateStageForSignal("whatsapp.replied", { score: 0 }, 70)).toBe("MQL");
+    // Responder por IG/Messenger pesa lo mismo que responder por WhatsApp.
+    expect(candidateStageForSignal("social.replied", { score: 0 }, 70)).toBe("MQL");
     expect(candidateStageForSignal("contact.scored", { score: 80 }, 70)).toBe("SQL");
     expect(candidateStageForSignal("contact.scored", { score: 40 }, 70)).toBe("MQL");
     expect(candidateStageForSignal("deal.created", { score: 0 }, 70)).toBe("OPORTUNIDAD");

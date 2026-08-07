@@ -4,7 +4,7 @@ import { workflowActionTypes } from "@/lib/validations/rebuild-f1";
 export function describeSchema() {
   return {
     triggerTypes: ["EVENT", "TIME", "BEHAVIORAL", "INACTIVITY", "STAGE_CHANGE", "SLA_BREACH", "SCORE_THRESHOLD"],
-    eventTypesHint: ["lead.captured", "lead.assigned", "deal.stage_changed", "whatsapp.replied"],
+    eventTypesHint: ["lead.captured", "lead.assigned", "deal.stage_changed", "whatsapp.replied", "social.replied"],
     workflowActionTypes,
     leadAssignmentModes: ["ROUND_ROBIN", "PERFORMANCE", "MANUAL", "GUARDIA"],
     connectorProviders: [

@@ -218,7 +218,8 @@ SlaEngine y ActionPlanScheduler corren por tiempo (pg_cron) sobre SlaTimer / Enr
 
 ### D.3 Enums del motor (NUEVO)
 - **TriggerType:** `EVENT`, `TIME`, `BEHAVIORAL`, `INACTIVITY`, `STAGE_CHANGE`, `SLA_BREACH`, `SCORE_THRESHOLD`.
-- **WorkflowEventType:** `lead.captured`, `lead.assigned`, `contact.scored`, `deal.stage_changed`, `quote.opened`, `whatsapp.replied`, `unit.viewed`, `payment.overdue`, `visit.completed`, `deal.won`, `deal.lost`, …
+- **WorkflowEventType:** `lead.captured`, `lead.assigned`, `contact.scored`, `deal.stage_changed`, `quote.opened`, `whatsapp.replied`, `social.replied`, `unit.viewed`, `payment.overdue`, `visit.completed`, `deal.won`, `deal.lost`, …
+  - `social.replied` es el equivalente de `whatsapp.replied` para Instagram/Messenger (el lead respondió). Se emitió aparte y no se reusó el nombre de WhatsApp porque ya hay reglas y agentes escuchándolo. Ambos ascienden el contacto a **MQL**.
 - **ActionType:** `CREATE_TASK`, `SEND_WHATSAPP`, `SEND_EMAIL`, `MAKE_CALL`, `ASSIGN`, `REASSIGN`, `NOTIFY`, `UPDATE_FIELD`, `ADD_TAG`, `CHANGE_STAGE`, `ENROLL_PLAN`, `ESCALATE`, `AI_DRAFT`, `AI_REPLY`, `AI_CALL_SUMMARY`, `WEBHOOK`.
 
 ### D.4 DSL de condiciones (JSONB)

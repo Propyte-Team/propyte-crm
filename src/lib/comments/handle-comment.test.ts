@@ -38,7 +38,7 @@ vi.mock("./graph", () => ({
 
 const persistOpener = vi.fn();
 vi.mock("./link-comment-origin", () => ({
-  persistOpenerForKnownContact: (...a: unknown[]) => persistOpener(...a),
+  persistOpenerCreatingContact: (...a: unknown[]) => persistOpener(...a),
 }));
 
 const isSenderBlocked = vi.fn();
@@ -246,20 +246,64 @@ describe("handleComment — envíos", () => {
     });
   });
 
-  it("intenta enganchar el opener al hilo si la persona ya es contacto", async () => {
+  // Cambio de producto 2026-08-06: el hilo se materializa con el envío, así que
+  // se le pasa todo lo que hace falta para dar de alta al contacto (handle) y
+  // para estampar el log + la nota de origen (logId, postId, matchedPhrase).
+  it("engancha el opener al hilo pasando el log y el handle para poder crear el contacto", async () => {
     await handleComment(comment());
     expect(persistOpener).toHaveBeenCalledWith({
+      logId: "log-1",
       platform: "INSTAGRAM",
       connectorId: "conn-ig",
       recipientId: "IGSID-1",
+      authorHandle: "luisf",
+      postId: "MEDIA-1",
+      matchedPhrase: "info",
       text: "Hola luisf, aquí va la info.",
       externalMessageId: "mid-1",
     });
   });
 
-  it("si persistOpener falla, el resultado sigue siendo procesado", async () => {
+  // El try/catch que envuelve la llamada al opener es lo único que impide que
+  // el error caiga al catch exterior y marque dmStatus FAILED un DM que YA está
+  // en el chat del cliente. Sin la segunda aserción, quitar ese try/catch dejaba
+  // los 25 tests en verde: `procesado` se devuelve igual por las dos ramas.
+  // Gemelo del test de la ruta de reintento, pero para el camino que corre en
+  // CADA comentario. El mid tiene que estar EN LA BASE antes de que empiece el
+  // opener: persistOpenerCreatingContact tarda cientos de ms creando el
+  // contacto (alta + eventos + ruteo + SLA), y un eco de Meta que llegue en esa
+  // ventana no encontraría ni el opener ni el log por dmExternalMessageId, pero
+  // sí el contacto → entraría como ADVISOR y aplicaría el takeover: bot mudo.
+  it("persiste dmExternalMessageId en el log ANTES de llamar al opener (si no, el eco enmudece al bot)", async () => {
+    await handleComment(comment());
+
+    const dmUpdateIdx = logUpdate.mock.calls.findIndex((c) => c[0].data.dmStatus === "SENT");
+    expect(dmUpdateIdx).toBeGreaterThanOrEqual(0);
+    expect(logUpdate.mock.calls[dmUpdateIdx][0].data).toMatchObject({
+      dmStatus: "SENT",
+      dmRecipientId: "IGSID-1",
+      dmExternalMessageId: "mid-1",
+    });
+    expect(logUpdate.mock.invocationCallOrder[dmUpdateIdx]).toBeLessThan(
+      persistOpener.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("si persistOpener falla (contacto u opener), sigue procesado y el DM NO se marca FAILED", async () => {
     persistOpener.mockRejectedValue(new Error("boom"));
     expect((await handleComment(comment())).status).toBe("procesado");
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
+    expect(updates).toContainEqual(expect.objectContaining({ dmStatus: "SENT" }));
+  });
+
+  it("el DM sigue contando como enviado aunque el contacto no sea capturable (opener devuelve null)", async () => {
+    persistOpener.mockResolvedValue(null);
+    const out = await handleComment(comment());
+    expect(out.status).toBe("procesado");
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).toContainEqual(expect.objectContaining({ dmStatus: "SENT" }));
+    expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
   });
 
   // Fix 5 (code review, detectado por el implementer de la Task 6): si
@@ -325,9 +369,13 @@ describe("handleComment — envíos", () => {
     const updates = logUpdate.mock.calls.map((c) => c[0].data);
     expect(updates).not.toContainEqual(expect.objectContaining({ dmStatus: "FAILED" }));
     expect(persistOpener).toHaveBeenCalledWith({
+      logId: "log-1",
       platform: "INSTAGRAM",
       connectorId: "conn-ig",
       recipientId: "IGSID-1",
+      authorHandle: "luisf",
+      postId: "MEDIA-1",
+      matchedPhrase: "info",
       text: "Hola luisf, aquí va la info.",
       externalMessageId: "mid-1",
     });

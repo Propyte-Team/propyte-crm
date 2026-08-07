@@ -46,10 +46,41 @@ function buildAttributionData(lead: IncomingLead) {
   };
 }
 
+/**
+ * Alta de contacto por el camino canónico.
+ *
+ * `opts.provisional`: el contacto existe pero **todavía no es un lead** — lo
+ * creamos nosotros al escribirle primero (el DM de una regla de comentarios),
+ * no porque la persona haya levantado la mano. Se salta ruteo + SLA +
+ * notificación, el evento `lead.captured` (y con él el ascenso a MQL que hace
+ * lib/lifecycle/transitions.ts) y el `ConversionEvent` de CAPI. `contact.created`
+ * SÍ se emite: el contacto existe de verdad.
+ *
+ * Qué pasa cuando la persona responde (lib/messaging/core.ts):
+ *  - SÍ se le enruta —dueño, SLA de primer toque y notificación— gracias a la
+ *    marca de origen que el llamador deja en `sourceDetail`.
+ *  - SÍ sube a MQL, por el evento `social.replied` del intake.
+ *  - **NUNCA se manda el evento `Lead` a Meta CAPI**, ni al comentar ni al
+ *    responder. Es una decisión de producto, no un olvido: hay una medición de
+ *    calidad de leads de Meta corriendo y un comentarista no debe contar como
+ *    lead en ella. `recordConversionEvent` solo se llama en el alta no
+ *    provisional, y el intake de inbound no lo llama nunca.
+ *
+ * Por qué: sin esto, cada persona que comenta "pollo" en una publicación entra
+ * como lead calificado, genera un breach de SLA garantizado (nadie va a
+ * contestar un DM que ya contestó el bot) y mete un evento `Lead` en la
+ * medición de calidad de leads de Meta.
+ *
+ * `provisional: true` implica `skipRouting`: el llamador no tiene que pasar los
+ * dos.
+ */
 export async function captureLead(
   input: IncomingLead | Record<string, unknown>,
-  opts: { connectorId?: string; skipRouting?: boolean } = {}
+  opts: { connectorId?: string; skipRouting?: boolean; provisional?: boolean } = {}
 ): Promise<CaptureResult> {
+  // Un alta provisional nunca se rutea: no hay a quién avisar de un lead que
+  // todavía no existe como tal.
+  const skipRouting = opts.skipRouting || opts.provisional === true;
   const parsed = incomingLeadSchema.safeParse(input);
   if (!parsed.success) {
     return { contactId: null, isNew: false, assignedToId: null, error: parsed.error.message };
@@ -102,12 +133,16 @@ export async function captureLead(
       }
     }
 
-    const { emitEvent } = await import("@/lib/workflows/events");
-    await emitEvent("lead.captured", "contact", existing.id, {
-      leadSource: lead.source,
-      duplicate: true,
-      connectorId: opts.connectorId,
-    });
+    // Mismo criterio que en el alta: un toque provisional no convierte a nadie
+    // en lead, así que tampoco dispara lead.captured (ni el ascenso a MQL).
+    if (!opts.provisional) {
+      const { emitEvent } = await import("@/lib/workflows/events");
+      await emitEvent("lead.captured", "contact", existing.id, {
+        leadSource: lead.source,
+        duplicate: true,
+        connectorId: opts.connectorId,
+      });
+    }
     return { contactId: existing.id, isNew: false, assignedToId: existing.assignedToId };
   }
 
@@ -152,22 +187,30 @@ export async function captureLead(
   }
 
   const { emitEvent } = await import("@/lib/workflows/events");
+  // contact.created se emite siempre: el contacto existe de verdad, provisional
+  // o no. Lo que cambia es si además se le trata como lead.
   await emitEvent("contact.created", "contact", contact.id, { leadSource: lead.source });
-  await emitEvent("lead.captured", "contact", contact.id, {
-    leadSource: lead.source,
-    connectorId: opts.connectorId,
-    hubDevelopmentId: lead.hubDevelopmentId,
-  });
 
-  // CAPI: evento Lead hacia plataformas (speckit #4 §5.2) — best effort
-  try {
-    const { recordConversionEvent } = await import("@/lib/capi/events");
-    await recordConversionEvent("LEAD", contact);
-  } catch { /* tablas C123 sin migrar */ }
+  if (!opts.provisional) {
+    await emitEvent("lead.captured", "contact", contact.id, {
+      leadSource: lead.source,
+      connectorId: opts.connectorId,
+      hubDevelopmentId: lead.hubDevelopmentId,
+    });
+
+    // CAPI: evento Lead hacia plataformas (speckit #4 §5.2) — best effort.
+    // Fuera del alta provisional a propósito: targetPlatforms manda a Meta
+    // aunque no haya fbclid (matchea por PII), así que un DM de regla metería
+    // un Lead por cada comentarista en la medición de calidad.
+    try {
+      const { recordConversionEvent } = await import("@/lib/capi/events");
+      await recordConversionEvent("LEAD", contact);
+    } catch { /* tablas C123 sin migrar */ }
+  }
 
   // Ruteo + SLA (P2: owner en <60s)
   let assignedToId: string | null = null;
-  if (!opts.skipRouting) {
+  if (!skipRouting) {
     const { autoRouteLead } = await import("@/lib/workflows/routing");
     assignedToId = await autoRouteLead(contact.id, { reason: `intake ${lead.source}` });
   }

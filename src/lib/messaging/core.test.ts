@@ -17,6 +17,7 @@ const botRespond = vi.fn();
 const meetSlaTimers = vi.fn();
 const commentRuleLogFindFirst = vi.fn();
 const commentRuleLogUpdateMany = vi.fn();
+const slaTimerFindFirst = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -42,13 +43,22 @@ vi.mock("@/lib/db", () => ({
       findFirst: (...a: unknown[]) => commentRuleLogFindFirst(...a),
       updateMany: (...a: unknown[]) => commentRuleLogUpdateMany(...a),
     },
+    slaTimer: { findFirst: (...a: unknown[]) => slaTimerFindFirst(...a) },
   },
 }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a) }));
+const autoRouteLead = vi.fn();
+vi.mock("@/lib/workflows/routing", () => ({
+  autoRouteLead: (...a: unknown[]) => autoRouteLead(...a),
+}));
 const linkCommentOrigin = vi.fn();
-vi.mock("@/lib/comments/link-comment-origin", () => ({
+// Solo se stubea linkCommentOrigin: isCommentOriginDetail se deja REAL para que
+// el ruteo del primer reply se rompa aquí —y no en producción— si alguien
+// cambia el prefijo de la marca de origen.
+vi.mock("@/lib/comments/link-comment-origin", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/comments/link-comment-origin")>()),
   linkCommentOrigin: (...a: unknown[]) => linkCommentOrigin(...a),
 }));
 const emitEvent = vi.fn();
@@ -82,8 +92,11 @@ beforeEach(() => {
     convFindFirst, convCreate, convUpdate, msgCreate, msgFindUnique, activityCreate,
     notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
-    commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin,
+    commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
+    slaTimerFindFirst,
   ].forEach((m) => m.mockReset());
+  autoRouteLead.mockResolvedValue("u-nuevo");
+  slaTimerFindFirst.mockResolvedValue(null); // por defecto: nunca se enrutó
   contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
   commentRuleLogFindFirst.mockResolvedValue(null);
   linkCommentOrigin.mockResolvedValue(null);
@@ -717,5 +730,202 @@ describe("handleInboundMessage — remitente bloqueado", () => {
     } as never);
 
     expect(contactFindFirst).toHaveBeenCalled();
+  });
+});
+
+// Paridad con WhatsApp: responder por IG/Messenger emite la misma señal de "el
+// lead respondió" y asciende a MQL igual (lib/lifecycle/transitions.ts). Sin
+// esto, un contacto que solo habla por IG se quedaba clavado en LEAD para
+// siempre — incluido el comentarista que el DM de una regla da de alta como
+// provisional, que ya no pasa por captureLead cuando contesta.
+describe("handleInboundMessage — señal 'el lead respondió'", () => {
+  const known = { id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" };
+
+  /** Todas las señales de respuesta emitidas, sea cual sea el canal. */
+  function repliedCalls() {
+    return emitEvent.mock.calls.filter(
+      (c) => c[0] === "social.replied" || c[0] === "whatsapp.replied"
+    );
+  }
+
+  it("INSTAGRAM: emite social.replied sobre la conversación", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage(base);
+    expect(emitEvent).toHaveBeenCalledWith("social.replied", "conversation", "conv1", {
+      contactId: "c1",
+      channel: "INSTAGRAM",
+      body: "hola",
+    });
+  });
+
+  it("MESSENGER: emite social.replied con su propio canal", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage({
+      ...base,
+      channel: "MESSENGER" as const,
+      senderId: "PSID-1",
+      externalMessageId: "mid-ms-1",
+    });
+    expect(emitEvent).toHaveBeenCalledWith("social.replied", "conversation", "conv1", {
+      contactId: "c1",
+      channel: "MESSENGER",
+      body: "hola",
+    });
+  });
+
+  // El nombre viejo NO se reusa: hay un agente sembrado escuchando
+  // whatsapp.replied (scripts/seed-agentes.ts) que se ampliaría en silencio.
+  it("IG/Messenger NO emiten whatsapp.replied", async () => {
+    contactFindFirst.mockResolvedValue(known);
+    await handleInboundMessage(base);
+    expect(emitEvent).not.toHaveBeenCalledWith(
+      "whatsapp.replied", expect.anything(), expect.anything(), expect.anything()
+    );
+  });
+
+  it("WHATSAPP no emite social.replied: sigue con la suya (no-regresión)", async () => {
+    contactFindFirst.mockResolvedValue({ ...known, whatsappOptOut: false });
+    await handleInboundMessage(wa);
+    expect(emitEvent).toHaveBeenCalledWith(
+      "whatsapp.replied", "conversation", "conv1", expect.objectContaining({ contactId: "c1" })
+    );
+    expect(emitEvent).not.toHaveBeenCalledWith(
+      "social.replied", expect.anything(), expect.anything(), expect.anything()
+    );
+  });
+
+  it("un echo NO emite ninguna señal de respuesta: no respondió el lead, respondió la Página", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue(known);
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true });
+    await handleInboundMessage(echo);
+    expect(repliedCalls()).toHaveLength(0);
+  });
+});
+
+// El contacto que crea una regla de comentarios nace SIN dueño (provisional).
+// Cuando contesta ya es un lead de verdad, pero como el contacto existe el
+// intake no vuelve a pasar por captureLead: si no se enruta en este punto, se
+// queda huérfano — sin dueño, sin SLA y sin notificación — y si Sage escala,
+// escalateToHuman lo deja en HUMAN con controlledById null y sin aviso.
+describe("handleInboundMessage — el provisional deja de serlo al responder", () => {
+  const MARCA = "comentario:MEDIA-1";
+  const provisional = {
+    id: "c1", assignedToId: null, firstName: "luisf", lastName: "(por identificar)",
+    leadSourceDetail: MARCA,
+  };
+
+  it("sin dueño + marca de comentario → se enruta, con un reason que lo explica", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    await handleInboundMessage(base);
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "primer reply de comentario" });
+  });
+
+  it("CON dueño no se re-enruta (aunque conserve la marca de origen)", async () => {
+    contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u1" });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  // Un gerente pudo desasignar a propósito: sin marca de origen no se le
+  // deshace la decisión.
+  it("sin dueño pero SIN marca (desasignado a mano) NO se enruta", async () => {
+    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+
+    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: "web:landing-tulum" });
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  it("el segundo inbound ya no enruta: el primero le puso dueño", async () => {
+    contactFindFirst.mockResolvedValueOnce(provisional);
+    contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u-nuevo" });
+
+    await handleInboundMessage(base);
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+  });
+
+  // El pago de todo esto: el aviso deja de irse al vacío.
+  it("hilo en HUMAN sin controlledById: el aviso va al dueño recién enrutado, no se pierde", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true, controlledById: null });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "HUMAN", botEnabled: true, controlledById: null });
+
+    await handleInboundMessage(base);
+
+    expect(notifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: "u-nuevo" }) })
+    );
+  });
+
+  it("si el ruteo truena, la ingesta sigue: el mensaje ya está en el hilo", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    autoRouteLead.mockRejectedValue(new Error("boom"));
+    await expect(handleInboundMessage(base)).resolves.toBeTruthy();
+  });
+});
+
+// Tercer tramo del guard: la marca de origen no se borra nunca (es
+// procedencia), así que sin esto un contacto que vino de un comentario y al que
+// un gerente desasignó a mano —con la feature de asignación del Inbox— se
+// volvía a enrutar con su siguiente mensaje, deshaciéndole la decisión.
+describe("handleInboundMessage — no re-enrutar a quien desasignaron a propósito", () => {
+  const provisional = {
+    id: "c1", assignedToId: null, firstName: "luisf", lastName: "(por identificar)",
+    leadSourceDetail: "comentario:MEDIA-1",
+  };
+
+  it("primer inbound, sin FIRST_TOUCH previo → sí enruta", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    slaTimerFindFirst.mockResolvedValue(null);
+    await handleInboundMessage(base);
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+  });
+
+  it("ya tuvo FIRST_TOUCH (se enrutó y luego lo desasignaron) → NO se re-enruta", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    slaTimerFindFirst.mockResolvedValue({ id: "sla-1" });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  // Cualquier estado del timer sirve de prueba de que hubo ruteo: MET y
+  // BREACHED también. Por eso el where no filtra por status.
+  it("busca el FIRST_TOUCH del contacto sin filtrar por status", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    await handleInboundMessage(base);
+    expect(slaTimerFindFirst).toHaveBeenCalledWith({
+      where: { contactId: "c1", type: "FIRST_TOUCH" },
+      select: { id: true },
+    });
+  });
+
+  // autoRouteLead sale antes de createSlaTimer si no encuentra candidato, así
+  // que un ruteo fallido no deja timer y debe reintentarse.
+  it("ruteo que falló (devolvió null, sin timer) → reintenta en el siguiente inbound", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    slaTimerFindFirst.mockResolvedValue(null);
+    autoRouteLead.mockResolvedValue(null);
+
+    await handleInboundMessage(base);
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+
+    expect(autoRouteLead).toHaveBeenCalledTimes(2);
+  });
+
+  // La query es el tramo caro: no debe correr en cada inbound.
+  it("no consulta los timers si el contacto ya tiene dueño o no trae la marca", async () => {
+    contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u1" });
+    await handleInboundMessage(base);
+    expect(slaTimerFindFirst).not.toHaveBeenCalled();
+
+    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+    expect(slaTimerFindFirst).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
 import { replyToComment, sendPrivateReply } from "@/lib/comments/graph";
-import { persistOpenerForKnownContact } from "@/lib/comments/link-comment-origin";
+import { persistOpenerCreatingContact } from "@/lib/comments/link-comment-origin";
 
 // Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
 // GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
@@ -74,7 +74,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Conector sin pageAccessToken" }, { status: 400 });
   }
 
-  // Candado atómico sin transacción, mismo patrón que persistOpenerForKnownContact
+  // Candado atómico sin transacción, mismo patrón que persistOpenerCreatingContact
   // / linkCommentOrigin en link-comment-origin.ts: reclama cada acción
   // condicionando el `where` al estado que justificó el reintento y
   // moviéndola a PENDING. Dos clicks casi simultáneos (o dos pestañas) que
@@ -137,13 +137,58 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       data.dmExternalMessageId = dm.messageId;
       data.dmError = null;
       if (dm.recipientId) {
-        await persistOpenerForKnownContact({
-          platform: log.platform,
-          connectorId: log.connectorId,
-          recipientId: dm.recipientId,
-          text: log.dmText,
-          externalMessageId: dm.messageId,
-        }).catch((err) => console.error("[comments] opener en reintento:", err));
+        // ORDEN CRÍTICO (replica el de lib/comments/handle-comment.ts): el mid
+        // se PERSISTE en el log antes de tocar el opener. Esta ruta acumulaba
+        // los campos del DM en `data` y los escribía en el update del final,
+        // después del opener — y desde que el opener crea contactos eso abría
+        // una ventana real: persistOpenerCreatingContact tarda cientos de ms
+        // (alta + eventos + ruteo + SLA), y si el eco de Meta llega dentro de
+        // esa ventana, handleEchoMessage no encuentra el opener (todavía no
+        // existe) pero SÍ el contacto (recién creado) y NO encuentra el log
+        // por dmExternalMessageId (aún sin persistir) → registra el eco como
+        // ADVISOR y aplica el takeover: el bot se calla. Antes del cambio este
+        // camino era inmune porque sin contacto el eco se descartaba.
+        //
+        // try/catch propio: si el DM salió y es esta escritura la que falla,
+        // NO se puede marcar FAILED (mentiría). Se avisa para reconciliar y se
+        // sigue: el opener es la otra mitad de la defensa contra el takeover.
+        try {
+          await prisma.commentRuleLog.update({
+            where: { id: log.id },
+            data: {
+              dmStatus: "SENT",
+              dmRecipientId: dm.recipientId,
+              dmExternalMessageId: dm.messageId,
+              dmError: null,
+            },
+          });
+        } catch (err) {
+          console.error(
+            `[comments] ALERTA reconciliación manual: DM SÍ salió en el reintento (logId=${log.id}, dmExternalMessageId=${dm.messageId}, dmRecipientId=${dm.recipientId}) pero no se pudo persistir antes del opener:`,
+            err
+          );
+        }
+
+        // Mismo trato que el envío original: crea el contacto si no existe y
+        // deja el hilo visible en el Inbox. Si el log ya venía estampado, el
+        // candado interno evita la segunda nota de origen. try/catch y no
+        // .catch(): un fallo aquí no puede arrastrar al catch de abajo y
+        // marcar FAILED un DM que ya está en el chat del cliente.
+        try {
+          await persistOpenerCreatingContact({
+            logId: log.id,
+            platform: log.platform,
+            connectorId: log.connectorId,
+            recipientId: dm.recipientId,
+            authorHandle: log.authorHandle,
+            postId: log.postId,
+            matchedPhrase: log.matchedPhrase,
+            text: log.dmText,
+            externalMessageId: dm.messageId,
+          });
+        } catch (err) {
+          console.error("[comments] opener en reintento:", err);
+        }
       }
     } catch (err) {
       data.dmStatus = "FAILED";
