@@ -214,3 +214,109 @@ export async function reassignUserAssets(
 
   return moved;
 }
+
+/**
+ * Soft delete: el usuario desaparece de la tabla pero conserva historial,
+ * comisiones y bitácora. Si le pasan un destino, la cartera se mueve PRIMERO
+ * dentro de la misma transacción — si el movimiento falla, el usuario no
+ * queda eliminado con los activos colgando.
+ */
+export async function softDeleteUser(
+  id: string,
+  opts?: { reassignTo?: string; scopes?: AssetScope[] },
+) {
+  const session = await requireRole(ELEVATED_ROLES);
+  assertNotSelf(session.user.id, id);
+
+  const validatedScopes =
+    opts?.reassignTo && opts.scopes ? scopeListSchema.parse(opts.scopes) : [];
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existing = await tx.user.findUnique({
+      where: { id },
+      select: { id: true, name: true, role: true, deletedAt: true },
+    });
+    if (!existing || existing.deletedAt) throw new Error("Usuario no encontrado");
+
+    await assertNotLastAdmin(tx, id);
+    await assertNoDependents(tx, id);
+
+    const moved: Partial<Record<AssetScope, number>> = {};
+    if (opts?.reassignTo) {
+      await assertValidTarget(tx, id, opts.reassignTo);
+      for (const key of validatedScopes) {
+        moved[key] = await ASSET_SCOPES[key].move(tx, id, opts.reassignTo);
+      }
+    }
+
+    const user = await tx.user.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+        status: "INACTIVE",
+        statusChangedById: session.user.id,
+        statusChangedAt: new Date(),
+      },
+      select: { id: true, name: true },
+    });
+
+    return { user, moved };
+  });
+
+  await prisma.auditLog
+    .create({
+      data: {
+        userId: session.user.id,
+        action: "DELETE",
+        entity: "User",
+        entityId: id,
+        changes: { reassignedTo: opts?.reassignTo ?? null, moved: result.moved },
+      },
+    })
+    .catch(() => {});
+
+  return result;
+}
+
+/**
+ * Deshace el soft delete. Devuelve al usuario a INACTIVE, nunca a ACTIVE:
+ * restaurar la cuenta y devolverle el acceso son dos decisiones distintas.
+ * No reasigna nada de vuelta — lo que se movió, se movió.
+ */
+export async function restoreUser(id: string) {
+  const session = await requireRole(ELEVATED_ROLES);
+
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, deletedAt: true },
+  });
+  if (!existing) throw new Error("Usuario no encontrado");
+  if (!existing.deletedAt) throw new Error("Este usuario no está eliminado");
+
+  const user = await prisma.user.update({
+    where: { id },
+    data: {
+      deletedAt: null,
+      status: "INACTIVE",
+      isActive: false,
+      statusChangedById: session.user.id,
+      statusChangedAt: new Date(),
+    },
+    select: { id: true, name: true, status: true, isActive: true },
+  });
+
+  await prisma.auditLog
+    .create({
+      data: {
+        userId: session.user.id,
+        action: "UPDATE",
+        entity: "User",
+        entityId: id,
+        changes: { restored: true },
+      },
+    })
+    .catch(() => {});
+
+  return user;
+}
