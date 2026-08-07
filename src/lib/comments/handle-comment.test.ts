@@ -268,6 +268,27 @@ describe("handleComment — envíos", () => {
   // el error caiga al catch exterior y marque dmStatus FAILED un DM que YA está
   // en el chat del cliente. Sin la segunda aserción, quitar ese try/catch dejaba
   // los 25 tests en verde: `procesado` se devuelve igual por las dos ramas.
+  // Gemelo del test de la ruta de reintento, pero para el camino que corre en
+  // CADA comentario. El mid tiene que estar EN LA BASE antes de que empiece el
+  // opener: persistOpenerCreatingContact tarda cientos de ms creando el
+  // contacto (alta + eventos + ruteo + SLA), y un eco de Meta que llegue en esa
+  // ventana no encontraría ni el opener ni el log por dmExternalMessageId, pero
+  // sí el contacto → entraría como ADVISOR y aplicaría el takeover: bot mudo.
+  it("persiste dmExternalMessageId en el log ANTES de llamar al opener (si no, el eco enmudece al bot)", async () => {
+    await handleComment(comment());
+
+    const dmUpdateIdx = logUpdate.mock.calls.findIndex((c) => c[0].data.dmStatus === "SENT");
+    expect(dmUpdateIdx).toBeGreaterThanOrEqual(0);
+    expect(logUpdate.mock.calls[dmUpdateIdx][0].data).toMatchObject({
+      dmStatus: "SENT",
+      dmRecipientId: "IGSID-1",
+      dmExternalMessageId: "mid-1",
+    });
+    expect(logUpdate.mock.invocationCallOrder[dmUpdateIdx]).toBeLessThan(
+      persistOpener.mock.invocationCallOrder[0]
+    );
+  });
+
   it("si persistOpener falla (contacto u opener), sigue procesado y el DM NO se marca FAILED", async () => {
     persistOpener.mockRejectedValue(new Error("boom"));
     expect((await handleComment(comment())).status).toBe("procesado");

@@ -60,3 +60,19 @@
 ## 10. Integridad de datos (BD)
 - [ ] `messages`: inbound social con `externalMessageId` y `externalPhone` **null**; inbound WhatsApp con `externalPhone` poblado.
 - [ ] `activities`: tipos `INSTAGRAM_IN/OUT`, `MESSENGER_IN/OUT`.
+
+## 11. Reglas de comentarios → DM → Inbox (flujo nuevo)
+> El DM que dispara una regla de comentarios ya no espera a que la persona conteste
+> para existir: el contacto y el hilo se crean en el momento del envío.
+
+- [ ] Comentar la palabra clave de una regla activa desde una cuenta que **no** es contacto del CRM → llega la respuesta pública **y** el DM.
+- [ ] El hilo aparece en el **Inbox** de inmediato, con el DM como primer mensaje marcado **BOT** (no ADVISOR) y la conversación en **BOT**.
+- [ ] El contacto nuevo aparece **sin dueño**, con `leadSourceDetail` = `comentario:<postId>` y apellido `(por identificar)`.
+- [ ] **No** se creó SLA de primer toque, **no** hubo notificación de "lead asignado" y **no** salió evento `Lead` a Meta CAPI.
+- [ ] La cronología del contacto tiene **una sola** nota `Origen: comentario en la publicación …`.
+- [ ] El `CommentRuleLog` queda con `dmStatus: SENT` y `contactId` poblado (Admin → Comentarios).
+- [ ] **La persona responde el DM** → el contacto queda **asignado** (round-robin), se crea el SLA `FIRST_TOUCH`, llega la notificación al asesor y la etapa sube a **MQL**.
+- [ ] Sigue **sin** salir evento `Lead` a Meta CAPI tras la respuesta (decisión de producto).
+- [ ] Segundo mensaje de la misma persona → **no** se re-asigna ni duplica la nota de origen.
+- [ ] El bot (Sage) sigue respondiendo tras la respuesta: el eco del propio DM **no** disparó el takeover.
+- [ ] `AutomationRule` que escuche `social.replied` se dispara con un inbound de IG/Messenger; la que escuche `whatsapp.replied` **no**.

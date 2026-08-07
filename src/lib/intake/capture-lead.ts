@@ -54,8 +54,17 @@ function buildAttributionData(lead: IncomingLead) {
  * no porque la persona haya levantado la mano. Se salta ruteo + SLA +
  * notificación, el evento `lead.captured` (y con él el ascenso a MQL que hace
  * lib/lifecycle/transitions.ts) y el `ConversionEvent` de CAPI. `contact.created`
- * SÍ se emite: el contacto existe de verdad. Cuando la persona responda, el
- * intake normal se encarga del resto.
+ * SÍ se emite: el contacto existe de verdad.
+ *
+ * Qué pasa cuando la persona responde (lib/messaging/core.ts):
+ *  - SÍ se le enruta —dueño, SLA de primer toque y notificación— gracias a la
+ *    marca de origen que el llamador deja en `sourceDetail`.
+ *  - SÍ sube a MQL, por el evento `social.replied` del intake.
+ *  - **NUNCA se manda el evento `Lead` a Meta CAPI**, ni al comentar ni al
+ *    responder. Es una decisión de producto, no un olvido: hay una medición de
+ *    calidad de leads de Meta corriendo y un comentarista no debe contar como
+ *    lead en ella. `recordConversionEvent` solo se llama en el alta no
+ *    provisional, y el intake de inbound no lo llama nunca.
  *
  * Por qué: sin esto, cada persona que comenta "pollo" en una publicación entra
  * como lead calificado, genera un breach de SLA garantizado (nadie va a
