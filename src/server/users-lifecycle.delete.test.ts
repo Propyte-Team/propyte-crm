@@ -13,6 +13,7 @@ const {
   teamFindMany,
   territoryMemberCount,
   contactUpdateMany,
+  contactCount,
   auditCreate,
   db,
 } = vi.hoisted(() => {
@@ -23,7 +24,13 @@ const {
   const teamFindMany = vi.fn();
   const territoryMemberCount = vi.fn();
   const contactUpdateMany = vi.fn();
+  const contactCount = vi.fn();
   const auditCreate = vi.fn();
+
+  // Los 5 scopes que estos tests no ejercitan devuelven 0 fijo: lo que se
+  // prueba aquí es la baja, no el conteo de activos. `contactCount` sí es
+  // configurable, porque es el que dispara el guard de cartera viva.
+  const emptyScope = { count: async () => 0, updateMany: async () => ({ count: 0 }) };
 
   const db = {
     user: {
@@ -32,7 +39,15 @@ const {
       count: (...a: unknown[]) => userCount(...a),
       findMany: (...a: unknown[]) => userFindMany(...a),
     },
-    contact: { updateMany: (...a: unknown[]) => contactUpdateMany(...a) },
+    contact: {
+      updateMany: (...a: unknown[]) => contactUpdateMany(...a),
+      count: (...a: unknown[]) => contactCount(...a),
+    },
+    deal: emptyScope,
+    conversation: emptyScope,
+    unit: emptyScope,
+    walkIn: emptyScope,
+    quote: emptyScope,
     team: { findMany: (...a: unknown[]) => teamFindMany(...a) },
     territoryMember: { count: (...a: unknown[]) => territoryMemberCount(...a) },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
@@ -46,6 +61,7 @@ const {
     teamFindMany,
     territoryMemberCount,
     contactUpdateMany,
+    contactCount,
     auditCreate,
     db,
   };
@@ -63,8 +79,12 @@ import { softDeleteUser, restoreUser } from "./users-lifecycle";
 beforeEach(() => {
   for (const m of [
     userUpdate, userFindUnique, userCount, userFindMany,
-    teamFindMany, territoryMemberCount, contactUpdateMany, auditCreate,
+    teamFindMany, territoryMemberCount, contactUpdateMany, contactCount, auditCreate,
   ]) m.mockReset();
+
+  // Por defecto el usuario no tiene cartera viva: así los tests de la baja
+  // prueban la baja, y el guard de activos se ejercita en sus propios casos.
+  contactCount.mockResolvedValue(0);
 
   userFindUnique.mockResolvedValue({
     id: "u1", name: "Ana", role: "ASESOR_JR", isActive: true, deletedAt: null,
@@ -87,6 +107,33 @@ describe("softDeleteUser", () => {
     expect(data.deletedAt).toBeInstanceOf(Date);
     expect(data.isActive).toBe(false);
     expect(data.status).toBe("INACTIVE");
+  });
+
+  it("se niega a eliminar a quien todavía tiene cartera asignada", async () => {
+    contactCount.mockResolvedValue(12);
+
+    await expect(softDeleteUser("u1")).rejects.toThrow(/12 Contactos/);
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("sí elimina cuando la reasignación en el mismo paso vació la cartera", async () => {
+    // Antes de mover hay 12; el updateMany se los lleva y el guard, que corre
+    // después, ya no ve nada.
+    contactCount.mockResolvedValue(0);
+    contactUpdateMany.mockResolvedValue({ count: 12 });
+
+    const result = await softDeleteUser("u1", { reassignTo: "u2", scopes: ["contacts"] });
+
+    expect(result.moved).toEqual({ contacts: 12 });
+    expect(userUpdate).toHaveBeenCalled();
+  });
+
+  it("rechaza un destino sin scopes en vez de no mover nada en silencio", async () => {
+    await expect(
+      softDeleteUser("u1", { reassignTo: "u2" }),
+    ).rejects.toThrow(/ningún tipo de activo/);
+    expect(contactUpdateMany).not.toHaveBeenCalled();
+    expect(userUpdate).not.toHaveBeenCalled();
   });
 
   it("reasigna antes de eliminar cuando le pasan un destino", async () => {

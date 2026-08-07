@@ -17,6 +17,7 @@ import {
   assertNotSelf,
   assertNotLastAdmin,
   assertNoDependents,
+  assertNoLiveAssets,
   assertValidTarget,
 } from "@/lib/users/lifecycle-guards";
 import { ASSET_SCOPES, ASSET_SCOPE_KEYS, type AssetScope } from "@/lib/users/asset-scopes";
@@ -41,9 +42,13 @@ const setUserStatusSchema = z.object({
 });
 
 /**
- * ÚNICO escritor de `status` e `isActive` sobre User en todo el código.
- * `isActive` es la derivada `status === 'ACTIVE'` y es lo que aplican el login
- * y el ruteo de leads; si se escribe por otro lado, el espejo se desincroniza.
+ * Cambia el estado de un usuario. `isActive` es la derivada
+ * `status === 'ACTIVE'` y es lo que aplican el login y el ruteo de leads.
+ *
+ * El invariante del espejo es de MÓDULO, no de función: solo este archivo
+ * escribe `status`/`isActive` sobre User — aquí, en `softDeleteUser` y en
+ * `restoreUser`. Fuera de él, nadie. Eso es lo que verifica el guardrail de
+ * `users-lifecycle.mirror.test.ts`.
  */
 export async function setUserStatus(
   id: string,
@@ -62,7 +67,8 @@ export async function setUserStatus(
   const isActive = validated.status === "ACTIVE";
   const now = new Date();
 
-  const user = await prisma.$transaction(async (tx) => {
+  const user = await prisma.$transaction(
+    async (tx) => {
     const existing = await tx.user.findUnique({
       where: { id },
       select: { id: true, name: true, role: true, isActive: true, deletedAt: true },
@@ -88,7 +94,14 @@ export async function setUserStatus(
       },
       select: { id: true, name: true, status: true, isActive: true },
     });
-  });
+    },
+    // Serializable, no el READ COMMITTED por defecto: `assertNotLastAdmin`
+    // cuenta administradores y decide en función de ese conteo. Con READ
+    // COMMITTED, dos bajas simultáneas de los dos últimos admins ven cada una
+    // "queda otro" y ambas pasan — el CRM se queda sin nadie que pueda entrar
+    // al panel. Aquí una de las dos falla y se reintenta.
+    { isolationLevel: "Serializable" },
+  );
 
   await prisma.auditLog
     .create({
@@ -228,10 +241,19 @@ export async function softDeleteUser(
   const session = await requireRole(ELEVATED_ROLES);
   assertNotSelf(session.user.id, id);
 
-  const validatedScopes =
-    opts?.reassignTo && opts.scopes ? scopeListSchema.parse(opts.scopes) : [];
+  // Un destino sin scopes no movería nada, y la bitácora quedaría afirmando
+  // una reasignación que no ocurrió. Se rechaza en vez de descartar en silencio.
+  if (opts?.reassignTo && !opts.scopes?.length) {
+    throw new Error(
+      "Indicaste un usuario destino pero ningún tipo de activo para mover",
+    );
+  }
+  const validatedScopes = opts?.reassignTo
+    ? scopeListSchema.parse(opts.scopes)
+    : [];
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(
+    async (tx) => {
     const existing = await tx.user.findUnique({
       where: { id },
       select: { id: true, name: true, role: true, deletedAt: true },
@@ -249,6 +271,12 @@ export async function softDeleteUser(
       }
     }
 
+    // Ya sea porque no se pidió reasignación, o porque los scopes elegidos no
+    // cubrieron todo: si queda algo asignado, la baja se detiene. Un contacto
+    // que apunta a una cuenta eliminada no aparece en ningún selector de
+    // asesor y deja de ser trabajable sin que nadie se entere.
+    await assertNoLiveAssets(tx, id);
+
     const user = await tx.user.update({
       where: { id },
       data: {
@@ -262,7 +290,10 @@ export async function softDeleteUser(
     });
 
     return { user, moved };
-  });
+    },
+    // Mismo motivo que en setUserStatus: `assertNotLastAdmin` decide contando.
+    { isolationLevel: "Serializable" },
+  );
 
   await prisma.auditLog
     .create({

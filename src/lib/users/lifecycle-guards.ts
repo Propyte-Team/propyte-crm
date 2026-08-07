@@ -1,6 +1,7 @@
 // Invariantes del ciclo de vida de usuarios. Se aplican en el servidor:
 // la UI oculta las acciones que no corresponden, pero eso no es una defensa.
 import type { Prisma, UserRole } from "@prisma/client";
+import { ASSET_SCOPES, ASSET_SCOPE_KEYS } from "./asset-scopes";
 
 type Tx = Prisma.TransactionClient;
 
@@ -72,6 +73,29 @@ export async function assertNoDependents(tx: Tx, targetId: string): Promise<void
       "Este usuario es miembro de un territorio. Quítalo del territorio antes de continuar, o el ruteo apuntará a una cuenta inactiva.",
     );
   }
+}
+
+/**
+ * Dar de baja a alguien con cartera viva la deja huérfana: los contactos y
+ * negocios seguirían apuntando a una cuenta con `deletedAt`, invisible en
+ * todos los selectores de asesor. Se exige moverla primero — o pasar un
+ * destino de reasignación en la misma operación.
+ */
+export async function assertNoLiveAssets(tx: Tx, targetId: string): Promise<void> {
+  const counts = await Promise.all(
+    ASSET_SCOPE_KEYS.map(
+      async (key) =>
+        [ASSET_SCOPES[key].label, await ASSET_SCOPES[key].count(tx, targetId)] as const,
+    ),
+  );
+
+  const pending = counts.filter(([, n]) => n > 0);
+  if (pending.length === 0) return;
+
+  const detail = pending.map(([label, n]) => `${n} ${label}`).join(", ");
+  throw new Error(
+    `Este usuario todavía tiene activos asignados: ${detail}. Usa "Mover activos" para pasarlos a alguien más antes de darlo de baja.`,
+  );
 }
 
 /** El destino de una reasignación debe existir, estar activo y no ser el origen. */

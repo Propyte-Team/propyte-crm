@@ -343,6 +343,21 @@ export function AdminContent({
   }
 
   async function handleDelete(user: UserData) {
+    // Atajo de cortesía: el servidor rechaza la baja de quien tiene activos
+    // asignados, así que en vez de dejar que choque con ese error, se le abre
+    // el diálogo que resuelve el problema. El servidor sigue siendo la
+    // autoridad — este conteo solo cubre contactos y negocios, y una
+    // conversación o una unidad reservada todavía dispararán su rechazo.
+    const cartera = user._count.assignedContacts + user._count.deals;
+    if (cartera > 0) {
+      toast({
+        title: "Primero hay que mover sus activos",
+        description: `${user.name} tiene ${user._count.assignedContacts} contactos y ${user._count.deals} negocios asignados. Pásalos a alguien más y vuelve a intentar la baja.`,
+      });
+      setReassignDialogUser(user);
+      return;
+    }
+
     const typed = window.prompt(
       `Escribe el nombre del usuario para confirmar la eliminación: ${user.name}`,
     );

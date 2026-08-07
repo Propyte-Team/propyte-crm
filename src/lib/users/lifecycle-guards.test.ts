@@ -3,6 +3,7 @@ import {
   assertNotSelf,
   assertNotLastAdmin,
   assertNoDependents,
+  assertNoLiveAssets,
   assertValidTarget,
 } from "./lifecycle-guards";
 
@@ -27,6 +28,59 @@ function txWith(overrides: {
     territoryMember: { count: vi.fn(async () => overrides.territories ?? 0) },
   } as never;
 }
+
+/** Cliente falso donde cada scope de activos devuelve el conteo que le pidas. */
+function txWithAssets(counts: Partial<Record<string, number>>) {
+  const model = (name: string) => ({
+    count: vi.fn(async () => counts[name] ?? 0),
+  });
+  return {
+    contact: model("contact"),
+    deal: model("deal"),
+    conversation: model("conversation"),
+    unit: model("unit"),
+    walkIn: model("walkIn"),
+    quote: model("quote"),
+  } as never;
+}
+
+describe("assertNoLiveAssets", () => {
+  it("permite cuando el usuario no tiene nada asignado", async () => {
+    await expect(assertNoLiveAssets(txWithAssets({}), "u1")).resolves.toBeUndefined();
+  });
+
+  it("rechaza y dice cuántos contactos tiene", async () => {
+    await expect(
+      assertNoLiveAssets(txWithAssets({ contact: 30 }), "u1"),
+    ).rejects.toThrow(/30 Contactos/);
+  });
+
+  it("nombra todos los scopes con algo, no solo el primero", async () => {
+    const error = await assertNoLiveAssets(
+      txWithAssets({ contact: 30, deal: 5, quote: 2 }),
+      "u1",
+    ).catch((e: Error) => e);
+
+    expect((error as Error).message).toMatch(/30 Contactos/);
+    expect((error as Error).message).toMatch(/5 Negocios/);
+    expect((error as Error).message).toMatch(/2 Cotizaciones/);
+  });
+
+  it("no menciona los scopes que están en cero", async () => {
+    const error = await assertNoLiveAssets(txWithAssets({ contact: 3 }), "u1").catch(
+      (e: Error) => e,
+    );
+
+    expect((error as Error).message).not.toMatch(/Negocios/);
+    expect((error as Error).message).not.toMatch(/Walk-ins/);
+  });
+
+  it("detecta un scope que no es cartera comercial, como conversaciones", async () => {
+    await expect(
+      assertNoLiveAssets(txWithAssets({ conversation: 1 }), "u1"),
+    ).rejects.toThrow(/Conversaciones del inbox/);
+  });
+});
 
 describe("assertNotSelf", () => {
   it("rechaza actuar sobre la propia cuenta", () => {
