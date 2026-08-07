@@ -17,7 +17,9 @@ import {
   assertNotSelf,
   assertNotLastAdmin,
   assertNoDependents,
+  assertValidTarget,
 } from "@/lib/users/lifecycle-guards";
+import { ASSET_SCOPES, ASSET_SCOPE_KEYS, type AssetScope } from "@/lib/users/asset-scopes";
 
 /** Puede ver y suspender. */
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
@@ -154,4 +156,61 @@ export async function adminResetPassword(id: string, password?: string) {
     .catch(() => {});
 
   return { password: raw, user: { id: existing.id, name: existing.name } };
+}
+
+const scopeListSchema = z
+  .array(z.enum(ASSET_SCOPE_KEYS as [AssetScope, ...AssetScope[]]))
+  .min(1, "Selecciona al menos un tipo de activo para mover");
+
+/** Conteo por scope de lo que hoy le cuelga al usuario. Alimenta el diálogo. */
+export async function getUserAssetCounts(
+  id: string,
+): Promise<Record<AssetScope, number>> {
+  await requireRole(ADMIN_ROLES);
+
+  const entries = await Promise.all(
+    ASSET_SCOPE_KEYS.map(
+      async (key) => [key, await ASSET_SCOPES[key].count(prisma, id)] as const,
+    ),
+  );
+  return Object.fromEntries(entries) as Record<AssetScope, number>;
+}
+
+/**
+ * Mueve los scopes indicados de un usuario a otro. Todo en una transacción:
+ * una cartera a medio mover es peor que una sin mover.
+ */
+export async function reassignUserAssets(
+  fromId: string,
+  toId: string,
+  scopes: AssetScope[],
+): Promise<Partial<Record<AssetScope, number>>> {
+  const session = await requireRole(ADMIN_ROLES);
+  const validated = scopeListSchema.parse(scopes);
+
+  const moved = await prisma.$transaction(async (tx) => {
+    await assertValidTarget(tx, fromId, toId);
+
+    const result: Partial<Record<AssetScope, number>> = {};
+    for (const key of validated) {
+      result[key] = await ASSET_SCOPES[key].move(tx, fromId, toId);
+    }
+    return result;
+  });
+
+  await prisma.auditLog
+    .create({
+      data: {
+        userId: session.user.id,
+        action: "UPDATE",
+        entity: "User",
+        entityId: toId,
+        // El fromId queda registrado: es lo que permite reconstruir la autoría
+        // original de las cotizaciones, cuyo createdById sí se reescribe.
+        changes: { reassignedFrom: fromId, moved },
+      },
+    })
+    .catch(() => {});
+
+  return moved;
 }
