@@ -17,6 +17,7 @@ const botRespond = vi.fn();
 const meetSlaTimers = vi.fn();
 const commentRuleLogFindFirst = vi.fn();
 const commentRuleLogUpdateMany = vi.fn();
+const slaTimerFindFirst = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -42,6 +43,7 @@ vi.mock("@/lib/db", () => ({
       findFirst: (...a: unknown[]) => commentRuleLogFindFirst(...a),
       updateMany: (...a: unknown[]) => commentRuleLogUpdateMany(...a),
     },
+    slaTimer: { findFirst: (...a: unknown[]) => slaTimerFindFirst(...a) },
   },
 }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
@@ -91,8 +93,10 @@ beforeEach(() => {
     notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
     commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
+    slaTimerFindFirst,
   ].forEach((m) => m.mockReset());
   autoRouteLead.mockResolvedValue("u-nuevo");
+  slaTimerFindFirst.mockResolvedValue(null); // por defecto: nunca se enrutó
   contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
   commentRuleLogFindFirst.mockResolvedValue(null);
   linkCommentOrigin.mockResolvedValue(null);
@@ -863,5 +867,65 @@ describe("handleInboundMessage — el provisional deja de serlo al responder", (
     contactFindFirst.mockResolvedValue(provisional);
     autoRouteLead.mockRejectedValue(new Error("boom"));
     await expect(handleInboundMessage(base)).resolves.toBeTruthy();
+  });
+});
+
+// Tercer tramo del guard: la marca de origen no se borra nunca (es
+// procedencia), así que sin esto un contacto que vino de un comentario y al que
+// un gerente desasignó a mano —con la feature de asignación del Inbox— se
+// volvía a enrutar con su siguiente mensaje, deshaciéndole la decisión.
+describe("handleInboundMessage — no re-enrutar a quien desasignaron a propósito", () => {
+  const provisional = {
+    id: "c1", assignedToId: null, firstName: "luisf", lastName: "(por identificar)",
+    leadSourceDetail: "comentario:MEDIA-1",
+  };
+
+  it("primer inbound, sin FIRST_TOUCH previo → sí enruta", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    slaTimerFindFirst.mockResolvedValue(null);
+    await handleInboundMessage(base);
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+  });
+
+  it("ya tuvo FIRST_TOUCH (se enrutó y luego lo desasignaron) → NO se re-enruta", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    slaTimerFindFirst.mockResolvedValue({ id: "sla-1" });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  // Cualquier estado del timer sirve de prueba de que hubo ruteo: MET y
+  // BREACHED también. Por eso el where no filtra por status.
+  it("busca el FIRST_TOUCH del contacto sin filtrar por status", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    await handleInboundMessage(base);
+    expect(slaTimerFindFirst).toHaveBeenCalledWith({
+      where: { contactId: "c1", type: "FIRST_TOUCH" },
+      select: { id: true },
+    });
+  });
+
+  // autoRouteLead sale antes de createSlaTimer si no encuentra candidato, así
+  // que un ruteo fallido no deja timer y debe reintentarse.
+  it("ruteo que falló (devolvió null, sin timer) → reintenta en el siguiente inbound", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    slaTimerFindFirst.mockResolvedValue(null);
+    autoRouteLead.mockResolvedValue(null);
+
+    await handleInboundMessage(base);
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+
+    expect(autoRouteLead).toHaveBeenCalledTimes(2);
+  });
+
+  // La query es el tramo caro: no debe correr en cada inbound.
+  it("no consulta los timers si el contacto ya tiene dueño o no trae la marca", async () => {
+    contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u1" });
+    await handleInboundMessage(base);
+    expect(slaTimerFindFirst).not.toHaveBeenCalled();
+
+    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
+    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+    expect(slaTimerFindFirst).not.toHaveBeenCalled();
   });
 });

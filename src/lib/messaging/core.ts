@@ -369,22 +369,43 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   // HUMAN con controlledById null y se salta el aviso, así que el lead más
   // caliente que produce la feature acaba en silencio.
   //
-  // El guard es "sin dueño Y con marca de origen-comentario", no solo "sin
-  // dueño": un gerente puede haber desasignado a alguien a propósito y no se le
-  // deshace la decisión.
+  // El guard tiene tres tramos, en orden de coste creciente:
+  //   1. sin dueño,
+  //   2. con marca de origen-comentario (un gerente pudo desasignar a alguien
+  //      que nunca vino de un comentario, y no se le deshace la decisión),
+  //   3. sin FIRST_TOUCH previo — la query solo corre si 1 y 2 ya pasaron.
   //
-  // DESPUÉS de meetSlaTimers a propósito: ese updateMany cierra TODOS los
-  // timers RUNNING del contacto, así que enrutar antes mataría el FIRST_TOUCH
-  // recién creado y el asesor no tendría reloj.
+  // El tramo 3 cierra el hueco que dejaban los otros dos: la marca es dato de
+  // procedencia y no se borra, así que un contacto que SÍ vino de un comentario
+  // y al que un gerente desasignó a mano (feature de asignación del Inbox)
+  // volvería a enrutarse con su siguiente mensaje. Un FIRST_TOUCH existente —en
+  // cualquier estado: MET y BREACHED también prueban que hubo ruteo— significa
+  // "a este ya se le asignó dueño alguna vez", así que quedarse sin dueño ahora
+  // es decisión de alguien.
+  //
+  // Y conserva el reintento: autoRouteLead sale con `if (!assigneeId) return
+  // null` ANTES de createSlaTimer (routing.ts), así que un ruteo que no
+  // encontró candidato no deja timer y se vuelve a intentar en el siguiente
+  // inbound.
+  //
+  // Todo esto va DESPUÉS de meetSlaTimers a propósito: ese updateMany cierra
+  // TODOS los timers RUNNING del contacto, así que enrutar antes mataría el
+  // FIRST_TOUCH recién creado y el asesor no tendría reloj.
   if (!contact.assignedToId) {
     try {
       const { isCommentOriginDetail } = await import("@/lib/comments/link-comment-origin");
       if (isCommentOriginDetail(contact.leadSourceDetail)) {
-        const { autoRouteLead } = await import("@/lib/workflows/routing");
-        const routedTo = await autoRouteLead(contact.id, { reason: "primer reply de comentario" });
-        // Refleja el dueño nuevo en memoria: lo leen el aviso de hilo HUMAN de
-        // más abajo y, vía re-fetch, el escalamiento del bot.
-        if (routedTo) contact = { ...contact, assignedToId: routedTo };
+        const routedBefore = await prisma.slaTimer.findFirst({
+          where: { contactId: contact.id, type: "FIRST_TOUCH" },
+          select: { id: true },
+        });
+        if (!routedBefore) {
+          const { autoRouteLead } = await import("@/lib/workflows/routing");
+          const routedTo = await autoRouteLead(contact.id, { reason: "primer reply de comentario" });
+          // Refleja el dueño nuevo en memoria: lo leen el aviso de hilo HUMAN de
+          // más abajo y, vía re-fetch, el escalamiento del bot.
+          if (routedTo) contact = { ...contact, assignedToId: routedTo };
+        }
       }
     } catch (err) {
       console.error(`[messaging] ruteo del primer reply de comentario falló:`, err);
