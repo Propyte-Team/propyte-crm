@@ -107,11 +107,13 @@ Y al final del modelo, junto a `@@map("users")`, agregar el índice para que coi
 - [ ] **Step 4: Regenerar el cliente y verificar que tipa**
 
 ```bash
-npx prisma generate --no-engine
+npx prisma generate
 npx tsc --noEmit
 ```
 
 Esperado: `prisma generate` termina sin error y `tsc` no reporta nada nuevo. `prisma generate` lee el archivo `.prisma`, no la base — funciona aunque la migración todavía no esté aplicada.
+
+**Sin `--no-engine`.** Ese flag genera el cliente en modo Accelerate y exige una `DATABASE_URL` que empiece con `prisma://`; con la URL normal del proyecto, TODA query lanza `Error validating datasource db: the URL must start with the protocol prisma://`. En este CRM esa excepción cae dentro del `authorize()` de NextAuth y sale como un 401 "Credenciales inválidas" — parece contraseña mala y en realidad no corre ninguna query. Si la DLL del engine está bloqueada en Windows, para el dev server y vuelve a generar; no uses el flag.
 
 - [ ] **Step 5: Commit**
 
