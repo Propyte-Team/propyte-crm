@@ -218,7 +218,7 @@ export function PipelineView({
       {/* Encabezado editorial con estadísticas en vivo */}
       <div>
         <p className="eyebrow">Ventas</p>
-        <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">Pipeline</h1>
+        <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">Negocios</h1>
         <p className="num mt-1 text-[13px]" style={{ color: "var(--text-secondary)" }}>
           {activeDeals.length} deals activos &middot; {formatCurrency(valorPonderado)} ponderado
         </p>

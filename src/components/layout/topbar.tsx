@@ -2,9 +2,10 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
-import { Search, Bell, User, TrendingUp, LogOut } from "lucide-react"
+import { Search, Bell, LogOut } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,21 +14,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+// Las opciones de sistema salieron del sidebar y viven aquí (pedido de Luis, ago-2026).
+// Se importan de nav-config para que sidebar y menú compartan UNA sola definición de roles.
+import { visibleUserMenuItems } from "./nav-config"
 
 const MODULE_LABELS: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/hoy": "Hoy",
+  "/agenda": "Agenda",
   "/contacts": "Contactos",
   "/inbox": "Inbox",
-  "/pipeline": "Pipeline",
+  "/pipeline": "Negocios",
   "/cotizaciones": "Cotizaciones",
   "/cobranza": "Cobranza",
   "/developments": "Desarrollos",
   "/commissions": "Comisiones",
+  "/metas": "Metas",
   "/reports": "Reportes",
   "/career": "Mi Carrera",
-  "/settings": "Mi Config",
+  "/settings": "Mi Perfil",
   "/walk-ins": "Walk-ins",
+  "/duplicados": "Duplicados",
+  "/conexiones": "Conexiones",
   "/admin": "Configuración",
   "/configuracion": "Configuración",
 }
@@ -53,6 +61,7 @@ export function Topbar() {
   const userName = session?.user?.name || "Usuario"
   const userEmail = session?.user?.email || ""
   const userRole = (session?.user as { role?: string })?.role || "ASESOR"
+  const menuItems = React.useMemo(() => visibleUserMenuItems(userRole), [userRole])
 
   const initials = userName
     .split(" ")
@@ -126,15 +135,20 @@ export function Topbar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
-              <span>Mi Perfil</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <TrendingUp className="mr-2 h-4 w-4" />
-              <span>Plan de Carrera</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
+            {/* Antes había dos items sin `href` que no navegaban a ningún lado.
+                Ahora cada uno es un Link real y la lista se filtra por rol. */}
+            {menuItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <DropdownMenuItem key={item.href} asChild>
+                  <Link href={item.href} className="cursor-pointer">
+                    <Icon className="mr-2 h-4 w-4" />
+                    <span>{item.label}</span>
+                  </Link>
+                </DropdownMenuItem>
+              )
+            })}
+            {menuItems.length > 0 && <DropdownMenuSeparator />}
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={() => signOut()}
