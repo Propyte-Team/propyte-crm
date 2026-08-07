@@ -249,10 +249,31 @@ export function AdminContent({
   async function handleCreateUser(data: Record<string, unknown>) {
     startTransition(async () => {
       try {
-        const newUser = await createUser(data as any);
-        // Recargar datos refrescando la pagina
-        window.location.reload();
-        toast({ title: "Usuario creado", description: `${(newUser as any).name} fue creado exitosamente` });
+        const newUser = (await createUser(data as any)) as any;
+        // Sin reload: el mismo patrón se comió la API key recién generada en
+        // abril (618fa7f). Con la contraseña mostrada una sola vez el fallo
+        // sería irreversible, así que la tabla se actualiza en memoria.
+        setUsers((prev) =>
+          [
+            ...prev,
+            {
+              ...newUser,
+              status: newUser.status ?? "ACTIVE",
+              suspendedAt: null,
+              suspensionReason: null,
+              deletedAt: null,
+              phone: (data.phone as string) ?? null,
+              sedetusNumber: (data.sedetusNumber as string) ?? null,
+              sedetusExpiry: null,
+              teamLeaderId: (data.teamLeaderId as string) ?? null,
+              teamLeader: null,
+              _count: { deals: 0, assignedContacts: 0 },
+              createdAt: new Date(),
+            } as UserData,
+          ].sort((a, b) => a.name.localeCompare(b.name)),
+        );
+        setUserDialogOpen(false);
+        toast({ title: "Usuario creado", description: `${newUser.name} fue creado exitosamente` });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -262,8 +283,9 @@ export function AdminContent({
   async function handleUpdateUser(id: string, data: Record<string, unknown>) {
     startTransition(async () => {
       try {
-        await updateUser(id, data as any);
-        window.location.reload();
+        const updated = (await updateUser(id, data as any)) as any;
+        patchUser(id, updated as Partial<UserData>);
+        setUserDialogOpen(false);
         toast({ title: "Usuario actualizado" });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
