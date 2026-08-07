@@ -30,7 +30,6 @@ import {
 import {
   createUser,
   updateUser,
-  deactivateUser,
   createCommissionRule,
   updateCommissionRule,
   deleteCommissionRule,
@@ -45,11 +44,34 @@ import { PlaybookTab, type PlaybookData } from "./playbook-tab";
 import { BotAgentsTab, type AgentProfileRow } from "./bot-agents-tab";
 import { CommentRulesTab } from "./comments/comment-rules-tab";
 import type { BotTonePreset } from "@prisma/client";
+import {
+  setUserStatus,
+  adminResetPassword,
+  softDeleteUser,
+  restoreUser,
+  getUserAssetCounts,
+  reassignUserAssets,
+} from "@/server/users-lifecycle";
+import type { AssetScope } from "@/lib/users/asset-scopes";
+import { PasswordResetDialog } from "./password-reset-dialog";
+import { UserStatusDialog, type UserStatusValue } from "./user-status-dialog";
+import { ReassignAssetsDialog } from "./reassign-assets-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
 
-// Configuracion de colores para estados de usuario
+// Colores por estado de usuario. `DELETED` es un pseudo-estado de UI: en la
+// base es deletedAt, no un valor de status.
 const USER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  true: { label: "Activo", className: "bg-green-100 text-green-700" },
-  false: { label: "Inactivo", className: "bg-gray-100 text-gray-700" },
+  ACTIVE: { label: "Activo", className: "bg-green-100 text-green-700" },
+  SUSPENDED: { label: "Suspendido", className: "bg-amber-100 text-amber-800" },
+  INACTIVE: { label: "Inactivo", className: "bg-gray-100 text-gray-700" },
+  DELETED: { label: "Eliminado", className: "bg-red-100 text-red-700" },
 };
 
 // Tipos para los datos del servidor
@@ -61,12 +83,16 @@ interface UserData {
   plaza: string;
   careerLevel: string;
   isActive: boolean;
+  status: string;
+  suspendedAt: Date | null;
+  suspensionReason: string | null;
+  deletedAt: Date | null;
   phone: string | null;
   sedetusNumber: string | null;
   sedetusExpiry: Date | null;
   teamLeaderId: string | null;
   teamLeader: { id: string; name: string } | null;
-  _count: { deals: number };
+  _count: { deals: number; assignedContacts: number };
   createdAt: Date;
 }
 
@@ -127,6 +153,10 @@ const DEFAULT_ADMIN_TAB = "users";
 interface AdminContentProps {
   initialTab?: string;
   initialUsers: UserData[];
+  showDeleted?: boolean;
+  /** Rol de quien está viendo: decide qué acciones se renderizan. */
+  viewerRole: string;
+  viewerId: string;
   initialCommissionRules: CommissionRuleData[];
   initialSystemConfig: Record<string, unknown>;
   initialWebhooks: WebhookData[];
@@ -141,6 +171,9 @@ interface AdminContentProps {
 export function AdminContent({
   initialTab,
   initialUsers,
+  showDeleted = false,
+  viewerRole,
+  viewerId,
   initialCommissionRules,
   initialSystemConfig,
   initialWebhooks,
@@ -168,6 +201,15 @@ export function AdminContent({
   // Filtros de la tabla de usuarios
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [plazaFilter, setPlazaFilter] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
+  // Diálogos del ciclo de vida
+  const [passwordDialogUser, setPasswordDialogUser] = useState<UserData | null>(null);
+  const [statusDialogUser, setStatusDialogUser] = useState<UserData | null>(null);
+  const [reassignDialogUser, setReassignDialogUser] = useState<UserData | null>(null);
+
+  // Solo ADMIN y DIRECTOR cambian contraseñas y eliminan.
+  const canElevate = ["ADMIN", "DIRECTOR"].includes(viewerRole);
 
   // Dialogos
   const [userDialogOpen, setUserDialogOpen] = useState(false);
@@ -190,6 +232,10 @@ export function AdminContent({
   const filteredUsers = users.filter((u) => {
     if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
     if (plazaFilter !== "ALL" && u.plaza !== plazaFilter) return false;
+    if (statusFilter === "DELETED" && !u.deletedAt) return false;
+    if (statusFilter !== "ALL" && statusFilter !== "DELETED") {
+      if (u.deletedAt || u.status !== statusFilter) return false;
+    }
     return true;
   });
 
@@ -225,23 +271,86 @@ export function AdminContent({
     });
   }
 
-  async function handleToggleActive(user: UserData) {
+  /** Reemplaza el estado de un usuario en la tabla sin recargar la página. */
+  function patchUser(id: string, patch: Partial<UserData>) {
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+  }
+
+  async function handleSetStatus(
+    id: string,
+    status: UserStatusValue,
+    reason?: string,
+  ) {
+    await setUserStatus(id, status, reason);
+    patchUser(id, {
+      status,
+      isActive: status === "ACTIVE",
+      suspensionReason: status === "SUSPENDED" ? (reason ?? null) : null,
+      suspendedAt: status === "SUSPENDED" ? new Date() : null,
+    });
+    toast({ title: `Estado actualizado a ${USER_STATUS_CONFIG[status].label}` });
+  }
+
+  async function handleResetPassword(id: string, password?: string) {
+    const result = await adminResetPassword(id, password);
+    return result.password;
+  }
+
+  async function handleReassign(
+    fromId: string,
+    toId: string,
+    scopes: string[],
+  ): Promise<Record<string, number>> {
+    const moved = await reassignUserAssets(fromId, toId, scopes as AssetScope[]);
+    // reassignUserAssets devuelve Partial<Record<AssetScope, number>>: los
+    // scopes no pedidos vienen como undefined. El diálogo espera números, así
+    // que se normalizan aquí y no allá.
+    const clean: Record<string, number> = {};
+    for (const [key, value] of Object.entries(moved)) clean[key] = value ?? 0;
+
+    // Los conteos de la fila origen quedan en cero para lo que se movió.
+    patchUser(fromId, {
+      _count: {
+        deals: scopes.includes("deals") ? 0 : (users.find((u) => u.id === fromId)?._count.deals ?? 0),
+        assignedContacts: scopes.includes("contacts")
+          ? 0
+          : (users.find((u) => u.id === fromId)?._count.assignedContacts ?? 0),
+      },
+    });
+    return clean;
+  }
+
+  async function handleDelete(user: UserData) {
+    const typed = window.prompt(
+      `Escribe el nombre del usuario para confirmar la eliminación: ${user.name}`,
+    );
+    if (typed !== user.name) {
+      if (typed !== null) {
+        toast({ title: "El nombre no coincide, no se eliminó nada", variant: "destructive" });
+      }
+      return;
+    }
     startTransition(async () => {
       try {
-        if (user.isActive) {
-          await deactivateUser(user.id);
+        await softDeleteUser(user.id);
+        if (showDeleted) {
+          patchUser(user.id, { deletedAt: new Date(), isActive: false, status: "INACTIVE" });
         } else {
-          await updateUser(user.id, { isActive: true });
+          setUsers((prev) => prev.filter((u) => u.id !== user.id));
         }
-        // Actualizar estado local
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === user.id ? { ...u, isActive: !u.isActive } : u
-          )
-        );
-        toast({
-          title: user.isActive ? "Usuario desactivado" : "Usuario activado",
-        });
+        toast({ title: "Usuario eliminado" });
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+    });
+  }
+
+  async function handleRestore(user: UserData) {
+    startTransition(async () => {
+      try {
+        await restoreUser(user.id);
+        patchUser(user.id, { deletedAt: null, status: "INACTIVE", isActive: false });
+        toast({ title: "Usuario restaurado como Inactivo" });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -377,6 +486,27 @@ export function AdminContent({
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="w-48">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filtrar por estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todos los estados</SelectItem>
+                      <SelectItem value="ACTIVE">Activo</SelectItem>
+                      <SelectItem value="SUSPENDED">Suspendido</SelectItem>
+                      <SelectItem value="INACTIVE">Inactivo</SelectItem>
+                      {showDeleted && <SelectItem value="DELETED">Eliminado</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Link
+                  href={showDeleted ? "/admin?tab=users" : "/admin?tab=users&deleted=1"}
+                  className="self-center text-[13px] font-medium hover:underline"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  {showDeleted ? "Ocultar eliminados" : "Ver eliminados"}
+                </Link>
               </div>
 
               {/* Tabla de usuarios */}
@@ -389,13 +519,15 @@ export function AdminContent({
                       <th className="pb-3 font-medium">Rol</th>
                       <th className="pb-3 font-medium">Plaza</th>
                       <th className="pb-3 font-medium">Team Leader</th>
+                      <th className="pb-3 font-medium">Cartera</th>
                       <th className="pb-3 font-medium">Estado</th>
                       <th className="pb-3 font-medium">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredUsers.map((user) => {
-                      const statusConfig = USER_STATUS_CONFIG[String(user.isActive)];
+                      const statusKey = user.deletedAt ? "DELETED" : user.status;
+                      const statusConfig = USER_STATUS_CONFIG[statusKey] ?? USER_STATUS_CONFIG.INACTIVE;
                       return (
                         <tr
                           key={user.id}
@@ -414,41 +546,81 @@ export function AdminContent({
                           <td className="py-3">
                             {user.teamLeader?.name || "-"}
                           </td>
+                          <td className="py-3 text-xs text-muted-foreground">
+                            {user._count.assignedContacts} contactos ·{" "}
+                            {user._count.deals} negocios
+                          </td>
                           <td className="py-3">
                             <span
+                              title={user.suspensionReason ?? undefined}
                               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusConfig.className}`}
                             >
                               {statusConfig.label}
                             </span>
                           </td>
                           <td className="py-3">
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setEditingUser(user);
-                                  setUserDialogOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleToggleActive(user)}
-                                disabled={isPending}
-                              >
-                                {user.isActive ? "Desactivar" : "Activar"}
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" disabled={isPending}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {user.deletedAt ? (
+                                  canElevate && (
+                                    <DropdownMenuItem onClick={() => handleRestore(user)}>
+                                      Restaurar
+                                    </DropdownMenuItem>
+                                  )
+                                ) : (
+                                  <>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setEditingUser(user);
+                                        setUserDialogOpen(true);
+                                      }}
+                                    >
+                                      Editar
+                                    </DropdownMenuItem>
+                                    {canElevate && user.id !== viewerId && (
+                                      <DropdownMenuItem
+                                        onClick={() => setPasswordDialogUser(user)}
+                                      >
+                                        Cambiar contraseña
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem
+                                      onClick={() => setReassignDialogUser(user)}
+                                    >
+                                      Mover activos
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {user.id !== viewerId && (
+                                      <DropdownMenuItem
+                                        onClick={() => setStatusDialogUser(user)}
+                                      >
+                                        Cambiar estado
+                                      </DropdownMenuItem>
+                                    )}
+                                    {canElevate && user.id !== viewerId && (
+                                      <DropdownMenuItem
+                                        className="text-red-600"
+                                        onClick={() => handleDelete(user)}
+                                      >
+                                        Eliminar
+                                      </DropdownMenuItem>
+                                    )}
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </td>
                         </tr>
                       );
                     })}
                     {filteredUsers.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                        <td colSpan={8} className="py-8 text-center text-muted-foreground">
                           No se encontraron usuarios con los filtros seleccionados
                         </td>
                       </tr>
@@ -731,6 +903,29 @@ export function AdminContent({
           setUserDialogOpen(false);
         }}
         isPending={isPending}
+      />
+
+      <PasswordResetDialog
+        open={passwordDialogUser !== null}
+        onOpenChange={(v) => !v && setPasswordDialogUser(null)}
+        user={passwordDialogUser}
+        onConfirm={handleResetPassword}
+      />
+
+      <UserStatusDialog
+        open={statusDialogUser !== null}
+        onOpenChange={(v) => !v && setStatusDialogUser(null)}
+        user={statusDialogUser}
+        onConfirm={handleSetStatus}
+      />
+
+      <ReassignAssetsDialog
+        open={reassignDialogUser !== null}
+        onOpenChange={(v) => !v && setReassignDialogUser(null)}
+        user={reassignDialogUser}
+        candidates={users.filter((u) => u.isActive && !u.deletedAt)}
+        loadCounts={getUserAssetCounts}
+        onConfirm={handleReassign}
       />
 
       {/* Dialog de regla de comision */}

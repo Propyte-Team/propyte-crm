@@ -53,6 +53,8 @@ export default async function AdminPage({
         initialTab={searchParams?.tab}
         initialUsers={users}
         showDeleted={searchParams?.deleted === "1"}
+        viewerRole={session.user.role}
+        viewerId={session.user.id}
         initialCommissionRules={commissionRules}
         initialSystemConfig={systemConfig}
         initialWebhooks={webhooks}
