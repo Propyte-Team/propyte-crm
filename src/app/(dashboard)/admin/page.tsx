@@ -11,7 +11,7 @@ import { AdminContent } from "@/components/admin/admin-content";
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: { tab?: string };
+  searchParams: { tab?: string; deleted?: string };
 }) {
   // Obtener sesion y verificar rol
   const session = await getServerSession();
@@ -35,7 +35,7 @@ export default async function AdminPage({
 
   // Obtener datos en paralelo
   const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles] = await Promise.all([
-    getUsers(),
+    getUsers({ includeDeleted: searchParams?.deleted === "1" }),
     getCommissionRules(),
     getSystemConfig(),
     getWebhookConfigs(),
@@ -52,6 +52,7 @@ export default async function AdminPage({
       <AdminContent
         initialTab={searchParams?.tab}
         initialUsers={users}
+        showDeleted={searchParams?.deleted === "1"}
         initialCommissionRules={commissionRules}
         initialSystemConfig={systemConfig}
         initialWebhooks={webhooks}

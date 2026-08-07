@@ -138,13 +138,14 @@ const updateCommissionRuleSchema = z.object({
 // ============================================================
 
 /**
- * Obtiene todos los usuarios con datos de team leader y conteo de deals.
+ * Obtiene los usuarios con su team leader y el conteo de cartera viva.
+ * `includeDeleted` alimenta el toggle "Ver eliminados" del panel.
  */
-export async function getUsers() {
+export async function getUsers(opts?: { includeDeleted?: boolean }) {
   await requireAdminRole();
 
   const users = await prisma.user.findMany({
-    where: { deletedAt: null },
+    where: opts?.includeDeleted ? {} : { deletedAt: null },
     select: {
       id: true,
       name: true,
@@ -153,6 +154,10 @@ export async function getUsers() {
       plaza: true,
       careerLevel: true,
       isActive: true,
+      status: true,
+      suspendedAt: true,
+      suspensionReason: true,
+      deletedAt: true,
       phone: true,
       sedetusNumber: true,
       sedetusExpiry: true,
@@ -161,7 +166,10 @@ export async function getUsers() {
         select: { id: true, name: true },
       },
       _count: {
-        select: { deals: true },
+        select: {
+          deals: { where: { deletedAt: null } },
+          assignedContacts: { where: { deletedAt: null } },
+        },
       },
       createdAt: true,
     },
