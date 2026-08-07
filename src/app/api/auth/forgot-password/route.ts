@@ -25,11 +25,11 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, isActive: true, email: true },
+      select: { id: true, isActive: true, deletedAt: true, email: true },
     });
 
     // Respuesta genérica para no revelar si el correo existe
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || user.deletedAt) {
       return NextResponse.json({
         message: "Si el correo está registrado, recibirás un código para restablecer tu contraseña.",
       });

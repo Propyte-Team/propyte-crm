@@ -28,10 +28,10 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
-      select: { id: true, isActive: true, otpHash: true, otpExpiresAt: true },
+      select: { id: true, isActive: true, deletedAt: true, otpHash: true, otpExpiresAt: true },
     });
 
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || user.deletedAt) {
       return NextResponse.json({ error: "Código inválido o expirado" }, { status: 400 });
     }
 

@@ -75,6 +75,7 @@ export const authOptions: NextAuthOptions = {
             plaza: true,
             careerLevel: true,
             isActive: true,
+            deletedAt: true,
           },
         });
 
@@ -82,7 +83,7 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Credenciales inválidas");
         }
 
-        if (!user.isActive) {
+        if (!user.isActive || user.deletedAt) {
           throw new Error("Cuenta desactivada. Contacta al administrador.");
         }
 
