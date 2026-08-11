@@ -1,14 +1,20 @@
 # Task Manager — propyte-crm (núcleo CRM + Google Workspace)
 
-> Última actualización: 2026-06-15 (Activación Gmail GW-0 + fixes de acceso/correo + triage auditoría externa 22 bugs).
+> Última actualización: 2026-08-11 (diagnóstico bug crear usuario en /admin — ZodError null en phone/SEDETUS).
 >
 > ## 🔭 Pendientes activos (top)
+> - [ ] **BUG /admin crear usuario** (diagnóstico 2026-08-11, fix NO aplicado): el form manda `null` en phone/sedetusNumber/sedetusExpiry vacíos pero `createUserSchema` (`src/server/admin.ts`) usa `z.string().optional()` que rechaza `null` → ZodError → toast genérico en prod. Fix: `.nullable().optional()` en los 3 campos (como ya hace `updateUserSchema`) + corregir select Team Leader que manda `"none"` en vez de null (FK violation latente). Workaround: llenar Teléfono + los 2 SEDETUS al crear. Evidencia: `hbuilds/current/nodejs/console.log` en hosting (ERROR 2026-08-11T14:43Z). Ver memoria `feedback_crm_admin_createuser_zod_null`.
 > - [ ] **GW-1 Gmail** — enviar desde el CRM + auto-log entrantes/salientes + hilos, todo en `ActivityLog`. Pieza grande restante de Entregable B. (yo: código+migración por MCP; Luis: tópico Pub/Sub en GCP, o arrancamos con cron de respaldo)
 > - [ ] **Luis: verificar SMTP** (forgot-password) y **cambiar la contraseña temporal** `PropyteTmp2026!` de marketing@nativatulum.mx.
 > - [ ] **Luis: SMTP_USER/SMTP_PASS** (Gmail/Workspace: smtp.gmail.com:465 + App Password de cuenta Workspace) en Hostinger.
 > - [ ] Verificar `ActivityLog` en **detalle de deal** a runtime cuando exista un deal real (no verificado: pipeline en 0 deals).
 > - [ ] (Futuro, aparte) GW-2 Calendar · GW-3 Google Contacts.
 > - [ ] (Pre-existente) Aplicar SQL `unit_inventory.hold_deal_id` (Hub inventory hold) — sale en logs como ERROR.
+>
+> **🎯 Sesión 2026-08-11 (usuario Karla + diagnóstico bug /admin)** —
+> - ✅ Usuario **Karla Muñoz** creado vía SQL directo en `propyte_crm.users` (jkarlamut@gmail.com, MARKETING, PDC, bcrypt 10; login Hub verificado por hash compare). Camino establecido: memoria `feedback-hub-user-creation`.
+> - 🔍 **Root cause del fallo en crm.propyte.com/admin**: ZodError capturado en logs del servidor (mismo minuto del intento de Luis). El formulario de crear usuario NUNCA funciona con Teléfono/SEDETUS vacíos (ver pendiente arriba). Descartado: rol (Luis es ADMIN y el bundle desplegado del 08-08 incluye ADMIN en guards), deploy stale, conexión BD.
+> - 📌 Hallazgo lateral: logs útiles del CRM están en `~/domains/crm.propyte.com/hbuilds/current/nodejs/console.log` (build activo), NO en `domains/crm.propyte.com/nodejs/` (stale, para el 08-03). Host SSH `propyte` (compartido).
 >
 > ### 🐛 AUDITORÍA EXTERNA 2026-06-15 (Claude Bug Finder) — 22 bugs · TRIAGE
 > Corrida con sesión ADMIN heredada (marketing@nativatulum.mx) en crm.propyte.com. **Caveat clave:** la auditoría es del MISMO día que la **caída transitoria de BD Supabase** ("database system is not accepting connections", ya recuperada) → varios P0 (500 / Application Error / 503) **probablemente son ese outage, no bugs de código**. Reproducir ANTES de tocar código (ver [[feedback_data_gap_vs_code_bug]]).

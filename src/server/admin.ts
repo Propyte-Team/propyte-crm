@@ -50,10 +50,12 @@ const createUserSchema = z.object({
   ]),
   plaza: z.enum(["PDC", "TULUM", "MERIDA"]),
   careerLevel: z.enum(["JR", "SR", "TOP_PRODUCER", "TEAM_LEADER", "GERENTE"]).optional(),
-  teamLeaderId: z.string().optional(),
-  phone: z.string().optional(),
-  sedetusNumber: z.string().optional(),
-  sedetusExpiry: z.string().optional(),
+  // El formulario manda null (no undefined) en los opcionales vacíos — deben ser nullable
+  // igual que en updateUserSchema, o la creación falla con campos en blanco.
+  teamLeaderId: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  sedetusNumber: z.string().nullable().optional(),
+  sedetusExpiry: z.string().nullable().optional(),
 });
 
 const updateUserSchema = z.object({
@@ -182,10 +184,10 @@ export async function createUser(data: {
   role: string;
   plaza: string;
   careerLevel?: string;
-  teamLeaderId?: string;
-  phone?: string;
-  sedetusNumber?: string;
-  sedetusExpiry?: string;
+  teamLeaderId?: string | null;
+  phone?: string | null;
+  sedetusNumber?: string | null;
+  sedetusExpiry?: string | null;
 }) {
   await requireAdminRole();
 

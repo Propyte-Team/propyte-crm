@@ -176,7 +176,12 @@ export function UserFormDialog({
       role: formData.role,
       plaza: formData.plaza,
       careerLevel: formData.careerLevel || "JR",
-      teamLeaderId: formData.teamLeaderId || null,
+      // El SelectItem "Sin asignar" tiene value "none" (Radix no permite value "");
+      // hay que traducirlo a null o el create/update viola el FK de teamLeaderId.
+      teamLeaderId:
+        formData.teamLeaderId && formData.teamLeaderId !== "none"
+          ? formData.teamLeaderId
+          : null,
       phone: formData.phone || null,
       sedetusNumber: formData.sedetusNumber || null,
       sedetusExpiry: formData.sedetusExpiry || null,
