@@ -87,3 +87,19 @@ describe("DELETE /api/admin/comment-rules/[id]", () => {
     expect((await DELETE(req(null), ctx())).status).toBe(404);
   });
 });
+
+// Ver la nota en ../route.test.ts: la matriz de roles vive en
+// @/lib/comments/roles.test.ts; aquí solo se fija que esta ruta la consulte.
+describe("acceso por rol", () => {
+  it("MARKETING puede editar y pausar una regla", async () => {
+    session.user.role = "MARKETING";
+    expect((await PATCH(req({ isActive: true }), ctx())).status).toBe(200);
+  });
+
+  it("un rol de venta recibe 403 y no llega a escribir", async () => {
+    session.user.role = "ASESOR_JR";
+    expect((await PATCH(req({ isActive: true }), ctx())).status).toBe(403);
+    expect((await DELETE(req(null), ctx())).status).toBe(403);
+    expect(ruleUpdate).not.toHaveBeenCalled();
+  });
+});

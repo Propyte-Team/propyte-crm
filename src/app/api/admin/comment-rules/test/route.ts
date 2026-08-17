@@ -6,11 +6,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { matchRule } from "@/lib/comments/match";
 import { renderTemplate, pickVariant } from "@/lib/comments/template";
-
-// Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
-// GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
-// no debe conceder más acceso del que esa página deja ver.
-const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
+import { canManageCommentRules } from "@/lib/comments/roles";
 
 const schema = z.object({
   connectorId: z.string().min(1),
@@ -21,7 +17,7 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession();
-  if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) {
+  if (!session?.user || !canManageCommentRules(session.user.role)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

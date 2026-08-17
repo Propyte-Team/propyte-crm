@@ -6,16 +6,12 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { normalize } from "@/lib/comments/match";
+import { canManageCommentRules } from "@/lib/comments/roles";
 import { commentRuleCreateSchema } from "@/server/comment-rules.schema";
-
-// Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
-// GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
-// no debe conceder más acceso del que esa página deja ver.
-const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 async function assertRole() {
   const session = await getServerSession();
-  if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) return null;
+  if (!session?.user || !canManageCommentRules(session.user.role)) return null;
   return session;
 }
 

@@ -34,8 +34,10 @@ beforeEach(() => {
   ruleFindMany.mockReset();
   logCount.mockReset();
   logCount.mockResolvedValue(0);
-  // Fix 5 (code review): MARKETING salió de ALLOWED_ROLES, pareado con el
-  // guard de /admin/page.tsx. El caso feliz se prueba con un rol permitido.
+  // El permiso ya no vive aquí: lo decide canManageCommentRules (@/lib/comments/roles).
+  // Historia: MARKETING se sacó en su día "pareado con el guard de /admin/page.tsx";
+  // ago-2026 volvió a entrar junto con la puerta propia /admin/comentarios, que sí
+  // lo admite. El caso feliz se prueba con ADMIN; el acceso por rol se prueba abajo.
   session.user.role = "ADMIN";
 });
 
@@ -85,5 +87,11 @@ describe("POST /api/admin/comment-rules/test", () => {
   it("403 para rol sin permiso", async () => {
     session.user.role = "ASESOR";
     expect((await POST(req({ connectorId: "c", commentText: "info" }))).status).toBe(403);
+  });
+
+  it("MARKETING puede usar el probador", async () => {
+    session.user.role = "MARKETING";
+    ruleFindMany.mockResolvedValue([RULE]);
+    expect((await POST(req({ connectorId: "conn-ig", commentText: "info" }))).status).toBe(200);
   });
 });

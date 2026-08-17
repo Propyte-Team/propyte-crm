@@ -121,3 +121,22 @@ describe("GET /api/admin/comment-rules", () => {
     expect((await GET()).status).toBe(500);
   });
 });
+
+// Quién puede entrar lo decide canManageCommentRules (@/lib/comments/roles), y la
+// matriz completa de roles se prueba en su propio test. Lo que se fija aquí es que
+// ESTA ruta lo consulte de verdad: si alguien vuelve a poner una lista literal,
+// estos dos casos lo cachan.
+describe("acceso por rol", () => {
+  it("MARKETING lista y crea — el acceso de la diseñadora sin volverla ADMIN", async () => {
+    session.user.role = "MARKETING";
+    expect((await GET()).status).toBe(200);
+    expect((await POST(req(VALID))).status).toBe(201);
+  });
+
+  it("un rol de venta sigue fuera en ambos verbos", async () => {
+    session.user.role = "ASESOR_JR";
+    expect((await GET()).status).toBe(403);
+    expect((await POST(req(VALID))).status).toBe(403);
+    expect(ruleCreate).not.toHaveBeenCalled();
+  });
+});

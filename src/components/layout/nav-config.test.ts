@@ -54,6 +54,7 @@ describe("nav-config — menú del nombre (opciones de sistema)", () => {
       "/configuracion",
       "/conexiones",
       "/duplicados",
+      "/admin/comentarios",
     ]);
   });
 
@@ -78,8 +79,22 @@ describe("nav-config — menú del nombre (opciones de sistema)", () => {
     expect(hrefs).toEqual(["/settings"]);
   });
 
-  it("ADMIN ve las 4", () => {
-    expect(visibleUserMenuItems("ADMIN")).toHaveLength(4);
+  it("ADMIN ve las 5", () => {
+    expect(visibleUserMenuItems("ADMIN")).toHaveLength(5);
+  });
+
+  // El motivo de existir de /admin/comentarios: MARKETING no entra a /admin
+  // (esa página exige rol de administración), pero sí a esta puerta. Si alguien
+  // la quita del menú, la diseñadora se queda sin forma de llegar.
+  it("MARKETING ve Comentarios, pero ninguna otra opción de administración", () => {
+    const hrefs = visibleUserMenuItems("MARKETING").map((i) => i.href);
+    expect(hrefs).toContain("/admin/comentarios");
+    expect(hrefs).not.toContain("/configuracion");
+    expect(hrefs).not.toContain("/duplicados");
+  });
+
+  it("un asesor no ve Comentarios", () => {
+    expect(visibleUserMenuItems("ASESOR_JR").map((i) => i.href)).not.toContain("/admin/comentarios");
   });
 });
 

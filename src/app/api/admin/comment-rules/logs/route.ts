@@ -2,11 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
+import { canManageCommentRules } from "@/lib/comments/roles";
 
-// Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
-// GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
-// no debe conceder más acceso del que esa página deja ver.
-const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 const PAGE_SIZE_MAX = 100;
 
 /** `Number("abc")` es NaN, y `Math.max`/`Math.min` con un NaN de por medio dan NaN:
@@ -18,7 +15,7 @@ function parsePositiveInt(raw: string | null, fallback: number): number {
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession();
-  if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) {
+  if (!session?.user || !canManageCommentRules(session.user.role)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

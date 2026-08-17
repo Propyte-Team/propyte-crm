@@ -256,3 +256,19 @@ describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
     });
   });
 });
+
+// Reintentar publica de verdad en Meta, así que el guard de esta ruta importa
+// más que el de las demás. La matriz de roles vive en @/lib/comments/roles.test.ts.
+describe("acceso por rol", () => {
+  it("MARKETING puede reintentar un envío fallido", async () => {
+    session.user.role = "MARKETING";
+    expect((await POST(req(), ctx())).status).toBe(200);
+  });
+
+  it("un rol de venta recibe 403 y no toca Graph", async () => {
+    session.user.role = "ASESOR_JR";
+    expect((await POST(req(), ctx())).status).toBe(403);
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(sendPrivateReply).not.toHaveBeenCalled();
+  });
+});
