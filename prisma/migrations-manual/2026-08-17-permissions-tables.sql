@@ -35,10 +35,18 @@ CREATE TABLE IF NOT EXISTS propyte_crm.user_permission_overrides (
 CREATE UNIQUE INDEX IF NOT EXISTS "user_permission_overrides_userId_permission_key"
   ON propyte_crm.user_permission_overrides USING btree ("userId", "permission");
 
-ALTER TABLE propyte_crm.user_permission_overrides
-  ADD CONSTRAINT "user_permission_overrides_userId_fkey"
-  FOREIGN KEY ("userId") REFERENCES propyte_crm.users("id")
-  ON DELETE CASCADE ON UPDATE CASCADE;
+-- Postgres no admite IF NOT EXISTS en ADD CONSTRAINT, así que el bloque
+-- traga el duplicado: sin esto, reejecutar el archivo entero (p. ej. tras
+-- un fallo a media aplicación) revienta aquí con 42710.
+DO $$
+BEGIN
+  ALTER TABLE propyte_crm.user_permission_overrides
+    ADD CONSTRAINT "user_permission_overrides_userId_fkey"
+    FOREIGN KEY ("userId") REFERENCES propyte_crm.users("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- RLS: ambas tablas se leen y escriben solo desde el servidor. Se activa
 -- sin políticas; postgres (Prisma) y service_role tienen bypassrls=true y
