@@ -31,9 +31,9 @@ describe("catálogo de permisos", () => {
     expect(isSensitive("usuarios.password")).toBe(true);
     expect(isSensitive("permisos.gestionar")).toBe(true);
     expect(isSensitive("usuarios.ver")).toBe(false);
-    // integraciones.gestionar NO es sensible a propósito: marcarlo se lo
+    // integraciones.apikeys NO es sensible a propósito: marcarlo se lo
     // quitaría también a DIRECTOR, y eso nadie lo decidió. Ver spec §4.1.
-    expect(isSensitive("integraciones.gestionar")).toBe(false);
+    expect(isSensitive("integraciones.apikeys")).toBe(false);
   });
 
   it("isPermission rechaza lo que no está en el catálogo", () => {
@@ -49,7 +49,8 @@ describe("catálogo de permisos", () => {
       "usuarios.password",
       "comisiones.reglas",
       "config.actividad",
-      "integraciones.gestionar",
+      "integraciones.conectores",
+      "integraciones.apikeys",
       "bot.configurar",
       "comentarios.gestionar",
       "permisos.gestionar",

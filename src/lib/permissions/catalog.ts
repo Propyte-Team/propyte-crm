@@ -20,9 +20,10 @@ export const PERMISSIONS = {
   "usuarios.password": { label: "Restablecer contraseñas de otros", sensitive: true },
   "comisiones.reglas": { label: "Editar las reglas de comisión" },
   "config.actividad": { label: "Configurar el acuerdo de actividad" },
-  // NO sensible: marcarlo se lo quitaría también a DIRECTOR. Lo único
-  // decidido fue que GERENTE lo pierda, vía DIVERGENCIAS. Ver spec §4.1.
-  "integraciones.gestionar": { label: "Conectores, webhooks y API keys" },
+  // NO sensibles: marcarlas se las quitaría también a DIRECTOR. Lo único
+  // decidido fue que GERENTE pierda las API keys, vía DIVERGENCIAS. Ver spec §4.1.
+  "integraciones.conectores": { label: "Conectores de leads" },
+  "integraciones.apikeys": { label: "Webhooks y API keys" },
   "bot.configurar": { label: "Configuración del bot, playbooks y agentes" },
   "comentarios.gestionar": { label: "Reglas de comentarios en redes" },
   "permisos.gestionar": { label: "Administrar este moderador de permisos", sensitive: true },

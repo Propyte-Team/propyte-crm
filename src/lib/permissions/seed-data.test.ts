@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { ROLE_SEED, LEGACY_ROLE_LISTS, DIVERGENCIAS } from "./seed-data";
-import { ALL_PERMISSIONS, SENSITIVE_PERMISSIONS, isSensitive } from "./catalog";
+import { ROLE_SEED, LEGACY_ROLE_LISTS, DIVERGENCIAS, PERDIDAS_POR_SENSIBILIDAD } from "./seed-data";
+import { ALL_PERMISSIONS, SENSITIVE_PERMISSIONS, isSensitive, type Permission } from "./catalog";
 import { resolvePermission } from "./resolve";
 import { UserRole } from "@prisma/client";
 
@@ -9,14 +9,15 @@ function seedAllows(role: string, permission: string): boolean {
   return resolvePermission({
     role,
     permission,
-    rolePermissions: ROLE_SEED[role] ?? [],
+    rolePermissions: ROLE_SEED[role as keyof typeof ROLE_SEED] ?? [],
   }).allowed;
 }
 
 /** Lo que las listas hardcodeadas conceden hoy. */
 function legacyAllows(role: string, permission: string): boolean {
   if (role === "ADMIN") return true;
-  return (LEGACY_ROLE_LISTS[permission as never] ?? []).includes(role);
+  const roles: readonly string[] = LEGACY_ROLE_LISTS[permission as Permission] ?? [];
+  return roles.includes(role);
 }
 
 describe("semilla — ningún permiso sensible se siembra", () => {
@@ -30,6 +31,15 @@ describe("semilla — ningún permiso sensible se siembra", () => {
 
   it("hay al menos un sensible, o el test anterior no prueba nada", () => {
     expect(SENSITIVE_PERMISSIONS.length).toBeGreaterThan(0);
+  });
+
+  it("las pérdidas por sensibilidad son reales: hoy sí, después no", () => {
+    for (const p of PERDIDAS_POR_SENSIBILIDAD) {
+      expect(legacyAllows(p.role, p.permission), `${p.role}×${p.permission} antes`)
+        .toBe(true);
+      expect(seedAllows(p.role, p.permission), `${p.role}×${p.permission} después`)
+        .toBe(false);
+    }
   });
 });
 
@@ -48,13 +58,13 @@ describe("semilla — solo claves reales y roles reales", () => {
   });
 
   it("ADMIN no se siembra: es comodín, sembrarlo duplicaría la verdad", () => {
-    expect(ROLE_SEED.ADMIN).toBeUndefined();
+    expect("ADMIN" in ROLE_SEED).toBe(false);
   });
 });
 
 describe("paridad con las listas hardcodeadas", () => {
-  const declaradas = new Map(
-    DIVERGENCIAS.map((d) => [`${d.role}|${d.permission}`, d]),
+  const declaradas = new Set(
+    DIVERGENCIAS.map((d) => `${d.role}|${d.permission}`),
   );
 
   it("nadie gana ni pierde acceso, salvo las divergencias declaradas", () => {
@@ -99,12 +109,16 @@ describe("paridad con las listas hardcodeadas", () => {
 
 describe("la divergencia decidida el 2026-08-17", () => {
   it("GERENTE pierde las API keys y no gana nada a cambio", () => {
-    expect(seedAllows("GERENTE", "integraciones.gestionar")).toBe(false);
-    expect(legacyAllows("GERENTE", "integraciones.gestionar")).toBe(true);
+    expect(seedAllows("GERENTE", "integraciones.apikeys")).toBe(false);
+    expect(legacyAllows("GERENTE", "integraciones.apikeys")).toBe(true);
+  });
+
+  it("GERENTE conserva los conectores: la decisión era solo sobre las API keys", () => {
+    expect(seedAllows("GERENTE", "integraciones.conectores")).toBe(true);
   });
 
   it("DIRECTOR conserva las API keys: la decisión era solo sobre GERENTE", () => {
-    expect(seedAllows("DIRECTOR", "integraciones.gestionar")).toBe(true);
+    expect(seedAllows("DIRECTOR", "integraciones.apikeys")).toBe(true);
   });
 
   it("MARKETING conserva los comentarios (PR #12, ya en producción)", () => {
