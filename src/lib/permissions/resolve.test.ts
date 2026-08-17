@@ -91,11 +91,26 @@ describe("resolvePermission — fail-closed", () => {
         permission: "usuarios.inventado",
         rolePermissions: [],
         override: { granted: true },
-      }).allowed,
-    ).toBe(false);
+      }),
+    ).toEqual({ allowed: false, source: "denegado" });
   });
 
   it("lista de permisos vacía deniega todo salvo a ADMIN", () => {
-    expect(resolvePermission({ ...base, rolePermissions: [] }).allowed).toBe(false);
+    expect(resolvePermission({ ...base, rolePermissions: [] })).toEqual({
+      allowed: false,
+      source: "denegado",
+    });
+  });
+
+  it("un rol falsy no se cuela aunque le pasen permisos sembrados", () => {
+    // Este caso NO puede ocurrir vía can(), pero es lo único que ejercita el
+    // guard `if (!role)`: con la lista vacía, la denegación llegaría igual por
+    // el camino de abajo y borrar el guard no rompería ningún test.
+    for (const role of [null, undefined, ""]) {
+      expect(
+        resolvePermission({ ...base, role, rolePermissions: ["usuarios.ver"] }).allowed,
+        `rol ${String(role)} debería denegar aun con permisos en la lista`,
+      ).toBe(false);
+    }
   });
 });
