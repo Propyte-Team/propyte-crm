@@ -61,7 +61,7 @@ export const PERMISSIONS = {
   "comisiones.ver":        { label: "Ver el tablero de comisiones" },
   "comisiones.reglas":     { label: "Editar las reglas de comisión" },
   "bot.configurar":        { label: "Configuración del bot y playbooks" },
-  "integraciones.gestionar": { label: "Conectores y API keys", sensitive: true },
+  "integraciones.gestionar": { label: "Conectores y API keys" },
   "permisos.gestionar":    { label: "Administrar este moderador", sensitive: true },
   // …se agregan conforme cada fase migra su superficie
 } as const;
@@ -69,11 +69,14 @@ export const PERMISSIONS = {
 export type Permission = keyof typeof PERMISSIONS;
 ```
 
-**`sensitive: true` — el segundo nivel.** Un permiso sensible es el que permite *volverse otra persona* o *tomar la casa*:
+**`sensitive: true` — el segundo nivel.** Un permiso sensible es el que permite *volverse otra persona* o *repartirse a sí mismo el resto*:
 
 - `usuarios.password` — quien lo tiene le pone contraseña a cualquiera y entra como esa persona. En la práctica es "ser quien sea", incluido el dueño del CRM.
-- `integraciones.gestionar` — da acceso a las API keys, que son credenciales de sistemas externos.
-- `permisos.gestionar` — quien lo tiene se administra los permisos.
+- `permisos.gestionar` — quien lo tiene se administra los permisos, empezando por los suyos.
+
+**`integraciones.gestionar` NO es sensible, y conviene explicar por qué**, porque da acceso a las API keys y el instinto dice lo contrario. Marcarlo sensible significaría "sin default de rol", y eso se lo quitaría también a `DIRECTOR` — un cambio que nadie decidió. La decisión tomada fue únicamente que `GERENTE` lo pierda (§12.3), y eso se logra con la divergencia declarada de §8.1.
+
+Si más adelante se quiere que las API keys sean estrictamente por persona, el camino es partir el permiso en `integraciones.conectores` y `integraciones.apikeys` —que en el código ya son superficies distintas— y marcar sensible solo al segundo. Es un cambio posterior, no parte de la fase 0.
 
 Un permiso sensible **no puede tener default de rol**: no existe su casilla en la matriz. Solo se concede a una persona concreta, desde la vista de Persona, y con una razón escrita obligatoria. La diferencia importa: marcar una casilla en la matriz le da la capacidad a *todo un rol* —los 12 asesores de un tirón— con un clic y sin que quede dicho por qué.
 
@@ -144,7 +147,9 @@ Costo: una consulta extra por request que consulte permisos. Se mitiga con un ca
 
 ## 6. La pantalla del moderador
 
-Nueva pestaña en `/admin?tab=permisos`, gobernada por el permiso `permisos.gestionar` (que solo `ADMIN` y `DIRECTOR` traen sembrado).
+Nueva pestaña en `/admin?tab=permisos`, gobernada por `permisos.gestionar`.
+
+Como ese permiso es sensible, **no se siembra a ningún rol**: al principio solo `ADMIN` abre el moderador, por su condición de comodín. Si un `DIRECTOR` debe administrarlo, un `ADMIN` se lo concede por persona y con razón escrita. Es más restrictivo que lo que hay hoy —cualquier `DIRECTOR` entra a `/admin` completo— y es a propósito: repartir permisos es la llave de todas las demás.
 
 **Vista 1 — Matriz rol × permiso.** Filas = permisos del catálogo agrupados por módulo; columnas = roles. Checkboxes. La columna de `ADMIN` se dibuja marcada y deshabilitada, con la leyenda de que es comodín por diseño.
 
@@ -194,7 +199,12 @@ export const DIVERGENCIAS = [
 ] as const;
 ```
 
-**Esta divergencia sí quita un acceso que hoy existe.** Antes de aplicarla en la fase 0 hay que confirmar que ningún GERENTE esté usando `/admin?tab=integrations` en su día a día — se comprueba en `audit_logs` filtrando por los usuarios con ese rol. Si alguno lo usa, la salida no es cancelar la decisión sino darle una excepción por persona, que para eso está.
+**Esta divergencia sí quita un acceso que hoy existe**, así que se comprobó antes de darla por buena (2026-08-17):
+
+- Hay **un solo `GERENTE`**: Karla Muñoz (`jkarlamut@gmail.com`), alta del 2026-08-11.
+- **Cero** filas en `audit_logs`, cero actividades y cero contactos asignados.
+
+Límite de esa evidencia: `audit_logs` tiene 68 filas en dos meses y solo cubre escrituras sobre unas pocas entidades — *abrir* la pestaña de integraciones no deja rastro, así que esto no prueba que nunca la mirara. Con una sola persona en el rol y sin ninguna acción registrada, el riesgo se consideró aceptable. Si resultara equivocado, la salida no es cancelar la decisión sino un override por persona.
 
 ## 9. Seguridad
 
