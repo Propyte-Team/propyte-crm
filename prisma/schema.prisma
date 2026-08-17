@@ -717,6 +717,9 @@ model User {
 
   sendersBlocked BlockedSender[] @relation("SendersBlockedBy")
 
+  // Moderador de permisos — fase 0
+  permissionOverrides UserPermissionOverride[]
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -2757,5 +2760,41 @@ model BlockedSender {
   @@index([contactId])
   @@index([createdAt])
   @@map("blocked_senders")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// MODERADOR DE PERMISOS — ver docs/superpowers/specs/2026-08-17-moderador-permisos-design.md
+// =====================================================================
+
+/// Default de permisos por rol. Presencia de la fila = concedido.
+/// ADMIN nunca aparece aquí: es comodín en resolvePermission().
+/// Los permisos sensibles tampoco: solo se conceden por persona.
+model RolePermission {
+  id         String   @id @default(uuid())
+  role       UserRole
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([role, permission])
+  @@map("role_permissions")
+  @@schema("propyte_crm")
+}
+
+/// Excepción por persona. `granted` de dos estados: true concede aunque su
+/// rol no lo tenga, false revoca aunque sí. El false es lo que permite darle
+/// un permiso a un rol y quitárselo a una cuenta concreta (p.ej. una pantalla).
+model UserPermissionOverride {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  granted    Boolean
+  /// Por qué. Obligatorio si el permiso es sensible (lo valida el server action).
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, permission])
+  @@map("user_permission_overrides")
   @@schema("propyte_crm")
 }

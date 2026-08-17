@@ -14,6 +14,7 @@
     "db:migrate": "prisma migrate dev",
     "create:user-marketing": "tsx scripts/create-user-marketing.ts",
     "seed:admins": "tsx scripts/seed-admin-users.ts",
+    "seed:permissions": "tsx scripts/seed-permissions.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
