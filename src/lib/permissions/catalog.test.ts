@@ -48,7 +48,7 @@ describe("catálogo de permisos", () => {
       "usuarios.editar",
       "usuarios.password",
       "comisiones.reglas",
-      "config.actividad",
+      "config.sistema",
       "integraciones.conectores",
       "integraciones.apikeys",
       "bot.configurar",

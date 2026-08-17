@@ -23,7 +23,14 @@ export const PERMISSIONS = {
   // fase, sino mucho después. El catálogo solo suma claves conforme cada fase
   // migra su superficie — "comisiones.ver" llega cuando le toque su turno.
   "comisiones.reglas": { label: "Editar las reglas de comisión" },
-  "config.actividad": { label: "Configurar el acuerdo de actividad" },
+  // Se llamaba config.actividad, pero prometía menos de lo que concede: la
+  // superficie real es updateSystemConfig(key, value), que acepta CUALQUIER
+  // clave de system_config — incluido el puntero de round-robin
+  // (lib/workflows/routing.ts) y el umbral de CAPI (lib/capi/events.ts), no
+  // solo el acuerdo de actividad que la UI escribe hoy. El nombre ahora dice
+  // lo que de verdad abre. Estrechar el server action a una lista blanca de
+  // claves es una mejora aparte, y sí cambiaría comportamiento.
+  "config.sistema": { label: "Configuración del sistema" },
   // NO sensibles: marcarlas se las quitaría también a DIRECTOR. Lo único
   // decidido fue que GERENTE pierda las API keys, vía DIVERGENCIAS. Ver spec §4.1.
   "integraciones.conectores": { label: "Conectores de leads" },
