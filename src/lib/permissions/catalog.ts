@@ -18,6 +18,10 @@ export const PERMISSIONS = {
   "usuarios.ver": { label: "Ver la lista de usuarios" },
   "usuarios.editar": { label: "Crear y editar usuarios" },
   "usuarios.password": { label: "Restablecer contraseñas de otros", sensitive: true },
+  // El spec (§4.1) también menciona "comisiones.ver" (el tablero /commissions),
+  // pero esa clave no está aquí a propósito: /commissions no se migra en esta
+  // fase, sino mucho después. El catálogo solo suma claves conforme cada fase
+  // migra su superficie — "comisiones.ver" llega cuando le toque su turno.
   "comisiones.reglas": { label: "Editar las reglas de comisión" },
   "config.actividad": { label: "Configurar el acuerdo de actividad" },
   // NO sensibles: marcarlas se las quitaría también a DIRECTOR. Lo único

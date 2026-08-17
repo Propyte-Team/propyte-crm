@@ -13,12 +13,13 @@ import type { Permission } from "./catalog";
  *  - COMMENT_RULES_ROLES    src/lib/comments/roles.ts
  *  - Conectores             src/app/api/admin/connectors/route.ts:18,
  *                           connectors/[id]/route.ts:9, connectors/test/route.ts:8,
- *                           connectors/[id]/test-mapping/route.ts:9,
- *                           src/app/(dashboard)/conexiones/page.tsx:6 →
- *                           ["ADMIN","DIRECTOR","GERENTE","MARKETING"]. Nota: la
- *                           ruta hermana connectors/health/route.ts:8 NO incluye
- *                           MARKETING (inconsistencia existente, no arreglada
- *                           aquí — la lista dominante de las cinco rutas manda).
+ *                           connectors/[id]/test-mapping/route.ts:9 (4 archivos
+ *                           route.ts) más src/app/(dashboard)/conexiones/page.tsx:6
+ *                           (1 página) → ["ADMIN","DIRECTOR","GERENTE","MARKETING"].
+ *                           Nota: la ruta hermana connectors/health/route.ts:8 NO
+ *                           incluye MARKETING (inconsistencia existente, no
+ *                           arreglada aquí — la lista dominante de los 4 route.ts
+ *                           más la página manda).
  *  - Webhooks y API keys    ADMIN_ROLES en src/server/admin.ts → sin MARKETING.
  */
 export const LEGACY_ROLE_LISTS = {

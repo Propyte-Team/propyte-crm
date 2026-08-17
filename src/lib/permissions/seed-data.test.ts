@@ -3,6 +3,7 @@ import { ROLE_SEED, LEGACY_ROLE_LISTS, DIVERGENCIAS, PERDIDAS_POR_SENSIBILIDAD }
 import { ALL_PERMISSIONS, SENSITIVE_PERMISSIONS, isSensitive, type Permission } from "./catalog";
 import { resolvePermission } from "./resolve";
 import { UserRole } from "@prisma/client";
+import { COMMENT_RULES_ROLES } from "@/lib/comments/roles";
 
 /** Lo que la semilla concede hoy a un rol, según ROLE_SEED. */
 function seedAllows(role: string, permission: string): boolean {
@@ -104,6 +105,16 @@ describe("paridad con las listas hardcodeadas", () => {
     for (const d of DIVERGENCIAS) {
       expect(d.motivo.length, `${d.role}×${d.permission} sin motivo`).toBeGreaterThan(30);
     }
+  });
+
+  // LEGACY_ROLE_LISTS es una transcripción a mano, así que la red de paridad
+  // mide contra lo que alguien escribió, no contra el código. De las 8 listas
+  // solo esta es importable (las otras son constantes privadas dentro de
+  // "use server" o route.ts). Anclarla convierte una fila de transcripción en
+  // una fila verificada: si alguien edita COMMENT_RULES_ROLES, esto truena.
+  it("la fila de comentarios está anclada a su fuente real, no transcrita", () => {
+    const realSinAdmin = [...COMMENT_RULES_ROLES].filter((r) => r !== "ADMIN").sort();
+    expect([...LEGACY_ROLE_LISTS["comentarios.gestionar"]].sort()).toEqual(realSinAdmin);
   });
 });
 
