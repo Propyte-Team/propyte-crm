@@ -27,6 +27,7 @@ import {
   CopyCheck,
   Plug,
 } from "lucide-react"
+import { COMMENT_RULES_ROLES } from "@/lib/comments/roles"
 
 const ASESORES = ["ASESOR", "ASESOR_SR", "ASESOR_JR"]
 // MANTENIMIENTO/DEVELOPER_EXT entran a los básicos (Hoy/Dashboard/Contactos/Mi Config):
@@ -82,6 +83,10 @@ export const userMenuItems: NavItem[] = [
   { label: "Configuración", href: "/configuracion", icon: Settings, roles: ["DIRECTOR", "GERENTE"] },
   { label: "Conexiones", href: "/conexiones", icon: Plug, roles: ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"] },
   { label: "Duplicados", href: "/duplicados", icon: CopyCheck, roles: ["ADMIN", "DIRECTOR", "MANTENIMIENTO"] },
+  // Puerta directa a /admin/comentarios: MARKETING no puede entrar por
+  // /admin?tab=comments (esa página exige rol de administración). Los roles
+  // se leen del módulo de permiso para que el menú y la API no se separen.
+  { label: "Comentarios", href: "/admin/comentarios", icon: MessageSquare, roles: [...COMMENT_RULES_ROLES] },
 ]
 
 /** Items del sidebar visibles para un rol (ADMIN ve todo) — misma regla que renderiza el Sidebar. */

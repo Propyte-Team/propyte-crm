@@ -10,11 +10,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
 import { replyToComment, sendPrivateReply } from "@/lib/comments/graph";
 import { persistOpenerCreatingContact } from "@/lib/comments/link-comment-origin";
-
-// Pareado a propósito con el guard de /admin/page.tsx (ADMIN, DIRECTOR,
-// GERENTE): la UI de esta feature vive en /admin?tab=comments, así que la API
-// no debe conceder más acceso del que esa página deja ver.
-const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
+import { canManageCommentRules } from "@/lib/comments/roles";
 
 /**
  * FAILED es el caso normal. PENDING también es reintentable: si el worker
@@ -39,7 +35,7 @@ function errorText(err: unknown): string {
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession();
-  if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) {
+  if (!session?.user || !canManageCommentRules(session.user.role)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
