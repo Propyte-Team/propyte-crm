@@ -1,7 +1,7 @@
 # Moderador de permisos por rol y por persona
 
 **Fecha:** 2026-08-17
-**Estado:** propuesta, pendiente de revisión de Luis
+**Estado:** decisiones cerradas 2026-08-17 (§12); listo para escribir el plan de implementación
 **Detonante:** dar a la diseñadora (`design@nativatulum.mx`, rol `MARKETING`) acceso a las reglas de comentarios sin convertirla en `ADMIN`.
 
 ---
@@ -54,20 +54,28 @@ Tres piezas. Las dos tablas van al esquema `propyte_crm`, con `@@map` en snake_c
 ```ts
 // src/lib/permissions/catalog.ts — módulo PURO
 export const PERMISSIONS = {
-  "comentarios.gestionar": "Reglas de comentarios en redes",
-  "usuarios.ver":          "Ver la lista de usuarios",
-  "usuarios.editar":       "Crear y editar usuarios",
-  "usuarios.password":     "Restablecer contraseñas de otros",
-  "comisiones.ver":        "Ver el tablero de comisiones",
-  "comisiones.reglas":     "Editar las reglas de comisión",
-  "bot.configurar":        "Configuración del bot y playbooks",
-  "integraciones.gestionar": "Conectores y API keys",
-  "permisos.gestionar":    "Administrar este moderador de permisos",
+  "comentarios.gestionar": { label: "Reglas de comentarios en redes" },
+  "usuarios.ver":          { label: "Ver la lista de usuarios" },
+  "usuarios.editar":       { label: "Crear y editar usuarios" },
+  "usuarios.password":     { label: "Restablecer contraseñas de otros", sensitive: true },
+  "comisiones.ver":        { label: "Ver el tablero de comisiones" },
+  "comisiones.reglas":     { label: "Editar las reglas de comisión" },
+  "bot.configurar":        { label: "Configuración del bot y playbooks" },
+  "integraciones.gestionar": { label: "Conectores y API keys", sensitive: true },
+  "permisos.gestionar":    { label: "Administrar este moderador", sensitive: true },
   // …se agregan conforme cada fase migra su superficie
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
 ```
+
+**`sensitive: true` — el segundo nivel.** Un permiso sensible es el que permite *volverse otra persona* o *tomar la casa*:
+
+- `usuarios.password` — quien lo tiene le pone contraseña a cualquiera y entra como esa persona. En la práctica es "ser quien sea", incluido el dueño del CRM.
+- `integraciones.gestionar` — da acceso a las API keys, que son credenciales de sistemas externos.
+- `permisos.gestionar` — quien lo tiene se administra los permisos.
+
+Un permiso sensible **no puede tener default de rol**: no existe su casilla en la matriz. Solo se concede a una persona concreta, desde la vista de Persona, y con una razón escrita obligatoria. La diferencia importa: marcar una casilla en la matriz le da la capacidad a *todo un rol* —los 12 asesores de un tirón— con un clic y sin que quede dicho por qué.
 
 El catálogo vive en código **a propósito**: una clave de permiso está acoplada al código que la consulta. Si viviera en base, alguien podría borrar `comentarios.gestionar` desde una UI y dejar un `can()` preguntando por algo inexistente. En código, TypeScript no deja escribir una clave que no existe, y el catálogo es la lista que dibuja la pantalla del moderador.
 
@@ -86,7 +94,9 @@ model RolePermission {
 }
 ```
 
-Presencia de la fila = concedido. Se siembra con las listas que hoy están hardcodeadas, para que **el día 1 nadie gane ni pierda nada**.
+Presencia de la fila = concedido. Se siembra con las listas que hoy están hardcodeadas, para que el día 1 nadie gane ni pierda nada — **con una excepción deliberada**, ver §8.1.
+
+Un permiso con `sensitive: true` **nunca** tiene fila aquí. Un guardia en el server action lo rechaza, y un test lo fija: si alguien agrega la clave sensible a la semilla, el test truena antes del deploy.
 
 ### 4.3 `user_permission_overrides` — la excepción por persona
 
@@ -97,7 +107,7 @@ model UserPermissionOverride {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   permission String
   granted    Boolean  // true = concede aunque su rol no lo tenga; false = revoca aunque sí
-  reason     String?  // por qué; se muestra en la UI
+  reason     String?  // por qué; se muestra en la UI. OBLIGATORIO si el permiso es sensible
   createdAt  DateTime @default(now())
 
   @@unique([userId, permission])
@@ -106,7 +116,7 @@ model UserPermissionOverride {
 }
 ```
 
-El `granted` de dos estados —y no solo una lista de concesiones— es lo que permite el caso real que tenemos: dar `comentarios.gestionar` a `MARKETING` como default y **revocárselo a `pantallapdc@`**, sin inventar un rol para una pantalla.
+El `granted` de dos estados —y no solo una lista de concesiones— es lo que permite el caso real que tenemos: dar `comentarios.gestionar` a `MARKETING` como default y **revocárselo a `pantallapdc@`**, sin inventar un rol para una pantalla y sin desactivar una cuenta cuya función no conocemos del todo (ver §12.1).
 
 ## 5. El helper `can()`
 
@@ -138,7 +148,9 @@ Nueva pestaña en `/admin?tab=permisos`, gobernada por el permiso `permisos.gest
 
 **Vista 1 — Matriz rol × permiso.** Filas = permisos del catálogo agrupados por módulo; columnas = roles. Checkboxes. La columna de `ADMIN` se dibuja marcada y deshabilitada, con la leyenda de que es comodín por diseño.
 
-**Vista 2 — Persona.** Buscas a alguien, ves sus permisos efectivos y de dónde sale cada uno ("por su rol MARKETING" / "concedido aparte" / "revocado aparte"), y puedes conceder o revocar con una razón escrita. Esta es la vista que resuelve el caso de la diseñadora.
+Los permisos sensibles aparecen en la matriz pero **con la fila entera bloqueada** y la nota "solo se concede por persona". Aparecer bloqueados y no estar ausentes es deliberado: un permiso que no se ve en ningún lado obliga a leer código para saber quién lo tiene.
+
+**Vista 2 — Persona.** Buscas a alguien, ves sus permisos efectivos y de dónde sale cada uno ("por su rol MARKETING" / "concedido aparte" / "revocado aparte"), y puedes conceder o revocar con una razón escrita. Esta es la vista que resuelve el caso de la diseñadora, el de la pantalla, y la única por la que se concede un permiso sensible.
 
 Guardar es explícito, no al vuelo: se acumulan los cambios y un botón los aplica, mostrando antes el resumen de qué cambia y a quién afecta.
 
@@ -161,18 +173,43 @@ La regla que hace esto seguro: **una superficie usa `can()` o usa su lista vieja
 
 La semilla de la fase 0 se genera leyendo las listas hardcodeadas actuales, y se verifica con un test que compara, rol por rol y permiso por permiso, que el resultado de `can()` coincide con lo que la lista vieja habría contestado. Ese test es la red: si la semilla se equivoca, no llega a producción.
 
+### 8.1 Las divergencias deliberadas
+
+Un test de paridad estricto no admite mejoras: cualquier cambio intencional lo pone en rojo, y la tentación entonces es aflojar el test — que es como se pierde la red entera.
+
+Por eso las diferencias a propósito van en una lista explícita, con su motivo, y el test comprueba **dos cosas**: que las divergencias declaradas ocurran, y que no haya ninguna otra.
+
+```ts
+// src/lib/permissions/seed-divergences.ts
+export const DIVERGENCIAS = [
+  {
+    role: "GERENTE",
+    permission: "integraciones.gestionar",
+    antes: true,
+    despues: false,
+    motivo:
+      "Decisión de Luis (2026-08-17): un GERENTE no necesita las API keys. " +
+      "Son credenciales de sistemas externos y el rol lo tienen varias personas.",
+  },
+] as const;
+```
+
+**Esta divergencia sí quita un acceso que hoy existe.** Antes de aplicarla en la fase 0 hay que confirmar que ningún GERENTE esté usando `/admin?tab=integrations` en su día a día — se comprueba en `audit_logs` filtrando por los usuarios con ese rol. Si alguno lo usa, la salida no es cancelar la decisión sino darle una excepción por persona, que para eso está.
+
 ## 9. Seguridad
 
 - **Fail-closed en todos lados.** Sin fila, sin rol, sin catálogo → denegado.
 - **No lockout.** `ADMIN` va cableado a `true` antes de cualquier consulta. Además, un guardia en el server action impide guardar un cambio que deje `permisos.gestionar` sin ningún usuario activo que lo tenga.
 - **Escalación de privilegios.** Conceder un permiso que uno mismo no tiene queda prohibido, salvo para `ADMIN`. Sin esto, `permisos.gestionar` es equivalente a `ADMIN`: quien lo tenga se autoconcede lo que quiera.
+- **Permisos sensibles.** Ni default de rol, ni concesión sin razón escrita. Son los que permiten volverse otra persona (`usuarios.password`), tomar credenciales externas (`integraciones.gestionar`) o repartir permisos (`permisos.gestionar`). El guardia va en el server action, no solo en la UI.
 - **El servidor es quien manda.** Ocultar un botón en el cliente es cosmética. Cada server action y cada `route.ts` migrado llama a `can()` por su cuenta.
 - **El cliente nunca recibe el catálogo completo de otra persona.** Solo los permisos efectivos de quien pide, y solo para decidir qué dibujar.
 
 ## 10. Pruebas
 
 - **Módulo puro** (`resolvePermission`): la tabla de verdad completa, incluida la precedencia override-sobre-rol en ambos sentidos y el `ADMIN` comodín.
-- **Paridad con lo viejo** (fase 0): para cada rol del enum y cada permiso sembrado, `can()` responde lo mismo que la lista hardcodeada que reemplaza.
+- **Paridad con lo viejo** (fase 0): para cada rol del enum y cada permiso sembrado, `can()` responde lo mismo que la lista hardcodeada que reemplaza — **salvo** las entradas de `DIVERGENCIAS`, que deben ocurrir. Una diferencia no declarada rompe el test; una divergencia declarada que no ocurre, también.
+- **Permisos sensibles**: la semilla no contiene ninguno; conceder uno sin razón escrita falla; y no existe forma de dárselo a un rol.
 - **No lockout**: el guardia rechaza el cambio que dejaría a nadie con `permisos.gestionar`.
 - **No escalación**: un `DIRECTOR` sin `bot.configurar` no puede concedérselo ni concedérselo a otro.
 - **Por superficie migrada**: un caso que entra y uno que recibe 403, como los que ya agregó `fa5c1ef8`.
@@ -188,8 +225,34 @@ La semilla de la fase 0 se genera leyendo las listas hardcodeadas actuales, y se
 | El proyecto se queda a medias | Es el diseño: quedarse a medias es un estado válido y estable |
 | La matriz crece hasta ser ilegible | Permisos agrupados por módulo; el catálogo solo suma claves cuando su fase las migra |
 
-## 12. Preguntas abiertas para Luis
+## 12. Decisiones tomadas
 
-1. **`pantallapdc@propyte.local`** — ¿es una pantalla que nadie usa para entrar? Si es así, lo más limpio es desactivarla y ahorrarse el override. No la toco sin saber qué depende de ella.
-2. **Restablecer contraseñas** — quedó pendiente de la conversación anterior. Encaja como el permiso `usuarios.password` de la fase 1. ¿Lo construyo dentro de este proyecto, o antes y por separado?
-3. **`GERENTE`** — hoy entra a `/admin` completo. Al sembrar, ¿le dejamos exactamente lo que tiene, o aprovechamos para quitarle algo (por ejemplo `integraciones.gestionar`, que da acceso a las API keys)?
+Las tres preguntas abiertas quedaron resueltas por Luis el 2026-08-17.
+
+### 12.1 `pantallapdc@propyte.local` — se queda viva, se le revoca el permiso
+
+Es una pantalla. En base tiene **cero eventos de auditoría y cero actividades** desde que se creó el 19 de junio, así que nunca hizo nada rastreable.
+
+Eso **no** basta para desactivarla: una pantalla que solo muestra no deja rastro, y apagar la cuenta apagaría lo que sea que esté mostrando. La cuenta se queda activa y recibe un override `granted: false` sobre `comentarios.gestionar`. La pantalla sigue funcionando; simplemente no puede tocar las reglas.
+
+Es el primer caso de uso real del override negativo, y confirma que la tabla necesitaba los dos estados.
+
+### 12.2 `usuarios.password` — al moderador, marcado como sensible
+
+El botón de restablecer contraseña (ya en producción, PR #13) migra al moderador en la fase 1, pero como permiso **sensible**: sin casilla en la matriz de roles, solo concesión por persona y con razón escrita obligatoria.
+
+El razonamiento: quien puede restablecer contraseñas puede entrar como cualquiera, incluido el dueño del CRM. Eso no es un permiso más, y darlo con un clic a un rol entero no es lo mismo que dárselo a una persona con nombre y apellido.
+
+Hasta que la fase 1 lo migre, la regla sigue siendo `PASSWORD_RESET_ROLES` en `src/server/admin.ts` (`ADMIN` y `DIRECTOR`), fijada por sus tests.
+
+### 12.3 `GERENTE` pierde el acceso a las API keys
+
+`integraciones.gestionar` no se siembra para `GERENTE`. Es la única divergencia deliberada de la semilla; queda formalizada en §8.1 con su motivo y su comprobación previa en `audit_logs`.
+
+## 13. Lo que aún no está decidido
+
+Nada bloquea el arranque de la fase 0. Estos son puntos a resolver cuando su fase llegue:
+
+- **Cuántos permisos entran en el catálogo inicial.** El listado de §4.1 es ilustrativo; la lista real sale de inventariar las superficies de la fase 1.
+- **Qué pasa con `MANTENIMIENTO` y `DEVELOPER_EXT`.** Son roles con presencia rara en las listas actuales; hay que mirarlos uno por uno al sembrar.
+- **Si la vista de Persona debe permitir revocar un permiso a un `ADMIN`.** Hoy la respuesta es no —`ADMIN` es comodín antes de consultar nada—, pero conviene que la UI lo explique en vez de simplemente ignorar el intento.
