@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, KeyRound } from "lucide-react";
 import {
   ROLE_LABELS,
   DEAL_TYPE_LABELS,
@@ -31,6 +31,7 @@ import {
   createUser,
   updateUser,
   deactivateUser,
+  resetUserPassword,
   createCommissionRule,
   updateCommissionRule,
   deleteCommissionRule,
@@ -38,6 +39,7 @@ import {
 } from "@/server/admin";
 import { useToast } from "@/components/ui/use-toast";
 import { UserFormDialog } from "./user-form-dialog";
+import { ResetPasswordDialog } from "./reset-password-dialog";
 import { CommissionRuleDialog } from "./commission-rule-dialog";
 import { IntegrationsTab } from "./integrations-tab";
 import { BotConfigTab } from "./bot-config-tab";
@@ -124,8 +126,14 @@ const ADMIN_TAB_TITLES: Record<string, string> = {
 };
 const DEFAULT_ADMIN_TAB = "users";
 
+/** Roles que pueden restablecer contraseñas — pareado con PASSWORD_RESET_ROLES
+ *  de @/server/admin. Esto solo decide si se DIBUJA el botón; el permiso real
+ *  lo aplica el server action. */
+const PASSWORD_RESET_ROLES = ["ADMIN", "DIRECTOR"];
+
 interface AdminContentProps {
   initialTab?: string;
+  currentUserRole: string;
   initialUsers: UserData[];
   initialCommissionRules: CommissionRuleData[];
   initialSystemConfig: Record<string, unknown>;
@@ -140,6 +148,7 @@ interface AdminContentProps {
 
 export function AdminContent({
   initialTab,
+  currentUserRole,
   initialUsers,
   initialCommissionRules,
   initialSystemConfig,
@@ -174,6 +183,9 @@ export function AdminContent({
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<CommissionRuleData | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<UserData | null>(null);
+
+  const canResetPasswords = PASSWORD_RESET_ROLES.includes(currentUserRole);
 
   // Configuracion del acuerdo de actividad
   const activityConfig = (initialSystemConfig.activity_agreement as Record<string, number>) || {};
@@ -219,6 +231,21 @@ export function AdminContent({
         await updateUser(id, data as any);
         window.location.reload();
         toast({ title: "Usuario actualizado" });
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+    });
+  }
+
+  async function handleResetPassword(userId: string, password: string) {
+    startTransition(async () => {
+      try {
+        const target = await resetUserPassword(userId, password);
+        setResetPasswordUser(null);
+        toast({
+          title: "Contraseña restablecida",
+          description: `${target.name} ya puede entrar con la contraseña nueva.`,
+        });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -433,6 +460,17 @@ export function AdminContent({
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
+                              {canResetPasswords && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="Restablecer contraseña"
+                                  aria-label={`Restablecer contraseña de ${user.name}`}
+                                  onClick={() => setResetPasswordUser(user)}
+                                >
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -730,6 +768,17 @@ export function AdminContent({
           }
           setUserDialogOpen(false);
         }}
+        isPending={isPending}
+      />
+
+      {/* Dialog de restablecer contraseña (solo ADMIN y DIRECTOR) */}
+      <ResetPasswordDialog
+        open={resetPasswordUser !== null}
+        onOpenChange={(open) => {
+          if (!open) setResetPasswordUser(null);
+        }}
+        user={resetPasswordUser}
+        onSubmit={handleResetPassword}
         isPending={isPending}
       />
 

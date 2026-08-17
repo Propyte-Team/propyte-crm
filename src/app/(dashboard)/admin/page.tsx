@@ -51,6 +51,7 @@ export default async function AdminPage({
       {/* Contenido: vista de detalle del hub de Configuración */}
       <AdminContent
         initialTab={searchParams?.tab}
+        currentUserRole={session.user.role}
         initialUsers={users}
         initialCommissionRules={commissionRules}
         initialSystemConfig={systemConfig}

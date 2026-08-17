@@ -18,6 +18,14 @@ import { generateApiKeyPair } from "@/lib/auth/api-key";
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 /**
+ * Restablecer la contraseña de otra persona es más peligroso que el resto del
+ * panel: quien puede hacerlo puede ENTRAR COMO esa persona. Un GERENTE con este
+ * poder podría tomar la cuenta de un DIRECTOR, así que se queda fuera — sigue
+ * pudiendo crear, editar y desactivar usuarios, solo no reparte credenciales.
+ */
+const PASSWORD_RESET_ROLES = ["ADMIN", "DIRECTOR"];
+
+/**
  * Verifica que el usuario actual tenga rol de administración.
  * Lanza error si no es DIRECTOR o GERENTE.
  */
@@ -26,6 +34,16 @@ async function requireAdminRole() {
   if (!session?.user) throw new Error("No autorizado");
   if (!ADMIN_ROLES.includes(session.user.role)) {
     throw new Error("Acceso denegado: se requiere rol de Director o Gerente");
+  }
+  return session;
+}
+
+/** Guardia estrecha para restablecer contraseñas. Ver PASSWORD_RESET_ROLES. */
+async function requirePasswordResetRole() {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+  if (!PASSWORD_RESET_ROLES.includes(session.user.role)) {
+    throw new Error("Acceso denegado: solo un Administrador o Director puede restablecer contraseñas");
   }
   return session;
 }
@@ -56,6 +74,13 @@ const createUserSchema = z.object({
   phone: z.string().nullable().optional(),
   sedetusNumber: z.string().nullable().optional(),
   sedetusExpiry: z.string().nullable().optional(),
+});
+
+// Mínimo 8 (no 6 como al crear): esta contraseña la elige un tercero y viaja
+// por WhatsApp o de viva voz hasta su dueño. El createUserSchema se queda en 6
+// para no invalidar el alta que ya usa el equipo.
+const resetPasswordSchema = z.object({
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
 });
 
 const updateUserSchema = z.object({
@@ -303,6 +328,48 @@ export async function updateUser(
   });
 
   return user;
+}
+
+/**
+ * Restablece la contraseña de otro usuario. Devuelve solo datos de
+ * identificación: ni la contraseña ni el hash vuelven a quien la pidió.
+ *
+ * OJO: la sesión de esa persona NO se cierra. NextAuth v4 usa JWT y el token
+ * vive hasta expirar, así que cambiar la contraseña no expulsa a quien ya
+ * estuviera dentro. Si algún día hace falta echar a alguien de inmediato, eso
+ * es invalidación de sesiones y es un trabajo aparte.
+ */
+export async function resetUserPassword(userId: string, password: string) {
+  const session = await requirePasswordResetRole();
+
+  const { password: validPassword } = resetPasswordSchema.parse({ password });
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId, deletedAt: null },
+    select: { id: true, name: true, email: true },
+  });
+  if (!target) throw new Error("Usuario no encontrado");
+
+  const passwordHash = await hash(validPassword, 12);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash },
+  });
+
+  // Sin la contraseña ni el hash: un log que guarda la credencial la deja en
+  // claro para cualquiera que pueda leer la tabla de auditoría.
+  await prisma.auditLog.create({
+    data: {
+      userId: session.user.id,
+      action: "UPDATE",
+      entity: "User",
+      entityId: userId,
+      changes: { field: "passwordHash", reset: true, targetEmail: target.email },
+    },
+  });
+
+  return { id: target.id, name: target.name, email: target.email };
 }
 
 /**
