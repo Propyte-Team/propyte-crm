@@ -8,7 +8,7 @@
 >
 > **Pendientes que dependen de Luis:**
 > - [ ] **Cambiar la contraseña de Felipe** (`fluksic@propyte.com`). Estaba en texto plano en la descripción del PR #6 de `Propyte_hub`; ya la retiré de ahí, **pero GitHub conserva el historial de ediciones**, así que sigue siendo recuperable. Se cambia desde `/admin` del CRM (botón de llave) — y como el Hub lee la misma tabla, queda cambiada en los dos sitios.
-> - [ ] **Confirmar el cierre del PR #6 de `Propyte_hub`** (password recovery + magic link). Decidido descartarlo: 841 commits atrás de main y el reset manual ya cubre la necesidad. La rama `feat/auth-recovery-magic-link` se queda en GitHub, el trabajo no se pierde.
+> - [x] **PR #6 de `Propyte_hub` CERRADO** (2026-08-18) sin mergear — password recovery + magic link. El reset manual desde /admin del CRM ya cubre la necesidad (misma tabla de usuarios). Rama `feat/auth-recovery-magic-link` intacta en GitHub.
 >
 > **Pendientes técnicos (ninguno urgente):**
 > - [ ] **Sembrar los 17 permisos** (`npm run seed:permissions`, o SQL). Tablas `role_permissions`/`user_permission_overrides` en prod y VACÍAS. Nadie las lee todavía. El `.env` local NO tiene `DATABASE_URL`: hay que correrlo desde el servidor.
