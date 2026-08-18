@@ -1,11 +1,27 @@
 # Task Manager — propyte-crm (núcleo CRM + Google Workspace)
 
-> Última actualización: 2026-08-11 (diagnóstico bug crear usuario en /admin — ZodError null en phone/SEDETUS).
+> Última actualización: 2026-08-18 (moderador de permisos fase 0 en prod · blindaje de ADMIN · propietario).
+>
+> ## 🔐 Sesión 2026-08-17/18 — Moderador de permisos (main = `a02fce7e`)
+>
+> **En producción:** PR #12 (MARKETING gestiona comentarios sin ser ADMIN, en uso real) · PR #13 (botón de llave para restablecer contraseñas) · PR #14 (fase 0 del moderador, **sin consumidores a propósito**) · PR #15 (blindaje de ADMIN + propietario) · PR #16 (`config.actividad`→`config.sistema`) · PR #17 (inventario de la fase 1).
+>
+> **Pendientes que dependen de Luis:**
+> - [ ] **Cambiar la contraseña de Felipe** (`fluksic@propyte.com`). Estaba en texto plano en la descripción del PR #6 de `Propyte_hub`; ya la retiré de ahí, **pero GitHub conserva el historial de ediciones**, así que sigue siendo recuperable. Se cambia desde `/admin` del CRM (botón de llave) — y como el Hub lee la misma tabla, queda cambiada en los dos sitios.
+> - [ ] **Confirmar el cierre del PR #6 de `Propyte_hub`** (password recovery + magic link). Decidido descartarlo: 841 commits atrás de main y el reset manual ya cubre la necesidad. La rama `feat/auth-recovery-magic-link` se queda en GitHub, el trabajo no se pierde.
+>
+> **Pendientes técnicos (ninguno urgente):**
+> - [ ] **Sembrar los 17 permisos** (`npm run seed:permissions`, o SQL). Tablas `role_permissions`/`user_permission_overrides` en prod y VACÍAS. Nadie las lee todavía. El `.env` local NO tiene `DATABASE_URL`: hay que correrlo desde el servidor.
+> - [ ] **Decisión 1 de la fase 1, YA TOMADA pero NO implementada:** `can()` debe leer `role` e `isActive` de la base, no del JWT. Hoy desactivar una cuenta no le quita permisos hasta que expire su token.
+> - [ ] **Decisión 3 de la fase 1:** ¿estrechar `updateSystemConfig` a una lista blanca de claves? Hoy acepta cualquiera (round-robin, umbral de CAPI…).
+> - [ ] Prerrequisitos menores antes de la fase 1: alinear `connectors/health/route.ts` (única ruta de conectores sin MARKETING) · cachear `rol→permisos` en `can()` (hoy 1 consulta por permiso) · anclar las 7 filas de `LEGACY_ROLE_LISTS` que siguen siendo transcripción a mano.
+>
+> **Nota:** hay **CERO usuarios con rol DIRECTOR**. 8 activos: 3 ADMIN, 2 MARKETING (uno es una pantalla), 1 GERENTE (Karla), 2 bot/QA. Detalle en la memoria `project_permisos_crm_estado`.
 >
 > ## 🔭 Pendientes activos (top)
 > - [x] **BUG /admin crear usuario — RESUELTO** ✅ 2026-08-11 (commit `996e08f5`, push autorizado por Luis): `createUserSchema` → `.nullable().optional()` en phone/sedetusNumber/sedetusExpiry/teamLeaderId (el form manda `null` en vacíos y `.optional()` solo lo rechazaba en create, no en update) + dialog traduce Team Leader `"none"`→null (FK violation en create/update). Build verde + 1,486 tests PASS. Evidencia del bug: ZodError en `hbuilds/current/nodejs/console.log` (2026-08-11T14:43Z). Pendiente: smoke en prod (crear usuario con Teléfono/SEDETUS vacíos). Nota: rama remota `feat/admin-user-lifecycle` (otra sesión) podría retrabajar esta zona. Ver memoria `feedback_crm_admin_createuser_zod_null`.
 > - [ ] **GW-1 Gmail** — enviar desde el CRM + auto-log entrantes/salientes + hilos, todo en `ActivityLog`. Pieza grande restante de Entregable B. (yo: código+migración por MCP; Luis: tópico Pub/Sub en GCP, o arrancamos con cron de respaldo)
-> - [ ] **Luis: verificar SMTP** (forgot-password) y **cambiar la contraseña temporal** `PropyteTmp2026!` de marketing@nativatulum.mx.
+> - [ ] **Luis: verificar SMTP** (forgot-password) y **cambiar la contraseña temporal** `<credencial retirada de este archivo>` de marketing@nativatulum.mx.
 > - [ ] **Luis: SMTP_USER/SMTP_PASS** (Gmail/Workspace: smtp.gmail.com:465 + App Password de cuenta Workspace) en Hostinger.
 > - [ ] Verificar `ActivityLog` en **detalle de deal** a runtime cuando exista un deal real (no verificado: pipeline en 0 deals).
 > - [ ] (Futuro, aparte) GW-2 Calendar · GW-3 Google Contacts.
@@ -25,7 +41,7 @@
 > - [ ] BUG-14 HTTP 503 intermitentes en `*?_rsc=*` — coincide con recovery de BD + queries lentas del sync Zoho
 >
 > **B. Conocido / en progreso (no abrir nuevo):**
-> - [ ] BUG-01 creds de auditoría no entran — `audit-temp@propyte.local` está **DESACTIVADO a propósito** (changelog 06-10) + sin hash. Expected. *Gap real derivado:* falta UI "reset password by admin".
+> - [ ] BUG-01 creds de auditoría no entran — `audit-temp@propyte.local` está **DESACTIVADO a propósito** (changelog 06-10) + sin hash. Expected. *Gap real derivado:* ✅ RESUELTO 2026-08-17 (PR #13) — botón de llave en /admin, solo ADMIN+DIRECTOR.
 > - [ ] BUG-02/03 forgot-password / email-code 500 — ya migrado a Nodemailer/SMTP (commit `33d6f75`); **pendiente Luis: SMTP vars + verificar**. Mismo origen ambos.
 > - [ ] BUG-19 workflows toggles inactivos — el cron `/api/cron/workflows` **no está agendado en Hostinger** (pendiente Luis ya listado). No es bug del toggle.
 >
@@ -62,7 +78,7 @@
 > - ✅ **Fix redirect callback** (commit `596720a`): usaba `req.url` → `0.0.0.0:3000` tras proxy Hostinger; ahora usa `NEXTAUTH_URL`. Ver [[feedback_proxy_redirect_req_url]].
 > - ✅ **Email transaccional Resend→Nodemailer/SMTP** (commit `33d6f75`). **SMTP = Gmail/Workspace** (smtp.gmail.com:465 + App Password), no Hostinger.
 > - 🔍 **Causa raíz de login 401 + /api/activities 500 + /configuracion crash**: caída/recovery transitorio de la BD Supabase (logs "database system is not accepting connections"). Ya recuperada. Sesiones JWT seguían vivas → confundía el diagnóstico.
-> - ⚠️ **Contraseña temporal** `PropyteTmp2026!` (reset directo en BD; pgcrypto NO casa con bcryptjs.compare → hash con bcryptjs del repo). Ver [[feedback_pgcrypto_bcryptjs_mismatch]].
+> - ⚠️ **Contraseña temporal** `<credencial retirada de este archivo>` (reset directo en BD; pgcrypto NO casa con bcryptjs.compare → hash con bcryptjs del repo). Ver [[feedback_pgcrypto_bcryptjs_mismatch]].
 >
 > **🎯 Sesión 2026-06-13 (Entregable A Actividades + Entregable B GW-0)** —
 > - ✅ **Actividades en contacto y deal** (merge a main `1e366a4`): nuevo componente B/N `ActivityLog` (compositor + timeline interactivo: registrar/completar/editar/borrar, 17 tipos), API `PATCH/DELETE /api/activities/[id]`, server `deleteActivity`, predicado RBAC `canModifyActivity`+test. Montado en `contact-detail` y `deal-detail`. Sin migración (modelo ya existía). Smoke contacto PASS.
