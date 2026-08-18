@@ -48,6 +48,70 @@ async function requirePasswordResetRole() {
   return session;
 }
 
+/**
+ * Guardia compartida por updateUser y deactivateUser. ADMIN sigue siendo el
+ * rol más alto del sistema (se usa como comodín en el resto del código); estas
+ * reglas lo protegen, no lo debilitan.
+ *
+ * @param session sesión del actor, ya validada por requireAdminRole()
+ * @param target usuario objetivo, tal como está ANTES de la operación
+ * @param opts.settingInactive true si esta llamada pondría isActive en false
+ * @param opts.settingRole el nuevo role solicitado, si la operación lo cambia
+ */
+async function assertUserMutationAllowed(
+  session: { user: { id: string; role: string } },
+  target: { id: string; role: UserRole; isActive: boolean },
+  opts: { settingInactive?: boolean; settingRole?: string } = {}
+) {
+  const actorRole = session.user.role;
+  const actorId = session.user.id;
+
+  // Regla C: si alguien pudiera desactivarse a sí mismo, quedaría fuera de su
+  // propia sesión sin que nadie más se diera cuenta ni pudiera revertirlo.
+  if (opts.settingInactive && target.id === actorId) {
+    throw new Error("No puedes desactivar tu propia cuenta");
+  }
+
+  // Regla A: solo un ADMIN puede tocar a otro ADMIN. Sin esto un DIRECTOR o
+  // GERENTE —que hoy pasan el mismo requireAdminRole()— podrían desactivar o
+  // reconfigurar a quien está por encima de ellos en la jerarquía.
+  if (target.role === "ADMIN" && actorRole !== "ADMIN") {
+    throw new Error("Solo un Administrador puede modificar a otro Administrador");
+  }
+
+  // Regla B: promover a alguien (o a sí mismo) a ADMIN exige ya ser ADMIN. Sin
+  // esto la Regla A no protege nada: cualquiera se autopromueve primero y
+  // luego ya puede tocar ADMINs con el rol recién adquirido.
+  if (opts.settingRole === "ADMIN" && actorRole !== "ADMIN") {
+    throw new Error("Solo un Administrador puede asignar el rol de Administrador");
+  }
+
+  // Regla D: no dejar el sistema sin ningún ADMIN activo, porque nadie podría
+  // volver a entrar a /admin para deshacer el error.
+  //
+  // Cuenta DESACTIVAR y también DEGRADAR: quitarle el rol al último ADMIN deja
+  // la casa igual de cerrada, y encima es irreversible — nadie podría volver a
+  // promoverlo, porque la Regla B exige ya ser ADMIN para repartir ese rol.
+  // Solo aplica si el objetivo está activo hoy: tocar a un ADMIN ya inactivo
+  // no cambia cuántos quedan.
+  const dejariaDeSerAdminActivo =
+    target.role === "ADMIN" &&
+    target.isActive &&
+    (opts.settingInactive === true ||
+      (opts.settingRole !== undefined && opts.settingRole !== "ADMIN"));
+
+  if (dejariaDeSerAdminActivo) {
+    const activeAdmins = await prisma.user.count({
+      where: { role: "ADMIN", isActive: true, deletedAt: null },
+    });
+    if (activeAdmins <= 1) {
+      throw new Error(
+        "Este es el último Administrador activo: no se puede desactivar ni cambiarle el rol"
+      );
+    }
+  }
+}
+
 // ============================================================
 // Esquemas de validación Zod
 // ============================================================
@@ -277,16 +341,25 @@ export async function updateUser(
     isActive?: boolean;
   }
 ) {
-  await requireAdminRole();
+  const session = await requireAdminRole();
 
-  // Validar datos con Zod
-  const validated = updateUserSchema.parse(data);
-
-  // Verificar que el usuario existe
+  // Verificar que el usuario existe (antes de validar con Zod: a quién se
+  // toca no debe depender de que el resto del payload tenga forma válida).
   const existing = await prisma.user.findUnique({
     where: { id, deletedAt: null },
   });
   if (!existing) throw new Error("Usuario no encontrado");
+
+  // Reglas A-D, evaluadas sobre `data` tal cual llegó (no sobre el resultado
+  // de Zod): así el candado de autorización no depende de qué valores de rol
+  // acepte hoy el esquema de validación, y sigue firme aunque eso cambie.
+  await assertUserMutationAllowed(session, existing, {
+    settingInactive: data.isActive === false,
+    settingRole: data.role,
+  });
+
+  // Validar datos con Zod
+  const validated = updateUserSchema.parse(data);
 
   // Verificar email único si se está cambiando
   if (validated.email && validated.email !== existing.email) {
@@ -376,12 +449,15 @@ export async function resetUserPassword(userId: string, password: string) {
  * Desactiva un usuario (soft deactivate, no borra).
  */
 export async function deactivateUser(id: string) {
-  await requireAdminRole();
+  const session = await requireAdminRole();
 
   const existing = await prisma.user.findUnique({
     where: { id, deletedAt: null },
   });
   if (!existing) throw new Error("Usuario no encontrado");
+
+  // Mismas reglas A, C y D que updateUser — ver assertUserMutationAllowed.
+  await assertUserMutationAllowed(session, existing, { settingInactive: true });
 
   const user = await prisma.user.update({
     where: { id },
