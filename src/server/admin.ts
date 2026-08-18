@@ -49,6 +49,31 @@ async function requirePasswordResetRole() {
 }
 
 /**
+ * Clave de `system_config` que guarda el id del "propietario": el único ADMIN
+ * que puede actuar sobre otros ADMIN.
+ *
+ * Por qué existe. Los tres administradores tienen el MISMO acceso —ADMIN es
+ * comodín en todo el código, y darle a alguien otro rol le daría menos, no una
+ * posición distinta—. La jerarquía no puede salir del rol, así que sale de
+ * aquí: todos administran el CRM por igual, y uno solo administra a los demás.
+ *
+ * Si la clave no está puesta, el sistema se comporta como antes: cualquier
+ * ADMIN puede tocar a otro ADMIN. Es deliberado — así este cambio se puede
+ * desplegar sin efecto y activarse después, y borrar la fila no deja a nadie
+ * fuera, solo vuelve al reparto plano.
+ */
+const ADMIN_OWNER_KEY = "admin_owner_user_id";
+
+/** Id del propietario, o null si no hay ninguno designado. */
+async function getAdminOwnerId(): Promise<string | null> {
+  const row = await prisma.systemConfig
+    .findUnique({ where: { key: ADMIN_OWNER_KEY } })
+    .catch(() => null);
+  const value = row?.value;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
  * Guardia compartida por updateUser y deactivateUser. ADMIN sigue siendo el
  * rol más alto del sistema (se usa como comodín en el resto del código); estas
  * reglas lo protegen, no lo debilitan.
@@ -72,11 +97,28 @@ async function assertUserMutationAllowed(
     throw new Error("No puedes desactivar tu propia cuenta");
   }
 
-  // Regla A: solo un ADMIN puede tocar a otro ADMIN. Sin esto un DIRECTOR o
-  // GERENTE —que hoy pasan el mismo requireAdminRole()— podrían desactivar o
-  // reconfigurar a quien está por encima de ellos en la jerarquía.
+  // Regla A: quién puede tocar a un ADMIN.
+  //
+  // Piso: hay que ser ADMIN. Sin esto un DIRECTOR o GERENTE —que pasan el
+  // mismo requireAdminRole()— podría desactivar a quien está por encima.
   if (target.role === "ADMIN" && actorRole !== "ADMIN") {
     throw new Error("Solo un Administrador puede modificar a otro Administrador");
+  }
+
+  // Techo: si hay un propietario designado, es el ÚNICO que puede actuar sobre
+  // un ADMIN — ni siquiera los otros ADMIN, y tampoco entre ellos. Todos
+  // administran el CRM igual; solo uno administra a los administradores.
+  //
+  // Tocarse a uno mismo se permite: el propietario no debe quedar atrapado sin
+  // poder editar su propio nombre o teléfono. Desactivarse sigue prohibido por
+  // la Regla C, y quedarse sin ADMIN activos por la Regla D.
+  if (target.role === "ADMIN" && target.id !== actorId) {
+    const ownerId = await getAdminOwnerId();
+    if (ownerId && actorId !== ownerId) {
+      throw new Error(
+        "Solo el Administrador propietario puede modificar a otro Administrador"
+      );
+    }
   }
 
   // Regla B: promover a alguien (o a sí mismo) a ADMIN exige ya ser ADMIN. Sin
@@ -588,10 +630,27 @@ export async function getSystemConfig() {
  * Actualiza o crea una entrada de configuración del sistema (upsert).
  */
 export async function updateSystemConfig(key: string, value: unknown) {
-  await requireAdminRole();
+  const session = await requireAdminRole();
 
   if (!key || typeof key !== "string") {
     throw new Error("La clave de configuración es requerida");
+  }
+
+  // La clave del propietario se protege a sí misma: solo el propietario actual
+  // puede cambiarla. Sin esto la Regla A no valdría nada — cualquier ADMIN se
+  // nombraría propietario y recuperaría el poder de tocar a los demás.
+  //
+  // Mientras no haya propietario, cualquier ADMIN puede designar al primero:
+  // es la única forma de arrancar. Los roles no-ADMIN nunca pueden, aunque
+  // requireAdminRole() los haya dejado pasar.
+  if (key === ADMIN_OWNER_KEY) {
+    if (session.user.role !== "ADMIN") {
+      throw new Error("Solo un Administrador puede designar al propietario");
+    }
+    const ownerId = await getAdminOwnerId();
+    if (ownerId && session.user.id !== ownerId) {
+      throw new Error("Solo el propietario actual puede transferir la propiedad");
+    }
   }
 
   const config = await prisma.systemConfig.upsert({

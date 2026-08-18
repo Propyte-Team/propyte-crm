@@ -9,6 +9,8 @@ vi.mock("@/lib/auth/session", () => ({ getServerSession: async () => session }))
 const userFindUnique = vi.fn();
 const userUpdate = vi.fn();
 const userCount = vi.fn();
+const configFindUnique = vi.fn();
+const configUpsert = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     user: {
@@ -16,10 +18,14 @@ vi.mock("@/lib/db", () => ({
       update: (...a: unknown[]) => userUpdate(...a),
       count: (...a: unknown[]) => userCount(...a),
     },
+    systemConfig: {
+      findUnique: (...a: unknown[]) => configFindUnique(...a),
+      upsert: (...a: unknown[]) => configUpsert(...a),
+    },
   },
 }));
 
-import { deactivateUser, updateUser } from "./admin";
+import { deactivateUser, updateUser, updateSystemConfig } from "./admin";
 
 // Objetivos de prueba reutilizables. isActive siempre parte en true salvo que
 // el caso lo cambie explícitamente.
@@ -27,7 +33,10 @@ const ADMIN_TARGET = { id: "admin-2", name: "Otro Admin", email: "admin2@nativat
 const ASESOR_TARGET = { id: "asesor-1", name: "Asesor Uno", email: "asesor@nativatulum.mx", role: "ASESOR_SR", isActive: true };
 
 beforeEach(() => {
-  for (const m of [userFindUnique, userUpdate, userCount]) m.mockReset();
+  for (const m of [userFindUnique, userUpdate, userCount, configFindUnique, configUpsert]) m.mockReset();
+  // Sin propietario designado por defecto: el reparto plano de siempre.
+  configFindUnique.mockResolvedValue(null);
+  configUpsert.mockImplementation(async (a: { create: unknown }) => a.create);
   session.user.role = "DIRECTOR";
   session.user.id = "actor-1";
   // Por defecto hay varios ADMIN activos: la Regla D solo debe dispararse en
@@ -238,5 +247,118 @@ describe("No filtra información de más", () => {
     userCount.mockResolvedValue(1);
 
     await expect(deactivateUser(ADMIN_TARGET.id)).rejects.toThrow(/^Solo un Administrador puede modificar a otro Administrador$/);
+  });
+});
+
+// El caso de Luis: tres ADMIN con el MISMO acceso al CRM, pero uno solo puede
+// administrar a los otros dos. La jerarquía no puede salir del rol —ADMIN es
+// comodín, y cualquier otro rol les daría menos acceso, no una posición
+// distinta—, así que sale de una clave de system_config.
+describe("Propietario — un solo ADMIN puede tocar a los demás ADMIN", () => {
+  const PROPIETARIO = "luis-1";
+  const OTRO_ADMIN = { id: "conrad-1", name: "Conrad", email: "conrad@propyte.com", role: "ADMIN", isActive: true };
+
+  function conPropietario(id: string) {
+    configFindUnique.mockResolvedValue({ key: "admin_owner_user_id", value: id });
+  }
+
+  it("sin propietario designado, cualquier ADMIN puede tocar a otro (comportamiento previo)", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    userFindUnique.mockResolvedValue({ ...OTRO_ADMIN, id: "fluksic-1" });
+    configFindUnique.mockResolvedValue(null);
+
+    await expect(updateUser("fluksic-1", { name: "Felipe" })).resolves.toBeTruthy();
+  });
+
+  it("con propietario, un ADMIN cualquiera NO puede tocar a otro ADMIN", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    userFindUnique.mockResolvedValue({ ...OTRO_ADMIN, id: "fluksic-1" });
+    conPropietario(PROPIETARIO);
+
+    await expect(updateUser("fluksic-1", { name: "Felipe" })).rejects.toThrow(/propietario/i);
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("con propietario, un ADMIN cualquiera NO puede desactivar a otro ADMIN", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    userFindUnique.mockResolvedValue({ ...OTRO_ADMIN, id: "fluksic-1" });
+    conPropietario(PROPIETARIO);
+
+    await expect(deactivateUser("fluksic-1")).rejects.toThrow(/propietario/i);
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("el propietario sí puede desactivar a otro ADMIN", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = PROPIETARIO;
+    userFindUnique.mockResolvedValue(OTRO_ADMIN);
+    conPropietario(PROPIETARIO);
+
+    await expect(deactivateUser(OTRO_ADMIN.id)).resolves.toBeTruthy();
+  });
+
+  it("un ADMIN no propietario sigue pudiendo editarse a sí mismo", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    userFindUnique.mockResolvedValue({ ...OTRO_ADMIN, id: "conrad-1" });
+    conPropietario(PROPIETARIO);
+
+    await expect(updateUser("conrad-1", { phone: "+52 998 000 0000" })).resolves.toBeTruthy();
+  });
+
+  it("un ADMIN no propietario sigue administrando el resto del CRM (edita a un ASESOR)", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    userFindUnique.mockResolvedValue(ASESOR_TARGET);
+    conPropietario(PROPIETARIO);
+
+    await expect(updateUser(ASESOR_TARGET.id, { name: "Asesor Editado" })).resolves.toBeTruthy();
+  });
+});
+
+describe("La clave del propietario se protege a sí misma", () => {
+  it("un ADMIN que no es el propietario no puede robársela", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    configFindUnique.mockResolvedValue({ key: "admin_owner_user_id", value: "luis-1" });
+
+    await expect(updateSystemConfig("admin_owner_user_id", "conrad-1")).rejects.toThrow(/propietario actual/i);
+    expect(configUpsert).not.toHaveBeenCalled();
+  });
+
+  it("el propietario sí puede transferirla", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "luis-1";
+    configFindUnique.mockResolvedValue({ key: "admin_owner_user_id", value: "luis-1" });
+
+    await expect(updateSystemConfig("admin_owner_user_id", "conrad-1")).resolves.toBeTruthy();
+  });
+
+  it("sin propietario, cualquier ADMIN puede designar al primero (arranque)", async () => {
+    session.user.role = "ADMIN";
+    session.user.id = "conrad-1";
+    configFindUnique.mockResolvedValue(null);
+
+    await expect(updateSystemConfig("admin_owner_user_id", "luis-1")).resolves.toBeTruthy();
+  });
+
+  it("un GERENTE nunca puede designar propietario, aunque no haya ninguno", async () => {
+    session.user.role = "GERENTE";
+    session.user.id = "gerente-1";
+    configFindUnique.mockResolvedValue(null);
+
+    await expect(updateSystemConfig("admin_owner_user_id", "gerente-1")).rejects.toThrow(/administrador/i);
+    expect(configUpsert).not.toHaveBeenCalled();
+  });
+
+  it("las demás claves de configuración siguen abiertas al rol de administración", async () => {
+    session.user.role = "GERENTE";
+    session.user.id = "gerente-1";
+
+    await expect(updateSystemConfig("activity_agreement", { minDailyCalls: 10 })).resolves.toBeTruthy();
+    expect(configUpsert).toHaveBeenCalled();
   });
 });
