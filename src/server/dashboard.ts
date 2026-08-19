@@ -4,6 +4,7 @@
 // ============================================================
 
 import prisma from "@/lib/db"
+import { realLeadWhere } from "@/lib/leads/real-leads";
 import { getServerSession } from "@/lib/auth/session"
 import { DealStage, Prisma } from "@prisma/client"
 import { PIPELINE_STAGES } from "@/lib/constants"
@@ -146,9 +147,10 @@ export async function getDashboardStats(
       where: { ...dealBaseWhere, stage: { in: activeStages } },
       select: { estimatedValue: true, probability: true },
     }),
-    // Leads nuevos este mes
+    // Leads nuevos este mes. Los provisionales de comentarios que nunca
+    // contestaron no cuentan: se los escribimos nosotros.
     prisma.contact.count({
-      where: {
+      where: realLeadWhere({
         createdAt: { gte: monthStart },
         deletedAt: null,
         ...(dealBaseWhere.assignedToId
@@ -156,11 +158,11 @@ export async function getDashboardStats(
           : dealBaseWhere.assignedTo
           ? { assignedTo: dealBaseWhere.assignedTo as any }
           : {}),
-      },
+      }),
     }),
     // Leads nuevos mes anterior (para tendencia)
     prisma.contact.count({
-      where: {
+      where: realLeadWhere({
         createdAt: { gte: prevMonthStart, lte: prevMonthEnd },
         deletedAt: null,
         ...(dealBaseWhere.assignedToId
@@ -168,7 +170,7 @@ export async function getDashboardStats(
           : dealBaseWhere.assignedTo
           ? { assignedTo: dealBaseWhere.assignedTo as any }
           : {}),
-      },
+      }),
     }),
     // Comisiones pendientes
     prisma.deal.aggregate({

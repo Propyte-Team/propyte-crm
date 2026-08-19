@@ -24,6 +24,7 @@ const RULE = {
   isActive: true,
   priority: 100,
   phrases: ["info"],
+  excludePhrases: [] as string[],
   postFilter: [],
   publicReplies: ["Te escribo al DM 📩", "Ya te mandé privado 📩"],
   dmTemplate: "Hola {{usuario}}, aquí va la info.",
@@ -55,6 +56,7 @@ describe("POST /api/admin/comment-rules/test", () => {
         dmText: "Hola luisf, aquí va la info.",
       },
       pausedMatch: null,
+      excluded: null,
     });
   });
 
@@ -71,13 +73,14 @@ describe("POST /api/admin/comment-rules/test", () => {
     expect(await res.json()).toEqual({
       match: null,
       pausedMatch: { ruleId: "rule-1", ruleName: "Info Tulum", phrase: "info" },
+      excluded: null,
     });
   });
 
   it("sin ninguna coincidencia devuelve match y pausedMatch en null", async () => {
     ruleFindMany.mockResolvedValue([RULE]);
     const res = await POST(req({ connectorId: "conn-ig", commentText: "qué bonito" }));
-    expect(await res.json()).toEqual({ match: null, pausedMatch: null });
+    expect(await res.json()).toEqual({ match: null, pausedMatch: null, excluded: null });
   });
 
   it("400 sin texto de comentario", async () => {
@@ -93,5 +96,44 @@ describe("POST /api/admin/comment-rules/test", () => {
     session.user.role = "MARKETING";
     ruleFindMany.mockResolvedValue([RULE]);
     expect((await POST(req({ connectorId: "conn-ig", commentText: "info" }))).status).toBe(200);
+  });
+});
+
+describe("probador — negativas", () => {
+  it("dice qué negativa vetó a la regla que habría ganado", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, excludePhrases: ["arquitectura"] }]);
+    const res = await POST(req({ connectorId: "conn-ig", commentText: "info de arquitectura" }));
+    const body = await res.json();
+    expect(body.match).toBeNull();
+    expect(body.excluded).toEqual({
+      ruleId: "rule-1",
+      ruleName: "Info Tulum",
+      phrase: "info",
+      excludedBy: "arquitectura",
+    });
+  });
+
+  it("cuando la regla sí dispara, excluded viene en null", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, excludePhrases: ["arquitectura"] }]);
+    const res = await POST(req({ connectorId: "conn-ig", commentText: "info porfa" }));
+    const body = await res.json();
+    expect(body.match?.phrase).toBe("info");
+    expect(body.excluded).toBeNull();
+  });
+
+  it("sin coincidencia ninguna, excluded también es null", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, excludePhrases: ["arquitectura"] }]);
+    const res = await POST(req({ connectorId: "conn-ig", commentText: "qué bonito" }));
+    const body = await res.json();
+    expect(body.match).toBeNull();
+    expect(body.excluded).toBeNull();
+  });
+
+  it("una regla EN PAUSA vetada no se reporta como veto activo", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, isActive: false, excludePhrases: ["arquitectura"] }]);
+    const res = await POST(req({ connectorId: "conn-ig", commentText: "info de arquitectura" }));
+    const body = await res.json();
+    expect(body.excluded).toBeNull();
+    expect(body.pausedMatch).toBeNull();
   });
 });

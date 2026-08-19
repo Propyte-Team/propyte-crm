@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { normalize } from "@/lib/comments/match";
 import { commentRuleUpdateSchema } from "@/server/comment-rules.schema";
+import { normalizeExclusions, findSelfVeto } from "@/lib/comments/exclusions";
 import { canManageCommentRules } from "@/lib/comments/roles";
 
 async function assertRole() {
@@ -33,7 +34,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const current = await prisma.commentRule.findFirst({
     where: { id: params.id, deletedAt: null },
-    select: { id: true, connectorId: true, phrases: true },
+    select: { id: true, connectorId: true, phrases: true, excludePhrases: true },
   });
   if (!current) return NextResponse.json({ error: "Regla no encontrada" }, { status: 404 });
 
@@ -42,6 +43,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     : current.phrases;
   if (phrases.length === 0) {
     return NextResponse.json({ error: "Las frases quedaron vacías al normalizar" }, { status: 400 });
+  }
+
+  // Las negativas se validan contra las frases EFECTIVAS: si el PATCH solo
+  // trae una de las dos listas, la otra es la que ya estaba guardada. Sin esto,
+  // agregar la negativa "info" a una regla cuya frase es "info" la dejaría
+  // muerta desde la edición, aunque el POST sí lo rechace.
+  const excludePhrases =
+    parsed.data.excludePhrases !== undefined
+      ? normalizeExclusions(parsed.data.excludePhrases)
+      : (current.excludePhrases ?? []);
+  const selfVeto = findSelfVeto(phrases, excludePhrases);
+  if (selfVeto) {
+    return NextResponse.json(
+      {
+        error: `La negativa "${selfVeto}" es idéntica a una frase de la misma regla: nunca dispararía`,
+      },
+      { status: 400 }
+    );
   }
 
   // La colisión solo importa entre reglas ACTIVAS de la misma cuenta.
@@ -72,6 +91,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       data: {
         ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
         ...(parsed.data.phrases !== undefined ? { phrases } : {}),
+        ...(parsed.data.excludePhrases !== undefined ? { excludePhrases } : {}),
+        ...(parsed.data.dailyCap !== undefined ? { dailyCap: parsed.data.dailyCap } : {}),
         ...(parsed.data.publicReplies !== undefined
           ? { publicReplies: parsed.data.publicReplies }
           : {}),

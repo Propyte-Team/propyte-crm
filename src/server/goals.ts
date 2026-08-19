@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { monthRange, computeGoalProgress, type GoalStatus } from "@/lib/goals/progress";
+import { realLeadWhere } from "@/lib/leads/real-leads";
 
 type Scope = "USER" | "TEAM" | "COMPANY";
 type Metric =
@@ -33,7 +34,7 @@ export async function computeActual(input: {
   switch (input.metric) {
     case "CAPTACIONES":
       return prisma.contact.count({
-        where: { deletedAt: null, createdAt: { gte: start, lt: end }, ...(ownerIn ? { assignedToId: ownerIn } : {}) },
+        where: realLeadWhere({ deletedAt: null, createdAt: { gte: start, lt: end }, ...(ownerIn ? { assignedToId: ownerIn } : {}) }),
       });
     case "NEGOCIOS_CREADOS":
       return prisma.deal.count({

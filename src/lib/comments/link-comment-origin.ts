@@ -47,7 +47,7 @@ const DEFAULT_FIRST_NAME: Record<Platform, string> = {
 //   2) queda filtrable y reportable en el CRM.
 // NO se limpia al enrutar: es dato de procedencia, no un flag de estado. El
 // candado contra el re-enrutado es tener dueño, no la marca.
-const COMMENT_ORIGIN_PREFIX = "comentario:";
+export const COMMENT_ORIGIN_PREFIX = "comentario:";
 
 /** `leadSourceDetail` de un contacto nacido de un comentario en `postId`. */
 export function commentOriginDetail(postId: string): string {

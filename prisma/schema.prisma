@@ -2672,15 +2672,19 @@ enum CommentActionStatus {
 }
 
 model CommentRule {
-  id            String   @id @default(uuid())
-  name          String
-  connectorId   String
-  isActive      Boolean  @default(false)
-  priority      Int      @default(100)
-  phrases       String[]
-  publicReplies String[]
-  dmTemplate    String   @db.Text
-  postFilter    String[] @default([])
+  id             String   @id @default(uuid())
+  name           String
+  connectorId    String
+  isActive       Boolean  @default(false)
+  priority       Int      @default(100)
+  phrases        String[]
+  // Negativas: si alguna aparece en el comentario la regla NO dispara.
+  excludePhrases String[] @default([])
+  // Tope de actuaciones de la regla en una ventana deslizante de 24 h.
+  dailyCap       Int      @default(200)
+  publicReplies  String[]
+  dmTemplate     String   @db.Text
+  postFilter     String[] @default([])
 
   connector LeadConnector    @relation(fields: [connectorId], references: [id])
   logs      CommentRuleLog[]

@@ -14,6 +14,7 @@ import type { ConnectorOption } from "./comment-rule-dialog";
 interface TestResult {
   match: { ruleName: string; phrase: string; publicText: string; dmText: string } | null;
   pausedMatch: { ruleName: string; phrase: string } | null;
+  excluded: { ruleName: string; phrase: string; excludedBy: string } | null;
 }
 
 export function CommentRuleTester({ connectors }: { connectors: ConnectorOption[] }) {
@@ -97,6 +98,12 @@ export function CommentRuleTester({ connectors }: { connectors: ConnectorOption[
                 <p><span className="font-medium">Respuesta pública:</span> {result.match.publicText}</p>
                 <p><span className="font-medium">DM:</span> {result.match.dmText}</p>
               </>
+            ) : result.excluded ? (
+              <p className="text-muted-foreground">
+                La regla <strong>{result.excluded.ruleName}</strong> coincidió con
+                &quot;{result.excluded.phrase}&quot; pero la descartó su negativa{" "}
+                <strong>&quot;{result.excluded.excludedBy}&quot;</strong>. No se contestaría nada.
+              </p>
             ) : result.pausedMatch ? (
               <p className="text-muted-foreground">
                 Ninguna regla activa coincide, pero la regla <strong>en pausa</strong>{" "}

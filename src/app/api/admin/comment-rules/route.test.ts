@@ -140,3 +140,42 @@ describe("acceso por rol", () => {
     expect(ruleCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/admin/comment-rules — negativas y tope", () => {
+  it("guarda las negativas normalizadas y sin duplicados", async () => {
+    const res = await POST(req({ ...VALID, excludePhrases: ["Arquitectura", "ARQUITECTURA", "Bróker"] }));
+    expect(res.status).toBe(201);
+    expect(ruleCreate.mock.calls[0][0].data.excludePhrases).toEqual(["arquitectura", "broker"]);
+  });
+
+  it("sin negativas guarda un arreglo vacío, no undefined", async () => {
+    await POST(req(VALID));
+    expect(ruleCreate.mock.calls[0][0].data.excludePhrases).toEqual([]);
+  });
+
+  it("400 si una negativa es idéntica a una de sus propias frases: la regla nunca dispararía", async () => {
+    const res = await POST(req({ ...VALID, excludePhrases: ["info"] }));
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain("info");
+    expect(ruleCreate).not.toHaveBeenCalled();
+  });
+
+  it("una negativa que solo CONTIENE la frase sí se permite: acota, no apaga", async () => {
+    const res = await POST(req({ ...VALID, excludePhrases: ["ya no hay info"] }));
+    expect(res.status).toBe(201);
+  });
+
+  it("guarda el tope diario que le manden", async () => {
+    await POST(req({ ...VALID, dailyCap: 40 }));
+    expect(ruleCreate.mock.calls[0][0].data.dailyCap).toBe(40);
+  });
+
+  it("sin tope explícito aplica el de fábrica (200)", async () => {
+    await POST(req(VALID));
+    expect(ruleCreate.mock.calls[0][0].data.dailyCap).toBe(200);
+  });
+
+  it("400 si el tope es negativo", async () => {
+    expect((await POST(req({ ...VALID, dailyCap: -1 }))).status).toBe(400);
+  });
+});

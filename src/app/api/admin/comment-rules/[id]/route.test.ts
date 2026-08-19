@@ -103,3 +103,25 @@ describe("acceso por rol", () => {
     expect(ruleUpdate).not.toHaveBeenCalled();
   });
 });
+
+describe("PATCH /api/admin/comment-rules/[id] — negativas y tope", () => {
+  it("guarda las negativas normalizadas y el tope nuevo", async () => {
+    const res = await PATCH(req({ excludePhrases: ["ARQUITECTURA"], dailyCap: 25 }), ctx());
+    expect(res.status).toBe(200);
+    expect(ruleUpdate.mock.calls[0][0].data).toMatchObject({
+      excludePhrases: ["arquitectura"],
+      dailyCap: 25,
+    });
+  });
+
+  it("400 si la negativa nueva es idéntica a una frase YA guardada", async () => {
+    const res = await PATCH(req({ excludePhrases: ["info"] }), ctx());
+    expect(res.status).toBe(400);
+    expect(ruleUpdate).not.toHaveBeenCalled();
+  });
+
+  it("no toca las negativas si el PATCH no las manda", async () => {
+    await PATCH(req({ priority: 5 }), ctx());
+    expect(ruleUpdate.mock.calls[0][0].data).not.toHaveProperty("excludePhrases");
+  });
+});

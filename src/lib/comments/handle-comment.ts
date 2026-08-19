@@ -1,8 +1,9 @@
 // Orquestación de un comentario entrante: descartes → idempotencia → match →
-// cuota → log → respuesta pública y DM privado (independientes entre sí).
+// negativas → cuota → tope diario → log → respuesta pública y DM privado
+// (independientes entre sí).
 import prisma from "@/lib/db";
 import type { IncomingComment } from "./parse";
-import { matchRule } from "./match";
+import { matchRule, findExclusion } from "./match";
 import { renderTemplate, pickVariant } from "./template";
 import { replyToComment, sendPrivateReply } from "./graph";
 import {
@@ -18,7 +19,9 @@ export type CommentOutcome =
   | "anidado"
   | "duplicado"
   | "sin-match"
+  | "excluido"
   | "cuota"
+  | "tope-diario"
   | "sin-token"
   | "procesado";
 
@@ -72,14 +75,8 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
   const rules = await prisma.commentRule.findMany({
     where: { connectorId: connector.id, isActive: true, deletedAt: null },
   });
-  const match = matchRule(rules, comment.text, comment.postId);
-  if (!match) return { status: "sin-match" };
-
-  const vars = { usuario: comment.authorHandle };
-  const dmText = renderTemplate(match.rule.dmTemplate, vars);
-
-  const base = {
-    ruleId: match.rule.id,
+  const baseLog = (ruleId: string, matchedPhrase: string) => ({
+    ruleId,
     connectorId: connector.id,
     platform: comment.platform,
     externalCommentId: comment.externalCommentId,
@@ -87,8 +84,33 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
     authorId: comment.authorId,
     authorHandle: comment.authorHandle,
     commentText: comment.text.slice(0, 2000),
-    matchedPhrase: match.phrase,
-  };
+    matchedPhrase,
+  });
+
+  const match = matchRule(rules, comment.text, comment.postId);
+  if (!match) {
+    // Una regla que SI coincidio pero la veto una de sus negativas deja
+    // registro. Sin el, una negativa mal puesta se ve identica a no tener
+    // ninguna regla y el silencio no se puede depurar sin leer la base. Los
+    // comentarios que simplemente no coinciden -la enorme mayoria- siguen sin
+    // escribir nada: el log es para lo que estuvo a punto de contestarse.
+    const veto = findExclusion(rules, comment.text, comment.postId);
+    if (!veto) return { status: "sin-match" };
+    const log = await prisma.commentRuleLog.create({
+      data: {
+        ...baseLog(veto.rule.id, veto.phrase),
+        publicReplyStatus: "SKIPPED",
+        publicReplyError: `Descartado por la negativa "${veto.excludedBy}"`,
+        dmStatus: "SKIPPED",
+      },
+    });
+    return { status: "excluido", logId: log.id };
+  }
+
+  const vars = { usuario: comment.authorHandle };
+  const dmText = renderTemplate(match.rule.dmTemplate, vars);
+
+  const base = baseLog(match.rule.id, match.phrase);
 
   // Cuota: una respuesta por persona por publicación.
   const previous = await prisma.commentRuleLog.findFirst({
@@ -99,6 +121,33 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
       data: { ...base, publicReplyStatus: "SKIPPED", dmStatus: "SKIPPED" },
     });
     return { status: "cuota", logId: log.id };
+  }
+
+  // Tope diario por regla. La cuota de arriba es por persona y publicacion,
+  // asi que una publicacion que se vuelve viral podia disparar cientos de DMs
+  // en una tarde: inbox saturado y rate limit de Meta. Ventana deslizante de
+  // 24 h a proposito, para no depender de la zona horaria del servidor ni
+  // regalar el tope entero al cruzar la medianoche UTC.
+  if (match.rule.dailyCap && match.rule.dailyCap > 0) {
+    const desde = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const enviados = await prisma.commentRuleLog.count({
+      where: {
+        ruleId: match.rule.id,
+        createdAt: { gte: desde },
+        OR: [{ publicReplyStatus: "SENT" }, { dmStatus: "SENT" }],
+      },
+    });
+    if (enviados >= match.rule.dailyCap) {
+      const log = await prisma.commentRuleLog.create({
+        data: {
+          ...base,
+          publicReplyStatus: "SKIPPED",
+          publicReplyError: `Tope diario de la regla alcanzado (${match.rule.dailyCap} en 24 h)`,
+          dmStatus: "SKIPPED",
+        },
+      });
+      return { status: "tope-diario", logId: log.id };
+    }
   }
 
   const token = getSocialPageToken(connector);

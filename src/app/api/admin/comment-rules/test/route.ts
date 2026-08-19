@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { matchRule } from "@/lib/comments/match";
+import { matchRule, findExclusion } from "@/lib/comments/match";
 import { renderTemplate, pickVariant } from "@/lib/comments/template";
 import { canManageCommentRules } from "@/lib/comments/roles";
 
@@ -37,17 +37,28 @@ export async function POST(req: NextRequest) {
   const hit = matchRule(active, commentText, postId);
 
   if (!hit) {
-    // Nada activo coincide: decir si una pausada lo habría hecho ahorra el
-    // "¿por qué no disparó?" que si no se contesta leyendo la base.
+    // Nada activo coincide. Las dos explicaciones posibles se devuelven juntas
+    // porque contestan el mismo "¿por qué no disparó?": una regla en pausa que
+    // sí habría ganado, o una activa que ganó y se cayó por una negativa. Sin
+    // la segunda, una negativa mal puesta se ve idéntica a no tener regla.
     const paused = matchRule(
       rules.filter((r) => !r.isActive),
       commentText,
       postId
     );
+    const veto = findExclusion(active, commentText, postId);
     return NextResponse.json({
       match: null,
       pausedMatch: paused
         ? { ruleId: paused.rule.id, ruleName: paused.rule.name, phrase: paused.phrase }
+        : null,
+      excluded: veto
+        ? {
+            ruleId: veto.rule.id,
+            ruleName: veto.rule.name,
+            phrase: veto.phrase,
+            excludedBy: veto.excludedBy,
+          }
         : null,
     });
   }
@@ -67,5 +78,6 @@ export async function POST(req: NextRequest) {
       dmText: renderTemplate(hit.rule.dmTemplate, vars),
     },
     pausedMatch: null,
+    excluded: null,
   });
 }

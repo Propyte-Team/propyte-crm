@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { normalize, containsPhrase, matchRule, type CommentRuleLike } from "./match";
+import { normalize, containsPhrase, matchRule, findExclusion, type CommentRuleLike } from "./match";
 
 function rule(over: Partial<CommentRuleLike> = {}): CommentRuleLike {
   return {
     id: "r1",
     priority: 100,
     phrases: ["info"],
+    excludePhrases: [],
     postFilter: [],
     createdAt: new Date("2026-01-01T00:00:00Z"),
     ...over,
@@ -114,5 +115,58 @@ describe("matchRule", () => {
     const withExtra = [{ ...rule(), dmTemplate: "x" }];
     const out = matchRule(withExtra, "info", "POST-1");
     expect(out?.rule.dmTemplate).toBe("x");
+  });
+});
+
+describe("matchRule con exclusiones", () => {
+  it("una frase excluida veta la regla aunque la palabra clave esté presente", () => {
+    const r = rule({ phrases: ["info"], excludePhrases: ["arquitectura"] });
+    expect(matchRule([r], "info de tu estudio de arquitectura", "p1")).toBeNull();
+  });
+
+  it("la exclusión solo veta a su propia regla: la siguiente sí puede ganar", () => {
+    const vetada = rule({ id: "a", priority: 1, phrases: ["info"], excludePhrases: ["arquitectura"] });
+    const libre = rule({ id: "b", priority: 2, phrases: ["info"] });
+    const hit = matchRule([vetada, libre], "info de arquitectura", "p1");
+    expect(hit?.rule.id).toBe("b");
+  });
+
+  it("la exclusión exige palabra completa, igual que las frases", () => {
+    const r = rule({ phrases: ["info"], excludePhrases: ["venta"] });
+    expect(matchRule([r], "info de la ventana", "p1")?.phrase).toBe("info");
+    expect(matchRule([r], "info, sigue en venta?", "p1")).toBeNull();
+  });
+
+  it("basta UNA exclusión de la lista para vetar", () => {
+    const r = rule({ phrases: ["info"], excludePhrases: ["broker", "arquitectura"] });
+    expect(matchRule([r], "info, soy broker", "p1")).toBeNull();
+  });
+
+  it("una exclusión que no aparece no cambia nada", () => {
+    const r = rule({ phrases: ["info"], excludePhrases: ["arquitectura"] });
+    expect(matchRule([r], "quiero info", "p1")?.phrase).toBe("info");
+  });
+});
+
+describe("findExclusion", () => {
+  it("reporta la regla que habría ganado y la frase que la vetó", () => {
+    const r = rule({ id: "a", phrases: ["info"], excludePhrases: ["arquitectura"] });
+    const veto = findExclusion([r], "info de arquitectura", "p1");
+    expect(veto).toEqual({ rule: r, phrase: "info", excludedBy: "arquitectura" });
+  });
+
+  it("sin veto devuelve null", () => {
+    const r = rule({ phrases: ["info"], excludePhrases: ["arquitectura"] });
+    expect(findExclusion([r], "quiero info", "p1")).toBeNull();
+  });
+
+  it("una regla que no habría coincidido no cuenta como vetada", () => {
+    const r = rule({ phrases: ["terreno"], excludePhrases: ["arquitectura"] });
+    expect(findExclusion([r], "info de arquitectura", "p1")).toBeNull();
+  });
+
+  it("respeta postFilter: fuera de la publicación no hay veto que reportar", () => {
+    const r = rule({ phrases: ["info"], excludePhrases: ["arquitectura"], postFilter: ["otra"] });
+    expect(findExclusion([r], "info de arquitectura", "p1")).toBeNull();
   });
 });

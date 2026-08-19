@@ -1,6 +1,29 @@
 # Task Manager — propyte-crm (núcleo CRM + Google Workspace)
 
-> Última actualización: 2026-08-18 (moderador de permisos fase 0 en prod · blindaje de ADMIN · propietario).
+> Última actualización: 2026-08-19 (filtros de comentarios: negativas + tope diario · los provisionales dejan de contar como leads).
+>
+> ## 💬 Sesión 2026-08-19 — Filtros de comentarios + los provisionales dejan de contar como leads
+>
+> Rama `feat/filtros-comentarios` (basada en `origin/main` = `d82b50f2`). **Sin pushear.** Build verde, 1,645 tests PASS, lint sin nuevas advertencias.
+>
+> **Diagnóstico de partida (datos de prod):** los 4 registros de `comment_rule_logs` son pruebas internas ("Pollo" ×2, "Hay terrenos disponibles?", "Quién es Laura?"). **UN solo contacto creado por esta vía en la historia.** 5 reglas activas (una por conector) creadas el 17-ago con palabras sueltas muy anchas: `info`, `venta`, `preventa`, `casa`, `terreno`, `estudio`. Los DMs de Messenger sí entran (25 INBOUND hasta el 16-ago), así que el webhook vive; de comentarios reales, cero.
+>
+> **Lo que se agregó:**
+> - **Negativas por regla** (`comment_rules.excludePhrases`): si alguna aparece, la regla no contesta aunque la palabra clave esté. Vetan SOLO a su regla — la siguiente sigue evaluándose. Se rechaza al guardar (400, en POST y PATCH) una negativa idéntica a una frase propia: dejaría la regla muerta sin síntoma.
+> - **Tope diario por regla** (`comment_rules.dailyCap`, default **200**): ventana deslizante de 24 h, no día UTC. Fusible contra una publicación viral. 0 = sin tope. Deja registro `SKIPPED` visible en los logs.
+> - **Un comentario vetado deja log** (`excluido`) con la negativa que lo tumbó. Los que simplemente no coinciden siguen sin escribir nada.
+> - **El probador dice por qué NO disparó**: campo `excluded` con regla + frase + negativa.
+> - **Los provisionales dejan de contar como leads** en `/reportes` (fuentes), tablero (mes y mes anterior), metas (CAPTACIONES) y Vista Hoy. Predicado único en `src/lib/leads/real-leads.ts`: comment-origin SIN ningún mensaje INBOUND. En Contactos y el Inbox se siguen viendo enteros. Test-guardia en `src/server/leads-provisionales.test.ts` por si alguien quita el filtro de un tablero.
+> - **Diagnóstico de cuentas** en `/admin/comentarios`: botón que pregunta a Meta (`/{page-id}/subscribed_apps`) si la Página tiene suscrito `feed`. Sin él, una regla perfecta puede no disparar nunca y no hay ni error ni log. `/api/admin/connectors/health?probe=1` — la ruta **no tenía ningún consumidor en la UI** y además era la única de conectores sin MARKETING; las dos cosas corregidas.
+>
+> **Migración YA APLICADA en prod** (`comment_rules_exclusions_daily_cap`): `excludePhrases text[] NOT NULL DEFAULT '{}'` + `dailyCap integer NOT NULL DEFAULT 200`. Aditiva, el código viejo las ignora. **El orden importa: la migración va antes del deploy y ya está.**
+>
+> **Pendientes de esta tanda:**
+> - [x] **PR [#19](https://github.com/Propyte-Team/propyte-crm/pull/19) abierto** (2026-08-19). Rama pusheada, sin mergear: el merge es el que despliega.
+> - [x] **Negativas cargadas** en las 5 reglas activas por SQL (el código de prod todavía no acepta el campo por API): `arquitectura`, `broker`, `vendo`, `trabajo`, `empleo`. **NO surten efecto hasta que el PR #19 mergee** — el matcher que las lee va en ese PR.
+> - [ ] **3 palabras que Luis aprobó y dejé fuera a propósito**, por riesgo de silenciar leads buenos: `asesor` ("quiero hablar con un asesor" es intención de compra), `renta` y `rento` ("¿cuánto renta?" es la pregunta de ROI de un inversionista, justo el perfil que compra). Si el equipo las quiere, se agregan en un clic desde `/admin/comentarios`.
+> - [ ] **Verificar la suscripción de IG a nivel de app** (objeto `instagram`, campo `comments`) en el panel de Meta: el probe con token de Página NO puede leerla. Solo hay evidencia de que funciona en IG - Propyte (las pruebas del 05 y 17 de ago).
+> - [ ] Smoke en vivo: crear una negativa desde `/admin/comentarios` y probarla con el probador.
 >
 > ## 🔐 Sesión 2026-08-17/18 — Moderador de permisos (main = `a02fce7e`)
 >

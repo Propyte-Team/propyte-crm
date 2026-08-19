@@ -8,6 +8,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { normalize } from "@/lib/comments/match";
 import { canManageCommentRules } from "@/lib/comments/roles";
 import { commentRuleCreateSchema } from "@/server/comment-rules.schema";
+import { normalizeExclusions, findSelfVeto } from "@/lib/comments/exclusions";
 
 async function assertRole() {
   const session = await getServerSession();
@@ -77,6 +78,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Las frases quedaron vacías al normalizar" }, { status: 400 });
   }
 
+  const excludePhrases = normalizeExclusions(parsed.data.excludePhrases);
+  const selfVeto = findSelfVeto(phrases, excludePhrases);
+  if (selfVeto) {
+    return NextResponse.json(
+      {
+        error: `La negativa "${selfVeto}" es idéntica a una frase de la misma regla: nunca dispararía`,
+      },
+      { status: 400 }
+    );
+  }
+
   // Colisión: dos reglas activas con la misma frase en la misma cuenta hacen
   // que una nunca dispare, sin ningún síntoma visible.
   const siblings = await prisma.commentRule.findMany({
@@ -100,6 +112,8 @@ export async function POST(req: NextRequest) {
         name: parsed.data.name,
         connectorId: connector.id,
         phrases,
+        excludePhrases,
+        dailyCap: parsed.data.dailyCap,
         publicReplies: parsed.data.publicReplies,
         dmTemplate: parsed.data.dmTemplate,
         postFilter: parsed.data.postFilter,
@@ -125,7 +139,7 @@ export async function POST(req: NextRequest) {
         action: "CREATE",
         entity: "CommentRule",
         entityId: rule.id,
-        changes: { name: rule.name, phrases },
+        changes: { name: rule.name, phrases, excludePhrases, dailyCap: parsed.data.dailyCap },
       },
     })
     .catch(() => {});
