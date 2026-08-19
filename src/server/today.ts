@@ -3,6 +3,7 @@
 // Vista Hoy del asesor (Fase 2, T2.1). Agrega lo accionable del día en una sola
 // consulta server-side con RBAC: ASESOR ve lo suyo, TEAM_LEADER su equipo, dirección todo.
 import prisma from "@/lib/db";
+import { realLeadWhere } from "@/lib/leads/real-leads";
 
 const OWN_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 const TEAM_ROLES = ["TEAM_LEADER"];
@@ -77,9 +78,9 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
       openQuotes,
     ] = await Promise.all([
       // 1. Leads nuevos sin tocar
-      prisma.contact.count({ where: { deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope } }),
+      prisma.contact.count({ where: realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope }) }),
       prisma.contact.findMany({
-        where: { deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope },
+        where: realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope }),
         select: { id: true, firstName: true, lastName: true, phone: true, leadSource: true },
         orderBy: { createdAt: "desc" }, take: 6,
       }),

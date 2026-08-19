@@ -59,6 +59,8 @@ const RULE = {
   connectorId: "conn-ig",
   priority: 100,
   phrases: ["info"],
+  excludePhrases: [] as string[],
+  dailyCap: 200,
   postFilter: [],
   publicReplies: ["Te escribo al DM 📩", "Ya te mandé privado 📩"],
   dmTemplate: "Hola {{usuario}}, aquí va la info.",
@@ -457,5 +459,73 @@ describe("handleComment — autor bloqueado", () => {
     await handleComment(comment({ platform: "FACEBOOK", accountId: "PAGE-1", authorId: "PSID-7" }));
 
     expect(isSenderBlocked).toHaveBeenCalledWith("MESSENGER", "PSID-7");
+  });
+});
+
+describe("handleComment — negativas de la regla", () => {
+  it("una negativa veta la respuesta y deja registro del descarte", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, excludePhrases: ["arquitectura"] }]);
+    const out = await handleComment(comment({ text: "info de tu estudio de arquitectura" }));
+    expect(out.status).toBe("excluido");
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(sendPrivateReply).not.toHaveBeenCalled();
+    const data = logCreate.mock.calls[0][0].data;
+    expect(data.publicReplyStatus).toBe("SKIPPED");
+    expect(data.dmStatus).toBe("SKIPPED");
+    expect(data.matchedPhrase).toBe("info");
+    expect(data.publicReplyError).toContain("arquitectura");
+  });
+
+  it("la negativa de una regla no apaga a otra que sí aplica", async () => {
+    ruleFindMany.mockResolvedValue([
+      { ...RULE, id: "estrecha", priority: 1, excludePhrases: ["arquitectura"] },
+      { ...RULE, id: "general", priority: 2, excludePhrases: [] },
+    ]);
+    const out = await handleComment(comment({ text: "info de arquitectura" }));
+    expect(out.status).toBe("procesado");
+    expect(replyToComment).toHaveBeenCalled();
+  });
+
+  it("sin negativas se contesta como siempre", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, excludePhrases: ["arquitectura"] }]);
+    expect((await handleComment(comment({ text: "info porfa" }))).status).toBe("procesado");
+  });
+});
+
+describe("handleComment — tope diario por regla", () => {
+  it("al alcanzar el tope no se contesta y queda registrado", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, dailyCap: 2 }]);
+    logCount.mockResolvedValue(2);
+    const out = await handleComment(comment());
+    expect(out.status).toBe("tope-diario");
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(sendPrivateReply).not.toHaveBeenCalled();
+    const data = logCreate.mock.calls[0][0].data;
+    expect(data.publicReplyStatus).toBe("SKIPPED");
+    expect(data.dmStatus).toBe("SKIPPED");
+    expect(data.publicReplyError).toContain("Tope diario");
+  });
+
+  it("por debajo del tope se contesta normal", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, dailyCap: 2 }]);
+    logCount.mockResolvedValueOnce(1).mockResolvedValue(0);
+    expect((await handleComment(comment())).status).toBe("procesado");
+  });
+
+  it("el tope mira solo esa regla y solo las últimas 24 horas", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, dailyCap: 5 }]);
+    await handleComment(comment());
+    const where = logCount.mock.calls[0][0].where;
+    expect(where.ruleId).toBe("rule-1");
+    const desde = where.createdAt.gte as Date;
+    const horas = (Date.now() - desde.getTime()) / 3_600_000;
+    expect(horas).toBeGreaterThan(23.9);
+    expect(horas).toBeLessThan(24.1);
+  });
+
+  it("tope en cero o ausente = sin tope", async () => {
+    ruleFindMany.mockResolvedValue([{ ...RULE, dailyCap: 0 }]);
+    logCount.mockResolvedValue(9999);
+    expect((await handleComment(comment())).status).toBe("procesado");
   });
 });

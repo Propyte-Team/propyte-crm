@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, X } from "lucide-react";
 import { normalize } from "@/lib/comments/match";
+import { DAILY_CAP_DEFAULT } from "@/server/comment-rules.schema";
 
 export interface ConnectorOption {
   id: string;
@@ -29,6 +30,8 @@ export interface CommentRuleRow {
   isActive: boolean;
   priority: number;
   phrases: string[];
+  excludePhrases: string[];
+  dailyCap: number;
   publicReplies: string[];
   dmTemplate: string;
   postFilter: string[];
@@ -56,6 +59,9 @@ export function CommentRuleDialog({
   const [name, setName] = useState("");
   const [phrases, setPhrases] = useState<string[]>([]);
   const [phraseDraft, setPhraseDraft] = useState("");
+  const [excludePhrases, setExcludePhrases] = useState<string[]>([]);
+  const [excludeDraft, setExcludeDraft] = useState("");
+  const [dailyCap, setDailyCap] = useState(DAILY_CAP_DEFAULT);
   const [publicReplies, setPublicReplies] = useState<string[]>([""]);
   const [dmTemplate, setDmTemplate] = useState("");
   const [postFilter, setPostFilter] = useState("");
@@ -70,6 +76,8 @@ export function CommentRuleDialog({
       setConnectorId(editing.connectorId);
       setName(editing.name);
       setPhrases(editing.phrases);
+      setExcludePhrases(editing.excludePhrases ?? []);
+      setDailyCap(editing.dailyCap ?? DAILY_CAP_DEFAULT);
       setPublicReplies(editing.publicReplies.length ? editing.publicReplies : [""]);
       setDmTemplate(editing.dmTemplate);
       setPostFilter(editing.postFilter.join("\n"));
@@ -78,12 +86,15 @@ export function CommentRuleDialog({
       setConnectorId(connectors[0]?.id ?? "");
       setName("");
       setPhrases([]);
+      setExcludePhrases([]);
+      setDailyCap(DAILY_CAP_DEFAULT);
       setPublicReplies([""]);
       setDmTemplate("");
       setPostFilter("");
       setPriority(100);
     }
     setPhraseDraft("");
+    setExcludeDraft("");
   }, [open, editing, connectors]);
 
   const normalized = phrases.map(normalize);
@@ -91,13 +102,21 @@ export function CommentRuleDialog({
     .filter((r) => r.connectorId === connectorId && r.isActive && r.id !== editing?.id)
     .flatMap((r) => r.phrases.filter((p) => normalized.includes(p)).map((p) => ({ rule: r.name, phrase: p })));
 
-  function addPhrase() {
-    const value = phraseDraft.trim();
+  // Mismo rechazo que hace el servidor, pero antes de mandar: una negativa
+  // identica a una frase que dispara deja la regla muerta y sin sintoma.
+  const selfVetoes = excludePhrases
+    .map(normalize)
+    .filter((e) => normalized.includes(e));
+
+  function addTo(list: string[], set: (v: string[]) => void, draft: string, clear: () => void) {
+    const value = draft.trim();
     if (!value) return;
-    if (!phrases.some((p) => normalize(p) === normalize(value))) {
-      setPhrases([...phrases, value]);
-    }
-    setPhraseDraft("");
+    if (!list.some((p) => normalize(p) === normalize(value))) set([...list, value]);
+    clear();
+  }
+
+  function addPhrase() {
+    addTo(phrases, setPhrases, phraseDraft, () => setPhraseDraft(""));
   }
 
   async function save() {
@@ -107,11 +126,17 @@ export function CommentRuleDialog({
       setError("Faltan nombre, cuenta, frases, al menos una respuesta pública y el mensaje privado");
       return;
     }
+    if (selfVetoes.length > 0) {
+      setError(`La negativa "${selfVetoes[0]}" es también una palabra que dispara: la regla nunca contestaría`);
+      return;
+    }
     setSaving(true);
     const payload = {
       name: name.trim(),
       connectorId,
       phrases,
+      excludePhrases,
+      dailyCap,
       publicReplies: cleanReplies,
       dmTemplate: dmTemplate.trim(),
       postFilter: postFilter.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
@@ -204,6 +229,53 @@ export function CommentRuleDialog({
           </div>
 
           <div className="space-y-1.5">
+            <Label>Palabras que la descartan (negativas)</Label>
+            <div className="flex gap-2">
+              <Input
+                value={excludeDraft}
+                onChange={(e) => setExcludeDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTo(excludePhrases, setExcludePhrases, excludeDraft, () => setExcludeDraft(""));
+                  }
+                }}
+                placeholder="arquitectura"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => addTo(excludePhrases, setExcludePhrases, excludeDraft, () => setExcludeDraft(""))}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {excludePhrases.map((p) => (
+                <span key={p} className="badge badge-warning inline-flex items-center gap-1">
+                  {p}
+                  <button type="button" onClick={() => setExcludePhrases(excludePhrases.filter((x) => x !== p))}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Si alguna de estas aparece en el comentario, la regla NO contesta aunque la
+              palabra que dispara sí esté. Es lo que evita responderle a
+              &quot;estudio de arquitectura&quot;, &quot;¿ya no está en venta?&quot; o
+              &quot;soy broker&quot;. Vacío = sin negativas.
+            </p>
+            {selfVetoes.length > 0 && (
+              <p className="text-[11px] text-destructive">
+                {selfVetoes.map((e) => `"${e}"`).join(", ")} también dispara la regla: así nunca
+                contestaría. Quita la palabra de una de las dos listas.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
             <Label>Respuestas públicas (rotan)</Label>
             {publicReplies.map((r, i) => (
               <div key={i} className="flex gap-2">
@@ -274,6 +346,22 @@ export function CommentRuleDialog({
             <Input type="number" min={1} max={999} value={priority}
               onChange={(e) => setPriority(Number(e.target.value))} />
             <p className="text-[11px] text-muted-foreground">Menor número gana si dos reglas coinciden.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Tope diario</Label>
+            <Input
+              type="number"
+              min={0}
+              max={5000}
+              value={dailyCap}
+              onChange={(e) => setDailyCap(Number(e.target.value))}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Máximo de veces que esta regla contesta en 24 horas. Es un fusible por si una
+              publicación se vuelve viral: sin él, un post con mil comentarios manda mil DMs.
+              0 = sin tope.
+            </p>
           </div>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}

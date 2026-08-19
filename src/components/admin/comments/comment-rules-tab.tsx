@@ -8,6 +8,7 @@ import { Plus, Pause, Play, Pencil, Trash2 } from "lucide-react";
 import { CommentRuleDialog, type CommentRuleRow, type ConnectorOption } from "./comment-rule-dialog";
 import { CommentRuleTester } from "./comment-rule-tester";
 import { CommentRuleLogs } from "./comment-rule-logs";
+import { CommentAccountsHealth } from "./comment-accounts-health";
 
 export function CommentRulesTab() {
   const [rules, setRules] = useState<CommentRuleRow[]>([]);
@@ -108,15 +109,22 @@ export function CommentRulesTab() {
                     {r.isActive ? "ACTIVA" : "EN PAUSA"}
                   </span>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-1">
+                <div className="mt-1 flex flex-wrap items-center gap-1">
                   {r.phrases.map((p) => (
                     <span key={p} className="badge badge-neutral">{p}</span>
+                  ))}
+                  {(r.excludePhrases ?? []).length > 0 && (
+                    <span className="text-[11px] text-muted-foreground">salvo</span>
+                  )}
+                  {(r.excludePhrases ?? []).map((p) => (
+                    <span key={`x-${p}`} className="badge badge-warning">{p}</span>
                   ))}
                 </div>
                 <p className="mt-1 text-[12px] text-muted-foreground">
                   {r._count.logs} disparos · prioridad {r.priority} ·{" "}
                   {r.postFilter.length ? `${r.postFilter.length} publicaciones` : "toda la cuenta"} ·{" "}
-                  {r.publicReplies.length} variante(s)
+                  {r.publicReplies.length} variante(s) ·{" "}
+                  {r.dailyCap > 0 ? `tope ${r.dailyCap}/día` : "sin tope diario"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -136,6 +144,8 @@ export function CommentRulesTab() {
           ))}
         </CardContent>
       </Card>
+
+      <CommentAccountsHealth />
 
       <CommentRuleTester connectors={connectors} />
       <CommentRuleLogs reloadKey={reloadKey} />

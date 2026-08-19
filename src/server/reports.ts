@@ -10,6 +10,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { STAGNATION_LIMITS } from "@/lib/constants";
 import type { Prisma } from "@prisma/client";
+import { realLeadWhere } from "@/lib/leads/real-leads";
 
 // --- Interfaces de filtros ---
 export interface ReportFilters {
@@ -444,7 +445,8 @@ export async function getLeadSourcesReport(
   // Agrupar contactos por fuente
   const contactsBySource = await prisma.contact.groupBy({
     by: ["leadSource"],
-    where: contactWhere,
+    // Los provisionales que nunca contestaron no son leads captados.
+    where: realLeadWhere(contactWhere),
     _count: { id: true },
   });
 
