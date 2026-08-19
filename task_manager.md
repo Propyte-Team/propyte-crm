@@ -19,8 +19,9 @@
 > **Migración YA APLICADA en prod** (`comment_rules_exclusions_daily_cap`): `excludePhrases text[] NOT NULL DEFAULT '{}'` + `dailyCap integer NOT NULL DEFAULT 200`. Aditiva, el código viejo las ignora. **El orden importa: la migración va antes del deploy y ya está.**
 >
 > **Pendientes de esta tanda:**
-> - [ ] **Push + PR** (requiere autorización de Luis; el push a `main` despliega).
-> - [ ] **Poblar las negativas** de las 5 reglas activas — es decisión de negocio, no la escribí. Candidatas obvias: `arquitectura`, `broker`, `asesor`, `renta`, `rento`, `trabajo`, `empleo`, `vendo`. Ojo con la regla "Info" de IG - Nativa: la frase `estudio` pega con "estudio de arquitectura".
+> - [x] **PR [#19](https://github.com/Propyte-Team/propyte-crm/pull/19) abierto** (2026-08-19). Rama pusheada, sin mergear: el merge es el que despliega.
+> - [x] **Negativas cargadas** en las 5 reglas activas por SQL (el código de prod todavía no acepta el campo por API): `arquitectura`, `broker`, `vendo`, `trabajo`, `empleo`. **NO surten efecto hasta que el PR #19 mergee** — el matcher que las lee va en ese PR.
+> - [ ] **3 palabras que Luis aprobó y dejé fuera a propósito**, por riesgo de silenciar leads buenos: `asesor` ("quiero hablar con un asesor" es intención de compra), `renta` y `rento` ("¿cuánto renta?" es la pregunta de ROI de un inversionista, justo el perfil que compra). Si el equipo las quiere, se agregan en un clic desde `/admin/comentarios`.
 > - [ ] **Verificar la suscripción de IG a nivel de app** (objeto `instagram`, campo `comments`) en el panel de Meta: el probe con token de Página NO puede leerla. Solo hay evidencia de que funciona en IG - Propyte (las pruebas del 05 y 17 de ago).
 > - [ ] Smoke en vivo: crear una negativa desde `/admin/comentarios` y probarla con el probador.
 >
