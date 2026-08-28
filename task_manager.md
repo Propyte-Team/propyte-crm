@@ -1,6 +1,6 @@
 # Task Manager — propyte-crm (núcleo CRM + Google Workspace)
 
-> Última actualización: 2026-08-19 (filtros de comentarios: negativas + tope diario · los provisionales dejan de contar como leads).
+> Última actualización: 2026-08-26 (tras /task) — **R2 de la puerta MCP de mejoras: CRM-1 y CRM-2, ver la sección de 2026-08-26.** Antes, 2026-08-19 (filtros de comentarios: negativas + tope diario · los provisionales dejan de contar como leads).
 >
 > ## 💬 Sesión 2026-08-19 — Filtros de comentarios + los provisionales dejan de contar como leads
 >
@@ -346,6 +346,17 @@
 > **✅ Sesión 2026-06-06** — Fix bug #4 del robot 01-classifier (`1a671a5`): la clave de upsert `(lower(nombre_desarrollo), id_desarrollador)` era inestable (lower() sensible a acentos `Cancún≠Cancun`; id_desarrollador variaba entre corridas) → duplicaba desarrollos. Ahora persiste `ext_dedup_key` (nombre normalizado: lower + sin acentos + sin puntuación) y deduplica con `ON CONFLICT(ext_dedup_key)`. Requiere DDL prod `robot_infra_0004` (columna + backfill + índice único parcial). Prod ya limpio (48 grupos / 49 dups). **Pendiente: merge a main + drop índice viejo.** Ver [[feedback_mpgenesis_robot_duplicate_devs]].
 >
 > **✅ Sesión 2026-06-03** — Formulario externo de captura de desarrollos (`e2d7587`, merge). Link público con token (sin login) → cola de revisión en `/developments` tab "Captura" → al aprobar crea/actualiza catálogo `real_estate_hub` en borrador (nunca publica), con tipologías + imágenes (bucket de cuarentena). Tablas `intake_links`/`intake_submissions` aplicadas a prod (`add_intake_tables`). + `2a0ff56` preserva estado de publicación al actualizar dev + valida status query; + `1f2cd80` script de limpieza de cuarentena (>30d no aprobadas). **⚠️ Nota:** este intake se construyó por error en `propyte-crm` (crm.propyte.com); decisión de Luis fue "dejarlo por ahora" — falta reimplementar en el Hub (hub.propyte.com). Ver [[reference_hub_domain_captura]].
+
+## Pendiente — Puerta MCP de mejoras: lo que toca al CRM (2026-08-26)
+
+> **El detalle NO vive aquí.** Estas dos tareas están en el tablero de mejoras del Hub, que es la fuente de verdad (D1 del spec `panel-mejoras-ia.md`): un markdown por repo son tres verdades que divergen.
+>
+> - **[#59](https://hub.propyte.com/mejoras/59)** · P2 · `CRM_MCP_READONLY_TOKEN`. **Bloqueante.** Hoy el único `CRM_MCP_API_TOKEN` abre `POST /automation/rules`, `POST /connectors` y `POST /config/fields`; un proxy que solo lee no debe portarlo.
+> - **[#60](https://hub.propyte.com/mejoras/60)** · P3 · `GET /mcp/signals` en `src/lib/mcp/dispatch.ts`, seis secciones emitiendo la forma `Hallazgo`.
+>
+> Spec completo: `Propyte_hub/specs/puerta-mejoras-remota.md` §9 y §14. Protocolo para IAs: `.claude/AI_TASKS.md` de este repo.
+>
+> 🎭 **Antes de tomarlas:** `src/app/api/mcp/[...path]` **NO es un servidor MCP** pese al nombre de la carpeta. Es una pasarela REST con ~45 rutas y `Authorization: Bearer`; no habla JSON-RPC ni tiene `tools/list`. Sirve igual como capa de datos: el Hub la llama server-a-server.
 
 ## En progreso
 
