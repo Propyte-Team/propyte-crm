@@ -324,7 +324,7 @@ Espejo de la suite de la puerta del blog:
 ## 14. Cómo quedó implementado (2026-08-28)
 
 Rama `feat/puerta-revision-cowork`, sobre `origin/main` = `ac155cbb`.
-**107 pruebas propias verdes; suite completa del repo 1752/1752.**
+**115 pruebas propias verdes; suite completa del repo 1760/1760.**
 
 ### Lo que se desvía del diseño, y por qué
 
@@ -335,7 +335,7 @@ Rama `feat/puerta-revision-cowork`, sobre `origin/main` = `ac155cbb`.
 | 4.2 | El test-guardia era la garantía | Se le antepuso el **tipo**: `RevisionDb` no expone métodos de escritura, así que un handler que escriba no compila. El test cubre lo que el tipo no puede ver (`$queryRaw`, un `fetch` con POST) |
 | 5.4 | "grep sobre la ref" | La búsqueda usa el índice de GitHub: **solo la rama por default, sin regex y sin número de línea**. Es más limitada de lo que suponía el diseño. La alternativa —bajar el árbol y grepear— cuesta decenas de peticiones y nginx corta lo que pasa minutos sin mandar bytes. La limitación va declarada en la descripción de la tool **y** en el cuerpo de cada respuesta |
 | 8 | El agente elige qué práctica medir | **El servidor rota dos por día.** Un revisor al que se le pide "elige una" elige la primera de la lista todos los días: nada en su contexto distingue el martes del miércoles |
-| 11 | Un archivo de test por invariante | Se agruparon en 7: `auth`, `rpc`, `catalogo`, `solo-lectura`, `redactar`, `topes` y `puerta` (integración de las 9 tools, incluida la de PII) |
+| 11 | Un archivo de test por invariante | Se agruparon en 7: `auth`, `rpc`, `catalogo`, `solo-lectura`, `redactar`, `topes`, `puerta` (integración de las 9 tools, incluida la de PII) y `http` (la puerta real contestando) |
 
 ### Añadido que el diseño no contemplaba
 
