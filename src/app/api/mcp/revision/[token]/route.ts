@@ -20,12 +20,14 @@ import { handleRevisionMcpHttp } from "@/lib/mcp/revision/http";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type Ctx = { params: Promise<{ token: string }> };
+/**
+ * `params` es un objeto plano, NO una promesa: este repo va en Next 14. La firma con
+ * `Promise` es de Next 15 y `tsc --noEmit` no la delata —valida la anotación que uno
+ * escribe, no la que Next espera—; el que falla es `next build`.
+ */
+type Ctx = { params: { token: string } };
 
-const handler = async (req: Request, ctx: Ctx) => {
-  const { token } = await ctx.params;
-  return handleRevisionMcpHttp(req, token);
-};
+const handler = async (req: Request, ctx: Ctx) => handleRevisionMcpHttp(req, ctx.params.token);
 
 export const POST = handler;
 // El resto de métodos existe para contestar 405 con el motivo —la autorización los

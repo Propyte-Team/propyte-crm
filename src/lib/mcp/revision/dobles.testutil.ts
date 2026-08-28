@@ -1,4 +1,4 @@
-import type { GithubReader, RevisionContext, RevisionDb } from "./types";
+import type { GithubReader, LectorDeConfig, RevisionContext, RevisionDb } from "./types";
 
 /**
  * Dobles para las pruebas.
@@ -82,4 +82,17 @@ export function ctxFalso(over: Partial<RevisionContext> = {}): RevisionContext {
     ahora: AHORA,
     ...over,
   };
+}
+
+/**
+ * Lector de `system_config` falso. `null` = no hay fila, que es el caso en que la puerta
+ * cae al respaldo del entorno.
+ */
+export function configFalso(valor: { token?: string; rotadoEn?: string } | null): LectorDeConfig {
+  return {
+    systemConfig: {
+      findUnique: async () =>
+        valor === null ? null : { id: "x", key: "mcp.revision.token", value: valor, updatedAt: AHORA },
+    },
+  } as unknown as LectorDeConfig;
 }

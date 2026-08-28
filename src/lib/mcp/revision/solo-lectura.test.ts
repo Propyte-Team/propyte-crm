@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { dbFalsa } from "./dobles.testutil";
+import type { RevisionDb } from "./types";
 
 /**
  * El guardia de §4.2 del spec: esta puerta SOLO LEE, y la garantía es una prueba, no una
@@ -69,11 +71,28 @@ describe("la puerta de revisión solo lee", () => {
     },
   );
 
-  it("el tipo de base de datos no expone ni un modelo de escritura", () => {
-    const tipos = readFileSync(join(DIR, "types.ts"), "utf8");
-    const bloque = tipos.slice(tipos.indexOf("RevisionDb"));
-    for (const prohibido of ["create", "update", "upsert", "delete"]) {
-      expect(bloque.slice(0, bloque.indexOf(">;")).includes(`"${prohibido}`)).toBe(false);
-    }
+  /**
+   * El guardia de TIPO, comprobado por el compilador y no por una comparación de texto.
+   *
+   * La primera versión de esta prueba leía `types.ts` y buscaba la palabra "create" en la
+   * declaración. Pasaba, y no probaba nada: `Pick<PrismaClient, "contact">` elige la
+   * CLAVE y deja el delegate entero —`create` incluido— del otro lado. El tipo parecía
+   * restrictivo y no restringía. Dos literales del mismo archivo nunca prueban un
+   * comportamiento.
+   *
+   * Ahora lo verifica `tsc`: si `RevisionDb` dejara de impedir la escritura, el
+   * `@ts-expect-error` sobraría y el typecheck fallaría por eso mismo.
+   */
+  it("el tipo de base de datos impide escribir, y lo comprueba el compilador", () => {
+    const escribir = (db: RevisionDb) => {
+      // @ts-expect-error `create` no existe en RevisionDb: es de solo lectura a propósito.
+      return db.contact.create;
+    };
+    const leer = (db: RevisionDb) => db.contact.count;
+
+    // En ejecución solo se comprueba que el doble responde; la garantía real es que este
+    // archivo COMPILE, y solo compila si `create` está fuera del tipo.
+    expect(typeof leer(dbFalsa({ conteos: { "contact.count": 0 } }))).toBe("function");
+    expect(escribir).toBeTypeOf("function");
   });
 });

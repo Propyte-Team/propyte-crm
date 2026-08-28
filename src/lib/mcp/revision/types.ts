@@ -29,12 +29,29 @@ export type RevisionContext = {
 /**
  * La porción de Prisma que esta puerta usa. Es un subconjunto A PROPÓSITO.
  *
- * El tipo no incluye `create`, `update`, `upsert` ni `delete` de ningún modelo, así que
- * un handler que intente escribir NO COMPILA. La prueba de §4.2 del spec es la segunda
- * red; esta es la primera, y actúa antes de que el código llegue a existir.
+ * ⚠️ NO BASTA CON `Pick<PrismaClient, "contact" | …>`. Eso elige las CLAVES, y el valor
+ * de cada una sigue siendo el delegate completo —con `create`, `update` y `delete`
+ * dentro—, así que un handler que escribiera compilaría sin queja. Es un error fácil de
+ * cometer y de creerse: parece restrictivo y no restringe nada.
+ *
+ * Por eso cada modelo se mapea a `SoloLectura`: se quedan los métodos de consulta y
+ * desaparecen los de escritura. `db.contact.create(...)` no compila, y eso sí es una
+ * garantía. La prueba de §4.2 es la segunda red, para lo que el tipo no ve —`$queryRaw`,
+ * un `fetch` con POST, un `as any`—.
  */
-export type RevisionDb = Pick<
-  PrismaClient,
+type MetodosDeLectura =
+  | "findMany"
+  | "findFirst"
+  | "findFirstOrThrow"
+  | "findUnique"
+  | "findUniqueOrThrow"
+  | "count"
+  | "groupBy"
+  | "aggregate";
+
+type SoloLectura<T> = Pick<T, Extract<keyof T, MetodosDeLectura>>;
+
+type ModelosLeidos =
   | "contact"
   | "deal"
   | "actionQueue"
@@ -44,8 +61,18 @@ export type RevisionDb = Pick<
   | "workflowEvent"
   | "leadConnector"
   | "automationRule"
-  | "user"
->;
+  | "user";
+
+export type RevisionDb = { [K in ModelosLeidos]: SoloLectura<PrismaClient[K]> };
+
+/**
+ * Lo mínimo para leer el secreto de la puerta: una sola fila de `system_config`.
+ *
+ * Va aparte de `RevisionDb` porque no es un dato del CRM que el revisor pueda consultar
+ * —es la credencial— y mezclarlo dejaría `systemConfig` al alcance de cualquier handler
+ * nuevo que se agregue.
+ */
+export type LectorDeConfig = { systemConfig: SoloLectura<PrismaClient["systemConfig"]> };
 
 /** Un archivo del repo, tal como lo devuelve GitHub, ya rotulado con la ref resuelta. */
 export type ArchivoRepo = {

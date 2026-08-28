@@ -324,7 +324,7 @@ Espejo de la suite de la puerta del blog:
 ## 14. Cómo quedó implementado (2026-08-28)
 
 Rama `feat/puerta-revision-cowork`, sobre `origin/main` = `ac155cbb`.
-**115 pruebas propias verdes; suite completa del repo 1760/1760.**
+**132 pruebas propias verdes; suite completa del repo 1777/1777.**
 
 ### Lo que se desvía del diseño, y por qué
 
@@ -345,7 +345,7 @@ Rama `feat/puerta-revision-cowork`, sobre `origin/main` = `ac155cbb`.
 
 ### Lo que NO se construyó
 
-- **`/admin/revision/conectar`** (§10) — la pantalla para ver y rotar el token. La puerta funciona sin ella; el token se pone a mano en Hostinger. Es lo primero que falta si se quiere operar sin tocar variables de entorno.
+- ~~`/admin/revision/conectar`~~ — **construida.** Ver §15.
 - **R2 y R4**, que ya estaban fuera de alcance (§12).
 
 ### Hallazgo del entorno, no de la puerta
@@ -363,3 +363,80 @@ El `node_modules` del worktree es un junction al del árbol principal, así que 
 3. Verificar contra prod: sin token → 401; con token → `tools/list` con 9 tools.
 4. Conectar en Cowork: `https://crm.propyte.com/api/mcp/revision/<TOKEN>`.
 5. Programar la tarea diaria: *"Corre la revisión diaria del CRM siguiendo `crm_revision_protocolo()`."*
+
+---
+
+## 15. La pantalla de conexión (2026-08-28)
+
+`/admin/revision/conectar`, solo ADMIN y DIRECTOR. **132 pruebas propias.**
+
+### El token se movió a la base, y eso se aparta del Hub
+
+§10 prometía "un botón para rotarlo". **Una pantalla no puede reescribir una variable de
+entorno de Hostinger**, así que con el diseño original ese botón no podía existir: las
+puertas del Hub leen su token del entorno y su pantalla de conectar **solo lo muestra**.
+
+El token vive ahora en `system_config` bajo la clave `mcp.revision.token`, y el entorno
+queda como respaldo de arranque. El motivo no es comodidad: un secreto que solo se cambia
+entrando al panel de Hostinger **no se rota nunca** —deja de ser una operación del producto
+y se vuelve una tarea de infraestructura que nadie hace—. Y aquí pesa más que en el Hub,
+porque este token viaja en la ruta y por lo tanto queda escrito en los logs de acceso.
+
+**La base gana sobre el entorno, y ese orden es la diferencia entre una rotación real y una
+que miente:** si el entorno ganara, la pantalla diría "rotado" y el secreto viejo seguiría
+abriendo mientras la variable estuviera puesta. La pantalla avisa cuando el token en uso
+viene del entorno y recomienda borrar la variable.
+
+**Sin caché.** Cachear la lectura aunque fueran 30 segundos abriría una ventana en la que
+el token recién revocado sigue funcionando. Es un `findUnique` por clave única y el tráfico
+es un agente al día.
+
+### Reparto de responsabilidades
+
+| Archivo | Qué hace |
+|---|---|
+| `src/lib/mcp/revision/token.ts` | **Solo lee** el token. Vive dentro de la puerta |
+| `src/lib/mcp/revision/conexion.ts` | Roles, armado de la URL y avisos. Puro y probado |
+| `src/server/revision-token.ts` | **La escritura**, FUERA del directorio de la puerta |
+| `.../admin/revision/conectar/page.tsx` + `PanelConexion.tsx` | La pantalla |
+
+La escritura está fuera a propósito: el directorio de la puerta es de solo lectura y el
+guardia lo vigila. Meter el `upsert` ahí lo rompería, y con razón — **la puerta no debe
+poder cambiar su propia credencial**.
+
+### Decisiones de la pantalla
+
+- **El secreto viene tapado.** Esta pantalla se abre en juntas y se comparte pantalla. Se
+  deja ver el host y la ruta, que identifican la puerta sin revelar nada.
+- **Confirmación en dos pasos.** La rotación no tiene ventana de convivencia: rompe el
+  conector que ya esté funcionando hasta que se pegue la URL nueva. Un botón de un clic
+  sería una caída de servicio a un dedo de distancia.
+- **El guardia se repite en la acción de servidor.** Una acción de servidor es un endpoint
+  público: quien conozca su identificador puede invocarla sin pasar por la pantalla. El
+  `redirect` del componente no la protege.
+- **El token NUNCA entra al `AuditLog`.** Se registra que hubo rotación y cuándo. Un log que
+  guarda la credencial convierte cada respaldo de la base en una copia del secreto.
+- **Puerta propia, no una pestaña de `/admin`**, por el mismo motivo que las reglas de
+  comentarios: `/admin` precarga usuarios, comisiones y API keys al payload. Aquí además se
+  pinta un secreto, así que cuanto menos cargue alrededor, mejor.
+
+### Dos correcciones a lo ya entregado
+
+1. **`RevisionDb` no restringía nada.** `Pick<PrismaClient, "contact">` elige la CLAVE y
+   deja el delegate entero —`create` incluido— del otro lado. El tipo parecía restrictivo y
+   no lo era. Ahora cada modelo se mapea a `SoloLectura<…>` y `db.contact.create(...)` no
+   compila. **Lo verifica `tsc`** con un `@ts-expect-error`: si el tipo dejara de impedirlo,
+   la directiva sobraría y el typecheck fallaría por eso.
+   La prueba anterior leía `types.ts` y buscaba la palabra "create" — pasaba sin probar
+   nada. Dos literales del mismo archivo nunca prueban un comportamiento.
+
+2. **Firma de Next 15 en un repo de Next 14.** Las routes traían
+   `params: Promise<{token}>`, copiado del Hub. `tsc --noEmit` no lo delata: valida la
+   anotación que uno escribe, no la que Next espera. El que falla es `next build`. Corregido
+   a `params: { token: string }`, que es lo que usan las demás rutas dinámicas del repo.
+
+### Lo que sigue faltando
+
+`next build` no se corrió: el cliente de Prisma compartido por el junction está generado
+desde el esquema de otra rama y hace fallar 27 comprobaciones en archivos ajenos (§14). El
+build real ocurre en el servidor al desplegar.

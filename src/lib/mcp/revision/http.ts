@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { autorizarRevision, HINT_AUTH } from "./auth";
 import { crearGithubReader } from "./github";
+import { leerTokenEsperado } from "./token";
 import { handleRpcMessage, RPC } from "./rpc";
 import { REVISION_TOOLS } from "./tools";
-import type { RevisionContext } from "./types";
+import type { GithubReader, LectorDeConfig, RevisionContext, RevisionDb } from "./types";
 
 /**
  * Capa HTTP de la puerta de revisión: JSON-RPC 2.0 en el cuerpo, un POST por mensaje.
@@ -23,11 +24,25 @@ import type { RevisionContext } from "./types";
 
 const ACTOR = process.env.MCP_REVISION_ACTOR ?? "cowork@revision";
 
+/**
+ * Dependencias sustituibles. En producción no se pasan y salen de `@/lib/db`.
+ *
+ * Existen para que la prueba de la puerta HTTP pueda ejercitar el handshake sin una base
+ * de datos: sin esto, la única forma de comprobar que las capas están CONECTADAS sería
+ * levantar Postgres, y en la práctica esa prueba no se escribe.
+ */
+export type DepsRevision = { config?: LectorDeConfig; db?: RevisionDb; gh?: GithubReader };
+
 export async function handleRevisionMcpHttp(
   req: Request,
   tokenDeUrl?: string,
+  deps: DepsRevision = {},
 ): Promise<Response> {
-  const auth = autorizarRevision(req, process.env.MCP_REVISION_TOKEN ?? "", tokenDeUrl);
+  // Una consulta por petición, sin caché. Cachearla aunque fueran 30 segundos abriría una
+  // ventana en la que el token recién revocado sigue funcionando — ver `token.ts`.
+  const { token } = await leerTokenEsperado(deps.config ?? prisma);
+
+  const auth = autorizarRevision(req, token, tokenDeUrl);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error, hint: auth.hint }, { status: auth.status });
   }
@@ -48,8 +63,8 @@ export async function handleRevisionMcpHttp(
   // sin que nada lo delate.
   const ctx: RevisionContext = {
     actor: ACTOR,
-    db: prisma,
-    gh: crearGithubReader(),
+    db: deps.db ?? prisma,
+    gh: deps.gh ?? crearGithubReader(),
     ahora: new Date(),
   };
 
