@@ -1,4 +1,12 @@
+import { realLeadWhere } from "@/lib/leads/real-leads";
+import { HECHOS_DECLARADOS } from "../contexto.data";
 import type { RevisionContext } from "../types";
+
+/** El hecho declarado que explica «0 automatizaciones activas», con su caducidad. */
+function notaDeAutomatizaciones(): string {
+  const h = HECHOS_DECLARADOS.find((x) => x.id === "automatizaciones-pausadas-por-beta");
+  return h ? `${h.por_que} ${h.no_reportar} Caduca cuando: ${h.caduca_cuando}` : "";
+}
 
 /**
  * `crm_pulso` — el estado del CRM hoy, en conteos.
@@ -20,8 +28,10 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
   const hace7d = new Date(ahora.getTime() - 7 * DIA);
 
   const [
-    leads24h,
-    leads7d,
+    crudos24h,
+    crudos7d,
+    reales24h,
+    reales7d,
     porOrigen,
     porEtapa,
     slaVencidos,
@@ -34,11 +44,18 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     usuarios,
     eventosSinProcesar,
   ] = await Promise.all([
+    // Crudo: todo lo que entró. Sirve solo para medir la brecha, nunca como volumen.
     db.contact.count({ where: { createdAt: { gte: hace24h } } }),
     db.contact.count({ where: { createdAt: { gte: hace7d } } }),
+    // 🚨 `realLeadWhere` es LA definición de lead del CRM, la misma que usan el tablero,
+    // las metas, `/reportes` y Vista Hoy. Contar por nuestra cuenta daría un número que
+    // contradice al que el equipo mira en pantalla, y entonces la puerta no reporta el
+    // estado del CRM: reporta el de una tercera versión de la verdad que nadie más ve.
+    db.contact.count({ where: realLeadWhere({ createdAt: { gte: hace24h } }) }),
+    db.contact.count({ where: realLeadWhere({ createdAt: { gte: hace7d } }) }),
     db.contact.groupBy({
       by: ["leadSource"],
-      where: { createdAt: { gte: hace7d } },
+      where: realLeadWhere({ createdAt: { gte: hace7d } }),
       _count: { _all: true },
     }),
     db.deal.groupBy({ by: ["stage"], _count: { _all: true } }),
@@ -78,11 +95,23 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
 
   return {
     leads: {
-      nuevos_24h: leads24h,
-      nuevos_7d: leads7d,
+      /** La cifra buena: el mismo filtro que el tablero, las metas y `/reportes`. */
+      reales_24h: reales24h,
+      reales_7d: reales7d,
+      /** Sin filtro. NO usar como volumen: incluye contactos que nunca levantaron la mano. */
+      crudos_24h: crudos24h,
+      crudos_7d: crudos7d,
+      /** La brecha. Es esperada, no un hallazgo. */
+      descontados_7d: crudos7d - reales7d,
+      /** Ya filtrado. */
       por_origen_7d: Object.fromEntries(
         porOrigen.map((o) => [o.leadSource, o._count._all]).sort((a, b) => Number(b[1]) - Number(a[1])),
       ),
+      nota:
+        "`reales_*` aplica realLeadWhere (descuenta los contactos nacidos de un comentario " +
+        "que nunca contestaron). Los canales sociales además traen spam que este filtro " +
+        "todavía NO cubre, así que incluso `reales_*` sobrecuenta en INSTAGRAM y MESSENGER. " +
+        "Ver crm_revision_protocolo → contexto_declarado.",
     },
     deals_por_etapa: Object.fromEntries(porEtapa.map((e) => [e.stage, e._count._all])),
     sla: {
@@ -103,7 +132,13 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
       ultimo_lead: c.lastLeadAt?.toISOString() ?? null,
       errores_acumulados: c.errorCount,
     })),
-    automatizaciones: { activas: reglasActivas, totales: reglasTotales },
+    automatizaciones: {
+      activas: reglasActivas,
+      totales: reglasTotales,
+      // El número nunca se sirve desnudo: leído solo, «0 de 8» se reporta como fallo, y
+      // durante el BETA es una decisión. El hecho declarado trae su fecha de caducidad.
+      ...(reglasActivas === 0 && reglasTotales > 0 ? { nota: notaDeAutomatizaciones() } : {}),
+    },
     usuarios_activos: Object.fromEntries(usuarios.map((u) => [u.role, u._count._all])),
     eventos_sin_procesar: eventosSinProcesar,
   };

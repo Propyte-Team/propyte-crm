@@ -1,3 +1,4 @@
+import { realLeadWhere } from "@/lib/leads/real-leads";
 import type { RevisionContext } from "../types";
 
 /**
@@ -61,7 +62,9 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
   const desde = new Date(corteHoy.getTime() - VENTANA_DIAS * DIA);
 
   const [contactos, deals, accionesFallidas, leadsConError, slaIncumplidos] = await Promise.all([
-    db.contact.findMany({ where: { createdAt: { gte: desde } }, select: { createdAt: true } }),
+    // Con el filtro del CRM: la serie tiene que medir lo mismo que `/reportes`, o la
+    // mediana se calcula sobre spam y la señal deja de significar nada.
+    db.contact.findMany({ where: realLeadWhere({ createdAt: { gte: desde } }), select: { createdAt: true } }),
     db.deal.findMany({ where: { createdAt: { gte: desde } }, select: { createdAt: true } }),
     db.actionQueue.findMany({
       where: { status: "FAILED", createdAt: { gte: desde } },
@@ -78,7 +81,7 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
   ]);
 
   const series: Record<string, Date[]> = {
-    contactos_nuevos: contactos.map((x) => x.createdAt),
+    leads_reales_nuevos: contactos.map((x) => x.createdAt),
     deals_nuevos: deals.map((x) => x.createdAt),
     acciones_fallidas: accionesFallidas.map((x) => x.createdAt),
     leads_de_conector_con_error: leadsConError.map((x) => x.receivedAt),
