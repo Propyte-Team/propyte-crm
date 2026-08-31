@@ -53,7 +53,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "Un lead sin dueño no tiene a quién reclamarle el seguimiento. Es la fuga más silenciosa: no aparece como error en ningún log.",
     como_se_mide:
-      "crm_codigo_buscar sobre las reglas de enrutamiento (RoutingRule) y contraste con crm_pulso() → leads.nuevos_7d. Si hay reglas activas pero el reparto se concentra en un solo asesor, el round-robin está secuestrando leads.",
+      "crm_codigo_buscar sobre las reglas de enrutamiento (RoutingRule) y contraste con crm_pulso() → leads.reales_7d. Si hay reglas activas pero el reparto se concentra en un solo asesor, el round-robin está secuestrando leads.",
     ya_existe_si:
       "Existen RoutingRule activas que cubren todos los orígenes de lead vigentes, y ninguna deja un hueco por territorio o por tipo de producto.",
   },
@@ -123,7 +123,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "La mayoría de las ventas de obra nueva cierran después de varios contactos. Un CRM que solo agenda el siguiente paso deja que la cadencia dependa de la disciplina de cada asesor.",
     como_se_mide:
-      "Contar ActionPlan activos y sus inscripciones (ActionPlanEnrollment) vía crm_codigo_buscar sobre las consultas existentes, contrastando con crm_pulso() → leads.nuevos_7d. Si entran leads y no se inscriben en ningún plan, la cadencia no está operando.",
+      "Contar ActionPlan activos y sus inscripciones (ActionPlanEnrollment) vía crm_codigo_buscar sobre las consultas existentes, contrastando con crm_pulso() → leads.reales_7d. Si entran leads y no se inscriben en ningún plan, la cadencia no está operando.",
     ya_existe_si:
       "Existen ActionPlan activos y la mayoría de los leads nuevos queda inscrito en alguno de forma automática.",
   },
@@ -156,7 +156,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "Una meta sin línea base no se puede evaluar: cualquier resultado se puede narrar como éxito o fracaso según convenga.",
     como_se_mide:
-      "crm_anomalias() → series.contactos_nuevos y deals_nuevos dan la línea base real por mediana. Contrastar con las metas configuradas (modelo Goal) vía crm_codigo_buscar.",
+      "crm_anomalias() → series.leads_reales_nuevos y series.deals_nuevos dan la línea base real por mediana. Contrastar con las metas configuradas (modelo Goal) vía crm_codigo_buscar.",
     ya_existe_si:
       "Las metas vigentes están dentro de un rango razonable de la mediana observada, en vez de ser múltiplos arbitrarios.",
   },
