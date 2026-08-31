@@ -2,6 +2,21 @@ import { realLeadWhere } from "@/lib/leads/real-leads";
 import { HECHOS_DECLARADOS } from "../contexto.data";
 import type { RevisionContext } from "../types";
 
+/**
+ * Proveedores que entregan por PULL, es decir los que tienen un cron que les escribe
+ * `lastSyncAt`. Verificado contra el código, no supuesto: los únicos crons de conectores
+ * en el repo son `api/cron/connectors/linkedin` y `api/cron/connectors/tiktok`.
+ *
+ * Todo lo demás (META, INSTAGRAM, MESSENGER, WHATSAPP…) llega por webhook, y para esos
+ * `lastSyncAt` no se escribe NUNCA. Servirlo como `null` hizo que casi reportara «9
+ * conectores llevan meses sin sincronizar» sobre un sistema que funcionaba bien.
+ */
+const PROVEEDORES_PULL = new Set(["LINKEDIN", "TIKTOK"]);
+
+function esPull(proveedor: string): boolean {
+  return PROVEEDORES_PULL.has(proveedor);
+}
+
 /** El hecho declarado que explica «0 automatizaciones activas», con su caducidad. */
 function notaDeAutomatizaciones(): string {
   const h = HECHOS_DECLARADOS.find((x) => x.id === "automatizaciones-pausadas-por-beta");
@@ -124,14 +139,27 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
       /** Fallaron y ya no se reintentan: estas no se recuperan solas. */
       agotadas: colaAgotadas,
     },
-    conectores: conectores.map((c) => ({
-      nombre: c.name,
-      proveedor: c.provider,
-      estado: c.status,
-      ultima_sincronizacion: c.lastSyncAt?.toISOString() ?? null,
-      ultimo_lead: c.lastLeadAt?.toISOString() ?? null,
-      errores_acumulados: c.errorCount,
-    })),
+    conectores: {
+      nota:
+        "`ultima_sincronizacion` SOLO existe para los proveedores de tipo pull: son los " +
+        "únicos con cron que la escribe. Para los de webhook el campo ni siquiera se emite, " +
+        "porque un `null` ahí se lee como «lleva meses sin sincronizar» cuando en realidad " +
+        "esa columna nunca les aplicó. La señal de vida de un webhook es `ultimo_lead`.",
+      lista: conectores.map((c) => {
+        const pull = esPull(c.provider);
+        return {
+          nombre: c.name,
+          proveedor: c.provider,
+          estado: c.status,
+          via: pull ? "pull (cron)" : "webhook",
+          // El campo se OMITE en los de webhook en vez de mandarse nulo. Un campo ausente
+          // se pregunta; un nulo se interpreta, y se interpreta mal.
+          ...(pull ? { ultima_sincronizacion: c.lastSyncAt?.toISOString() ?? null } : {}),
+          ultimo_lead: c.lastLeadAt?.toISOString() ?? null,
+          errores_acumulados: c.errorCount,
+        };
+      }),
+    },
     automatizaciones: {
       activas: reglasActivas,
       totales: reglasTotales,
