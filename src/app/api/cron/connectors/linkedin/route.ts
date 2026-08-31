@@ -1,6 +1,7 @@
 // Pull de LinkedIn Lead Gen Forms — agendar en Hostinger CADA 15 MIN:
 //   curl -s -H "x-cron-secret: $CRON_SECRET" https://crm.propyte.com/api/cron/connectors/linkedin
 import { NextRequest, NextResponse } from "next/server";
+import { rechazoCron } from "@/lib/cron/auth";
 import prisma from "@/lib/db";
 import { readCredentials, mapExternalFields, processIncomingLead } from "@/lib/intake/connectors";
 
@@ -17,9 +18,8 @@ interface LIResponse {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET?.trim();
-  const provided = req.headers.get("x-cron-secret")?.trim() ?? req.nextUrl.searchParams.get("key")?.trim();
-  if (!secret || provided !== secret) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const rechazo = rechazoCron(req);
+  if (rechazo) return rechazo;
 
   const connectors = await prisma.leadConnector.findMany({
     where: { provider: "LINKEDIN", status: "ACTIVE", deletedAt: null },
