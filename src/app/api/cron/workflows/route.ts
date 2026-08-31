@@ -7,6 +7,7 @@ import { processPendingEvents, emitEvent } from "@/lib/workflows/events";
 import { runQueue } from "@/lib/workflows/queue";
 import { checkSlaBreaches } from "@/lib/workflows/sla";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
+import { rechazoCron } from "@/lib/cron/auth";
 
 // CAPI dispatcher con guarda (tablas C123 pueden no estar migradas aún)
 async function processPendingConversionsSafe() {
@@ -48,18 +49,10 @@ async function checkOverduePayments(): Promise<number> {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const header = req.headers.get("x-cron-secret")?.trim();
-  const query = req.nextUrl.searchParams.get("key")?.trim();
-  return header === secret || query === secret;
-}
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const rechazo = rechazoCron(req);
+  if (rechazo) return rechazo;
 
   const startedAt = Date.now();
   const result: Record<string, unknown> = {};

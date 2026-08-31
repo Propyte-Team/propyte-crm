@@ -2,6 +2,7 @@
 //   curl -s -H "x-cron-secret: $CRON_SECRET" https://crm.propyte.com/api/cron/connectors/tiktok
 // Trae leads con create_time > lastSyncAt por cada conector TIKTOK activo.
 import { NextRequest, NextResponse } from "next/server";
+import { rechazoCron } from "@/lib/cron/auth";
 import prisma from "@/lib/db";
 import { readCredentials, mapExternalFields, processIncomingLead } from "@/lib/intake/connectors";
 
@@ -22,11 +23,8 @@ interface TikTokLead {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET?.trim();
-  const provided = req.headers.get("x-cron-secret")?.trim() ?? req.nextUrl.searchParams.get("key")?.trim();
-  if (!secret || provided !== secret) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const rechazo = rechazoCron(req);
+  if (rechazo) return rechazo;
 
   const connectors = await prisma.leadConnector.findMany({
     where: { provider: "TIKTOK", status: "ACTIVE", deletedAt: null },
