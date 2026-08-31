@@ -144,7 +144,13 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
         "`ultima_sincronizacion` SOLO existe para los proveedores de tipo pull: son los " +
         "únicos con cron que la escribe. Para los de webhook el campo ni siquiera se emite, " +
         "porque un `null` ahí se lee como «lleva meses sin sincronizar» cuando en realidad " +
-        "esa columna nunca les aplicó. La señal de vida de un webhook es `ultimo_lead`.",
+        "esa columna nunca les aplicó. " +
+        "🚨 Y `ultimo_lead` TAMPOCO es señal de vida fiable: solo se escribe dentro de " +
+        "`processIncomingLead` (la vía de formularios de anuncio). Los leads que entran por " +
+        "DM llaman a `captureLead` directamente y no la tocan nunca, así que un conector de " +
+        "INSTAGRAM/MESSENGER activo y recibiendo prospectos puede quedarse en `null` para " +
+        "siempre. Los que salen con `senal_de_vida: \"ninguna\"` no se pueden monitorear hoy " +
+        "— es la tarea #653 del tablero, no un hallazgo nuevo.",
       lista: conectores.map((c) => {
         const pull = esPull(c.provider);
         return {
@@ -156,6 +162,15 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
           // se pregunta; un nulo se interpreta, y se interpreta mal.
           ...(pull ? { ultima_sincronizacion: c.lastSyncAt?.toISOString() ?? null } : {}),
           ultimo_lead: c.lastLeadAt?.toISOString() ?? null,
+          /**
+           * Con qué se sabría si este conector se cayó.
+           *
+           * `ninguna` no es un adorno: significa que si mañana deja de entregar, el panel se
+           * ve EXACTAMENTE igual que hoy. Decirlo aquí evita que el revisor lea `ultimo_lead:
+           * null` como «no ha llegado nada» cuando el dato correcto es «no tenemos forma de
+           * saberlo».
+           */
+          senal_de_vida: pull ? "ultima_sincronizacion" : c.lastLeadAt ? "ultimo_lead" : "ninguna",
           errores_acumulados: c.errorCount,
         };
       }),

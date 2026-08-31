@@ -174,12 +174,37 @@ describe("crm_pulso y los conectores", () => {
     expect(tk.ultima_sincronizacion).toBe("2026-08-28T10:00:00.000Z");
   });
 
-  it("la nota explica cuál es la señal de vida de cada tipo", () => {
-    // Sin esto, el revisor tiene el dato correcto y sigue sin saber qué mirar.
-    return pulso({}, ctxFalso({ db: dbBase(0, 8) })).then((r) => {
-      const c = (r as unknown as { conectores: { nota: string } }).conectores;
-      expect(c.nota).toMatch(/ultimo_lead/);
-      expect(c.nota).toMatch(/pull/);
-    });
+  /**
+   * 🚨 El caso que un humano y yo dimos por bueno, y que el revisor automático corrigió.
+   *
+   * Yo concluí que «la señal de vida de un webhook es `ultimo_lead`» y lo escribí en la
+   * nota. Es falso: `lastLeadAt` solo se escribe dentro de `processIncomingLead` —la vía
+   * de formularios de anuncio— y las vías de DM llaman a `captureLead` directamente, sin
+   * tocarla. Un conector de INSTAGRAM/MESSENGER activo, recibiendo prospectos todos los
+   * días, se queda en `null` para siempre.
+   *
+   * Consecuencia real: si mañana se cae, el panel se ve EXACTAMENTE igual que hoy.
+   */
+  it("un conector de webhook sin lastLeadAt sale con senal_de_vida: ninguna", async () => {
+    const r = (await pulso({}, ctxFalso({ db: dbBase(0, 8) }))) as unknown as {
+      conectores: { nota: string; lista: Array<Record<string, unknown>> };
+    };
+
+    const ig = r.conectores.lista.find((c) => c.proveedor === "INSTAGRAM")!;
+    // «ninguna» es distinto de «no ha llegado nada»: es «no tenemos forma de saberlo».
+    expect(ig.senal_de_vida).toBe("ninguna");
+
+    const tk = r.conectores.lista.find((c) => c.proveedor === "TIKTOK")!;
+    expect(tk.senal_de_vida).toBe("ultima_sincronizacion");
+  });
+
+  it("la nota ya NO afirma que ultimo_lead sea señal de vida de un webhook", async () => {
+    // Guardia contra la regresión exacta: la afirmación falsa llegó a producción una vez.
+    const r = (await pulso({}, ctxFalso({ db: dbBase(0, 8) }))) as unknown as {
+      conectores: { nota: string };
+    };
+    expect(r.conectores.nota).toMatch(/TAMPOCO es señal de vida fiable/);
+    expect(r.conectores.nota).toMatch(/#653/);
+    expect(r.conectores.nota).not.toMatch(/La señal de vida de un webhook es/);
   });
 });
