@@ -1,14 +1,28 @@
 // src/app/api/mcp/[...path]/route.ts
 import { NextRequest } from "next/server";
-import { checkBearer, getMcpUserId } from "@/lib/mcp/auth";
+import { getMcpUserId, nivelDeAcceso } from "@/lib/mcp/auth";
 import { resolveRoute } from "@/lib/mcp/dispatch";
 import { ok, fail } from "@/lib/mcp/respond";
 
 export const dynamic = "force-dynamic";
 
 async function handle(req: NextRequest, segments: string[]) {
-  const token = process.env.CRM_MCP_API_TOKEN ?? "";
-  if (!checkBearer(req.headers.get("authorization"), token)) return fail("unauthorized", 401);
+  const nivel = nivelDeAcceso(req.headers.get("authorization"), {
+    escritura: process.env.CRM_MCP_API_TOKEN ?? "",
+    soloLectura: process.env.CRM_MCP_READONLY_TOKEN ?? "",
+  });
+  if (nivel === "ninguno") return fail("unauthorized", 401);
+  /**
+   * 403 y no 401: el token ES válido, lo que no alcanza es el permiso. Un 401 le diría a
+   * quien llama «tu credencial está mal» y lo mandaría a rotarla, cuando el problema es
+   * que está usando la llave de lectura para escribir.
+   *
+   * El método es el único criterio, y basta: en este dispatch no hay un solo GET que
+   * mute, ni una sola escritura que no sea POST/PATCH/PUT.
+   */
+  if (nivel === "solo_lectura" && req.method !== "GET") {
+    return fail("forbidden: el token de solo lectura no autoriza escrituras", 403);
+  }
 
   const route = resolveRoute(req.method, segments);
   if (!route) return fail(`no_route: ${req.method} /${segments.join("/")}`, 404);
