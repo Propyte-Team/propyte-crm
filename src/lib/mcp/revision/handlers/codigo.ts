@@ -161,7 +161,12 @@ export async function codigoBuscar(args: unknown, ctx: RevisionContext) {
   const glob = a.glob === undefined ? undefined : textoRequerido(a.glob, "glob");
 
   const sha = await ctx.gh.resolverRef(ref);
-  const encontradas = await ctx.gh.buscar(patron, glob, sha, TOPE_COINCIDENCIAS);
+  const { coincidencias: encontradas, incompleta } = await ctx.gh.buscar(
+    patron,
+    glob,
+    sha,
+    TOPE_COINCIDENCIAS,
+  );
   const r = recortar(encontradas, TOPE_COINCIDENCIAS, "coincidencias");
 
   return envolver(
@@ -176,6 +181,20 @@ export async function codigoBuscar(args: unknown, ctx: RevisionContext) {
       patron,
       glob: glob ?? null,
       coincidencias: r.items,
+      /**
+       * GitHub devolvió ALGO pero dejó el índice a medias. Lo que sigue es un subconjunto
+       * de tamaño desconocido, así que una ausencia dentro de esta lista no prueba nada.
+       * Se emite solo cuando aplica: un campo que aparece a veces se lee, uno que siempre
+       * está se ignora.
+       */
+      ...(incompleta
+        ? {
+            advertencia_resultado_parcial:
+              "🚨 GitHub marcó esta búsqueda como INCOMPLETA (`incomplete_results`): recorrió " +
+              "solo una parte del índice. Estas coincidencias son válidas, pero la LISTA no " +
+              "está completa. No concluyas «solo aparece aquí» a partir de ella.",
+          }
+        : {}),
       limitacion_declarada:
         "La búsqueda usa el índice de código de GitHub: mira SOLO la rama por default, no acepta " +
         "expresiones regulares y no devuelve número de línea. Un resultado vacío NO prueba que el " +
