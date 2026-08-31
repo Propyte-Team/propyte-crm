@@ -69,7 +69,7 @@ export const HECHOS_DECLARADOS: HechoDeclarado[] = [
       "nacidos de un comentario que nunca contestaron, y es la que usan el tablero, las " +
       "metas, los reportes y Vista Hoy.",
     no_reportar:
-      "No uses `leads.nuevos_*` (crudo) como evidencia de volumen ni de calidad de campaña: " +
+      "No uses `leads.crudos_*` como evidencia de volumen ni de calidad de campaña: " +
       "usa `leads.reales_*`, que aplica el mismo filtro que los reportes del CRM. La brecha " +
       "entre los dos es esperada, no un hallazgo.",
     caduca_cuando:
