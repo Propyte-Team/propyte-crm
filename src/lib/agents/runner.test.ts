@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
+import { MAX_STEPS_AGOTADOS } from "./run-status";
 
 // --- mocks de dependencias externas de runner.ts ---
 
@@ -156,5 +157,111 @@ describe("runAgent — system prompt vía buildSystemPrompt (marca+tono, sin pla
     expect(result.status).toBe("FAILED");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(getBotConfig).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #654 — el loop tiene UNA salida limpia: el `break` de cuando el modelo responde sin
+ * pedir herramienta. Si pide en los `maxSteps` turnos, el `for` se acaba solo.
+ *
+ * Antes ese camino caía directo al update de éxito: COMPLETED con `output` en null,
+ * porque `finalText` nunca se asignó. Y como `crm_fallos` solo consulta FAILED, la
+ * corrida no aparecía en ningún reporte. El agente dejaba el trabajo a medias y el
+ * tablero decía que todo salió bien.
+ */
+describe("runAgent — corrida que agota sus pasos", () => {
+  function toolUseResponse() {
+    return {
+      ok: true,
+      json: async () => ({
+        content: [
+          { type: "text", text: "Sigo trabajando…" },
+          { type: "tool_use", id: "t1", name: "buscar", input: {} },
+        ],
+        stop_reason: "tool_use",
+      }),
+      text: async () => "",
+    };
+  }
+
+  function agenteConTool() {
+    toolsForAgent.mockReturnValue([
+      {
+        name: "buscar",
+        description: "Busca",
+        input_schema: { type: "object", properties: {} },
+        allowedRoles: ["ADMIN"],
+        handler: vi.fn().mockResolvedValue({ ok: true }),
+      },
+    ]);
+  }
+
+  it("NO se cierra como COMPLETED: sale FAILED con la marca de agotamiento", async () => {
+    agenteConTool();
+    // El agente (maxSteps: 3) pide herramienta siempre: nunca llega al break.
+    const fetchMock = vi.fn().mockResolvedValue(toolUseResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAgent("agent1", "manual", {});
+
+    expect(fetchMock).toHaveBeenCalledTimes(3); // consumió el presupuesto entero
+    expect(result.status).toBe("FAILED");
+    expect(result.output).toBeNull();
+
+    const update = agentRunUpdate.mock.calls.at(-1)?.[0];
+    expect(update.data.status).toBe("FAILED");
+    expect(update.data.error).toContain(MAX_STEPS_AGOTADOS);
+    expect(update.data.error).toContain("3 pasos");
+    // Los pensamientos siguen auditables aunque no haya conclusión.
+    expect(update.data.steps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ tool: "buscar" })]),
+    );
+  });
+
+  // Escalar es un efecto real: si ocurrió, el mensaje lo dice. Pero la corrida siguió sin
+  // concluir, así que no se puede cerrar como ESCALATED —eso la volvería invisible otra vez.
+  it("si escaló y aun así se quedó sin pasos, lo dice sin darla por buena", async () => {
+    toolsForAgent.mockReturnValue([
+      {
+        name: "escalate_to_human",
+        description: "Escala",
+        input_schema: { type: "object", properties: {} },
+        allowedRoles: ["ADMIN"],
+        handler: vi.fn().mockResolvedValue({ escalated: true, to: "u2" }),
+      },
+    ]);
+    const escalaSiempre = {
+      ok: true,
+      json: async () => ({
+        content: [{ type: "tool_use", id: "t1", name: "escalate_to_human", input: {} }],
+        stop_reason: "tool_use",
+      }),
+      text: async () => "",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(escalaSiempre));
+
+    const result = await runAgent("agent1", "manual", {});
+
+    expect(result.status).toBe("FAILED");
+    const update = agentRunUpdate.mock.calls.at(-1)?.[0];
+    expect(update.data.error).toContain(MAX_STEPS_AGOTADOS);
+    expect(update.data.error).toContain("escalar");
+  });
+
+  // Control: la salida limpia sigue siendo un éxito. Si esto se rompe, el arreglo estaría
+  // marcando como fallo cualquier corrida normal.
+  it("la corrida que sí concluye sigue saliendo COMPLETED y sin error", async () => {
+    agenteConTool();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(toolUseResponse())
+      .mockResolvedValueOnce(textResponse("Ya está."));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runAgent("agent1", "manual", {});
+
+    expect(result).toEqual({ runId: "run1", status: "COMPLETED", output: "Ya está." });
+    const update = agentRunUpdate.mock.calls.at(-1)?.[0];
+    expect(update.data.error).toBeUndefined();
   });
 });

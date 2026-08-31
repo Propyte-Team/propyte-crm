@@ -6,6 +6,7 @@ import prisma from "@/lib/db";
 import { buildSystemPrompt } from "@/lib/bot/claude";
 import { getBotConfig } from "@/lib/bot/config";
 import { toolsForAgent, type AgentTool } from "./tools";
+import { MAX_STEPS_AGOTADOS } from "./run-status";
 
 interface ClaudeContentBlock {
   type: string;
@@ -65,6 +66,15 @@ export async function runAgent(
   const steps: Array<Record<string, unknown>> = [];
   let finalText: string | null = null;
   let escalated = false;
+  /**
+   * ¿El loop salió por la puerta buena?
+   *
+   * Tiene UNA salida limpia: el `break` de abajo, cuando el modelo responde sin pedir
+   * herramienta. Si pide en los `maxSteps` turnos, el `for` se acaba solo y antes caía
+   * directo al update de éxito, con `output` en null porque nunca se asignó. Sin este
+   * testigo no hay forma de distinguir «terminó» de «se le acabaron los pasos».
+   */
+  let concluyo = false;
 
   try {
     for (let step = 0; step < maxSteps; step++) {
@@ -91,6 +101,7 @@ export async function runAgent(
 
       if (toolUses.length === 0) {
         finalText = text;
+        concluyo = true;
         steps.push({ step, thought: text });
         break;
       }
@@ -119,6 +130,36 @@ export async function runAgent(
         });
       }
       messages.push({ role: "user", content: toolResults });
+    }
+
+    /**
+     * Agotamiento de presupuesto = estado terminal propio, nunca un éxito.
+     *
+     * El agente pidió herramienta en todos los turnos disponibles y jamás dio una
+     * conclusión. Guardarlo como COMPLETED con `output` vacío es el peor tipo de falla:
+     * la que no se ve como falla. `crm_fallos` solo consulta FAILED, así que estas
+     * corridas no aparecían en ningún reporte.
+     *
+     * `output` se deja en null a propósito: no hay conclusión que guardar, y meter ahí
+     * el último pensamiento suelto la haría pasar por una. Los pensamientos están en
+     * `steps`, que es donde se pueden leer como lo que son.
+     */
+    if (!concluyo) {
+      const error =
+        `${MAX_STEPS_AGOTADOS}: el agente pidió herramienta en los ${maxSteps} pasos ` +
+        `disponibles y nunca dio una conclusión` +
+        (escalated ? " (alcanzó a escalar a un humano antes de quedarse sin pasos)" : "") +
+        ".";
+      await prisma.agentRun.update({
+        where: { id: run.id },
+        data: {
+          steps: JSON.parse(JSON.stringify(steps)),
+          status: "FAILED",
+          error,
+          endedAt: new Date(),
+        },
+      });
+      return { runId: run.id, status: "FAILED", output: null };
     }
 
     await prisma.agentRun.update({

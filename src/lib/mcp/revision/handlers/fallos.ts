@@ -1,3 +1,4 @@
+import { esCorridaAgotada } from "@/lib/agents/run-status";
 import { badRequest } from "../errors";
 import { firmaDeError, redactar } from "../redactar";
 import { recortar } from "../sobre";
@@ -100,13 +101,29 @@ export async function fallos(args: unknown, ctx: RevisionContext) {
       fecha: l.receivedAt,
     })),
   );
+  /**
+   * Las corridas agotadas van en su propio montón.
+   *
+   * Las dos salen con status FAILED —el enum no las distingue todavía— pero piden cosas
+   * distintas: una que se quedó sin pasos pide subirle el límite o recortarle el
+   * objetivo; una que reventó pide arreglar lo que reventó. Juntas, la segunda se
+   * pierde entre las primeras.
+   */
   const gAgentes = agrupar(
-    agentes.map((r) => ({ clave: r.trigger, error: r.error, fecha: r.endedAt })),
+    agentes
+      .filter((r) => !esCorridaAgotada(r.error))
+      .map((r) => ({ clave: r.trigger, error: r.error, fecha: r.endedAt })),
+  );
+  const gAgotadas = agrupar(
+    agentes
+      .filter((r) => esCorridaAgotada(r.error))
+      .map((r) => ({ clave: r.trigger, error: r.error, fecha: r.endedAt })),
   );
 
   const rAcciones = recortar(gAcciones, TOPE_GRUPOS, "grupos de acciones fallidas");
   const rConector = recortar(gConector, TOPE_GRUPOS, "grupos de leads de conector con error");
   const rAgentes = recortar(gAgentes, TOPE_GRUPOS, "grupos de corridas de agente fallidas");
+  const rAgotadas = recortar(gAgotadas, TOPE_GRUPOS, "grupos de corridas de agente sin terminar");
 
   return {
     desde: desde.toISOString(),
@@ -119,9 +136,16 @@ export async function fallos(args: unknown, ctx: RevisionContext) {
      */
     leads_de_conector_perdidos: rConector.items,
     agentes_fallidos: rAgentes.items,
+    /**
+     * Se quedaron sin pasos antes de concluir. NO reventaron: hicieron trabajo, lo
+     * dejaron a medias y hasta ahora se guardaban como «terminado bien» con el resumen
+     * vacío. Un número que sube aquí significa objetivos más grandes que su presupuesto
+     * de pasos, no un sistema roto.
+     */
+    agentes_sin_terminar: rAgotadas.items,
     sla_incumplidos_por_tipo: Object.fromEntries(sla.map((s) => [s.type, s._count._all])),
     eventos_sin_procesar_por_tipo: Object.fromEntries(eventos.map((e) => [e.type, e._count._all])),
-    truncados: [rAcciones.truncado, rConector.truncado, rAgentes.truncado].filter(Boolean),
+    truncados: [rAcciones.truncado, rConector.truncado, rAgentes.truncado, rAgotadas.truncado].filter(Boolean),
     limitacion_declarada:
       "Cubre fallos de negocio (cola de acciones, conectores, agentes, SLA, eventos). NO cubre " +
       "excepciones de runtime ni 500s de Next: este repo no tiene agregador de esos. Un resultado " +
