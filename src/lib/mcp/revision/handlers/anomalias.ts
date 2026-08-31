@@ -61,7 +61,7 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
   const corteHoy = new Date(`${claveDia(ahora)}T00:00:00.000Z`);
   const desde = new Date(corteHoy.getTime() - VENTANA_DIAS * DIA);
 
-  const [contactos, deals, accionesFallidas, leadsConError, slaIncumplidos] = await Promise.all([
+  const [contactos, deals, accionesFallidas, leadsConError, slaIncumplidos, eventos, corridas] = await Promise.all([
     // Con el filtro del CRM: la serie tiene que medir lo mismo que `/reportes`, o la
     // mediana se calcula sobre spam y la señal deja de significar nada.
     db.contact.findMany({ where: realLeadWhere({ createdAt: { gte: desde } }), select: { createdAt: true } }),
@@ -78,6 +78,24 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
       where: { status: "BREACHED", createdAt: { gte: desde } },
       select: { createdAt: true },
     }),
+    /**
+     * La cola de eventos es un STOCK, no un flujo: importa cuántos quedaban PENDIENTES
+     * al cierre de cada día, no cuántos entraron. Por eso se traen las dos fechas y el
+     * backlog se reconstruye por día — con `processedAt` se sabe hasta qué día estuvo
+     * pendiente cada evento, así que la serie histórica es exacta y no una estimación.
+     *
+     * El `OR` con `processedAt: null` es lo que evita el sesgo: un evento viejo que sigue
+     * sin procesarse está fuera de la ventana por `occurredAt` pero pesa en el backlog de
+     * TODOS los días. Omitirlo haría que la cola atascada se viera vacía.
+     */
+    db.workflowEvent.findMany({
+      where: { OR: [{ occurredAt: { gte: desde } }, { processedAt: null }] },
+      select: { occurredAt: true, processedAt: true },
+    }),
+    db.agentRun.findMany({
+      where: { startedAt: { gte: desde } },
+      select: { startedAt: true, status: true, output: true },
+    }),
   ]);
 
   const series: Record<string, Date[]> = {
@@ -86,6 +104,24 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
     acciones_fallidas: accionesFallidas.map((x) => x.createdAt),
     leads_de_conector_con_error: leadsConError.map((x) => x.receivedAt),
     sla_incumplidos: slaIncumplidos.map((x) => x.createdAt),
+    /**
+     * Que los agentes SIGAN CORRIENDO. Es la señal que pide la práctica
+     * `automatizaciones-vivas` y la única que detecta el modo de falla más silencioso de
+     * todos: que dejen de dispararse. Cero corridas no produce ningún error en ningún
+     * log — simplemente no pasa nada.
+     */
+    corridas_de_agente: corridas.map((x) => x.startedAt),
+    corridas_de_agente_fallidas: corridas
+      .filter((x) => x.status === "FAILED")
+      .map((x) => x.startedAt),
+    /**
+     * 🚨 Cerradas como exitosas y con la salida VACÍA. Es la huella de una corrida que se
+     * quedó a medias, y se cuenta por el PATRÓN y no por el estado: así la serie detecta
+     * el caso aunque el status siga diciendo que todo salió bien (tarjeta #654).
+     */
+    corridas_de_agente_sin_conclusion: corridas
+      .filter((x) => x.status === "COMPLETED" && !(x.output ?? "").trim())
+      .map((x) => x.startedAt),
   };
 
   // Las claves de los días previos, del más viejo al más nuevo, SIN incluir hoy.
@@ -98,6 +134,12 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
 
   const comparadas: Record<string, unknown> = {};
   const parcialHoy: Record<string, number> = {};
+
+  /** Cuántos eventos seguían sin procesar en un instante dado. */
+  const backlogEn = (corte: Date) =>
+    eventos.filter(
+      (e) => e.occurredAt <= corte && (e.processedAt === null || e.processedAt > corte),
+    ).length;
 
   for (const [nombre, fechas] of Object.entries(series)) {
     const porDia = contarPorDia(fechas);
@@ -113,6 +155,37 @@ export async function anomalias(_args: unknown, ctx: RevisionContext) {
     };
     parcialHoy[nombre] = porDia.get(claveDia(ahora)) ?? 0;
   }
+
+  /**
+   * La cola de eventos, medida como stock al cierre de cada día.
+   *
+   * Va por fuera del bucle porque las otras cinco series cuentan CUÁNTOS pasaron y esta
+   * cuenta CUÁNTOS quedaban. El manual del propio CRM dice que la alarma es que este
+   * número crezca día con día —significa que el cron que los consume dejó de correr— y
+   * un conteo puntual no puede mostrar crecimiento: cada día se compara contra nada.
+   */
+  const cierres: Date[] = [];
+  for (let i = VENTANA_DIAS; i >= 1; i--) {
+    // El cierre del día `i` atrás es el corte del día siguiente.
+    cierres.push(new Date(corteHoy.getTime() - (i - 1) * DIA));
+  }
+  const backlogs = cierres.map(backlogEn);
+  const backlogAyer = backlogs[backlogs.length - 1];
+  const backlogPrevios = backlogs.slice(0, -1);
+  const medBacklog = mediana(backlogPrevios);
+
+  comparadas.eventos_sin_procesar = {
+    ultimo_dia_completo: backlogAyer,
+    mediana_13_dias_previos: medBacklog,
+    desviacion: Number((backlogAyer - medBacklog).toFixed(2)),
+    senal: senal(backlogAyer, medBacklog, backlogPrevios.length),
+    nota:
+      "Es un STOCK —cuántos quedaban pendientes al cierre del día—, no un flujo. Un valor " +
+      "que crece día con día significa que el cron que los consume dejó de correr, aunque " +
+      "ningún log reporte error. Su cifra de hoy es el backlog AHORA MISMO, que sí es un " +
+      "dato completo: la advertencia de día parcial no le aplica.",
+  };
+  parcialHoy.eventos_sin_procesar = backlogEn(ahora);
 
   return {
     /** La comparación válida: un día completo contra la mediana de los 13 anteriores. */
