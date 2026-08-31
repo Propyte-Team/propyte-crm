@@ -61,8 +61,18 @@ const dbCompleta = () =>
           connector: { name: "Meta Lead Ads" },
         },
       ],
+      "workflowEvent.findMany": [
+        { occurredAt: new Date("2026-08-27T09:00:00Z"), processedAt: null },
+        {
+          occurredAt: new Date("2026-08-26T09:00:00Z"),
+          processedAt: new Date("2026-08-26T09:05:00Z"),
+        },
+      ],
       "agentRun.findMany": [
         {
+          startedAt: new Date("2026-08-27T12:00:00Z"),
+          status: "FAILED",
+          output: null,
           trigger: "inbound_message",
           error: `Timeout consultando al contacto ${CORREO_SEMBRADO}`,
           endedAt: new Date("2026-08-27T12:00:00Z"),
