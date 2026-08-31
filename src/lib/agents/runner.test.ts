@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
-import { MAX_STEPS_AGOTADOS } from "./run-status";
+import { MAX_STEPS_AGOTADOS, RESPUESTA_TRUNCADA, resumenDeCorrida } from "./run-status";
 
 // --- mocks de dependencias externas de runner.ts ---
 
@@ -263,5 +263,125 @@ describe("runAgent — corrida que agota sus pasos", () => {
     expect(result).toEqual({ runId: "run1", status: "COMPLETED", output: "Ya está." });
     const update = agentRunUpdate.mock.calls.at(-1)?.[0];
     expect(update.data.error).toBeUndefined();
+  });
+});
+
+/**
+ * #656 — de cada corrida se guardaba lo que el agente pensó y lo que hizo, pero no lo
+ * que costó ni cuánto tardó: `usage` se descartaba al parsear y `stop_reason` se tipaba
+ * sin leerse nunca. Sin eso no hay forma de saber qué agente se lleva el gasto, cuál
+ * entró en un ciclo que quema dinero, ni cuál se está volviendo lento.
+ */
+describe("runAgent — instrumentación de la corrida", () => {
+  function respuesta(over: Record<string, unknown> = {}) {
+    return {
+      ok: true,
+      json: async () => ({
+        content: [{ type: "text", text: "Listo." }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 120, output_tokens: 30 },
+        ...over,
+      }),
+      text: async () => "",
+    };
+  }
+
+  it("guarda tokens y latencia del modelo en cada paso", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta()));
+
+    await runAgent("agent1", "manual", {});
+
+    const pasos = agentRunUpdate.mock.calls.at(-1)?.[0].data.steps as Array<Record<string, unknown>>;
+    expect(pasos[0].tokens_entrada).toBe(120);
+    expect(pasos[0].tokens_salida).toBe(30);
+    expect(pasos[0].stop_reason).toBe("end_turn");
+    expect(typeof pasos[0].ms_modelo).toBe("number");
+  });
+
+  it("el total de la corrida se puede leer de sus propios pasos", async () => {
+    const conTool = {
+      ok: true,
+      json: async () => ({
+        content: [{ type: "tool_use", id: "t1", name: "buscar", input: {} }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 200, output_tokens: 40 },
+      }),
+      text: async () => "",
+    };
+    toolsForAgent.mockReturnValue([
+      {
+        name: "buscar",
+        description: "Busca",
+        input_schema: { type: "object", properties: {} },
+        allowedRoles: ["ADMIN"],
+        handler: vi.fn().mockResolvedValue({ ok: true }),
+      },
+    ]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(conTool).mockResolvedValueOnce(respuesta()));
+
+    await runAgent("agent1", "manual", {});
+
+    const pasos = agentRunUpdate.mock.calls.at(-1)?.[0].data.steps;
+    const total = resumenDeCorrida(pasos);
+    expect(total.tokens_entrada).toBe(320); // 200 del turno con tool + 120 del final
+    expect(total.tokens_salida).toBe(70);
+    expect(total.pasos).toBe(2);
+    expect(typeof total.ms_tool).toBe("number");
+  });
+
+  /**
+   * 🚨 El caso caro: `max_tokens` significa que la respuesta se cortó a media frase.
+   * Antes ese texto se guardaba como `output`, o sea como la conclusión del agente.
+   */
+  it("stop_reason max_tokens NO se guarda como conclusión", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        respuesta({ content: [{ type: "text", text: "El contacto pidió que le coti" }], stop_reason: "max_tokens" }),
+      ),
+    );
+
+    const result = await runAgent("agent1", "manual", {});
+
+    expect(result.status).toBe("FAILED");
+    expect(result.output).toBeNull();
+    const update = agentRunUpdate.mock.calls.at(-1)?.[0];
+    expect(update.data.error).toContain(RESPUESTA_TRUNCADA);
+    expect(update.data.error).not.toContain(MAX_STEPS_AGOTADOS); // la causa correcta, no la otra
+    // El texto cortado sigue auditable como pensamiento, no como veredicto.
+    expect(update.data.steps[0].thought).toBe("El contacto pidió que le coti");
+  });
+
+  it("max_tokens sale del default y se puede subir por agente", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respuesta());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAgent("agent1", "manual", {});
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).max_tokens).toBe(1000);
+
+    agentDefFindUnique.mockResolvedValue({ ...AGENT, limits: { maxSteps: 3, maxTokens: 4000 } });
+    await runAgent("agent1", "manual", {});
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)?.[1].body as string).max_tokens).toBe(4000);
+  });
+
+  // Un tope sin techo deja que una config mal puesta convierta cada turno en una factura.
+  it("un maxTokens desmedido se topa", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respuesta());
+    vi.stubGlobal("fetch", fetchMock);
+    agentDefFindUnique.mockResolvedValue({ ...AGENT, limits: { maxSteps: 3, maxTokens: 999999 } });
+
+    await runAgent("agent1", "manual", {});
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).max_tokens).toBe(8000);
+  });
+
+  // Control: una respuesta sin `usage` (el proveedor podría omitirlo) no debe reventar.
+  it("sin usage en la respuesta, la corrida sigue y las cifras quedan en 0", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respuesta({ usage: undefined })));
+
+    const result = await runAgent("agent1", "manual", {});
+
+    expect(result.status).toBe("COMPLETED");
+    const pasos = agentRunUpdate.mock.calls.at(-1)?.[0].data.steps;
+    expect(resumenDeCorrida(pasos).tokens_entrada).toBe(0);
   });
 });
