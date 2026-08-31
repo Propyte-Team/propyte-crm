@@ -86,7 +86,7 @@ export function githubFalso(over: Partial<GithubReader> = {}): GithubReader {
     listarArbol: async () => ["src/a.ts", "src/b/"],
     listarCommits: async () => [],
     listarPullRequestsAbiertos: async () => [],
-    buscar: async () => [],
+    buscar: async () => ({ coincidencias: [], incompleta: false }),
     ...over,
   };
 }

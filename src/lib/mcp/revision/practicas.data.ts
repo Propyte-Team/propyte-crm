@@ -12,6 +12,14 @@
  * `ya_existe_si` es el otro guardia: describe cómo se ve la práctica CUANDO YA ESTÁ.
  * Proponer algo que el CRM ya hace es el error más frecuente de una cosecha automática,
  * y ya ocurrió aquí: de dos tareas cosechadas y trabajadas, las dos estaban resueltas.
+ *
+ * 🚨 NINGÚN `como_se_mide` manda a `crm_codigo_buscar`, y no es un olvido. El índice de
+ * código de GitHub no responde para este repo: `q=export repo:Propyte-Team/propyte-crm`
+ * devuelve `total_count: 0` con `incomplete_results: true` en 5 de 5 corridas, contra un
+ * repo público grande que sí devuelve cientos. Cinco prácticas dependían solo de esa
+ * herramienta y por lo tanto no se podían medir (tarjeta #662). La ruta buena mientras
+ * tanto es `crm_codigo_arbol` + `crm_codigo_leer`, que lee blobs reales sobre un SHA
+ * concreto. Si algún día el índice revive, se puede volver — pero midiéndolo antes.
  */
 
 export type Practica = {
@@ -53,7 +61,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "Un lead sin dueño no tiene a quién reclamarle el seguimiento. Es la fuga más silenciosa: no aparece como error en ningún log.",
     como_se_mide:
-      "crm_codigo_buscar sobre las reglas de enrutamiento (RoutingRule) y contraste con crm_pulso() → leads.reales_7d. Si hay reglas activas pero el reparto se concentra en un solo asesor, el round-robin está secuestrando leads.",
+      "crm_codigo_arbol + crm_codigo_leer sobre las reglas de enrutamiento (RoutingRule) y contraste con crm_pulso() → leads.reales_7d. Si hay reglas activas pero el reparto se concentra en un solo asesor, el round-robin está secuestrando leads.",
     ya_existe_si:
       "Existen RoutingRule activas que cubren todos los orígenes de lead vigentes, y ninguna deja un hueco por territorio o por tipo de producto.",
   },
@@ -87,7 +95,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "Un prospecto duplicado se reparte entre dos asesores, que lo llaman por separado. El costo no es la fila extra: es la llamada repetida que el cliente recibe.",
     como_se_mide:
-      "crm_codigo_buscar del guardia de duplicados en el alta de contactos, y verificar que cubra teléfono Y correo. Contrastar con crm_fallos(): un grupo de errores de clave única indica que el guardia está actuando tarde.",
+      "crm_codigo_arbol + crm_codigo_leer del guardia de duplicados en el alta de contactos, y verificar que cubra teléfono Y correo. Contrastar con crm_fallos(): un grupo de errores de clave única indica que el guardia está actuando tarde.",
     ya_existe_si:
       "El alta rechaza un teléfono ya registrado con un conflicto explícito, y el mismo guardia corre en la ruta de los conectores, no solo en el formulario.",
   },
@@ -123,7 +131,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "La mayoría de las ventas de obra nueva cierran después de varios contactos. Un CRM que solo agenda el siguiente paso deja que la cadencia dependa de la disciplina de cada asesor.",
     como_se_mide:
-      "Contar ActionPlan activos y sus inscripciones (ActionPlanEnrollment) vía crm_codigo_buscar sobre las consultas existentes, contrastando con crm_pulso() → leads.reales_7d. Si entran leads y no se inscriben en ningún plan, la cadencia no está operando.",
+      "Contar ActionPlan activos y sus inscripciones (ActionPlanEnrollment) vía crm_codigo_arbol + crm_codigo_leer sobre las consultas existentes, contrastando con crm_pulso() → leads.reales_7d. Si entran leads y no se inscriben en ningún plan, la cadencia no está operando.",
     ya_existe_si:
       "Existen ActionPlan activos y la mayoría de los leads nuevos queda inscrito en alguno de forma automática.",
   },
@@ -134,7 +142,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "Cotizar una unidad vendida quema la relación con el cliente en el peor momento: cuando ya decidió comprar. Este error ya ocurrió en un sitio de esta casa.",
     como_se_mide:
-      "Cruzar el estado de las unidades con los deals en etapas de cierre (RESERVED, CONTRACT_SIGNED, WON) vía crm_codigo_buscar sobre las consultas de disponibilidad. Una unidad con deal ganado que sigue apareciendo como disponible es el hallazgo.",
+      "Cruzar el estado de las unidades con los deals en etapas de cierre (RESERVED, CONTRACT_SIGNED, WON) vía crm_codigo_arbol + crm_codigo_leer sobre las consultas de disponibilidad. Una unidad con deal ganado que sigue apareciendo como disponible es el hallazgo.",
     ya_existe_si:
       "La consulta de unidades disponibles excluye las comprometidas por un deal en etapa de cierre.",
   },
@@ -156,7 +164,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "Una meta sin línea base no se puede evaluar: cualquier resultado se puede narrar como éxito o fracaso según convenga.",
     como_se_mide:
-      "crm_anomalias() → series.leads_reales_nuevos y series.deals_nuevos dan la línea base real por mediana. Contrastar con las metas configuradas (modelo Goal) vía crm_codigo_buscar.",
+      "crm_anomalias() → series.leads_reales_nuevos y series.deals_nuevos dan la línea base real por mediana. Contrastar con las metas configuradas (modelo Goal) vía crm_codigo_arbol + crm_codigo_leer.",
     ya_existe_si:
       "Las metas vigentes están dentro de un rango razonable de la mediana observada, en vez de ser múltiplos arbitrarios.",
   },

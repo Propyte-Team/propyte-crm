@@ -105,6 +105,19 @@ export type CoincidenciaBusqueda = {
 };
 
 /**
+ * El resultado de una búsqueda, con su honestidad incluida.
+ *
+ * `incompleta` viene de `incomplete_results` de la API de GitHub: el índice no terminó
+ * de recorrerse. Sin este campo, una búsqueda que GitHub abandonó a la mitad y una que
+ * de verdad no encontró nada devuelven exactamente lo mismo — y la segunda lectura es la
+ * que fabrica hallazgos falsos del tipo «esto no existe en el código».
+ */
+export type ResultadoBusqueda = {
+  coincidencias: CoincidenciaBusqueda[];
+  incompleta: boolean;
+};
+
+/**
  * Lo que la puerta necesita de GitHub. Solo lectura: no hay un solo método que escriba.
  *
  * Se lee de GitHub y NUNCA del filesystem del deploy. Ese es el punto entero: durante el
@@ -119,7 +132,7 @@ export type GithubReader = {
   listarArbol(path: string, ref: string): Promise<string[]>;
   listarCommits(desde: Date, hasta: Date, ref: string, tope: number): Promise<CommitRepo[]>;
   listarPullRequestsAbiertos(): Promise<PullRequestRepo[]>;
-  buscar(patron: string, glob: string | undefined, ref: string, tope: number): Promise<CoincidenciaBusqueda[]>;
+  buscar(patron: string, glob: string | undefined, ref: string, tope: number): Promise<ResultadoBusqueda>;
 };
 
 /** El sobre de rotulado de §4.3. Va en TODA respuesta de TODA tool. */
