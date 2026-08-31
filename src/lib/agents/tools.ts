@@ -16,15 +16,46 @@ export interface AgentTool {
 const ADVISOR_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER", "ASESOR", "ASESOR_SR", "ASESOR_JR", "MARKETING"];
 
 async function auditToolUse(systemUser: User, tool: string, input: unknown): Promise<void> {
-  await prisma.auditLog.create({
-    data: {
-      userId: systemUser.id,
-      action: "UPDATE",
-      entity: "AgentTool",
-      entityId: tool,
-      changes: JSON.parse(JSON.stringify({ input })),
-    },
-  }).catch(() => {});
+  await prisma.auditLog
+    .create({
+      data: {
+        userId: systemUser.id,
+        action: "UPDATE",
+        entity: "AgentTool",
+        entityId: tool,
+        changes: JSON.parse(JSON.stringify({ input })),
+      },
+    })
+    // Sigue sin bloquear la tool —un hipo de la base no debe dejar al agente mudo a
+    // media conversación— pero YA NO es mudo. Un historial que puede tener huecos y no
+    // los declara no sirve para reconstruir qué pasó, que es su única razón de existir.
+    .catch((err) => console.error(`[agents] AUDITORÍA PERDIDA de ${tool}:`, err));
+}
+
+/**
+ * La única forma soportada de invocar una tool: ejecutar DEJANDO CONSTANCIA.
+ *
+ * La cabecera de este archivo declara «Todo uso → Activity/AuditLog» desde el principio.
+ * En la práctica solo dos de las ocho llamaban a `auditToolUse` a mano, y las seis sin
+ * registrar incluían las dos de mayor consecuencia: mandar un WhatsApp a una persona real
+ * y dar de alta un prospecto. Si un agente le escribía a quien no debía, no quedaba
+ * constancia de que hubiera sido él.
+ *
+ * Por eso el registro NO vuelve a depender de que cada handler se acuerde: se hace aquí,
+ * en el punto por el que pasan todas. Una tool nueva queda auditada sin que su autor
+ * tenga que saber que existe esta regla.
+ *
+ * Se registra ANTES de ejecutar, a propósito: si el handler revienta a la mitad —o peor,
+ * a la mitad de un envío— el intento igual quedó anotado. Un registro que solo se escribe
+ * cuando todo salió bien no sirve para investigar lo que salió mal.
+ */
+export async function ejecutarTool(
+  tool: AgentTool,
+  input: Record<string, unknown>,
+  systemUser: User,
+): Promise<unknown> {
+  await auditToolUse(systemUser, tool.name, input);
+  return tool.handler(input, systemUser);
 }
 
 export const AGENT_TOOLS: AgentTool[] = [
@@ -96,7 +127,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       }
       if (Object.keys(data).length === 0) return { updated: false };
       await prisma.contact.update({ where: { id: String(contactId) }, data: { ...data, lastActivityAt: new Date() } as never });
-      await auditToolUse(systemUser, "update_investment_profile", { contactId, ...data });
+      // El registro lo pone `ejecutarTool`; llamarlo aquí lo duplicaría.
       return { updated: true, fields: Object.keys(data) };
     },
   },
@@ -204,7 +235,7 @@ export const AGENT_TOOLS: AgentTool[] = [
           link: `/contacts/${contact.id}`,
         },
       });
-      await auditToolUse(systemUser, "escalate_to_human", input);
+      // El registro lo pone `ejecutarTool`; llamarlo aquí lo duplicaría.
       return { escalated: true, to: targetId };
     },
   },
@@ -236,8 +267,14 @@ export const AGENT_TOOLS: AgentTool[] = [
   },
 ];
 
+/**
+ * Las tools que este agente puede usar, con el registro ya puesto.
+ *
+ * Devuelve COPIAS con el handler envuelto en `ejecutarTool`. El runner no tiene que
+ * acordarse de auditar, y no puede olvidarse: no tiene acceso al handler crudo.
+ */
 export function toolsForAgent(allowedTools: string[], systemUser: User): AgentTool[] {
   return AGENT_TOOLS.filter(
     (t) => allowedTools.includes(t.name) && t.allowedRoles.includes(systemUser.role)
-  );
+  ).map((t) => ({ ...t, handler: (input, usuario) => ejecutarTool(t, input, usuario) }));
 }
