@@ -4,7 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/db", () => ({ default: {
   user: { findUnique: vi.fn() },
 }}));
+/** Delega igual que el real, pero deja ver que la pasarela pasa por el (tarjeta #666). */
+const ejecutarToolSpy = vi.fn(async (tool: any, input: any, user: any) => tool.handler(input, user));
 vi.mock("@/lib/agents/tools", () => ({
+  ejecutarTool: (...a: any[]) => (ejecutarToolSpy as any)(...a),
   AGENT_TOOLS: [
     {
       name: "send_whatsapp",
