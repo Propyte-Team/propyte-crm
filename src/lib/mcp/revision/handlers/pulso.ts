@@ -49,7 +49,7 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     reales7d,
     porOrigen,
     porEtapa,
-    slaVencidos,
+    slaPorEstado,
     slaCorriendoVencidos,
     cola,
     colaAgotadas,
@@ -74,7 +74,14 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
       _count: { _all: true },
     }),
     db.deal.groupBy({ by: ["stage"], _count: { _all: true } }),
-    db.slaTimer.count({ where: { status: "BREACHED", createdAt: { gte: hace7d } } }),
+    // 🚨 Agrupado por estado, no contando solo los BREACHED. La diferencia es el
+    // DENOMINADOR: un `incumplidos_7d: 0` sin total no distingue «cumplimos todo» de
+    // «no se creó ni un temporizador», y las dos cosas producen el mismo cero verde.
+    db.slaTimer.groupBy({
+      by: ["status"],
+      where: { createdAt: { gte: hace7d } },
+      _count: { _all: true },
+    }),
     // 🚨 El más interesante de todos: sigue RUNNING pero su `dueAt` ya pasó. Es un SLA
     // incumplido que todavía no se marcó como tal — no aparece en el conteo de BREACHED
     // y por eso un tablero que solo mire ese conteo lo reporta todo en verde.
@@ -108,6 +115,14 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     }),
   ]);
 
+  /**
+   * El total del periodo sale de la misma agrupación: no hay una segunda consulta que
+   * pueda desincronizarse con la primera.
+   */
+  const slaEstados = Object.fromEntries(slaPorEstado.map((s) => [s.status, s._count._all]));
+  const slaTotal = slaPorEstado.reduce((suma, s) => suma + s._count._all, 0);
+  const slaVencidos = slaEstados.BREACHED ?? 0;
+
   return {
     leads: {
       /** La cifra buena: el mismo filtro que el tablero, las metas y `/reportes`. */
@@ -130,9 +145,33 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     },
     deals_por_etapa: Object.fromEntries(porEtapa.map((e) => [e.stage, e._count._all])),
     sla: {
+      /**
+       * El denominador, que es lo que hacía falta.
+       *
+       * El `como_se_mide` de la práctica `sla-primera-respuesta` pide «la proporción de
+       * BREACHED sobre el total de temporizadores del periodo». Con solo el numerador esa
+       * proporción no se podía calcular, y el cero de incumplidos se leía como verde
+       * cuando podía significar que el reloj nunca se echó a andar.
+       */
+      temporizadores_7d: slaTotal,
+      por_estado_7d: slaEstados,
       incumplidos_7d: slaVencidos,
+      /** La lectura correcta de `incumplidos_7d`. `null` cuando no hay denominador. */
+      proporcion_incumplidos_7d:
+        slaTotal === 0 ? null : Math.round((slaVencidos / slaTotal) * 1000) / 1000,
       /** Corriendo con la hora ya pasada: incumplidos que nadie marcó todavía. */
       vencidos_sin_marcar: slaCorriendoVencidos,
+      nota:
+        slaTotal === 0
+          ? "🚨 CERO temporizadores creados en la ventana. `incumplidos_7d: 0` aquí NO " +
+            "significa que se cumplió el SLA: significa que no se midió nada. Antes de " +
+            "reportar la atención como buena hay que averiguar por qué no se crea ninguno " +
+            "—si el ruteo no corre, si la regla que los crea está apagada— porque un cero " +
+            "sin denominador no es una métrica, es la ausencia de una."
+          : "`incumplidos_7d` se lee SOBRE `temporizadores_7d`, nunca solo. " +
+            "`vencidos_sin_marcar` no está incluido en los incumplidos: sigue RUNNING con la " +
+            "hora pasada, así que es incumplimiento que nadie ha marcado todavía y hay que " +
+            "sumarlo a mano para leer el peor caso.",
     },
     cola_de_acciones: {
       ...Object.fromEntries(cola.map((c) => [c.status.toLowerCase(), c._count._all])),

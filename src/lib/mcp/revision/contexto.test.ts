@@ -27,6 +27,7 @@ const dbBase = (activas: number, totales: number) =>
       "contact.groupBy": [],
       "deal.groupBy": [],
       "actionQueue.groupBy": [],
+      "slaTimer.groupBy": [],
       "user.groupBy": [],
     },
     listas: {
