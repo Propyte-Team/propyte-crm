@@ -29,7 +29,28 @@ const dbBase = (activas: number, totales: number) =>
       "actionQueue.groupBy": [],
       "user.groupBy": [],
     },
-    listas: { "leadConnector.findMany": [] },
+    listas: {
+      "leadConnector.findMany": [
+        // Webhook: nada escribe su lastSyncAt, nunca. Es el caso de los 9 reales.
+        {
+          name: "IG - Propyte",
+          provider: "INSTAGRAM",
+          status: "ACTIVE",
+          lastSyncAt: null,
+          lastLeadAt: null,
+          errorCount: 0,
+        },
+        // Pull: tiene cron que sí la escribe.
+        {
+          name: "TikTok",
+          provider: "TIKTOK",
+          status: "ACTIVE",
+          lastSyncAt: new Date("2026-08-28T10:00:00Z"),
+          lastLeadAt: null,
+          errorCount: 0,
+        },
+      ],
+    },
   });
 
 type DatosPulso = {
@@ -119,5 +140,46 @@ describe("crm_revision_protocolo publica el contexto", () => {
     }>;
     const paso2 = r.datos.pasos.find((p) => p.nombre === "Descartar lo ya sabido")!;
     expect(paso2.regla).toMatch(/contexto_declarado/);
+  });
+});
+
+describe("crm_pulso y los conectores", () => {
+  /**
+   * El caso que casi produce un hallazgo falso de verdad.
+   *
+   * Los 9 conectores reales son META/INSTAGRAM/MESSENGER —todos webhook— y su
+   * `lastSyncAt` estaba en `null`. Se lee como «llevan meses sin sincronizar». No es
+   * cierto: los ÚNICOS crons de conectores del repo son linkedin y tiktok, así que esa
+   * columna nunca se escribe para los demás. El dato no estaba mal; la presentación sí.
+   */
+  it("🚨 a un conector de webhook NO le emite ultima_sincronizacion", async () => {
+    const r = (await pulso({}, ctxFalso({ db: dbBase(0, 8) }))) as unknown as {
+      conectores: { nota: string; lista: Array<Record<string, unknown>> };
+    };
+
+    const ig = r.conectores.lista.find((c) => c.proveedor === "INSTAGRAM")!;
+    expect(ig.via).toBe("webhook");
+    // Ausente, no nulo: un campo que falta se pregunta, uno nulo se interpreta mal.
+    expect(Object.keys(ig)).not.toContain("ultima_sincronizacion");
+    expect(ig).toHaveProperty("ultimo_lead");
+  });
+
+  it("a uno de pull sí se la emite, porque su cron la escribe", async () => {
+    const r = (await pulso({}, ctxFalso({ db: dbBase(0, 8) }))) as unknown as {
+      conectores: { lista: Array<Record<string, unknown>> };
+    };
+
+    const tk = r.conectores.lista.find((c) => c.proveedor === "TIKTOK")!;
+    expect(tk.via).toBe("pull (cron)");
+    expect(tk.ultima_sincronizacion).toBe("2026-08-28T10:00:00.000Z");
+  });
+
+  it("la nota explica cuál es la señal de vida de cada tipo", () => {
+    // Sin esto, el revisor tiene el dato correcto y sigue sin saber qué mirar.
+    return pulso({}, ctxFalso({ db: dbBase(0, 8) })).then((r) => {
+      const c = (r as unknown as { conectores: { nota: string } }).conectores;
+      expect(c.nota).toMatch(/ultimo_lead/);
+      expect(c.nota).toMatch(/pull/);
+    });
   });
 });
