@@ -42,7 +42,7 @@ export const PRACTICAS: Practica[] = [
     por_que:
       "La probabilidad de contactar a un prospecto cae de forma abrupta pasada la primera hora. En obra nueva el lead suele estar cotizando con tres desarrolladoras a la vez.",
     como_se_mide:
-      "crm_pulso() → sla.incumplidos_7d y sla.vencidos_sin_marcar. El segundo es el revelador: son temporizadores que siguen RUNNING con su hora ya pasada, es decir incumplimientos que nadie marcó. Si vencidos_sin_marcar > 0 mientras incumplidos_7d se ve sano, el tablero está mintiendo.",
+      "crm_pulso() → sla.incumplidos_7d SOBRE sla.temporizadores_7d, nunca el numerador solo: con el denominador en cero, `incumplidos_7d: 0` significa que no se midió nada, no que se cumplió. sla.vencidos_sin_marcar es el otro revelador: son temporizadores que siguen RUNNING con su hora ya pasada, es decir incumplimientos que nadie marcó. Si vencidos_sin_marcar > 0 mientras incumplidos_7d se ve sano, el tablero está mintiendo.",
     ya_existe_si:
       "Hay al menos una SlaPolicy activa que cubre el alta de contacto, y la proporción de BREACHED sobre el total de temporizadores del periodo es baja.",
   },
