@@ -339,9 +339,10 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   try {
     // Activity.userId es NOT NULL (FK a users): sin asesor asignado se atribuye a un
     // ADMIN activo; si tampoco hay, se omite la actividad (el mensaje ya quedó en el hilo).
-    const activityUserId =
-      contact.assignedToId ??
-      (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
+    // El fallback vive en lib/activities/actor.ts: esta misma regla estaba copiada en
+    // captureLead y ahí seguía rota (tarjeta #663).
+    const { actorDeActividad } = await import("@/lib/activities/actor");
+    const activityUserId = await actorDeActividad(contact.assignedToId);
     if (activityUserId) {
       await prisma.activity.create({
         data: {

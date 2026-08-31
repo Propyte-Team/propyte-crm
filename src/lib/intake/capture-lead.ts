@@ -104,18 +104,37 @@ export async function captureLead(
     : null;
 
   if (existing) {
-    // Lead repetido: NO crear; registrar el toque y refrescar actividad
-    await prisma.activity.create({
-      data: {
-        contactId: existing.id,
-        userId: existing.assignedToId ?? existing.id,
-        activityType: "NOTE",
-        subject: `Lead repetido desde ${lead.source}`,
-        description: [lead.sourceDetail, lead.message].filter(Boolean).join(" — ") || null,
-        status: "COMPLETADA",
-        completedAt: new Date(),
-      },
-    }).catch(() => {});
+    // Lead repetido: NO crear; registrar el toque y refrescar actividad.
+    //
+    // 🚨 Aquí vivía `userId: existing.assignedToId ?? existing.id`: un id de Contact en
+    // una FK a `users`. La base lo rechazaba con P2003 y el `.catch(() => {})` se comía
+    // el rechazo, así que la nota simplemente no aparecía — sin error, sin aviso, sin
+    // rastro. Y solo fallaba para los contactos SIN asesor, que hoy son justo los que
+    // entran por DM y comentario: la única vía viva.
+    const { actorDeActividad } = await import("@/lib/activities/actor");
+    const actor = await actorDeActividad(existing.assignedToId);
+    if (actor) {
+      await prisma.activity
+        .create({
+          data: {
+            contactId: existing.id,
+            userId: actor,
+            activityType: "NOTE",
+            subject: `Lead repetido desde ${lead.source}`,
+            description: [lead.sourceDetail, lead.message].filter(Boolean).join(" — ") || null,
+            status: "COMPLETADA",
+            completedAt: new Date(),
+          },
+        })
+        // Sigue siendo best-effort —la nota no vale perder la captura del lead— pero
+        // ahora deja rastro. Un catch mudo convierte cualquier regresión futura en
+        // «la nota no sale y nadie sabe desde cuándo».
+        .catch((err) => console.error("[captureLead] nota de lead repetido:", err));
+    } else {
+      console.warn(
+        `[captureLead] sin asesor ni ADMIN activo: no se registró la nota de lead repetido del contacto ${existing.id}`,
+      );
+    }
     await prisma.contact.update({
       where: { id: existing.id },
       data: { lastActivityAt: new Date() },

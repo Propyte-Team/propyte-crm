@@ -99,6 +99,21 @@ export async function protocolo(_args: unknown, ctx: RevisionContext) {
           ],
           regla:
             "Un 409 es una RESPUESTA CORRECTA, no un error: significa que el hallazgo ya tiene tarea. Actualiza esa con `mejoras_update_task` si traes un dato nuevo; si no traes nada nuevo, no la toques.",
+          /**
+           * Con qué prioridad puede registrar el auditor.
+           *
+           * Va aquí y no en la cabeza de quien corre la revisión porque hasta ahora se
+           * cumplía por criterio y no por contrato: nada declaraba que la 1 estuviera
+           * reservada. Una regla que solo vive en la costumbre se rompe el día que cambia
+           * el modelo, el prompt o la persona.
+           */
+          prioridad: {
+            mapa: { critica: 2, alta: 2, media: 3, baja: 4 },
+            regla:
+              "El auditor NUNCA emite prioridad 1. Traduce la severidad que mediste con el mapa de arriba: crítica y alta van a 2, media a 3, baja a 4.",
+            por_que:
+              "La 1 es de las personas. Significa «esto se atiende antes que lo que estés haciendo», y esa interrupción la decide alguien que conoce el resto del trabajo del equipo, no una corrida nocturna que solo ve su propia medición. Un auditor que puede declarar la máxima urgencia la acaba usando, y entonces deja de significar algo.",
+          },
           por_que:
             "`resumen_humano` lo lee gente que no ve código: dice qué cambió para el usuario, sin nombres de archivo ni de función.",
         },

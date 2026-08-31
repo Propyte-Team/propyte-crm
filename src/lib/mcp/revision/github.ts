@@ -5,6 +5,7 @@ import type {
   CommitRepo,
   GithubReader,
   PullRequestRepo,
+  ResultadoBusqueda,
 } from "./types";
 
 /**
@@ -36,12 +37,12 @@ function pat(): string {
   return t;
 }
 
-async function gh<T>(path: string): Promise<T> {
+async function gh<T>(path: string, accept = "application/vnd.github+json"): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method: "GET",
     headers: {
       authorization: `Bearer ${pat()}`,
-      accept: "application/vnd.github+json",
+      accept,
       "x-github-api-version": "2022-11-28",
       "user-agent": "propyte-crm-revision",
     },
@@ -171,15 +172,22 @@ export function crearGithubReader(): GithubReader {
      * `crm_codigo_arbol` + `crm_codigo_leer`. La descripción de la tool lo dice para que
      * el agente no elija esta para lo que no puede.
      */
-    async buscar(patron, glob, ref, tope) {
+    async buscar(patron, glob, ref, tope): Promise<ResultadoBusqueda> {
       const partes = [patron, `repo:${REPO}`];
       if (glob) partes.push(`path:${glob}`);
       const q = encodeURIComponent(partes.join(" "));
 
       const data = await gh<{
         total_count: number;
+        incomplete_results?: boolean;
         items: Array<{ path: string; text_matches?: Array<{ fragment: string }> }>;
-      }>(`/search/code?q=${q}&per_page=${Math.min(tope, 100)}`);
+      }>(
+        `/search/code?q=${q}&per_page=${Math.min(tope, 100)}`,
+        // 🚨 Sin este accept la API NO manda `text_matches`, así que la rama de abajo que
+        // reporta «línea 0, texto vacío» era la única que se tomaba nunca: cada resultado
+        // salía sin el fragmento que lo hace útil.
+        "application/vnd.github.text-match+json",
+      );
 
       const out: CoincidenciaBusqueda[] = [];
       for (const item of data.items) {
@@ -194,7 +202,30 @@ export function crearGithubReader(): GithubReader {
         }
       }
       void ref; // La ref no se usa: code search solo mira la rama por default. Ver el comentario.
-      return out.slice(0, tope);
+
+      const incompleta = data.incomplete_results === true;
+      /**
+       * 🚨 Ni una coincidencia Y la búsqueda no completó: eso NO es «no existe», es «no
+       * te contesté». Servirlo como lista vacía es la máquina de fabricar el hallazgo
+       * falso «esto no está en el código», que este repo ya pagó cuatro veces.
+       *
+       * Medido el 2026-08-31 contra este mismo repo: `q=export repo:Propyte-Team/
+       * propyte-crm` devolvía `total_count: 0, incomplete_results: true` en 5 de 5
+       * corridas, con HTTP 200. El mismo endpoint contra un repo público grande
+       * responde 662 coincidencias e `incomplete_results: false`, así que ni la
+       * credencial ni la consulta estaban mal: GitHub abandona el índice de ESTE repo.
+       */
+      if (incompleta && out.length === 0) {
+        throw new RevisionError(
+          504,
+          "GitHub no completó la búsqueda en el índice de código y devolvió cero " +
+            "resultados. Eso NO significa que el texto no exista: significa que no hubo " +
+            "respuesta. Mide con crm_codigo_arbol + crm_codigo_leer antes de concluir nada.",
+          { repo: REPO, patron, glob: glob ?? null, incomplete_results: true },
+        );
+      }
+
+      return { coincidencias: out.slice(0, tope), incompleta };
     },
   };
 }
