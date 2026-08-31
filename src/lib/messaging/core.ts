@@ -211,14 +211,21 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
       msg.channel === "INSTAGRAM" ? { instagramId: msg.senderId }
       : msg.channel === "MESSENGER" ? { messengerPsid: msg.senderId }
       : { phone: msg.senderId };
+    // `connectorId` viaja desde el webhook hasta aquí. Pasarlo no es cosmético: es lo
+    // que deja atribuir el lead a su conector y marcarle señal de vida y errores, cosa
+    // que hasta ahora solo hacía la vía de formularios de anuncio.
     const result = await captureLead({
       source: SOURCE[msg.channel],
       firstName: profile?.firstName ?? (msg.profileName?.trim() || (msg.channel === "INSTAGRAM" ? "Instagram" : msg.channel === "MESSENGER" ? "Messenger" : "WhatsApp")),
       lastName: profile?.lastName ?? PLACEHOLDER_LASTNAME,
       message: msg.text,
       ...idField,
-    });
+    }, { connectorId: msg.connectorId ?? undefined });
     if (!result.contactId) {
+      if (msg.connectorId) {
+        const { markConnectorLead } = await import("@/lib/intake/connectors");
+        await markConnectorLead(msg.connectorId, result.error ?? "captureLead devolvió contactId null");
+      }
       console.warn(`[messaging] inbound no capturable (${msg.channel}): ${msg.senderId}`);
       return null;
     }
@@ -314,6 +321,16 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
       return prisma.message.findUnique({ where: { externalMessageId: msg.externalMessageId } });
     }
     throw err;
+  }
+
+  // Señal de vida del conector: el mensaje ya está persistido, así que este conector
+  // ENTREGÓ. Se marca en cada inbound y no solo en el alta de contacto, para que un
+  // conector que solo recibe de gente ya registrada no envejezca como si estuviera
+  // caído — es el mismo criterio que la vía de anuncios, que también refresca la marca
+  // en los leads duplicados.
+  if (msg.connectorId) {
+    const { markConnectorLead } = await import("@/lib/intake/connectors");
+    await markConnectorLead(msg.connectorId);
   }
 
   // ── Side-effects post-persistencia — NUNCA deben matar la ingesta ni enmudecer

@@ -145,12 +145,12 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
         "únicos con cron que la escribe. Para los de webhook el campo ni siquiera se emite, " +
         "porque un `null` ahí se lee como «lleva meses sin sincronizar» cuando en realidad " +
         "esa columna nunca les aplicó. " +
-        "🚨 Y `ultimo_lead` TAMPOCO es señal de vida fiable: solo se escribe dentro de " +
-        "`processIncomingLead` (la vía de formularios de anuncio). Los leads que entran por " +
-        "DM llaman a `captureLead` directamente y no la tocan nunca, así que un conector de " +
-        "INSTAGRAM/MESSENGER activo y recibiendo prospectos puede quedarse en `null` para " +
-        "siempre. Los que salen con `senal_de_vida: \"ninguna\"` no se pueden monitorear hoy " +
-        "— es la tarea #653 del tablero, no un hallazgo nuevo.",
+        "Para los de webhook la señal de vida es `ultimo_lead`, y desde la tarjeta #653 la " +
+        "escriben LAS DOS vías de entrega: los formularios de anuncio y el intake de DM. " +
+        "Antes solo la escribía la primera, así que un conector de INSTAGRAM/MESSENGER " +
+        "activo y recibiendo prospectos se quedaba en `null` para siempre. " +
+        "Ojo con la lectura histórica: un `ultimo_lead: null` anterior al despliegue de esa " +
+        "tarjeta no prueba que el conector no entregó, solo que nadie lo anotaba.",
       lista: conectores.map((c) => {
         const pull = esPull(c.provider);
         return {
@@ -163,14 +163,15 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
           ...(pull ? { ultima_sincronizacion: c.lastSyncAt?.toISOString() ?? null } : {}),
           ultimo_lead: c.lastLeadAt?.toISOString() ?? null,
           /**
-           * Con qué se sabría si este conector se cayó.
+           * Con qué se sabría si este conector se cayó: qué campo de esta misma fila hay
+           * que mirar. Depende de la vía, no del dato — un `ultimo_lead` nulo significa
+           * «no ha entregado», que es una respuesta, no una laguna.
            *
-           * `ninguna` no es un adorno: significa que si mañana deja de entregar, el panel se
-           * ve EXACTAMENTE igual que hoy. Decirlo aquí evita que el revisor lea `ultimo_lead:
-           * null` como «no ha llegado nada» cuando el dato correcto es «no tenemos forma de
-           * saberlo».
+           * Hasta la tarjeta #653 había una tercera opción, `ninguna`, para los conectores
+           * de DM: su `lastLeadAt` no lo escribía nadie, así que caídos y sanos se veían
+           * igual. Ya lo escriben las dos vías de entrega, así que ese caso desapareció.
            */
-          senal_de_vida: pull ? "ultima_sincronizacion" : c.lastLeadAt ? "ultimo_lead" : "ninguna",
+          senal_de_vida: pull ? "ultima_sincronizacion" : "ultimo_lead",
           errores_acumulados: c.errorCount,
         };
       }),

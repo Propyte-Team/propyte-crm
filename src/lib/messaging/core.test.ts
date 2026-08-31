@@ -18,6 +18,7 @@ const meetSlaTimers = vi.fn();
 const commentRuleLogFindFirst = vi.fn();
 const commentRuleLogUpdateMany = vi.fn();
 const slaTimerFindFirst = vi.fn();
+const leadConnectorUpdate = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -44,6 +45,7 @@ vi.mock("@/lib/db", () => ({
       updateMany: (...a: unknown[]) => commentRuleLogUpdateMany(...a),
     },
     slaTimer: { findFirst: (...a: unknown[]) => slaTimerFindFirst(...a) },
+    leadConnector: { update: (...a: unknown[]) => leadConnectorUpdate(...a) },
   },
 }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
@@ -93,10 +95,11 @@ beforeEach(() => {
     notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
     commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
-    slaTimerFindFirst,
+    slaTimerFindFirst, leadConnectorUpdate,
   ].forEach((m) => m.mockReset());
   autoRouteLead.mockResolvedValue("u-nuevo");
   slaTimerFindFirst.mockResolvedValue(null); // por defecto: nunca se enrutó
+  leadConnectorUpdate.mockResolvedValue({});
   contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
   commentRuleLogFindFirst.mockResolvedValue(null);
   linkCommentOrigin.mockResolvedValue(null);
@@ -128,7 +131,8 @@ describe("handleInboundMessage", () => {
     captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
     await handleInboundMessage(base);
     expect(captureLead).toHaveBeenCalledWith(
-      expect.objectContaining({ source: "INSTAGRAM", instagramId: "IG-1", firstName: "Ana" })
+      expect.objectContaining({ source: "INSTAGRAM", instagramId: "IG-1", firstName: "Ana" }),
+      { connectorId: undefined }
     );
     expect(convUpdate).toHaveBeenCalled();
     expect(msgCreate).toHaveBeenCalledWith(
@@ -231,7 +235,8 @@ describe("handleInboundMessage – identidad social (perfil Graph)", () => {
     await handleInboundMessage(msgMs);
     expect(fetchProfileForMessage).toHaveBeenCalledWith(msgMs);
     expect(captureLead).toHaveBeenCalledWith(
-      expect.objectContaining({ firstName: "Ana", lastName: "García", messengerPsid: "PSID-1" })
+      expect.objectContaining({ firstName: "Ana", lastName: "García", messengerPsid: "PSID-1" }),
+      { connectorId: "conn-nativa" }
     );
     expect(contactTxUpdate).not.toHaveBeenCalled(); // sin avatar no hay update extra
   });
@@ -257,7 +262,8 @@ describe("handleInboundMessage – identidad social (perfil Graph)", () => {
     captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
     await handleInboundMessage(msgMs);
     expect(captureLead).toHaveBeenCalledWith(
-      expect.objectContaining({ firstName: "Messenger", lastName: "(por identificar)" })
+      expect.objectContaining({ firstName: "Messenger", lastName: "(por identificar)" }),
+      { connectorId: "conn-nativa" }
     );
   });
 
@@ -927,5 +933,70 @@ describe("handleInboundMessage — no re-enrutar a quien desasignaron a propósi
     contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
     await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
     expect(slaTimerFindFirst).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #653 — la señal de vida del conector.
+ *
+ * Antes de esto, `lastLeadAt` y `errorCount` solo los escribía `processIncomingLead`,
+ * la vía de los formularios de anuncio. Los prospectos que entran por DM —hoy la única
+ * vía viva de INSTAGRAM/MESSENGER— no tocaban ninguno de los dos, así que un conector
+ * caído se veía exactamente igual que uno sano en crm_pulso: en cero y sin errores.
+ */
+describe("señal de vida del conector en el intake de DM", () => {
+  const conBoton = { ...base, connectorId: "conn_ig" };
+
+  it("contacto NUEVO con conector → sella lastLeadAt", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    await handleInboundMessage(conBoton);
+    expect(captureLead).toHaveBeenCalledWith(expect.any(Object), { connectorId: "conn_ig" });
+    const marca = leadConnectorUpdate.mock.calls.find(
+      (c) => (c[0] as { data: Record<string, unknown> }).data.lastLeadAt instanceof Date,
+    );
+    expect(marca?.[0]).toMatchObject({ where: { id: "conn_ig" } });
+  });
+
+  // El caso que la tarjeta llama «el conector que solo recibe de gente ya registrada».
+  // Si la marca dependiera del alta de contacto, este conector envejecería como si
+  // estuviera caído aunque estuviera entregando todos los días.
+  it("contacto CONOCIDO con conector → también sella lastLeadAt", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(conBoton);
+    expect(captureLead).not.toHaveBeenCalled();
+    expect(leadConnectorUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "conn_ig" } }),
+    );
+  });
+
+  it("sin conector resuelto → no escribe en ninguno", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(base);
+    expect(leadConnectorUpdate).not.toHaveBeenCalled();
+  });
+
+  it("captura fallida → incrementa el contador de errores del conector", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: null, isNew: false, assignedToId: null, error: "telefono invalido" });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await handleInboundMessage(conBoton);
+    expect(r).toBeNull();
+    expect(leadConnectorUpdate).toHaveBeenCalledWith({
+      where: { id: "conn_ig" },
+      data: { errorCount: { increment: 1 }, lastError: "telefono invalido" },
+    });
+    warn.mockRestore();
+  });
+
+  // Best-effort de verdad: si la marca no se puede escribir, el mensaje ya persistido
+  // no se pierde. Lo contrario sería cambiar un hueco de monitoreo por uno de datos.
+  it("si la marca falla, la ingesta sigue", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    leadConnectorUpdate.mockRejectedValue(new Error("db caída"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await handleInboundMessage(conBoton);
+    expect(r).toEqual({ id: "m1" });
+    err.mockRestore();
   });
 });
