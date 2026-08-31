@@ -98,6 +98,35 @@ export function mergeProfileDefaults(
   return fields;
 }
 
+/**
+ * Señal de vida de un conector: `lastLeadAt` cuando entregó, `errorCount`/`lastError`
+ * cuando lo que entregó no se pudo ingerir.
+ *
+ * Existe como función y no como `update` inline porque hay DOS vías de entrega y solo
+ * una escribía. `processIncomingLead` (formularios de anuncio) la escribía; el intake de
+ * DM —hoy la única vía por la que llegan prospectos de INSTAGRAM/MESSENGER— no la tocaba
+ * nunca. El resultado era que un conector de DM caído se veía IDÉNTICO a uno sano:
+ * `ultimo_lead: null` y cero errores desde siempre, que es justo lo que crm_pulso lee
+ * para decidir si un conector está vivo.
+ *
+ * Best-effort a propósito: la señal de vida NUNCA debe tumbar la ingesta del lead que la
+ * produjo. Si esta escritura falla se pierde una marca de monitoreo, no un prospecto.
+ * (Antes no era así: un fallo de este update dentro de `processIncomingLead` caía al
+ * catch y marcaba como ERROR un lead que sí se había capturado.)
+ */
+export async function markConnectorLead(connectorId: string, error?: string | null): Promise<void> {
+  try {
+    await prisma.leadConnector.update({
+      where: { id: connectorId },
+      data: error
+        ? { errorCount: { increment: 1 }, lastError: error.slice(0, 1000) }
+        : { lastLeadAt: new Date(), errorCount: 0, lastError: null },
+    });
+  } catch (err) {
+    console.error(`[connectors] señal de vida no escrita (${connectorId}):`, err);
+  }
+}
+
 // Punto único de entrada de un lead externo. Idempotente: el UNIQUE
 // (connectorId, externalLeadId) garantiza que un retry no duplica.
 export async function processIncomingLead(
@@ -178,12 +207,7 @@ export async function processIncomingLead(
         processedAt: new Date(),
       },
     });
-    await prisma.leadConnector.update({
-      where: { id: connectorId },
-      data: result.error
-        ? { errorCount: { increment: 1 }, lastError: result.error }
-        : { lastLeadAt: new Date(), errorCount: 0, lastError: null },
-    });
+    await markConnectorLead(connectorId, result.error);
     return { status, contactId: result.contactId ?? undefined };
   } catch (err) {
     const detail = String(err instanceof Error ? err.message : err).slice(0, 1000);
@@ -191,10 +215,7 @@ export async function processIncomingLead(
       where: { id: logId },
       data: { status: "ERROR", errorDetail: detail, processedAt: new Date() },
     });
-    await prisma.leadConnector.update({
-      where: { id: connectorId },
-      data: { errorCount: { increment: 1 }, lastError: detail },
-    });
+    await markConnectorLead(connectorId, detail);
     return { status: "ERROR" };
   }
 }

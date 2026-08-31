@@ -175,36 +175,40 @@ describe("crm_pulso y los conectores", () => {
   });
 
   /**
-   * 🚨 El caso que un humano y yo dimos por bueno, y que el revisor automático corrigió.
+   * Historia de este par de casos, que vale más que los asertos.
    *
-   * Yo concluí que «la señal de vida de un webhook es `ultimo_lead`» y lo escribí en la
-   * nota. Es falso: `lastLeadAt` solo se escribe dentro de `processIncomingLead` —la vía
-   * de formularios de anuncio— y las vías de DM llaman a `captureLead` directamente, sin
-   * tocarla. Un conector de INSTAGRAM/MESSENGER activo, recibiendo prospectos todos los
-   * días, se queda en `null` para siempre.
+   * Primero se afirmó que «la señal de vida de un webhook es `ultimo_lead`». Era falso:
+   * `lastLeadAt` solo lo escribía `processIncomingLead` —la vía de formularios de
+   * anuncio— y las vías de DM llaman a `captureLead` directamente, sin tocarla. Un
+   * conector de INSTAGRAM/MESSENGER activo y recibiendo prospectos se quedaba en `null`
+   * para siempre, así que caído y sano se veían idénticos. Se rotuló `ninguna`.
    *
-   * Consecuencia real: si mañana se cae, el panel se ve EXACTAMENTE igual que hoy.
+   * La tarjeta #653 lo arregló en la raíz: el intake de DM también marca a su conector.
+   * Con las dos vías escribiendo, `ninguna` dejó de existir y un `ultimo_lead` nulo pasa
+   * a significar lo que parece — que no ha entregado.
    */
-  it("un conector de webhook sin lastLeadAt sale con senal_de_vida: ninguna", async () => {
+  it("un conector de webhook siempre tiene señal de vida, la haya usado o no", async () => {
     const r = (await pulso({}, ctxFalso({ db: dbBase(0, 8) }))) as unknown as {
       conectores: { nota: string; lista: Array<Record<string, unknown>> };
     };
 
     const ig = r.conectores.lista.find((c) => c.proveedor === "INSTAGRAM")!;
-    // «ninguna» es distinto de «no ha llegado nada»: es «no tenemos forma de saberlo».
-    expect(ig.senal_de_vida).toBe("ninguna");
+    // Nulo o no, el campo que hay que mirar es el mismo. `ninguna` ya no es alcanzable.
+    expect(ig.senal_de_vida).toBe("ultimo_lead");
 
     const tk = r.conectores.lista.find((c) => c.proveedor === "TIKTOK")!;
     expect(tk.senal_de_vida).toBe("ultima_sincronizacion");
   });
 
-  it("la nota ya NO afirma que ultimo_lead sea señal de vida de un webhook", async () => {
-    // Guardia contra la regresión exacta: la afirmación falsa llegó a producción una vez.
+  it("la nota dice que las DOS vías escriben ultimo_lead, y advierte del histórico", async () => {
+    // Guardia doble: que no vuelva la afirmación a medias («solo processIncomingLead»),
+    // y que no se pierda el aviso de que los nulos viejos no prueban nada.
     const r = (await pulso({}, ctxFalso({ db: dbBase(0, 8) }))) as unknown as {
       conectores: { nota: string };
     };
-    expect(r.conectores.nota).toMatch(/TAMPOCO es señal de vida fiable/);
+    expect(r.conectores.nota).toMatch(/LAS DOS vías de entrega/);
     expect(r.conectores.nota).toMatch(/#653/);
-    expect(r.conectores.nota).not.toMatch(/La señal de vida de un webhook es/);
+    expect(r.conectores.nota).toMatch(/no prueba que el conector no entregó/);
+    expect(r.conectores.nota).not.toMatch(/TAMPOCO es señal de vida fiable/);
   });
 });
