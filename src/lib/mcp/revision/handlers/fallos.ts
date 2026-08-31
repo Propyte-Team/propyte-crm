@@ -1,4 +1,4 @@
-import { esCorridaAgotada } from "@/lib/agents/run-status";
+import { esCorridaSinTerminar } from "@/lib/agents/run-status";
 import { badRequest } from "../errors";
 import { firmaDeError, redactar } from "../redactar";
 import { recortar } from "../sobre";
@@ -105,18 +105,18 @@ export async function fallos(args: unknown, ctx: RevisionContext) {
    * Las corridas agotadas van en su propio montón.
    *
    * Las dos salen con status FAILED —el enum no las distingue todavía— pero piden cosas
-   * distintas: una que se quedó sin pasos pide subirle el límite o recortarle el
-   * objetivo; una que reventó pide arreglar lo que reventó. Juntas, la segunda se
-   * pierde entre las primeras.
+   * distintas: una que agotó su presupuesto (de pasos o de tokens) pide subirle el
+   * límite o recortarle el objetivo; una que reventó pide arreglar lo que reventó.
+   * Juntas, la segunda se pierde entre las primeras.
    */
   const gAgentes = agrupar(
     agentes
-      .filter((r) => !esCorridaAgotada(r.error))
+      .filter((r) => !esCorridaSinTerminar(r.error))
       .map((r) => ({ clave: r.trigger, error: r.error, fecha: r.endedAt })),
   );
   const gAgotadas = agrupar(
     agentes
-      .filter((r) => esCorridaAgotada(r.error))
+      .filter((r) => esCorridaSinTerminar(r.error))
       .map((r) => ({ clave: r.trigger, error: r.error, fecha: r.endedAt })),
   );
 
