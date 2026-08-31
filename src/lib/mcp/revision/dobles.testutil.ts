@@ -23,15 +23,32 @@ type Grupos = Record<string, Array<Record<string, unknown>>>;
  */
 export function dbFalsa(cfg: {
   conteos?: Conteos;
+  /**
+   * Valores distintos para llamadas sucesivas al MISMO método.
+   *
+   * Hace falta porque varios conteos comparten método y difieren solo en el `where`:
+   * `automationRule.count` se llama primero para las activas y luego para las totales, y
+   * un doble que devuelve lo mismo a las dos hace imposible probar el caso «0 de 8» —que
+   * es justo el que dispara la nota del contexto declarado.
+   */
+  secuencias?: Record<string, number[]>;
   grupos?: Grupos;
   listas?: Grupos;
   fechas?: Record<string, Date[]>;
 }): RevisionDb {
-  const { conteos = {}, grupos = {}, listas = {}, fechas = {} } = cfg;
+  const { conteos = {}, secuencias = {}, grupos = {}, listas = {}, fechas = {} } = cfg;
+  const consumidas: Record<string, number> = {};
 
   const modelo = (nombre: string) => ({
     count: async () => {
       const k = `${nombre}.count`;
+      if (k in secuencias) {
+        const i = consumidas[k] ?? 0;
+        consumidas[k] = i + 1;
+        const serie = secuencias[k];
+        if (i >= serie.length) throw new Error(`secuencia agotada: ${k} (llamada ${i + 1})`);
+        return serie[i];
+      }
       if (!(k in conteos)) throw new Error(`doble sin configurar: ${k}`);
       return conteos[k];
     },

@@ -156,7 +156,7 @@ describe("la puerta de revisión, de punta a punta", () => {
     expect(r.datos.dia_comparado).toBe("2026-08-27");
     expect(r.datos.hoy_parcial.fecha).toBe("2026-08-28");
     expect(r.datos.hoy_parcial.advertencia).toMatch(/NO son comparables/);
-    expect(r.datos.series.contactos_nuevos.ultimo_dia_completo).toBe(1);
+    expect(r.datos.series.leads_reales_nuevos.ultimo_dia_completo).toBe(1);
   });
 
   it("crm_revision_protocolo obliga a pedir las descartadas explícitamente", async () => {

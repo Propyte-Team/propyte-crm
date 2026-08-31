@@ -1,3 +1,4 @@
+import { FASE_DEL_PROYECTO, HECHOS_DECLARADOS } from "../contexto.data";
 import { construirSobre, envolver } from "../sobre";
 import type { RevisionContext } from "../types";
 
@@ -23,7 +24,24 @@ export async function protocolo(_args: unknown, ctx: RevisionContext) {
       alcance: "checklist de la revisión diaria",
     }),
     {
-      version: 1,
+      version: 2,
+      /**
+       * LO PRIMERO QUE HAY QUE LEER. Un revisor que mide el sistema sin saber qué es
+       * deliberado reporta decisiones como fallos, y lo hace todos los días — el dedup del
+       * tablero no lo frena porque cada día lo redacta distinto.
+       *
+       * Cada hecho trae `caduca_cuando`: esto no es una venda, es una tregua con fecha.
+       */
+      contexto_declarado: {
+        fase: FASE_DEL_PROYECTO.fase,
+        implicacion: FASE_DEL_PROYECTO.implicacion,
+        hechos: HECHOS_DECLARADOS,
+        como_usarlo:
+          "Antes de registrar un hallazgo, comprueba si algún hecho de aquí ya lo explica. " +
+          "Si lo explica, NO se crea tarea: menciónalo en el resumen de la corrida y sigue. " +
+          "Si la condición de `caduca_cuando` ya se cumplió, entonces sí es un hallazgo — y " +
+          "de los urgentes, porque lleva tiempo tapado.",
+      },
       pasos: [
         {
           n: 1,
@@ -47,7 +65,8 @@ export async function protocolo(_args: unknown, ctx: RevisionContext) {
             "mejoras_list_tasks({ proyecto: 'crm', estado: 'desplegada' })",
           ],
           regla:
-            "La segunda llamada NO es opcional. `mejoras_list_tasks` OCULTA las descartadas por default: sin pedirlas explícitamente vas a re-proponer cada día justo lo que ya fue rechazado.",
+            "La segunda llamada NO es opcional. `mejoras_list_tasks` OCULTA las descartadas por default: sin pedirlas explícitamente vas a re-proponer cada día justo lo que ya fue rechazado. " +
+            "Y antes de las tres, relee `contexto_declarado` de arriba: lo que ahí está explicado no llega nunca al tablero, así que el dedup no te va a salvar de proponerlo.",
           por_que:
             "Lo archivado sale del listado pero sigue vivo, y el guardia que solo mira el listado lo recrea. El dedup del servidor no basta: pega en hallazgos idénticos, y un reformulado pasa.",
         },

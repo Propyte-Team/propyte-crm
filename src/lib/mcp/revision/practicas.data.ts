@@ -111,7 +111,10 @@ export const PRACTICAS: Practica[] = [
     como_se_mide:
       "crm_pulso() → automatizaciones.activas contra totales, y crm_fallos() → acciones_fallidas y acciones_agotadas. Una regla activa sin lastFiredAt es una regla dormida; una acción agotada es seguimiento que se perdió sin aviso.",
     ya_existe_si:
-      "Las reglas activas tienen disparos recientes y la cola de acciones no acumula agotadas.",
+      "Las reglas activas tienen disparos recientes y la cola de acciones no acumula agotadas. " +
+      "🚨 OJO: mientras el CRM esté en BETA las reglas están pausadas A PROPÓSITO — ver " +
+      "`contexto_declarado` en crm_revision_protocolo(). En ese caso «0 activas» NO es un hallazgo; " +
+      "lo que sí lo es es que una regla ENCENDIDA falle o que la cola acumule agotadas.",
   },
   {
     id: "cadencia-de-seguimiento",
