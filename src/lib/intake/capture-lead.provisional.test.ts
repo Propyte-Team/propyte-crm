@@ -10,6 +10,7 @@ const contactUpdate = vi.fn();
 const activityCreate = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
+    leadConnector: { findUnique: async () => null },
     contact: {
       findFirst: (...a: unknown[]) => findFirst(...a),
       create: (...a: unknown[]) => create(...a),

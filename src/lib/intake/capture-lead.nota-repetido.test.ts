@@ -5,6 +5,7 @@ const activityCreate = vi.fn();
 const userFindFirst = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
+    leadConnector: { findUnique: async () => null },
     contact: {
       findFirst: (...a: unknown[]) => contactFindFirst(...a),
       create: vi.fn(async () => ({ id: "c-new", assignedToId: null })),

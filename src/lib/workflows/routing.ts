@@ -31,6 +31,47 @@ async function roundRobinPick(userIds: string[]): Promise<string | null> {
   return next;
 }
 
+// Pond (#678): un lead que ninguna regla pudo asignar NO se pierde en silencio —
+// arranca su reloj de huérfano (tiempo real) y avisa a la gerencia de su plaza.
+async function sendToPond(
+  contact: { id: string; firstName: string; lastName: string; leadSource: string; targetPlaza: string | null },
+  reason?: string,
+): Promise<void> {
+  await createSlaTimer(contact.id, "ORPHAN").catch((err) =>
+    console.error("[routing] pond: no se pudo crear el SlaTimer ORPHAN:", err),
+  );
+  const managerWhere = {
+    role: { in: ["GERENTE", "DIRECTOR", "ADMIN"] as never },
+    isActive: true,
+    deletedAt: null,
+    NOT: { email: { endsWith: ".local" } },
+  };
+  let managers = await prisma.user.findMany({
+    where: { ...managerWhere, ...(contact.targetPlaza ? { plaza: contact.targetPlaza as never } : {}) },
+    select: { id: true },
+  });
+  if (managers.length === 0) {
+    // Sin gerencia en la plaza del lead: avisar a toda la gerencia para que no quede ciego.
+    managers = await prisma.user.findMany({ where: managerWhere, select: { id: true } });
+  }
+  if (managers.length > 0) {
+    await prisma.notification.createMany({
+      data: managers.map((m) => ({
+        userId: m.id,
+        title: "Lead sin asignar (Pond)",
+        message: `${contact.firstName} ${contact.lastName} (${contact.leadSource})${contact.targetPlaza ? ` · ${contact.targetPlaza}` : ""} — nadie disponible para tomarlo`,
+        type: "lead_pond",
+        link: `/contacts/${contact.id}`,
+      })),
+    });
+  }
+  const { emitEvent } = await import("./events");
+  await emitEvent("lead.orphaned", "contact", contact.id, {
+    reason: reason ?? null,
+    plaza: contact.targetPlaza ?? null,
+  });
+}
+
 export async function autoRouteLead(
   contactId: string,
   opts: { reason?: string } = {}
@@ -95,7 +136,7 @@ export async function autoRouteLead(
           role: { in: roles as never },
           ...routableWhere,
           ...(excludedIds.length ? { id: { notIn: excludedIds } } : {}),
-          ...(targets.plaza ? { plaza: targets.plaza as never } : {}),
+          ...((targets.plaza ?? contact.targetPlaza) ? { plaza: (targets.plaza ?? contact.targetPlaza) as never } : {}),
         },
         select: { id: true },
         orderBy: { createdAt: "asc" },
@@ -133,7 +174,10 @@ export async function autoRouteLead(
     if (assigneeId) break;
   }
 
-  if (!assigneeId) return null;
+  if (!assigneeId) {
+    await sendToPond(contact, opts.reason);
+    return null;
+  }
 
   const previous = contact.assignedToId;
   await withChangeSource(

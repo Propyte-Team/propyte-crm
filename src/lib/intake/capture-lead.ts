@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { incomingLeadSchema, type IncomingLead } from "@/lib/validations/rebuild-f1";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { resolveTargetPlaza } from "@/lib/intake/campaign-plaza";
 
 export interface CaptureResult {
   contactId: string | null;
@@ -165,6 +166,14 @@ export async function captureLead(
     return { contactId: existing.id, isNew: false, assignedToId: existing.assignedToId };
   }
 
+  // Plaza objetivo del lead (reparto por plaza): de la campaña/anuncio o del conector.
+  let connectorName: string | null = null;
+  if (opts.connectorId) {
+    connectorName =
+      (await prisma.leadConnector.findUnique({ where: { id: opts.connectorId }, select: { name: true } }))?.name ?? null;
+  }
+  const targetPlaza = resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
+
   // --- Contacto nuevo ---
   const contact = await prisma.contact.create({
     data: {
@@ -178,6 +187,7 @@ export async function captureLead(
       contactType: lead.contactType ?? "COMPRADOR",
       contactStatus: "NUEVO",
       lifecycleStage: "LEAD",
+      targetPlaza,
       lastActivityAt: new Date(),
       tags: [],
       instagramId: instagramId ?? null,
