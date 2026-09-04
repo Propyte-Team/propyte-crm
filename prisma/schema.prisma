@@ -768,6 +768,7 @@ model Contact {
   // Ciclo de contacto y cumplimiento (Anexo Técnico §B.2)
   contactStatus     ContactStatus   @default(NUEVO)
   lifecycleStage    LifecycleStage?
+  targetPlaza       Plaza?          // reparto por plaza — lib/intake/campaign-plaza.ts
   urgency           Urgency?
   lastActivityAt    DateTime?
   originalCreatedAt DateTime?
