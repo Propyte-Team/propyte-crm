@@ -297,6 +297,11 @@ export async function logOutboundSend(opts: {
       })
       .catch(() => {})
   }
+  // #731: el correo que el asesor manda es un toque saliente real y detiene su reloj de
+  // SLA. Va después del dedup de arriba a propósito: un mismo correo relogueado no debe
+  // volver a cerrar nada.
+  const { meetSlaTimers } = await import("@/lib/workflows/sla")
+  await meetSlaTimers(opts.contactId)
   return true
 }
 
