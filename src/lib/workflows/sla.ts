@@ -48,8 +48,15 @@ export async function createSlaTimer(
   });
 }
 
-// Llamar cuando hay un toque saliente real (llamada/WhatsApp/email del asesor o bot)
-// o cuando el contacto responde (el contacto fue atendido).
+// Llamar SOLO cuando hay un toque SALIENTE real: llamada, WhatsApp, email o DM del
+// asesor o del bot. Nunca desde un mensaje entrante.
+//
+// #702: hasta 2026-09-05 la segunda mitad de este comentario decía "o cuando el contacto
+// responde (el contacto fue atendido)". Esa frase supone que nosotros hablamos primero,
+// y es falsa para todo lead de IG/Messenger/WhatsApp, que es quien inicia. Tratar su
+// primer mensaje como "fue atendido" cerraba el reloj que mide si lo atendimos: los 8
+// únicos FIRST_TOUCH en MET de la historia se cumplieron entre 1.53 s y 1.87 s. Si nos
+// escribió él primero, el toque que cuenta es el nuestro, y ese ya llama aquí solo.
 export async function meetSlaTimers(contactId: string): Promise<number> {
   const res = await prisma.slaTimer.updateMany({
     where: { contactId, status: "RUNNING" },

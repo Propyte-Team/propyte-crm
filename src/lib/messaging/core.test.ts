@@ -1000,3 +1000,23 @@ describe("señal de vida del conector en el intake de DM", () => {
     err.mockRestore();
   });
 });
+
+// #702: el mensaje con el que el propio lead se presenta NO prueba que lo hayamos
+// atendido. Los 8 unicos FIRST_TOUCH que el CRM ha registrado como cumplidos se cerraron
+// entre 1.53 s y 1.87 s: los cerraba este inbound, dentro del mismo request que los creo.
+// El complemento de estos dos casos es el test del eco ("echo SI marca SLA…"): un eco es
+// un SALIENTE del equipo y ese si cumple.
+describe("handleInboundMessage — el inbound del lead NO cumple el SLA (#702)", () => {
+  it("DM entrante de un desconocido: no cierra ningun timer", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    await handleInboundMessage(base);
+    expect(meetSlaTimers).not.toHaveBeenCalled();
+  });
+
+  it("DM entrante de un contacto ya conocido: tampoco", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(base);
+    expect(meetSlaTimers).not.toHaveBeenCalled();
+  });
+});

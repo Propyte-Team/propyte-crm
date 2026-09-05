@@ -53,6 +53,12 @@ export async function sendSMS(
     },
   });
 
+  // #731: un SMS al contacto es un toque saliente real, así que detiene su reloj de SLA
+  // igual que el dispatcher. Sin esto, contestar por SMS dejaba el FIRST_TOUCH corriendo
+  // hasta vencerse y el CRM registraba un incumplimiento donde sí hubo respuesta.
+  const { meetSlaTimers } = await import("@/lib/workflows/sla");
+  await meetSlaTimers(contactId);
+
   return message;
 }
 
