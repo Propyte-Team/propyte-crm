@@ -55,6 +55,9 @@ function setupBase(opts: { excluded?: unknown; targets?: unknown } = {}) {
     leadSource: "WHATSAPP",
     score: 0,
     adAttribution: null,
+    // #729: con plaza, para que estos casos sigan ejercitando el query por rol. Sin ella
+    // el lead cae al Pond y el gate anti-test —lo que este archivo mide— no se evalúa.
+    targetPlaza: "PDC",
   });
   routingRuleFindMany.mockResolvedValue([
     { strategy: "ROUND_ROBIN", conditions: {}, targets: opts.targets ?? {}, priority: 1 },
