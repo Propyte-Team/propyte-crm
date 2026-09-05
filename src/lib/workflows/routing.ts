@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
 import { createSlaTimer } from "./sla";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { createHash } from "crypto";
 
 const RR_POINTER_KEY = "workflows.routing.rr_pointer";
 // AUD-20260710-09: el round-robin asignó un lead REAL a un usuario QA recién creado.
@@ -17,16 +18,30 @@ async function routingExcludedIds(): Promise<string[]> {
   return (cfg.value as unknown[]).filter((v): v is string => typeof v === "string");
 }
 
-async function roundRobinPick(userIds: string[]): Promise<string | null> {
+// #728: el turno se guarda POR LISTA DE CANDIDATOS, no en una clave global. Desde el
+// ruteo por plaza (#704) las listas de dos plazas son disjuntas, así que un puntero
+// compartido nunca pertenecía a la lista en curso: indexOf devolvía -1 y el turno
+// colapsaba siempre en el primer asesor de cada plaza. Lo mismo ocurría entre reglas con
+// distintos `targets.roles`/`targets.userIds` y cuando el territorio recortaba la lista.
+// La huella de la lista cubre los cuatro casos de una vez.
+function rrPointerKey(ruleId: string, userIds: string[]): string {
+  const huella = createHash("sha1").update(userIds.join(",")).digest("hex").slice(0, 12);
+  return `${RR_POINTER_KEY}:${ruleId}:${huella}`;
+}
+
+async function roundRobinPick(userIds: string[], ruleId: string): Promise<string | null> {
   if (userIds.length === 0) return null;
-  const cfg = await prisma.systemConfig.findUnique({ where: { key: RR_POINTER_KEY } });
+  const key = rrPointerKey(ruleId, userIds);
+  const cfg = await prisma.systemConfig.findUnique({ where: { key } });
   const last = typeof cfg?.value === "string" ? cfg.value : "";
   const lastIdx = userIds.indexOf(last);
-  const next = userIds[(lastIdx + 1) % userIds.length];
+  // Explícito: sin puntero previo, o si el último elegido salió del pool, el turno
+  // arranca en el primero. Antes esto pasaba por accidente aritmético: (-1 + 1) % n === 0.
+  const next = userIds[lastIdx === -1 ? 0 : (lastIdx + 1) % userIds.length];
   await prisma.systemConfig.upsert({
-    where: { key: RR_POINTER_KEY },
+    where: { key },
     update: { value: next },
-    create: { key: RR_POINTER_KEY, value: next },
+    create: { key, value: next },
   });
   return next;
 }
@@ -154,7 +169,7 @@ export async function autoRouteLead(
 
     switch (rule.strategy) {
       case "ROUND_ROBIN":
-        assigneeId = await roundRobinPick(candidates);
+        assigneeId = await roundRobinPick(candidates, rule.id);
         break;
       case "PERFORMANCE": {
         // Menos contactos activos = mejor candidato (proxy de capacidad)

@@ -85,3 +85,46 @@ describe("autoRouteLead — Pond (#678)", () => {
     expect(notificationCreateMany.mock.calls[0][0].data[0].userId).toBe("dir");
   });
 });
+
+// #728: el turno del round-robin se guardaba en UNA clave global mientras los candidatos
+// ya venían filtrados por plaza. Como las listas de dos plazas son disjuntas, el puntero
+// nunca pertenecía a la lista en curso, indexOf devolvía -1 y el turno colapsaba siempre
+// en el primer asesor de cada plaza. Este test alterna plazas y exige equidad.
+describe("autoRouteLead — equidad del round-robin por plaza (#728)", () => {
+  const POOL: Record<string, Array<{ id: string }>> = {
+    PDC: [{ id: "pdc-1" }, { id: "pdc-2" }, { id: "pdc-3" }],
+    TULUM: [{ id: "tul-1" }, { id: "tul-2" }],
+  };
+
+  it("con leads alternando plaza, cada asesor de cada plaza recibe al menos uno", async () => {
+    // SystemConfig con persistencia real: sin ella el puntero nunca avanza y el test no
+    // distinguiría el arreglo del defecto.
+    const store = new Map<string, unknown>();
+    systemConfigFindUnique.mockImplementation(async (args: unknown) => {
+      const key = (args as { where: { key: string } }).where.key;
+      return store.has(key) ? { key, value: store.get(key) } : null;
+    });
+    systemConfigUpsert.mockImplementation(async (args: unknown) => {
+      const a = args as { where: { key: string }; update?: { value: unknown }; create?: { value: unknown } };
+      store.set(a.where.key, a.update?.value ?? a.create?.value);
+      return {};
+    });
+    userFindMany.mockImplementation(async (args: unknown) => {
+      const plaza = (args as { where: { plaza?: string } }).where.plaza;
+      return plaza ? (POOL[plaza] ?? []) : [];
+    });
+    routingRuleFindMany.mockResolvedValue([
+      { id: "rule-1", strategy: "ROUND_ROBIN", conditions: {}, targets: {}, priority: 1 },
+    ]);
+
+    const asignados: string[] = [];
+    for (const plaza of ["PDC", "TULUM", "PDC", "TULUM", "PDC", "TULUM"]) {
+      contactFindUnique.mockResolvedValue(contact({ targetPlaza: plaza }));
+      asignados.push((await autoRouteLead("c1")) as string);
+    }
+
+    for (const asesor of [...POOL.PDC, ...POOL.TULUM]) {
+      expect(asignados, `${asesor.id} nunca recibió un lead: ${asignados.join(", ")}`).toContain(asesor.id);
+    }
+  });
+});
