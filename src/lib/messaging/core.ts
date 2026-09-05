@@ -371,12 +371,17 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     }
   }
 
-  try {
-    const { meetSlaTimers } = await import("@/lib/workflows/sla");
-    await meetSlaTimers(contact.id);
-  } catch (err) {
-    console.error(`[messaging] meetSlaTimers falló:`, err);
-  }
+  // #702: aquí NO se cierra ningún SlaTimer. El mensaje con el que el propio lead se
+  // presenta no prueba que lo hayamos atendido: prueba lo contrario. Esta llamada cerraba
+  // TODOS los timers RUNNING del contacto dentro del mismo request que los creaba, y por
+  // eso los 8 únicos FIRST_TOUCH que el CRM registró como cumplidos se cerraron entre
+  // 1.53 s y 1.87 s — ninguna persona contesta un DM en segundo y medio.
+  //
+  // Los tres tipos de timer significan "le debemos un toque": FIRST_TOUCH (atender),
+  // RETRY (reintentar tras fallar el primero) y ORPHAN (asignarle dueño). Que el lead
+  // insista no salda ninguna de las tres. Quien SÍ las salda es un toque saliente, y
+  // todos los salientes ya llaman a meetSlaTimers por su cuenta: el eco de core.ts:174,
+  // el dispatcher (dispatcher.ts) y el envío de WhatsApp (twilio/whatsapp.ts).
 
   // ── El provisional deja de serlo: este es su primer reply ──────────────────
   // Un contacto creado por una regla de comentarios nace sin dueño a propósito
@@ -406,9 +411,11 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   // encontró candidato no deja timer y se vuelve a intentar en el siguiente
   // inbound.
   //
-  // Todo esto va DESPUÉS de meetSlaTimers a propósito: ese updateMany cierra
-  // TODOS los timers RUNNING del contacto, así que enrutar antes mataría el
-  // FIRST_TOUCH recién creado y el asesor no tendría reloj.
+  // Ya no hay restricción de orden con el SLA: hasta #702 esto tenía que ir DESPUÉS de
+  // meetSlaTimers porque aquel updateMany cerraba el FIRST_TOUCH recién creado y dejaba
+  // al asesor sin reloj. Ese comentario describía el bug desde el otro lado, tratándolo
+  // como una restricción a respetar. El inbound ya no cierra timers, así que la
+  // restricción desapareció y el orden de este bloque es libre.
   if (!contact.assignedToId) {
     try {
       const { isCommentOriginDetail } = await import("@/lib/comments/link-comment-origin");
