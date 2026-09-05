@@ -5,9 +5,17 @@ describe("resolveTargetPlaza", () => {
   it("default a PDC cuando no hay señal de Nativa/Tulum/Yaxnah", () => {
     expect(resolveTargetPlaza(["61 CAMPAÑA MEDIO ALTO - [LEADS] - USA"])).toBe("PDC");
   });
-  it("PDC con señales vacías, nulas o lista vacía", () => {
-    expect(resolveTargetPlaza([null, undefined, ""])).toBe("PDC");
-    expect(resolveTargetPlaza([])).toBe("PDC");
+  // #729: sin UNA SOLA señal no hay nada que medir. El lead se queda sin plaza y cae al
+  // Pond, como declara la migración. Es el caso del que escribe por WhatsApp directo:
+  // llega sin campaña, sin anuncio y sin conector.
+  it("null cuando no llega ni una sola señal (WhatsApp directo)", () => {
+    expect(resolveTargetPlaza([null, undefined, ""])).toBeNull();
+    expect(resolveTargetPlaza([])).toBeNull();
+    expect(resolveTargetPlaza([null, null, null, null, null])).toBeNull();
+  });
+
+  it("PDC sigue siendo el default cuando SÍ hay señal y no es Nativa/Yaxnah", () => {
+    expect(resolveTargetPlaza(["Campaña Genérica - LEADS"])).toBe("PDC");
   });
   it("TULUM si la campaña menciona Nativa", () => {
     expect(resolveTargetPlaza(["CAMPAÑA NATIVA - LEADS"])).toBe("TULUM");

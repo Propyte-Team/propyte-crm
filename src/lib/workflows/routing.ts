@@ -146,12 +146,18 @@ export async function autoRouteLead(
       const roles = Array.isArray(targets.roles) && targets.roles.length > 0
         ? targets.roles
         : ["ASESOR", "ASESOR_SR", "ASESOR_JR"];
+      // #729: sin plaza resoluble esta regla NO asigna. Antes el filtro simplemente no se
+      // aplicaba y el lead se le entregaba a cualquier asesor de cualquier plaza; la
+      // migración 2026-09-03-contact-target-plaza.sql declara lo contrario: sin plaza, al
+      // Pond. Una regla que nombre su propia plaza (targets.plaza) sí puede tomarlo.
+      const plazaEfectiva = targets.plaza ?? contact.targetPlaza;
+      if (!plazaEfectiva) continue;
       const users = await prisma.user.findMany({
         where: {
           role: { in: roles as never },
           ...routableWhere,
           ...(excludedIds.length ? { id: { notIn: excludedIds } } : {}),
-          ...((targets.plaza ?? contact.targetPlaza) ? { plaza: (targets.plaza ?? contact.targetPlaza) as never } : {}),
+          plaza: plazaEfectiva as never,
         },
         select: { id: true },
         orderBy: { createdAt: "asc" },

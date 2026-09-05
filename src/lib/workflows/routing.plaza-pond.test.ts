@@ -55,11 +55,15 @@ describe("autoRouteLead — ruteo por plaza", () => {
     expect(userFindMany.mock.calls[0][0].where.plaza).toBe("TULUM");
   });
 
-  it("sin targetPlaza no agrega filtro de plaza", async () => {
+  // #729: antes, un lead sin plaza no agregaba filtro y se le entregaba a CUALQUIER
+  // asesor de cualquier plaza. La migración declara lo contrario: sin plaza, al Pond.
+  it("sin plaza resoluble no se fuerza asesor: cae al Pond (#729)", async () => {
     contactFindUnique.mockResolvedValue(contact({ targetPlaza: null }));
-    userFindMany.mockResolvedValue([{ id: "u1" }]);
-    await autoRouteLead("c1");
-    expect(userFindMany.mock.calls[0][0].where.plaza).toBeUndefined();
+    userFindMany.mockResolvedValue([{ id: "gerente" }]);
+    const r = await autoRouteLead("c1");
+    expect(r).toBeNull();
+    expect(createSlaTimer).toHaveBeenCalledWith("c1", "ORPHAN");
+    expect(contactUpdate).not.toHaveBeenCalled();
   });
 });
 
