@@ -4,9 +4,8 @@
 // consulta server-side con RBAC: ASESOR ve lo suyo, TEAM_LEADER su equipo, dirección todo.
 import prisma from "@/lib/db";
 import { realLeadWhere } from "@/lib/leads/real-leads";
-
-const OWN_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
-const TEAM_ROLES = ["TEAM_LEADER"];
+import { resolveActivityScope } from "@/lib/activities/scope";
+import { cancunDayRange } from "@/lib/agenda/grouping";
 
 export interface TodayMini {
   id: string;
@@ -43,13 +42,23 @@ const EMPTY: TodayView = {
 };
 
 // Resuelve los IDs de usuario cuyo trabajo puede ver el actual (undefined = todos).
+//
+// #715 A-03: esto tenía su propia copia de las listas de roles —la tercera del
+// repositorio— y ya había divergido: HOSTESS no estaba en ninguna de las dos, así que
+// caía en el `return undefined` del final y veía las tareas, los leads y los negocios de
+// TODA la empresa. Cualquier rol nuevo habría heredado el mismo agujero, porque el
+// default era "sin restricción". Ahora el bucket lo decide `resolveActivityScope`, que es
+// el módulo canónico que ya usan getActivities y getOverdueTasks, y el caso no
+// contemplado deja de ver todo para no ver nada.
 async function resolveOwnerIds(userId: string, role: string): Promise<string[] | undefined> {
-  if (OWN_ROLES.includes(role)) return [userId];
-  if (TEAM_ROLES.includes(role)) {
+  const scope = resolveActivityScope(role);
+  if (scope === "ALL") return undefined;
+  if (scope === "TEAM") {
     const team = await prisma.user.findMany({ where: { teamLeaderId: userId }, select: { id: true } });
     return [userId, ...team.map((t) => t.id)];
   }
-  return undefined; // ADMIN/DIRECTOR/GERENTE/etc → sin restricción
+  if (scope === "OWN") return [userId];
+  return []; // DENIED: lista vacía → la consulta no devuelve nada
 }
 
 export async function getTodayView(userId: string, role: string): Promise<TodayView> {
@@ -58,10 +67,10 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
     const ownerWhere = owners ? { in: owners } : undefined;
 
     const now = new Date();
-    const endToday = new Date(now);
-    endToday.setHours(23, 59, 59, 999);
-    const startToday = new Date(now);
-    startToday.setHours(0, 0, 0, 0);
+    // #715 A-04: el día es el civil de Cancún, el mismo que usa /agenda. Con setHours()
+    // el rango salía en la zona del proceso (UTC en el contenedor) y las dos pantallas
+    // discrepaban de qué es "hoy" durante cinco horas cada día.
+    const { start: startToday, end: endToday } = cancunDayRange(now);
     const soon = new Date(now.getTime() + 2 * 60 * 60 * 1000); // SLA en riesgo: vence en <2h
 
     const contactScope = ownerWhere ? { assignedToId: ownerWhere } : {};

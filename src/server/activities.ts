@@ -244,7 +244,7 @@ export interface UpdateActivityInput {
   dueDate?: Date | null
   status?: ActivityStatus
   outcome?: string | null
-  duration_minutes?: number
+  duration_minutes?: number | null
 }
 
 export async function updateActivity(id: string, data: UpdateActivityInput) {
@@ -271,9 +271,11 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
   if (data.duration_minutes !== undefined) updateData.duration_minutes = data.duration_minutes
   if (data.status !== undefined) {
     updateData.status = data.status
-    if (data.status === "COMPLETADA") {
-      updateData.completedAt = new Date()
-    }
+    // #715 A-02: al reabrir una tarea hay que BORRAR la fecha de completado. Antes solo
+    // se escribía al completar, así que una tarea reabierta quedaba PENDIENTE con fecha
+    // de terminada — y cualquier reporte que cuente "completadas por fecha" la seguía
+    // contando.
+    updateData.completedAt = data.status === "COMPLETADA" ? new Date() : null
   }
 
   const activity = await prisma.activity.update({

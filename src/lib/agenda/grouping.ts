@@ -33,6 +33,27 @@ export function cancunDayKey(d: Date): string {
   }).format(d);
 }
 
+// Cancún es UTC−5 todo el año: México suprimió el horario de verano en 2022, y Quintana
+// Roo ya estaba fuera desde 2015. Por eso el offset se puede fijar como literal en vez de
+// calcularlo; `cancunDayRange` lo usa y hay una prueba que lo ancla.
+const CANCUN_UTC_OFFSET = "-05:00";
+
+/**
+ * Los dos instantes que delimitan el día civil de Cancún que contiene `now`.
+ *
+ * #715 A-04: `/agenda` agrupaba con `cancunDayKey` (hora de Cancún) mientras `/hoy`
+ * calculaba su rango con `setHours()` sobre la zona del proceso —UTC en el contenedor—.
+ * Entre las 19:00 y la medianoche de Cancún las dos pantallas discrepaban de qué día es
+ * hoy: una tarea para mañana ya aparecía como de hoy en una y no en la otra.
+ */
+export function cancunDayRange(now: Date): { start: Date; end: Date } {
+  const key = cancunDayKey(now);
+  return {
+    start: new Date(`${key}T00:00:00.000${CANCUN_UTC_OFFSET}`),
+    end: new Date(`${key}T23:59:59.999${CANCUN_UTC_OFFSET}`),
+  };
+}
+
 /** Aritmética de calendario sobre la clave de día, sin volver a tocar zonas horarias. */
 function addDaysToKey(key: string, days: number): string {
   const [y, m, d] = key.split("-").map(Number);
