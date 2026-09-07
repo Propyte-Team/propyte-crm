@@ -19,6 +19,7 @@ export function OverdueTasks() {
   const [tasks, setTasks] = useState<OverdueTask[]>([])
   const [loading, setLoading] = useState(true)
   const [completingId, setCompletingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchTasks()
@@ -44,17 +45,24 @@ export function OverdueTasks() {
 
   async function handleComplete(taskId: string) {
     setCompletingId(taskId)
+    setError(null)
     try {
-      const res = await fetch(`/api/activities`, {
+      // #715 A-01: esto apuntaba a `/api/activities` (la colección), que solo exporta
+      // GET y POST. Cada clic recibía un 405 que el catch se tragaba: el botón no
+      // completaba nada y tampoco avisaba. El PATCH vive en la ruta del elemento.
+      const res = await fetch(`/api/activities/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: taskId, status: "COMPLETADA" }),
+        body: JSON.stringify({ status: "COMPLETADA" }),
       })
-      if (res.ok) {
-        setTasks((prev) => prev.filter((t) => t.id !== taskId))
+      if (!res.ok) {
+        const json = await res.json().catch(() => null)
+        throw new Error(json?.error ?? "No se pudo completar la tarea")
       }
-    } catch {
-      // silent
+      setTasks((prev) => prev.filter((t) => t.id !== taskId))
+    } catch (err) {
+      // Un fallo silencioso es lo que dejó este botón roto sin que nadie lo notara.
+      setError(err instanceof Error ? err.message : "No se pudo completar la tarea")
     } finally {
       setCompletingId(null)
     }

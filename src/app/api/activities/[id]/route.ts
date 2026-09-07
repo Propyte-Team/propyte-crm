@@ -46,7 +46,9 @@ export async function PATCH(
       description: description,
       outcome: outcome,
       dueDate: dueDate,
-      duration_minutes: duration_minutes ?? undefined,
+      // #715: `?? undefined` convertía el null explícito en "no tocar", así que una
+      // duración puesta por error no se podía borrar nunca.
+      duration_minutes: duration_minutes,
     });
     return NextResponse.json({ data: activity });
   } catch (error) {
