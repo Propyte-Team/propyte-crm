@@ -17,22 +17,10 @@ export async function POST(
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
+    // Las cotas viven en paymentPlanSchema (lib/validations/quote.ts) y las aplica
+    // createPaymentPlan: una sola fuente de verdad en vez de dos juegos de reglas.
     const body = await request.json();
-    const { downPaymentPct, monthsCount, deliveryPaymentPct, startDate } = body;
-
-    if (downPaymentPct === undefined || downPaymentPct < 0 || downPaymentPct > 100) {
-      return NextResponse.json(
-        { error: "downPaymentPct debe estar entre 0 y 100" },
-        { status: 400 }
-      );
-    }
-
-    const result = await createPaymentPlan(params.id, {
-      downPaymentPct: Number(downPaymentPct),
-      monthsCount: Number(monthsCount ?? 0),
-      deliveryPaymentPct: deliveryPaymentPct ? Number(deliveryPaymentPct) : 0,
-      startDate: startDate ? new Date(startDate) : undefined,
-    });
+    const result = await createPaymentPlan(params.id, body);
 
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });

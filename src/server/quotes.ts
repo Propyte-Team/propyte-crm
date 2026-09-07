@@ -8,6 +8,14 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { addMonths, startOfDay } from "date-fns";
+import {
+  createQuoteSchema,
+  updateQuoteSchema,
+  paymentPlanSchema,
+  updateInstallmentSchema,
+  primerMensaje,
+} from "@/lib/validations/quote";
+import { buildInstallmentPlan, computeFinalPrice } from "@/lib/quotes/pricing";
 
 // --------------- helpers ---------------
 
@@ -60,25 +68,15 @@ export async function getQuotesByDeal(dealId: string) {
 
 // --------------- createQuote ---------------
 
-export async function createQuote(data: {
-  dealId: string;
-  hubUnitId?: string | null;
-  currency: "MXN" | "USD";
-  listPrice: number;
-  discountPct?: number;
-  scheme: "CONTADO" | "FINANCIAMIENTO_DIRECTO" | "CREDITO_BANCARIO" | "MIXTO";
-  notes?: string | null;
-  expiresAt?: Date | null;
-  fxRate?: number | null;
-}) {
+export async function createQuote(input: unknown) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
-  if (!data.dealId) return { error: "dealId es requerido" };
-  if (!data.listPrice || data.listPrice <= 0) return { error: "listPrice debe ser positivo" };
+  const parsed = createQuoteSchema.safeParse(input);
+  if (!parsed.success) return { error: primerMensaje(parsed.error) };
+  const data = parsed.data;
 
-  const discountPct = data.discountPct ?? 0;
-  const finalPrice = data.listPrice * (1 - discountPct / 100);
+  const finalPrice = computeFinalPrice(data.listPrice, data.discountPct);
 
   // T3.1: congelar snapshot de la unidad del Hub al emitir (fuente + precio + fecha).
   let unitSnapshot: Record<string, unknown> = {};
@@ -95,7 +93,7 @@ export async function createQuote(data: {
       hubUnitId: data.hubUnitId ?? null,
       currency: data.currency,
       listPrice: data.listPrice,
-      discountPct,
+      discountPct: data.discountPct,
       finalPrice,
       fxRate: data.fxRate ?? null,
       scheme: data.scheme,
@@ -114,22 +112,13 @@ export async function createQuote(data: {
 
 // --------------- updateQuote ---------------
 
-export async function updateQuote(
-  id: string,
-  data: Partial<{
-    hubUnitId: string | null;
-    currency: "MXN" | "USD";
-    listPrice: number;
-    discountPct: number;
-    scheme: "CONTADO" | "FINANCIAMIENTO_DIRECTO" | "CREDITO_BANCARIO" | "MIXTO";
-    notes: string | null;
-    expiresAt: Date | null;
-    fxRate: number | null;
-    status: "DRAFT" | "SENT" | "OPENED" | "ACCEPTED" | "EXPIRED" | "CANCELLED";
-  }>
-) {
+export async function updateQuote(id: string, input: unknown) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
+
+  const parsed = updateQuoteSchema.safeParse(input);
+  if (!parsed.success) return { error: primerMensaje(parsed.error) };
+  const data = parsed.data;
 
   const existing = await prisma.quote.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Cotización no encontrada" };
@@ -143,13 +132,14 @@ export async function updateQuote(
   if (data.fxRate !== undefined) updateData.fxRate = data.fxRate;
   if (data.status !== undefined) updateData.status = data.status;
 
-  // Recalcular precio final si cambió listPrice o discountPct
-  const newListPrice = data.listPrice ?? Number(existing.listPrice);
-  const newDiscountPct = data.discountPct ?? Number(existing.discountPct);
+  // Recalcular precio final si cambió listPrice o discountPct (AUD-20260903-D03:
+  // en centavos, para que el plan de pagos que se genere después pueda cerrar).
   if (data.listPrice !== undefined || data.discountPct !== undefined) {
+    const newListPrice = data.listPrice ?? Number(existing.listPrice);
+    const newDiscountPct = data.discountPct ?? Number(existing.discountPct);
     updateData.listPrice = newListPrice;
     updateData.discountPct = newDiscountPct;
-    updateData.finalPrice = newListPrice * (1 - newDiscountPct / 100);
+    updateData.finalPrice = computeFinalPrice(newListPrice, newDiscountPct);
   }
 
   const quote = await prisma.quote.update({
@@ -166,17 +156,13 @@ export async function updateQuote(
 
 // --------------- createPaymentPlan ---------------
 
-export async function createPaymentPlan(
-  quoteId: string,
-  data: {
-    downPaymentPct: number;
-    monthsCount: number;
-    deliveryPaymentPct?: number;
-    startDate?: Date;
-  }
-) {
+export async function createPaymentPlan(quoteId: string, input: unknown) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
+
+  const parsed = paymentPlanSchema.safeParse(input);
+  if (!parsed.success) return { error: primerMensaje(parsed.error) };
+  const data = parsed.data;
 
   const quote = await prisma.quote.findFirst({
     where: { id: quoteId, deletedAt: null },
@@ -186,18 +172,21 @@ export async function createPaymentPlan(
   if (quote.paymentPlan) return { error: "Esta cotización ya tiene un plan de pago" };
 
   const finalPrice = Number(quote.finalPrice);
-  const downPaymentPct = data.downPaymentPct;
-  const deliveryPaymentPct = data.deliveryPaymentPct ?? 0;
-  const monthsCount = data.monthsCount;
+  const { downPaymentPct, deliveryPaymentPct, monthsCount } = data;
 
-  const downPaymentAmount = finalPrice * (downPaymentPct / 100);
-  const deliveryAmount = finalPrice * (deliveryPaymentPct / 100);
-  const remainingForMonthly = finalPrice - downPaymentAmount - deliveryAmount;
-  const monthlyAmount = monthsCount > 0 ? remainingForMonthly / monthsCount : 0;
+  // AUD-20260903-D03: el reparto se hace en centavos enteros y el residuo se carga en
+  // la última mensualidad, para que Σ parcialidades === finalPrice.
+  const reparto = buildInstallmentPlan({
+    finalPrice,
+    downPaymentPct,
+    deliveryPaymentPct,
+    monthsCount,
+  });
+  const { downPaymentAmount, deliveryAmount, monthlyAmount, monthlyAmounts } = reparto;
 
   const startDate = data.startDate ? startOfDay(data.startDate) : startOfDay(new Date());
 
-  // Generar schedules: enganche (#0) + mensualidades + entrega (#n+1)
+  // Generar schedules: enganche (#1) + mensualidades + entrega (#n+2)
   const scheduleData: Array<{
     number: number;
     dueDate: Date;
@@ -208,13 +197,13 @@ export async function createPaymentPlan(
   scheduleData.push({ number: 1, dueDate: startDate, amount: downPaymentAmount });
 
   // mensualidades
-  for (let i = 0; i < monthsCount; i++) {
+  monthlyAmounts.forEach((amount, i) => {
     scheduleData.push({
       number: i + 2,
       dueDate: addMonths(startDate, i + 1),
-      amount: monthlyAmount,
+      amount,
     });
-  }
+  });
 
   // entrega (si aplica)
   if (deliveryPaymentPct > 0) {
@@ -251,17 +240,17 @@ export async function createPaymentPlan(
 
 // --------------- updateInstallment ---------------
 
-export async function updateInstallment(
-  id: string,
-  data: {
-    status?: "PENDIENTE" | "PAGADA" | "VENCIDA" | "CONDONADA";
-    paidAt?: Date | null;
-    paidAmount?: number | null;
-    notes?: string | null;
-  }
-) {
+export async function updateInstallment(id: string, input: unknown) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
+
+  // AUD-20260903-D09 (mitad de validación): `paidAmount` llegaba crudo, así que un
+  // texto reventaba con 500 y un negativo se guardaba y descuadraba la cobranza. La
+  // verificación de que la parcialidad pertenezca a un negocio del usuario es del
+  // helper de acceso por objeto (Paso 3), no de este cambio.
+  const parsed = updateInstallmentSchema.safeParse(input);
+  if (!parsed.success) return { error: primerMensaje(parsed.error) };
+  const data = parsed.data;
 
   const existing = await prisma.paymentSchedule.findUnique({ where: { id } });
   if (!existing) return { error: "Parcialidad no encontrada" };
