@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { deleteDocument } from "@/server/quotes";
+import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
 
 export async function DELETE(
   _request: NextRequest,
@@ -25,6 +26,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof Error && error.message === FUERA_DE_ALCANCE) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     console.error("[DELETE /api/deals/[id]/documents/[docId]]", error);
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }

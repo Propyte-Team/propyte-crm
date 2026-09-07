@@ -8,7 +8,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     const body = await request.json();
     if (!body?.hubUnitId) return NextResponse.json({ error: "hubUnitId es requerido" }, { status: 400 });
-    const result = await addItem({ shortlistId: params.id, hubUnitId: body.hubUnitId, note: body.note ?? null });
+    const result = await addItem(
+      { shortlistId: params.id, hubUnitId: body.hubUnitId, note: body.note ?? null },
+      session.user,
+    );
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: 404 });
     return NextResponse.json({ data: result.item }, { status: 201 });
   } catch (e) {

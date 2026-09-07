@@ -7,16 +7,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const quoteFindFirst = vi.fn();
 const paymentPlanCreate = vi.fn();
+// #711: crear un plan ahora comprueba de quién es el negocio dueño de la cotización.
+const dealFindFirst = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
     quote: { findFirst: (...a: unknown[]) => quoteFindFirst(...a) },
     paymentPlan: { create: (...a: unknown[]) => paymentPlanCreate(...a) },
+    deal: { findFirst: (...a: unknown[]) => dealFindFirst(...a) },
   },
 }));
 
 vi.mock("@/lib/auth/session", () => ({
-  getServerSession: async () => ({ user: { id: "user-1", role: "ADMIN" } }),
+  getServerSession: async () => ({ user: { id: "user-1", role: "ADMIN", plaza: "PDC" } }),
 }));
 
 import { createPaymentPlan } from "./quotes";
@@ -28,6 +31,11 @@ function parcialidadesCreadas(): number[] {
 }
 
 beforeEach(() => {
+  dealFindFirst.mockReset().mockResolvedValue({
+    id: "deal-1",
+    assignedToId: "user-1",
+    assignedTo: { plaza: "PDC", teamLeaderId: null },
+  });
   quoteFindFirst.mockReset();
   paymentPlanCreate.mockReset().mockResolvedValue({
     id: "plan-1",
@@ -45,6 +53,7 @@ beforeEach(() => {
 function conCotizacionDe(finalPrice: number) {
   quoteFindFirst.mockResolvedValue({
     id: "quote-1",
+    dealId: "deal-1",
     finalPrice,
     deletedAt: null,
     paymentPlan: null,

@@ -8,12 +8,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const body = await request.json();
     if (body?.action === "send") {
-      const { shortlist } = await sendShortlist(params.id);
-      return NextResponse.json({ data: shortlist });
+      const result = await sendShortlist(params.id, session.user);
+      if ("error" in result) return NextResponse.json({ error: result.error }, { status: 404 });
+      return NextResponse.json({ data: result.shortlist });
     }
     if (typeof body?.title === "string") {
-      const { shortlist } = await updateShortlistTitle(params.id, body.title);
-      return NextResponse.json({ data: shortlist });
+      const result = await updateShortlistTitle(params.id, body.title, session.user);
+      if ("error" in result) return NextResponse.json({ error: result.error }, { status: 404 });
+      return NextResponse.json({ data: result.shortlist });
     }
     return NextResponse.json({ error: "Acción no soportada" }, { status: 400 });
   } catch (e) {
@@ -26,7 +28,8 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {
-    await softDeleteShortlist(params.id);
+    const result = await softDeleteShortlist(params.id, session.user);
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[DELETE /api/shortlists/[id]]", e);
