@@ -12,6 +12,9 @@ import { getServerSession } from "@/lib/auth/session";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 import { dueDateSchema } from "@/lib/due-date";
 import { dealCommissionFields } from "@/lib/commission-engine/for-deal";
+import { withChangeSource } from "@/lib/audit/change-context";
+import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
+import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 
 // Roles con acceso completo
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -340,6 +343,9 @@ export async function PATCH(
     }
 
     // Hub hold al reservar (SOT del inventario). Un conflicto del Hub BLOQUEA la transición.
+    // Se toma ANTES de abrir la transacción porque es una llamada HTTP; si la
+    // transacción falla después, el catch lo libera.
+    let holdTomadoEnHub: string | null = null;
     if (data.stage === "RESERVED" && existingDeal.hubUnitId) {
       const { requestUnitHold } = await import("@/lib/hub/client");
       const hold = await requestUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id });
@@ -349,95 +355,87 @@ export async function PATCH(
           { status: 409 }
         );
       }
+      holdTomadoEnHub = existingDeal.hubUnitId;
       updateData.holdId = hold.unit?.id ?? existingDeal.hubUnitId;
       updateData.holdExpiresAt = hold.unit?.holdExpiresAt ? new Date(hold.unit.holdExpiresAt) : null;
       updateData.reservedAt = new Date();
     }
 
-    // Actualizar el deal
-    const updatedDeal = await prisma.deal.update({
-      where: { id: params.id },
-      data: updateData,
-      include: {
-        contact: { select: { id: true, firstName: true, lastName: true } },
-        assignedTo: { select: { id: true, name: true } },
-        development: { select: { id: true, name: true } },
-        unit: { select: { id: true, unitNumber: true } },
-      },
-    });
+    // #D-02: el deal, la unidad, los contadores del desarrollo y la actividad se
+    // escriben en UNA transacción. Antes eran cuatro escrituras suel­tas: si la de la
+    // unidad fallaba a media operación, el negocio quedaba WON con comisiones
+    // calculadas y la unidad seguía DISPONIBLE, sin rastro de la divergencia.
+    // Las llamadas HTTP al Hub quedan fuera a propósito (no se pueden revertir).
+    const huboCambioDeEtapa = !!data.stage && data.stage !== existingDeal.stage;
+
+    let updatedDeal;
+    try {
+      updatedDeal = await withChangeSource(
+        { source: "api", actorId: session.user.id },
+        async (tx) => {
+          const deal = await tx.deal.update({
+            where: { id: params.id },
+            data: updateData,
+            include: {
+              contact: { select: { id: true, firstName: true, lastName: true } },
+              assignedTo: { select: { id: true, name: true } },
+              development: { select: { id: true, name: true } },
+              unit: { select: { id: true, unitNumber: true } },
+            },
+          });
+
+          // Inventario local (legacy, sólo deals con unitId del CRM). Sólo en una
+          // transición real de etapa, y el movimiento lo decide el estado que la
+          // unidad tenía ANTES — ver lib/deals/stage-inventory.ts.
+          if (
+            huboCambioDeEtapa &&
+            deal.unitId &&
+            (data.stage === "RESERVED" || data.stage === "WON")
+          ) {
+            await aplicarInventarioDeEtapa(tx, {
+              unitId: deal.unitId,
+              developmentId: existingDeal.developmentId,
+              toStage: data.stage,
+              contactId: existingDeal.contactId,
+              assignedToId: existingDeal.assignedToId,
+              salePrice: deal.estimatedValue,
+            });
+          }
+
+          if (huboCambioDeEtapa && data.stage) {
+            await tx.activity.create({
+              data: actividadDeCambioDeEtapa({
+                contactId: existingDeal.contactId,
+                dealId: existingDeal.id,
+                userId: session.user.id,
+                fromStage: existingDeal.stage,
+                toStage: data.stage,
+                lostReason: data.lostReason,
+                lostReasonDetail: data.lostReasonDetail,
+              }),
+            });
+          }
+
+          return deal;
+        }
+      );
+    } catch (err) {
+      // Si ya tomamos el hold en el Hub y la transacción no cerró, liberarlo: si no, la
+      // unidad queda bloqueada allá por un negocio que aquí no avanzó.
+      if (holdTomadoEnHub) {
+        const { releaseUnitHold } = await import("@/lib/hub/client");
+        await releaseUnitHold({
+          hubUnitId: holdTomadoEnHub,
+          crmDealId: existingDeal.id,
+        }).catch(() => null);
+      }
+      throw err;
+    }
 
     // Hub: confirmar venta al ganar (SOT). No bloquea el WON; el webhook reconcilia.
     if (data.stage === "WON" && existingDeal.hubUnitId) {
       const { confirmUnitHold } = await import("@/lib/hub/client");
       await confirmUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id }).catch(() => null);
-    }
-
-    // Actualizar estado de unidad LOCAL si corresponde (legacy, sólo deals con unitId local)
-    if (data.stage === "RESERVED" && updatedDeal.unitId) {
-      await prisma.unit.update({
-        where: { id: updatedDeal.unitId },
-        data: {
-          status: "APARTADA",
-          reservationDate: new Date(),
-          reservedByContactId: existingDeal.contactId,
-          reservedByUserId: existingDeal.assignedToId,
-        },
-      });
-      // Actualizar contadores del desarrollo
-      if (existingDeal.developmentId) {
-        await prisma.development.update({
-          where: { id: existingDeal.developmentId },
-          data: {
-            reservedUnits: { increment: 1 },
-            availableUnits: { decrement: 1 },
-          },
-        });
-      }
-    } else if (data.stage === "WON" && updatedDeal.unitId) {
-      await prisma.unit.update({
-        where: { id: updatedDeal.unitId },
-        data: {
-          status: "VENDIDA",
-          saleDate: new Date(),
-          salePrice: updatedDeal.estimatedValue,
-        },
-      });
-      if (existingDeal.developmentId) {
-        await prisma.development.update({
-          where: { id: existingDeal.developmentId },
-          data: {
-            soldUnits: { increment: 1 },
-            reservedUnits: { decrement: 1 },
-          },
-        });
-      }
-    }
-
-    // Crear actividad de cambio de etapa
-    if (data.stage && data.stage !== existingDeal.stage) {
-      const stageLabels: Record<string, string> = {
-        NEW_LEAD: "Nuevo Lead", CONTACTED: "Contactado",
-        DISCOVERY_DONE: "Discovery Hecho", MEETING_SCHEDULED: "Reunión Agendada",
-        MEETING_COMPLETED: "Reunión Realizada", PROPOSAL_SENT: "Propuesta Enviada",
-        NEGOTIATION: "Negociación", RESERVED: "Reservado",
-        CONTRACT_SIGNED: "Contrato Firmado", CLOSING: "Cierre",
-        WON: "Ganado", LOST: "Perdido", FROZEN: "Congelado",
-      };
-
-      await prisma.activity.create({
-        data: {
-          contactId: existingDeal.contactId,
-          dealId: existingDeal.id,
-          userId: session.user.id,
-          activityType: "NOTE",
-          subject: `Cambio de etapa: ${stageLabels[existingDeal.stage] || existingDeal.stage} → ${stageLabels[data.stage] || data.stage}`,
-          description: data.stage === "LOST"
-            ? `Razón: ${data.lostReason}${data.lostReasonDetail ? ` - ${data.lostReasonDetail}` : ""}`
-            : undefined,
-          status: "COMPLETADA",
-          completedAt: new Date(),
-        },
-      });
     }
 
     return NextResponse.json({ data: updatedDeal });

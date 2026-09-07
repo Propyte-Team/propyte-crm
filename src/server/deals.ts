@@ -13,6 +13,8 @@ import { parseDueDate } from "@/lib/due-date";
 import type { Prisma, DealStage, DealType } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
+import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 import { computeDealCommissions } from "@/lib/commission-engine/deal-commissions";
 
 // Roles con acceso completo a todos los deals
@@ -553,11 +555,14 @@ export async function transitionDealStage(
   if (toStage === "CLOSING") updateData.deedAt = new Date();
   if (toStage === "WON") updateData.deliveredAt = new Date();
 
-  // Actualizar el deal
+  // #D-02: el deal, la unidad, los contadores del desarrollo y la nota de cronología
+  // se escriben en UNA sola transacción. Antes el deal se actualizaba en su propia
+  // transacción y las otras tres escrituras iban sueltas después: un fallo a media
+  // operación dejaba el negocio ganado con la unidad todavía disponible.
   const updatedDeal = await withChangeSource(
     { source: "ui", actorId: session.user.id },
-    (tx) =>
-      tx.deal.update({
+    async (tx) => {
+      const dealActualizado = await tx.deal.update({
         where: { id: dealId },
         data: updateData,
         include: {
@@ -566,92 +571,36 @@ export async function transitionDealStage(
           development: { select: { id: true, name: true } },
           unit: { select: { id: true, unitNumber: true } },
         },
-      })
-  );
-
-  // Actualizar estado de unidad si corresponde
-  if (toStage === "RESERVED" && updatedDeal.unitId) {
-    await prisma.unit.update({
-      where: { id: updatedDeal.unitId },
-      data: {
-        status: "APARTADA",
-        reservationDate: new Date(),
-        reservedByContactId: deal.contactId,
-        reservedByUserId: deal.assignedToId,
-      },
-    });
-
-    // Actualizar contadores del desarrollo
-    if (deal.developmentId) {
-      await prisma.development.update({
-        where: { id: deal.developmentId },
-        data: {
-          reservedUnits: { increment: 1 },
-          availableUnits: { decrement: 1 },
-        },
       });
-    }
-  }
 
-  if (toStage === "WON" && updatedDeal.unitId) {
-    await prisma.unit.update({
-      where: { id: updatedDeal.unitId },
-      data: {
-        status: "VENDIDA",
-        saleDate: new Date(),
-        salePrice: deal.estimatedValue,
-      },
-    });
-
-    // Actualizar contadores del desarrollo
-    if (deal.developmentId) {
-      const currentUnit = await prisma.unit.findUnique({
-        where: { id: updatedDeal.unitId },
-      });
-      // Solo actualizar si antes estaba apartada (no descontar disponible dos veces)
-      if (currentUnit) {
-        await prisma.development.update({
-          where: { id: deal.developmentId },
-          data: {
-            soldUnits: { increment: 1 },
-            reservedUnits: { decrement: 1 },
-          },
+      // El movimiento de contadores lo decide el estado que la unidad tenía ANTES, no
+      // la etapa destino — ver lib/deals/stage-inventory.ts.
+      if (dealActualizado.unitId && (toStage === "RESERVED" || toStage === "WON")) {
+        await aplicarInventarioDeEtapa(tx, {
+          unitId: dealActualizado.unitId,
+          developmentId: deal.developmentId,
+          toStage,
+          contactId: deal.contactId,
+          assignedToId: deal.assignedToId,
+          salePrice: deal.estimatedValue,
         });
       }
+
+      await tx.activity.create({
+        data: actividadDeCambioDeEtapa({
+          contactId: deal.contactId,
+          dealId: deal.id,
+          userId: session.user.id,
+          fromStage,
+          toStage,
+          lostReason: extras.lostReason,
+          lostReasonDetail: extras.lostReasonDetail,
+        }),
+      });
+
+      return dealActualizado;
     }
-  }
-
-  // Crear actividad de cambio de etapa
-  const stageLabels: Record<string, string> = {
-    NEW_LEAD: "Nuevo Lead",
-    CONTACTED: "Contactado",
-    DISCOVERY_DONE: "Discovery Hecho",
-    MEETING_SCHEDULED: "Reunión Agendada",
-    MEETING_COMPLETED: "Reunión Realizada",
-    PROPOSAL_SENT: "Propuesta Enviada",
-    NEGOTIATION: "Negociación",
-    RESERVED: "Reservado",
-    CONTRACT_SIGNED: "Contrato Firmado",
-    CLOSING: "Cierre",
-    WON: "Ganado",
-    LOST: "Perdido",
-    FROZEN: "Congelado",
-  };
-
-  await prisma.activity.create({
-    data: {
-      contactId: deal.contactId,
-      dealId: deal.id,
-      userId: session.user.id,
-      activityType: "NOTE",
-      subject: `Cambio de etapa: ${stageLabels[fromStage] || fromStage} → ${stageLabels[toStage] || toStage}`,
-      description: toStage === "LOST"
-        ? `Razón: ${extras.lostReason}${extras.lostReasonDetail ? ` - ${extras.lostReasonDetail}` : ""}`
-        : undefined,
-      status: "COMPLETADA",
-      completedAt: new Date(),
-    },
-  });
+  );
 
   // Disparar webhook de cambio de etapa (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("deal.stage_changed", { deal: updatedDeal, previousStage: fromStage, newStage: toStage });

@@ -39,6 +39,20 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+// #D-02: el PATCH escribe deal + unidad + contadores + nota dentro de una transacción,
+// así que el tx que abre withChangeSource tiene que estar simulado. Se enrutan
+// `deal.update` y `activity.create` a los mismos espías de siempre, para que las
+// aserciones de este archivo sigan valiendo.
+vi.mock("@/lib/audit/change-context", () => ({
+  withChangeSource: (_o: unknown, fn: (tx: unknown) => unknown) =>
+    fn({
+      deal: { update: (...a: unknown[]) => dealUpdate(...a) },
+      unit: { findUnique: vi.fn(async () => null), update: vi.fn(async () => ({})) },
+      development: { update: vi.fn(async () => ({})) },
+      activity: { create: (...a: unknown[]) => activityCreate(...a) },
+    }),
+}));
+
 import { PATCH } from "./route";
 
 const ctx = { params: { id: "deal-1" } };

@@ -8,6 +8,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const dealFindUnique = vi.fn();
 const dealUpdate = vi.fn();
 const developmentFindUnique = vi.fn();
+const developmentUpdate = vi.fn();
+const unitFindUnique = vi.fn();
+const unitUpdate = vi.fn();
 const activityCreate = vi.fn();
 const contactUpdate = vi.fn();
 const contactFindUnique = vi.fn();
@@ -28,9 +31,19 @@ vi.mock("@/lib/auth/session", () => ({
   getServerSession: async () => ({ user: { id: "user-1", role: "ADMIN", plaza: "PDC" } }),
 }));
 
+// El cambio de etapa escribe deal + unidad + contadores + nota DENTRO de la transacción
+// (#D-02), así que el tx falso tiene que ofrecer los cuatro modelos.
 vi.mock("@/lib/audit/change-context", () => ({
   withChangeSource: (_o: unknown, fn: (tx: unknown) => unknown) =>
-    fn({ deal: { update: (...a: unknown[]) => dealUpdate(...a) } }),
+    fn({
+      deal: { update: (...a: unknown[]) => dealUpdate(...a) },
+      unit: {
+        findUnique: (...a: unknown[]) => unitFindUnique(...a),
+        update: (...a: unknown[]) => unitUpdate(...a),
+      },
+      development: { update: (...a: unknown[]) => developmentUpdate(...a) },
+      activity: { create: (...a: unknown[]) => activityCreate(...a) },
+    }),
 }));
 
 vi.mock("@/lib/webhooks/dispatcher", () => ({ dispatchWebhook: async () => undefined }));
@@ -59,6 +72,9 @@ beforeEach(() => {
     contactId: "contact-1",
   });
   developmentFindUnique.mockReset();
+  developmentUpdate.mockReset().mockResolvedValue({});
+  unitFindUnique.mockReset().mockResolvedValue(null);
+  unitUpdate.mockReset().mockResolvedValue({});
   activityCreate.mockReset().mockResolvedValue({});
   contactUpdate.mockReset().mockResolvedValue({});
   contactFindUnique.mockReset().mockResolvedValue(null);
