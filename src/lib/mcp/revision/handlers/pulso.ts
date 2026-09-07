@@ -77,15 +77,21 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     // 🚨 Agrupado por estado, no contando solo los BREACHED. La diferencia es el
     // DENOMINADOR: un `incumplidos_7d: 0` sin total no distingue «cumplimos todo» de
     // «no se creó ni un temporizador», y las dos cosas producen el mismo cero verde.
+    // 🚨 #732: agrupado por estado Y POR TIPO. El Pond (#678) sella temporizadores
+    // ORPHAN —«nadie pudo tomar este lead»—, que no son atención cumplida ni incumplida:
+    // son leads sin dueño. Sumarlos al denominador del cumplimiento hace que un lead que
+    // nadie atendió pueda contar como atención cumplida. Se miden aparte.
     db.slaTimer.groupBy({
-      by: ["status"],
+      by: ["status", "type"],
       where: { createdAt: { gte: hace7d } },
       _count: { _all: true },
     }),
     // 🚨 El más interesante de todos: sigue RUNNING pero su `dueAt` ya pasó. Es un SLA
     // incumplido que todavía no se marcó como tal — no aparece en el conteo de BREACHED
     // y por eso un tablero que solo mire ese conteo lo reporta todo en verde.
-    db.slaTimer.count({ where: { status: "RUNNING", dueAt: { lt: ahora } } }),
+    db.slaTimer.count({
+      where: { status: "RUNNING", dueAt: { lt: ahora }, type: { not: "ORPHAN" } },
+    }),
     db.actionQueue.groupBy({ by: ["status"], _count: { _all: true } }),
     db.actionQueue.count({
       where: { status: "FAILED", attempts: { gte: 3 } },
@@ -119,9 +125,36 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
    * El total del periodo sale de la misma agrupación: no hay una segunda consulta que
    * pueda desincronizarse con la primera.
    */
-  const slaEstados = Object.fromEntries(slaPorEstado.map((s) => [s.status, s._count._all]));
-  const slaTotal = slaPorEstado.reduce((suma, s) => suma + s._count._all, 0);
+  // #732: el cumplimiento se mide SOLO sobre los temporizadores de atención
+  // (FIRST_TOUCH, RETRY). Los ORPHAN del Pond se publican aparte, nunca dentro del
+  // porcentaje: significan «nadie pudo tomar este lead», que es un problema de reparto,
+  // no de rapidez de respuesta.
+  const esPond = (t: { type: string }) => t.type === "ORPHAN";
+  const atencion = slaPorEstado.filter((t) => !esPond(t));
+  const pond = slaPorEstado.filter(esPond);
+
+  const porEstado = (filas: typeof slaPorEstado) => {
+    const acc: Record<string, number> = {};
+    for (const f of filas) acc[f.status] = (acc[f.status] ?? 0) + f._count._all;
+    return acc;
+  };
+  const totalDe = (filas: typeof slaPorEstado) =>
+    filas.reduce((suma, f) => suma + f._count._all, 0);
+
+  const slaEstados = porEstado(atencion);
+  const slaTotal = totalDe(atencion);
   const slaVencidos = slaEstados.BREACHED ?? 0;
+
+  const pondEstados = porEstado(pond);
+  const pondTotal = totalDe(pond);
+  const slaPorTipo = Object.fromEntries(
+    Object.entries(
+      slaPorEstado.reduce<Record<string, number>>((acc, f) => {
+        acc[f.type] = (acc[f.type] ?? 0) + f._count._all;
+        return acc;
+      }, {}),
+    ),
+  );
 
   return {
     leads: {
@@ -155,20 +188,48 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
        */
       temporizadores_7d: slaTotal,
       por_estado_7d: slaEstados,
+      por_tipo_7d: slaPorTipo,
       incumplidos_7d: slaVencidos,
       /** La lectura correcta de `incumplidos_7d`. `null` cuando no hay denominador. */
       proporcion_incumplidos_7d:
         slaTotal === 0 ? null : Math.round((slaVencidos / slaTotal) * 1000) / 1000,
-      /** Corriendo con la hora ya pasada: incumplidos que nadie marcó todavía. */
+      /**
+       * Corriendo con la hora ya pasada: incumplidos que nadie marcó todavía.
+       * #732: excluye los ORPHAN, por la misma razón que el denominador.
+       */
       vencidos_sin_marcar: slaCorriendoVencidos,
+      /**
+       * #732 — El Pond, medido aparte y NUNCA dentro del cumplimiento.
+       *
+       * Un temporizador ORPHAN significa «ningún asesor pudo quedarse con este lead».
+       * Mientras estuvo mezclado con los demás, un lead que nadie atendió podía acabar
+       * contando como atención cumplida: con un solo temporizador MET la puerta publicaba
+       * 100% de cumplimiento sin que se pudiera saber de qué tipo era.
+       *
+       * `proporcion_al_pond_7d` es el segundo número que faltaba: qué parte de los leads
+       * reales termina sin dueño. Un cumplimiento perfecto con un tercio de los leads en
+       * el Pond no es una buena semana.
+       */
+      pond: {
+        temporizadores_7d: pondTotal,
+        por_estado_7d: pondEstados,
+        proporcion_al_pond_7d:
+          reales7d === 0 ? null : Math.round((pondTotal / reales7d) * 1000) / 1000,
+      },
       nota:
         slaTotal === 0
-          ? "🚨 CERO temporizadores creados en la ventana. `incumplidos_7d: 0` aquí NO " +
+          ? "🚨 CERO temporizadores DE ATENCIÓN creados en la ventana (los del Pond, si " +
+            "los hay, están en `pond`). `incumplidos_7d: 0` aquí NO " +
             "significa que se cumplió el SLA: significa que no se midió nada. Antes de " +
             "reportar la atención como buena hay que averiguar por qué no se crea ninguno " +
             "—si el ruteo no corre, si la regla que los crea está apagada— porque un cero " +
             "sin denominador no es una métrica, es la ausencia de una."
-          : "`incumplidos_7d` se lee SOBRE `temporizadores_7d`, nunca solo. " +
+          : "`temporizadores_7d` cuenta SOLO atención (FIRST_TOUCH y RETRY): los ORPHAN " +
+            "del Pond van en `pond` y nunca entran al cumplimiento, porque significan que " +
+            "nadie pudo tomar el lead, no que se respondiera tarde. Léelos juntos: un " +
+            "cumplimiento alto con `pond.proporcion_al_pond_7d` alta es un problema de " +
+            "reparto disfrazado de buena atención. " +
+            "`incumplidos_7d` se lee SOBRE `temporizadores_7d`, nunca solo. " +
             "`vencidos_sin_marcar` no está incluido en los incumplidos: sigue RUNNING con la " +
             "hora pasada, así que es incumplimiento que nadie ha marcado todavía y hay que " +
             "sumarlo a mano para leer el peor caso.",
