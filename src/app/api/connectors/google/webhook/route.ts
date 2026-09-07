@@ -32,5 +32,13 @@ export async function POST(req: NextRequest) {
   if (!mapped.source) mapped.source = "GOOGLE_ADS";
 
   const result = await processIncomingLead(connector.id, externalLeadId, { external, google: payload }, mapped);
+
+  // #713: mismo criterio que el webhook de Meta — un lead que no entró no se responde con
+  // 200. Google reintenta ante un 5xx, y la marca de idempotencia impide que el reintento
+  // duplique nada.
+  if (result.status === "ERROR") {
+    return NextResponse.json({ ok: false, status: result.status }, { status: 503 });
+  }
+
   return NextResponse.json({ ok: true, status: result.status });
 }

@@ -4,7 +4,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import prisma from "@/lib/db";
-import { readCredentials, processIncomingLead } from "@/lib/intake/connectors";
+import {
+  readCredentials,
+  processIncomingLead,
+  reservarLeadEntrante,
+  marcarLeadFallido,
+} from "@/lib/intake/connectors";
 import { mapLead, parseRules, DEFAULT_META_RULES } from "@/lib/intake/map-lead";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +88,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const results: unknown[] = [];
+  const results: Array<{ status: string; contactId?: string }> = [];
+  // Fallos que no llegaron ni a producir un resultado (reserva o Graph).
+  let fallos = 0;
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const leadgenId = change.value?.leadgen_id;
@@ -99,6 +106,23 @@ export async function POST(req: NextRequest) {
       const config = (target.config ?? {}) as { formIds?: string[] };
       if (config.formIds?.length && change.value?.form_id && !config.formIds.includes(change.value.form_id)) {
         continue; // formulario fuera del alcance del conector
+      }
+
+      // #713: se reserva el lugar del lead ANTES de pedirle nada a Graph. Si el token de
+      // Página caducó —duran ~60 días y no se renuevan—, antes no quedaba ni una fila: el
+      // lead, ya pagado, desaparecía sin dejar rastro. Ahora queda en ERROR, visible y
+      // reprocesable.
+      let logId: string | null = null;
+      try {
+        const reserva = await reservarLeadEntrante(target.id, leadgenId, {
+          webhook: change.value as Record<string, unknown>,
+        });
+        if (reserva.yaProcesado) continue;
+        logId = reserva.logId;
+      } catch (err) {
+        console.error(`[meta-webhook] no se pudo reservar el lead ${leadgenId}:`, err);
+        fallos++;
+        continue;
       }
 
       try {
@@ -145,12 +169,22 @@ export async function POST(req: NextRequest) {
         results.push(await processIncomingLead(target.id, leadgenId, { external, meta: { ...lead, ...metadata } }, mapped));
       } catch (err) {
         console.error(`[meta-webhook] lead ${leadgenId}:`, err);
-        await prisma.leadConnector.update({
-          where: { id: target.id },
-          data: { errorCount: { increment: 1 }, lastError: String(err).slice(0, 500) },
-        }).catch(() => {});
+        fallos++;
+        if (logId) await marcarLeadFallido(logId, target.id, String(err));
       }
     }
+  }
+
+  // #713: si algo falló, hay que DECÍRSELO a Meta. Un 200 con leads perdidos dentro es
+  // una promesa falsa: Meta lo da por entregado y no reintenta nunca más. Con un 5xx
+  // reintenta durante horas, y la marca de idempotencia impide que el reintento duplique
+  // lo que sí entró en esta misma tanda.
+  const conError = fallos + results.filter((r) => r.status === "ERROR").length;
+  if (conError > 0) {
+    return NextResponse.json(
+      { ok: false, processed: results.length, failed: conError },
+      { status: 503 }
+    );
   }
 
   return NextResponse.json({ ok: true, processed: results.length });
