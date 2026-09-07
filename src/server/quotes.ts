@@ -16,6 +16,23 @@ import {
   primerMensaje,
 } from "@/lib/validations/quote";
 import { buildInstallmentPlan, computeFinalPrice } from "@/lib/quotes/pricing";
+import { verificarAccesoANegocio, FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
+
+// #711: todo lo de este archivo cuelga de un negocio, y hasta ahora ninguna de estas
+// funciones comprobaba de QUIÉN es ese negocio: bastaba con tener sesión y adivinar un
+// id para leer o editar las cotizaciones y los documentos de toda la empresa. El helper
+// es el mismo control que ya existía en /api/deals/[id]; lo que faltaba era aplicarlo.
+
+/** Acceso al negocio dueño del registro. Devuelve el error listo para el `{ error }`. */
+async function accesoAlNegocio(
+  dealId: string,
+  user: { id: string; role: string; plaza: string },
+  modo: "ver" | "editar" = "editar"
+) {
+  const acceso = await verificarAccesoANegocio(dealId, user, modo);
+  return acceso.ok ? null : { error: FUERA_DE_ALCANCE };
+}
+
 
 // --------------- helpers ---------------
 
@@ -52,6 +69,10 @@ export async function getQuotesByDeal(dealId: string) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
+  // Devolver una lista vacía escondería el intento: mejor que la ruta responda 404.
+  const acceso = await verificarAccesoANegocio(dealId, session.user, "ver");
+  if (!acceso.ok) throw new Error(FUERA_DE_ALCANCE);
+
   const quotes = await prisma.quote.findMany({
     where: { dealId, deletedAt: null },
     include: {
@@ -75,6 +96,9 @@ export async function createQuote(input: unknown) {
   const parsed = createQuoteSchema.safeParse(input);
   if (!parsed.success) return { error: primerMensaje(parsed.error) };
   const data = parsed.data;
+
+  const sinAcceso = await accesoAlNegocio(data.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
 
   const finalPrice = computeFinalPrice(data.listPrice, data.discountPct);
 
@@ -123,6 +147,9 @@ export async function updateQuote(id: string, input: unknown) {
   const existing = await prisma.quote.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Cotización no encontrada" };
 
+  const sinAcceso = await accesoAlNegocio(existing.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
+
   const updateData: Prisma.QuoteUpdateInput = {};
   if (data.hubUnitId !== undefined) updateData.hubUnitId = data.hubUnitId;
   if (data.currency !== undefined) updateData.currency = data.currency;
@@ -169,6 +196,10 @@ export async function createPaymentPlan(quoteId: string, input: unknown) {
     include: { paymentPlan: true },
   });
   if (!quote) return { error: "Cotización no encontrada" };
+
+  const sinAcceso = await accesoAlNegocio(quote.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
+
   if (quote.paymentPlan) return { error: "Esta cotización ya tiene un plan de pago" };
 
   const finalPrice = Number(quote.finalPrice);
@@ -244,16 +275,22 @@ export async function updateInstallment(id: string, input: unknown) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
-  // AUD-20260903-D09 (mitad de validación): `paidAmount` llegaba crudo, así que un
-  // texto reventaba con 500 y un negativo se guardaba y descuadraba la cobranza. La
-  // verificación de que la parcialidad pertenezca a un negocio del usuario es del
-  // helper de acceso por objeto (Paso 3), no de este cambio.
+  // AUD-20260903-D09: `paidAmount` llegaba crudo (arreglado en el PR #43) y además
+  // NADIE comprobaba de quién era la parcialidad, así que cualquier usuario marcaba
+  // PAGADA cualquier parcialidad de cualquier negocio adivinando el id. #711 cierra
+  // esa mitad: se resuelve la cadena parcialidad → plan → cotización → negocio.
   const parsed = updateInstallmentSchema.safeParse(input);
   if (!parsed.success) return { error: primerMensaje(parsed.error) };
   const data = parsed.data;
 
-  const existing = await prisma.paymentSchedule.findUnique({ where: { id } });
+  const existing = await prisma.paymentSchedule.findUnique({
+    where: { id },
+    include: { plan: { select: { quote: { select: { dealId: true } } } } },
+  });
   if (!existing) return { error: "Parcialidad no encontrada" };
+
+  const sinAcceso = await accesoAlNegocio(existing.plan.quote.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
 
   const updateData: Prisma.PaymentScheduleUpdateInput = {};
   if (data.status !== undefined) updateData.status = data.status;
@@ -286,6 +323,10 @@ export async function getDocumentsByDeal(dealId: string) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
+  // Lo más sensible del CRM: INE, comprobantes de ingresos, contratos firmados.
+  const acceso = await verificarAccesoANegocio(dealId, session.user, "ver");
+  if (!acceso.ok) throw new Error(FUERA_DE_ALCANCE);
+
   const docs = await prisma.dealDocument.findMany({
     where: { dealId, deletedAt: null },
     include: { uploadedBy: { select: { id: true, name: true } } },
@@ -315,6 +356,9 @@ export async function addDocument(
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
+  const sinAcceso = await accesoAlNegocio(dealId, session.user);
+  if (sinAcceso) return sinAcceso;
+
   if (!data.name?.trim()) return { error: "El nombre del documento es requerido" };
   if (!data.url?.trim()) return { error: "La URL del documento es requerida" };
 
@@ -340,6 +384,9 @@ export async function deleteDocument(id: string) {
 
   const existing = await prisma.dealDocument.findUnique({ where: { id } });
   if (!existing) return { error: "Documento no encontrado" };
+
+  const sinAcceso = await accesoAlNegocio(existing.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
 
   await prisma.dealDocument.update({
     where: { id },
