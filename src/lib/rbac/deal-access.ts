@@ -100,5 +100,10 @@ export async function verificarAccesoANegocio(
   return permitido ? { ok: true, deal } : { ok: false, reason: "forbidden" };
 }
 
+/** ¿Este rol ve la empresa entera? Lo usan los objetos que no cuelgan de un negocio. */
+export function tieneAccesoTotal(role: string): boolean {
+  return ACCESO_TOTAL.includes(role);
+}
+
 /** Mensaje único para las capas que trabajan con `throw`. Se traduce a 404. */
 export const FUERA_DE_ALCANCE = "Negocio no encontrado o sin acceso";

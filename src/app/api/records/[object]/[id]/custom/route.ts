@@ -6,6 +6,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { getActiveFields, visibleFields, buildZodFromRegistry } from "@/lib/metadata/registry";
 import type { UserRole } from "@prisma/client";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { puedeTocarRecord } from "@/lib/rbac/record-access";
 
 const SUPPORTED: Record<string, "contact" | "deal"> = { contact: "contact", deal: "deal" };
 
@@ -25,6 +26,13 @@ export async function GET(req: NextRequest, { params }: { params: { object: stri
 
   const record = await loadRecord(object, params.id);
   if (!record) return NextResponse.json({ error: "Record no existe" }, { status: 404 });
+
+  // #711: `visibleFields` filtra QUÉ campos ve cada rol, pero nadie comprobaba DE QUIÉN
+  // es el record. Cualquier usuario leía y escribía el `custom` de cualquier contacto o
+  // negocio con solo poner su id en la URL. Mismo 404 que si no existiera.
+  if (!(await puedeTocarRecord(object, params.id, session.user, "ver"))) {
+    return NextResponse.json({ error: "Record no existe" }, { status: 404 });
+  }
 
   const fields = await getActiveFields(object);
   const visible = visibleFields(fields, session.user.role as UserRole);
@@ -53,6 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { object: st
 
   const record = await loadRecord(object, params.id);
   if (!record) return NextResponse.json({ error: "Record no existe" }, { status: 404 });
+
+  if (!(await puedeTocarRecord(object, params.id, session.user, "editar"))) {
+    return NextResponse.json({ error: "Record no existe" }, { status: 404 });
+  }
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
+import { puedeTocarRecord } from "@/lib/rbac/record-access";
 
 async function resolveNames(object: string, ids: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
@@ -96,6 +97,13 @@ export async function POST(req: NextRequest) {
   const rel = await prisma.relationshipDef.findUnique({ where: { id: parsed.data.relationshipId } });
   if (!rel || !rel.isActive) return NextResponse.json({ error: "Relación inexistente" }, { status: 404 });
 
+  // #711: se vinculaba cualquier par de ids sin comprobar acceso a ninguno de los dos.
+  const puedeOrigen = await puedeTocarRecord(rel.fromObject, parsed.data.fromId, session.user);
+  const puedeDestino = await puedeTocarRecord(rel.toObject, parsed.data.toId, session.user);
+  if (!puedeOrigen || !puedeDestino) {
+    return NextResponse.json({ error: "Record no encontrado o sin acceso" }, { status: 404 });
+  }
+
   if (!rel.allowMultiple) {
     const existing = await prisma.recordLink.findFirst({
       where: { relationshipId: rel.id, fromId: parsed.data.fromId },
@@ -130,6 +138,16 @@ export async function DELETE(req: NextRequest) {
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Falta id" }, { status: 400 });
-  await prisma.recordLink.delete({ where: { id } }).catch(() => {});
+
+  // #711: esto borraba cualquier vínculo del CRM sin comprobar nada, y además se tragaba
+  // el error, así que un id inexistente y uno ajeno daban la misma respuesta `ok`.
+  const link = await prisma.recordLink.findUnique({ where: { id } });
+  if (!link) return NextResponse.json({ error: "Vínculo no encontrado" }, { status: 404 });
+
+  if (!(await puedeTocarRecord(link.fromObject, link.fromId, session.user))) {
+    return NextResponse.json({ error: "Vínculo no encontrado" }, { status: 404 });
+  }
+
+  await prisma.recordLink.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
