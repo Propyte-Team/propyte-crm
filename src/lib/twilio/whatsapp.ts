@@ -141,6 +141,12 @@ export async function sendWhatsAppTemplate(
     },
   });
 
+  // #731: el envío normal de este mismo archivo ya cerraba el SLA; el de plantilla no.
+  // Una plantilla es el saliente con el que se retoma a alguien fuera de la ventana de
+  // 24 h, así que es justo el caso donde el reloj debe pararse.
+  const { meetSlaTimers } = await import("@/lib/workflows/sla");
+  await meetSlaTimers(contactId);
+
   return message;
 }
 
