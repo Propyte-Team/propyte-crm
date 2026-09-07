@@ -11,6 +11,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 import { dueDateSchema } from "@/lib/due-date";
+import { dealCommissionFields } from "@/lib/commission-engine/for-deal";
 
 // Roles con acceso completo
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -319,23 +320,23 @@ export async function PATCH(
     if (data.stage === "WON") {
       updateData.actualCloseDate = data.actualCloseDate || new Date();
 
-      // Calcular comisiones basadas en la tasa del desarrollo
-      if (existingDeal.developmentId) {
-        const devData = await prisma.development.findUnique({
-          where: { id: existingDeal.developmentId },
-          select: { commissionRate: true },
-        });
-        if (devData) {
-          const rate = Number(devData.commissionRate) / 100;
-          const value = data.estimatedValue || Number(existingDeal.estimatedValue);
-          const total = value * rate;
-          updateData.commissionTotal = total;
-          updateData.commissionAdvisor = total * 0.4;
-          updateData.commissionTL = total * 0.1;
-          updateData.commissionGerente = total * 0.05;
-          updateData.commissionDirector = total * 0.05;
-        }
-      }
+      // Comisiones por el motor de commission-engine, no por porcentajes a mano (#D-01).
+      // `existingDeal` ya trae `development.commissionRate`, así que no hace falta otra
+      // consulta. Sin desarrollo, el motor aplica su tabla por tipo de operación en vez
+      // de dejar el negocio sin comisión calculada.
+      Object.assign(
+        updateData,
+        dealCommissionFields({
+          estimatedValue: data.estimatedValue || Number(existingDeal.estimatedValue),
+          dealType: data.dealType ?? existingDeal.dealType,
+          leadSourceAtDeal: existingDeal.leadSourceAtDeal,
+          externalBrokerId: existingDeal.externalBrokerId,
+          developmentCommissionRate:
+            existingDeal.development?.commissionRate != null
+              ? Number(existingDeal.development.commissionRate)
+              : null,
+        })
+      );
     }
 
     // Hub hold al reservar (SOT del inventario). Un conflicto del Hub BLOQUEA la transición.

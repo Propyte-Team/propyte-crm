@@ -128,12 +128,19 @@ export async function getCommissions(
     session.user.plaza
   );
 
-  // Condición principal: deals ganados O con commissionStatus definido
+  // Condición principal: deals ganados O con la comisión ya facturada/pagada.
+  //
+  // Antes decía `{ commissionStatus: { not: undefined } }`, que NO filtra nada: Prisma
+  // descarta las claves con valor `undefined`, así que esa rama quedaba como `{}` y el OR
+  // completo era siempre verdadero. La pantalla listaba todos los deals de la empresa,
+  // incluidos los perdidos, los congelados y los que están en NEW_LEAD. Además
+  // `commissionStatus` no es nulable (default PENDIENTE), así que "tener estado" nunca
+  // fue una condición distinguible: lo que importa es que esté facturada o pagada.
   const where: Prisma.DealWhereInput = {
     ...rbacFilter,
     OR: [
       { stage: "WON" },
-      { commissionStatus: { not: undefined } },
+      { commissionStatus: { in: ["FACTURADA", "PAGADA"] } },
     ],
   };
 

@@ -13,6 +13,7 @@ import { parseDueDate } from "@/lib/due-date";
 import type { Prisma, DealStage, DealType } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { computeDealCommissions } from "@/lib/commission-engine/deal-commissions";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -526,25 +527,18 @@ export async function transitionDealStage(
   if (toStage === "WON") {
     updateData.actualCloseDate = validated.actualCloseDate || new Date();
 
-    // Obtener datos para calcular comisión
-    const devData = deal.developmentId
-      ? await prisma.development.findUnique({
-          where: { id: deal.developmentId },
-          select: { commissionRate: true },
-        })
-      : null;
-
-    if (devData) {
-      const commissionRate = Number(devData.commissionRate) / 100;
-      const value = Number(deal.estimatedValue);
-      const totalCommission = value * commissionRate;
-
-      updateData.commissionTotal = totalCommission;
-      updateData.commissionAdvisor = totalCommission * 0.4;
-      updateData.commissionTL = totalCommission * 0.1;
-      updateData.commissionGerente = totalCommission * 0.05;
-      updateData.commissionDirector = totalCommission * 0.05;
-    }
+    // Comisiones por el motor de commission-engine (#D-01): mismo cálculo que la ruta
+    // PATCH /api/deals/[id], con reparto al broker externo y redondeo a dos decimales.
+    Object.assign(
+      updateData,
+      await computeDealCommissions({
+        estimatedValue: Number(deal.estimatedValue),
+        dealType: deal.dealType,
+        developmentId: deal.developmentId,
+        leadSourceAtDeal: deal.leadSourceAtDeal,
+        externalBrokerId: deal.externalBrokerId,
+      })
+    );
   }
 
   // Si se marca como LOST, guardar razón

@@ -37,10 +37,17 @@ export interface DealForCommission {
   dealType: DealType;
   leadSourceCategory: LeadSourceCategory;
   currency?: string;
+  /**
+   * Tasa de comisión total negociada para este negocio, en tanto por uno (0.1303 = 13.03%).
+   * Cuando el negocio pertenece a un desarrollo, la tasa del contrato con el desarrollador
+   * (`Development.commissionRate`) manda sobre la tabla por tipo de operación: es el número
+   * que se firmó. Sin desarrollo (corretaje, unidad del Hub) se usa BASE_COMMISSION_RATE.
+   */
+  baseRate?: number;
 }
 
 // --- Porcentajes base de comisión total por tipo de operación ---
-const BASE_COMMISSION_RATE: Record<DealType, number> = {
+export const BASE_COMMISSION_RATE: Record<DealType, number> = {
   NATIVA_CONTADO: 0.1303,         // 13.03% máximo (Nativa contado, lead Propyte)
   NATIVA_FINANCIAMIENTO: 0.1001,  // 10.01% máximo (Nativa financiamiento)
   MACROLOTE: 0.09,                // 9% máximo (Macrolotes)
@@ -102,7 +109,10 @@ const ROLE_LABELS: Record<CommissionRole, string> = {
  * @returns Resultado con el desglose de comisiones por rol
  */
 export function calculateCommission(deal: DealForCommission): CommissionResult {
-  const baseRate = BASE_COMMISSION_RATE[deal.dealType];
+  const baseRate =
+    typeof deal.baseRate === "number" && Number.isFinite(deal.baseRate) && deal.baseRate >= 0
+      ? deal.baseRate
+      : BASE_COMMISSION_RATE[deal.dealType];
   const totalCommissionAmount = deal.estimatedValue * baseRate;
   const distribution = DISTRIBUTION_BY_SOURCE[deal.leadSourceCategory];
   const currency = deal.currency ?? "MXN";
@@ -182,6 +192,6 @@ export function calculateDealCommissions(deal: DealForCommission) {
 /**
  * Redondea un valor monetario a 2 decimales.
  */
-function roundCurrency(value: number): number {
+export function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
 }
