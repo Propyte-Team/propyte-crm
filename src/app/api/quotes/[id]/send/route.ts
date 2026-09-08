@@ -5,8 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
-import { updateQuote } from "@/server/quotes";
-import prisma from "@/lib/db";
+import { sendQuote } from "@/server/quotes";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
 
 export async function POST(
@@ -19,27 +18,15 @@ export async function POST(
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const existing = await prisma.quote.findFirst({
-      where: { id: params.id, deletedAt: null },
-    });
-    if (!existing) {
-      return NextResponse.json({ error: "Cotización no encontrada" }, { status: 404 });
-    }
-
-    const result = await updateQuote(params.id, { status: "SENT" });
-
-    // Set sentAt directly
-    await prisma.quote.update({
-      where: { id: params.id },
-      data: { sentAt: new Date() },
-    });
+    // #738: una sola llamada. Antes la ruta buscaba la cotización, la actualizaba, le
+    // estampaba `sentAt` en una segunda escritura y SOLO ENTONCES miraba si algo había
+    // fallado — así que un envío rechazado dejaba la cotización marcada como enviada.
+    const result = await sendQuote(params.id);
 
     if ("error" in result) {
-      return NextResponse.json(
-        { error: result.error },
-        // #711: fuera de alcance es 404, no 403: un 403 confirma que el id existe.
-        { status: result.error === FUERA_DE_ALCANCE ? 404 : 400 },
-      );
+      const noEncontrada =
+        result.error === FUERA_DE_ALCANCE || result.error === "Cotización no encontrada";
+      return NextResponse.json({ error: result.error }, { status: noEncontrada ? 404 : 400 });
     }
 
     return NextResponse.json({ data: result.quote });
