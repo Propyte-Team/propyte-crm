@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { readCredentials, mapExternalFields, processIncomingLead } from "@/lib/intake/connectors";
 import { parseGoogleLeadForm, type GoogleLeadPayload } from "./parse";
+import { buscarPorSecreto } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,12 @@ export async function POST(req: NextRequest) {
   const connectors = await prisma.leadConnector.findMany({
     where: { provider: "GOOGLE_ADS", status: "ACTIVE", deletedAt: null },
   });
-  const connector = connectors.find(
-    (c) => readCredentials<{ webhookKey?: string }>(c)?.webhookKey === payload.google_key
+  // #736: en tiempo constante y sin corte temprano, ver src/lib/crypto/secretos.ts. El
+  // `.find(... === ...)` filtraba el prefijo de la llave y cuántos conectores se revisaron.
+  const connector = buscarPorSecreto<(typeof connectors)[number]>(
+    connectors,
+    payload.google_key,
+    (c) => readCredentials<{ webhookKey?: string }>(c)?.webhookKey
   );
   if (!connector) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 

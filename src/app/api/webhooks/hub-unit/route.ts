@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
+import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-hub-secret")?.trim();
-  const expected = process.env.HUB_WEBHOOK_SECRET?.trim();
-
-  if (!expected || secret !== expected) {
+  // #736: comparación en tiempo constante, ver src/lib/crypto/secretos.ts. Un secreto sin
+  // configurar sigue siendo un 401: el helper devuelve false si falta cualquiera de los dos.
+  if (!secretosIgualesRecortados(req.headers.get("x-hub-secret"), process.env.HUB_WEBHOOK_SECRET)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 

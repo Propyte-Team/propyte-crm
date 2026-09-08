@@ -4,15 +4,21 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
 import { enqueueAction, dayBucket } from "@/lib/workflows/queue"
+import { secretosIgualesRecortados } from "@/lib/crypto/secretos"
 
 export const dynamic = "force-dynamic"
 
 export async function POST(req: NextRequest) {
   // Verificación opcional (si está configurada, exigirla)
+  // #736: comparación en tiempo constante, ver src/lib/crypto/secretos.ts. La condición
+  // externa se conserva: si el token NO está configurado, la verificación es opcional y no
+  // se exige (patrón estándar de Pub/Sub). Lo que cambia es cómo se compara cuando sí está.
   const expected = process.env.GOOGLE_PUBSUB_VERIFICATION_TOKEN?.trim()
   if (expected) {
-    const token = req.nextUrl.searchParams.get("token")?.trim()
-    if (token !== expected) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    const token = req.nextUrl.searchParams.get("token")
+    if (!secretosIgualesRecortados(token, expected)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    }
   }
 
   let emailAddress = ""

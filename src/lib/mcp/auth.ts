@@ -1,15 +1,12 @@
 // src/lib/mcp/auth.ts
-import { timingSafeEqual } from "crypto";
 import prisma from "@/lib/db";
+import { secretosIguales } from "@/lib/crypto/secretos";
 
 export function checkBearer(header: string | null, expected: string): boolean {
-  if (!expected) return false;
   if (!header?.startsWith("Bearer ")) return false;
-  const got = header.slice(7).trim(); // gotcha conocido: \n trailing
-  const a = Buffer.from(got);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  // #736: la comparación en tiempo constante ahora vive en lib/crypto/secretos.ts. El
+  // `.trim()` se queda —gotcha conocido: un \n al final de la variable de entorno.
+  return secretosIguales(header.slice(7).trim(), expected);
 }
 
 /**

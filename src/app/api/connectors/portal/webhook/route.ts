@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { readCredentials, mapExternalFields, processIncomingLead } from "@/lib/intake/connectors";
+import { secretosIguales } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,8 @@ export async function POST(req: NextRequest) {
 
   const creds = readCredentials<{ webhookSecret?: string }>(connector);
   const provided = req.headers.get("x-webhook-secret");
-  if (!creds?.webhookSecret || provided !== creds.webhookSecret) {
+  // #736: comparación en tiempo constante, ver src/lib/crypto/secretos.ts.
+  if (!secretosIguales(provided, creds?.webhookSecret)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
