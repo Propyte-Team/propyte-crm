@@ -12,6 +12,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 import { dueDateSchema } from "@/lib/due-date";
+import { ordenValidado } from "@/lib/api/orden";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -72,8 +73,15 @@ export async function GET(request: NextRequest) {
     const dealType = searchParams.get("dealType") || undefined;
     const advisorId = searchParams.get("advisorId") || undefined;
     const developmentId = searchParams.get("developmentId") || undefined;
-    const sortBy = searchParams.get("sortBy") || "createdAt";
-    const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
+    // #745: ver src/lib/api/orden.ts. Columna y sentido validados, 400 si no cuadran.
+    const orden = ordenValidado(
+      "deal",
+      searchParams.get("sortBy"),
+      searchParams.get("sortOrder")
+    );
+    if (orden.error) {
+      return NextResponse.json({ error: orden.error }, { status: 400 });
+    }
 
     // Construir filtros RBAC
     const where: Prisma.DealWhereInput = {
@@ -136,7 +144,7 @@ export async function GET(request: NextRequest) {
           },
           _count: { select: { activities: true } },
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: orden.orderBy,
         skip,
         take: pageSize,
       }),

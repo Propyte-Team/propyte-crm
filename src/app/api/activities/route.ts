@@ -12,6 +12,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveScopeBucket, canReadUserScope } from "@/lib/rbac/query-scope";
 import { dueDateSchema } from "@/lib/due-date";
+import { ordenValidado } from "@/lib/api/orden";
 
 // Roles con acceso completo a actividades
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -65,8 +66,15 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || undefined;
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
-    const sortBy = searchParams.get("sortBy") || "createdAt";
-    const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
+    // #745: ver src/lib/api/orden.ts. Columna y sentido validados, 400 si no cuadran.
+    const orden = ordenValidado(
+      "activity",
+      searchParams.get("sortBy"),
+      searchParams.get("sortOrder")
+    );
+    if (orden.error) {
+      return NextResponse.json({ error: orden.error }, { status: 400 });
+    }
 
     // Construir filtros
     const where: Prisma.ActivityWhereInput = {
@@ -135,7 +143,7 @@ export async function GET(request: NextRequest) {
           deal: { select: { id: true, stage: true, estimatedValue: true } },
           user: { select: { id: true, name: true } },
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: orden.orderBy,
         skip,
         take: pageSize,
       }),

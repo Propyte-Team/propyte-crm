@@ -15,6 +15,7 @@ import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
 import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { ordenValidado } from "@/lib/api/orden";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -91,8 +92,16 @@ export async function GET(request: NextRequest) {
     const contactStatus = searchParams.get("status") || undefined;
     const lifecycleStage = searchParams.get("lifecycle") || undefined;
     const assignedToId = searchParams.get("assignedTo") || undefined;
-    const sortBy = searchParams.get("sortBy") || "createdAt";
-    const sortOrder = (searchParams.get("sortOrder") || "desc") as "asc" | "desc";
+    // #745: la columna y el sentido se validan contra la lista blanca de la entidad.
+    // Antes iban crudos a `orderBy` y un valor inventado devolvía 500 desde Prisma.
+    const orden = ordenValidado(
+      "contact",
+      searchParams.get("sortBy"),
+      searchParams.get("sortOrder")
+    );
+    if (orden.error) {
+      return NextResponse.json({ error: orden.error }, { status: 400 });
+    }
 
     // Construir condiciones de filtro
     const where: Prisma.ContactWhereInput = {
@@ -183,7 +192,7 @@ export async function GET(request: NextRequest) {
           assignedTo: { select: { id: true, name: true, email: true } },
           _count: { select: { deals: true, activities: true } },
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: orden.orderBy,
         skip,
         take: pageSize,
       }),
