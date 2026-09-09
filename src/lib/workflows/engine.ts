@@ -6,6 +6,11 @@ import { evaluateConditions } from "./evaluate-conditions";
 import { workflowActionsSchema } from "@/lib/validations/rebuild-f1";
 import { walkNodes } from "./walk-nodes";
 import { enqueueAction, dayBucket } from "./queue";
+import {
+  estaEnHorarioLaboral,
+  HORARIO_POR_DEFECTO,
+  type BusinessHours,
+} from "./business-hours";
 
 // ¿El trigger de la regla aplica a este evento? (INACTIVITY/TIME corren por scheduler, no aquí)
 export function matchesTrigger(rule: Pick<AutomationRule, "triggerType" | "triggerConfig">, event: Pick<WorkflowEvent, "type" | "payload">): boolean {
@@ -70,16 +75,41 @@ export async function buildContext(event: WorkflowEvent): Promise<Record<string,
   return {
     ...entityCtx,
     event: { type: event.type, payload: event.payload ?? {} },
-    context: { isBusinessHours: isBusinessHoursNow() },
+    context: { isBusinessHours: await isBusinessHoursNow() },
   };
 }
 
-// Horario laboral simple 09-18 hora Cancún (afinable por SlaPolicy.businessHours en F2.1)
-function isBusinessHoursNow(): boolean {
-  const cancun = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Cancun" }));
-  const h = cancun.getHours();
-  const day = cancun.getDay(); // 0=domingo
-  return day !== 0 && h >= 9 && h < 18;
+/**
+ * ¿Estamos en horario laboral? (#680)
+ *
+ * Antes esto era una segunda definición de horario laboral, escrita a mano aquí: 09-18 en
+ * América/Cancún, sábado laborable, y sin mirar la configuración. Convivía con la
+ * configurable de `SlaPolicy.businessHours`, que es la que decide los plazos de los relojes
+ * de atención — así que una regla podía considerar que el sábado a las cinco es horario de
+ * oficina mientras el reloj, con una política que cierra sábados, consideraba que no. Su
+ * propio comentario admitía que era un provisional: «afinable por SlaPolicy.businessHours
+ * en F2.1». Esto es esa F2.1.
+ *
+ * Ahora hay una sola definición, en `business-hours.ts`, la misma que consume `computeDueAt`.
+ * El orden de preferencia es explícito:
+ *
+ *   1. La agenda de la SlaPolicy por defecto, si existe y es válida.
+ *   2. HORARIO_POR_DEFECTO, que reproduce exactamente lo que hacía el código anterior.
+ *
+ * El fallback se conserva —y no se devuelve `false`— porque una regla condicionada a
+ * "estamos en horario de oficina" que nunca dispara es un fallo silencioso, y este arreglo
+ * no debe cambiar qué reglas disparan: solo de dónde sale el calendario.
+ */
+async function isBusinessHoursNow(): Promise<boolean> {
+  const policy = await prisma.slaPolicy
+    .findFirst({ where: { isDefault: true, isActive: true } })
+    .catch(() => null);
+
+  const agenda = (policy?.businessHours as unknown as BusinessHours | null) ?? null;
+  const conPolitica = estaEnHorarioLaboral(new Date(), agenda);
+  if (conPolitica !== null) return conPolitica;
+
+  return estaEnHorarioLaboral(new Date(), HORARIO_POR_DEFECTO) ?? false;
 }
 
 export async function processEvent(eventId: string): Promise<void> {

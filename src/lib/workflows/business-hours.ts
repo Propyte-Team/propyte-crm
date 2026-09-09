@@ -68,3 +68,77 @@ export function computeDueAt(startAt: Date, minutes: number, businessHours: Busi
   }
   return new Date(cur.getTime() - offset * 60000);
 }
+
+/**
+ * Agenda de reserva: 09-18, hora de Cancún, cerrado el domingo.
+ *
+ * Es exactamente la definición que `engine.ts` tenía hardcodeada (#680), reescrita en la
+ * misma estructura que `computeDueAt` ya consume. Se conserva para NO cambiar el
+ * comportamiento cuando no hay política configurada — pero como agenda por defecto
+ * declarada, no como una segunda definición paralela que nadie puede ajustar.
+ *
+ * Ojo al leerla: el sábado ("6") está ABIERTO. Eso es lo que hacía el código anterior
+ * (`day !== 0` excluye solo el domingo) y es justo la divergencia que la tarjeta reporta
+ * contra una SlaPolicy que cierre sábados. Al configurar una política, esta agenda deja de
+ * aplicarse y la política manda.
+ */
+export const HORARIO_POR_DEFECTO: BusinessHours = {
+  tz: "America/Cancun",
+  days: {
+    "0": null,          // domingo cerrado
+    "1": [9 * 60, 18 * 60],
+    "2": [9 * 60, 18 * 60],
+    "3": [9 * 60, 18 * 60],
+    "4": [9 * 60, 18 * 60],
+    "5": [9 * 60, 18 * 60],
+    "6": [9 * 60, 18 * 60], // sábado ABIERTO: lo que hacía engine.ts
+  },
+};
+
+/**
+ * ¿Este instante cae dentro del horario laboral de esta agenda? (#680)
+ *
+ * Había DOS definiciones de horario laboral en el repositorio y no se hablaban: la
+ * configurable de `SlaPolicy.businessHours`, que alimenta a `computeDueAt` y decide los
+ * plazos de los relojes de atención; y una escrita a mano en `engine.ts:77-83` que
+ * alimentaba `context.isBusinessHours` del DSL de reglas. La segunda fijaba 09-18 en
+ * América/Cancún, contaba el sábado como laborable e ignoraba la política por completo, así
+ * que una regla podía disparar un sábado a las cinco mientras el reloj de atención
+ * —configurado sin sábados— consideraba que la oficina estaba cerrada. Su propio comentario
+ * se declaraba provisional: «afinable por SlaPolicy.businessHours en F2.1».
+ *
+ * Ahora las dos salen de la misma estructura. Sin agenda válida devuelve `null`, que
+ * significa "no se puede saber": eso es distinto de `false` y quien llama decide. Devolver
+ * `false` a ciegas haría que una regla condicionada a horario de oficina nunca dispare, y
+ * eso es peor que el bug, porque no deja rastro.
+ *
+ * Comparte los supuestos de `computeDueAt` y por las mismas razones: la zona no observa DST
+ * (México desde 2022) y solo se soportan ventanas diurnas (apertura < cierre).
+ */
+export function estaEnHorarioLaboral(
+  at: Date,
+  businessHours: BusinessHours | null | undefined
+): boolean | null {
+  const days = businessHours?.days;
+  const tz = businessHours?.tz;
+  const hasSchedule = !!tz && !!days && Object.values(days).some((w) => Array.isArray(w));
+  if (!hasSchedule) return null;
+
+  let offset: number;
+  try {
+    offset = tzOffsetMinutes(at, tz!);
+  } catch {
+    console.warn(`[workflows] estaEnHorarioLaboral: timezone inválida "${tz}"`);
+    return null;
+  }
+
+  // Mismo truco que computeDueAt: se corre el instante por el offset y se lee en UTC, así
+  // el día de la semana y los minutos del día son los de la zona de la agenda.
+  const local = new Date(at.getTime() + offset * 60000);
+  const win = days![String(local.getUTCDay())];
+  if (!Array.isArray(win)) return false; // día cerrado
+
+  const [open, close] = win;
+  const minutesOfDay = local.getUTCHours() * 60 + local.getUTCMinutes();
+  return minutesOfDay >= open && minutesOfDay < close;
+}
