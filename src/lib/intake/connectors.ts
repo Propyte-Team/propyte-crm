@@ -127,16 +127,33 @@ export async function markConnectorLead(connectorId: string, error?: string | nu
   }
 }
 
-// Punto único de entrada de un lead externo. Idempotente: el UNIQUE
-// (connectorId, externalLeadId) garantiza que un retry no duplica.
-export async function processIncomingLead(
+/**
+ * Clave donde viajan los campos ya mapeados dentro de `rawPayload` (#713). Empieza con
+ * guion bajo para no chocar nunca con un campo del formulario del anunciante.
+ */
+export const CAMPOS_MAPEADOS = "_mapped";
+
+/**
+ * Reserva el lugar de un lead entrante ANTES de hacer nada que pueda fallar (#713).
+ *
+ * El agujero que cierra: el webhook de Meta pedía el detalle del lead a Graph *antes* de
+ * registrar nada. Si ese token había caducado —los de Página duran ~60 días y aquí no se
+ * renuevan—, no quedaba ni una fila: ni el id del lead, ni el payload, ni rastro de que
+ * hubiera existido. El lead, ya pagado, desaparecía en silencio.
+ *
+ * Reservando primero, un fallo posterior deja una fila en ERROR que se puede reprocesar y
+ * que además se ve en el panel.
+ *
+ * `yaProcesado` distingue el reintento legítimo del duplicado: si la fila existe pero
+ * quedó en ERROR o sin terminar, se devuelve para volver a intentarlo. Antes CUALQUIER
+ * fila existente cortaba el reintento, así que un lead que falló una vez quedaba
+ * bloqueado para siempre por su propia marca de idempotencia.
+ */
+export async function reservarLeadEntrante(
   connectorId: string,
   externalLeadId: string,
-  rawPayload: Record<string, unknown>,
-  mappedFields: Record<string, unknown>
-): Promise<{ status: string; contactId?: string }> {
-  // 1. Log primero (claim de idempotencia)
-  let logId: string;
+  rawPayload: Record<string, unknown>
+): Promise<{ logId: string; yaProcesado: boolean }> {
   try {
     const log = await prisma.connectorLeadLog.create({
       data: {
@@ -146,13 +163,46 @@ export async function processIncomingLead(
         status: "RECEIVED",
       },
     });
-    logId = log.id;
+    return { logId: log.id, yaProcesado: false };
   } catch (err: unknown) {
-    if (typeof err === "object" && err && (err as { code?: string }).code === "P2002") {
-      return { status: "ALREADY_PROCESSED" };
-    }
-    throw err;
+    if (typeof err === "object" && err && (err as { code?: string }).code !== "P2002") throw err;
   }
+
+  const existente = await prisma.connectorLeadLog.findUnique({
+    where: { connectorId_externalLeadId: { connectorId, externalLeadId } },
+  });
+  if (!existente) throw new Error("El log del lead desapareció entre el create y la lectura");
+
+  // PROCESSED y DUPLICATE ya llegaron a un contacto: no hay nada que rehacer.
+  const terminado = existente.status === "PROCESSED" || existente.status === "DUPLICATE";
+  return { logId: existente.id, yaProcesado: terminado };
+}
+
+/** Marca la reserva como fallida cuando el fallo ocurre fuera de processIncomingLead. */
+export async function marcarLeadFallido(
+  logId: string,
+  connectorId: string,
+  detalle: string
+): Promise<void> {
+  await prisma.connectorLeadLog.update({
+    where: { id: logId },
+    data: { status: "ERROR", errorDetail: detalle.slice(0, 1000), processedAt: new Date() },
+  }).catch((err) => console.error(`[connectors] no se pudo marcar el fallo ${logId}:`, err));
+  await markConnectorLead(connectorId, detalle);
+}
+
+// Punto único de entrada de un lead externo. Idempotente: el UNIQUE
+// (connectorId, externalLeadId) garantiza que un retry no duplica.
+export async function processIncomingLead(
+  connectorId: string,
+  externalLeadId: string,
+  rawPayload: Record<string, unknown>,
+  mappedFields: Record<string, unknown>
+): Promise<{ status: string; contactId?: string }> {
+  // 1. Log primero (claim de idempotencia)
+  const reserva = await reservarLeadEntrante(connectorId, externalLeadId, rawPayload);
+  if (reserva.yaProcesado) return { status: "ALREADY_PROCESSED" };
+  const logId = reserva.logId;
 
   // 2. Capturar
   const connector = await prisma.leadConnector.findUnique({ where: { id: connectorId } });
@@ -205,6 +255,10 @@ export async function processIncomingLead(
         contactId: result.contactId,
         errorDetail: result.error ?? null,
         processedAt: new Date(),
+        // #713: los campos ya mapeados viajan junto al crudo. Sin esto, reprocesar un
+        // lead fallido obligaría a volver a pedírselo al proveedor —y el token que
+        // falló suele ser justo el que no está disponible.
+        rawPayload: { ...rawPayload, [CAMPOS_MAPEADOS]: fields } as Prisma.InputJsonValue,
       },
     });
     await markConnectorLead(connectorId, result.error);
@@ -218,4 +272,53 @@ export async function processIncomingLead(
     await markConnectorLead(connectorId, detail);
     return { status: "ERROR" };
   }
+}
+
+/**
+ * Reprocesa los leads que quedaron en ERROR sin llegar a contacto (#713).
+ *
+ * El modelo `ConnectorLeadLog` prometía «idempotencia + replay» en su comentario desde el
+ * principio, pero el replay no existía: una fila en ERROR se quedaba ahí para siempre y
+ * nadie la miraba. Esto es la mitad que faltaba.
+ *
+ * Solo reprocesa lo que puede reprocesar solo: las filas que guardaron sus campos ya
+ * mapeados. Un lead que falló ANTES del mapeo —porque el token del proveedor había
+ * caducado— no se puede rehacer sin volver a pedírselo al proveedor, y esa recuperación
+ * es la que cubre el 5xx del webhook: el proveedor reintenta por su cuenta. Esas filas se
+ * quedan visibles en ERROR, que es exactamente lo que se quería: dejan de ser invisibles.
+ */
+export async function reprocesarLeadsFallidos(limite = 25): Promise<{
+  intentados: number;
+  recuperados: number;
+}> {
+  const fallidos = await prisma.connectorLeadLog.findMany({
+    where: { status: "ERROR", contactId: null },
+    orderBy: { receivedAt: "asc" },
+    take: limite,
+  });
+
+  let recuperados = 0;
+  let intentados = 0;
+
+  for (const fila of fallidos) {
+    const crudo = (fila.rawPayload ?? {}) as Record<string, unknown>;
+    const mapeados = crudo[CAMPOS_MAPEADOS] as Record<string, unknown> | undefined;
+    if (!mapeados || typeof mapeados !== "object") continue; // necesita al proveedor
+
+    intentados++;
+    const { [CAMPOS_MAPEADOS]: _omitido, ...sinMapeados } = crudo;
+    try {
+      const r = await processIncomingLead(
+        fila.connectorId,
+        fila.externalLeadId,
+        sinMapeados,
+        mapeados
+      );
+      if (r.status === "PROCESSED" || r.status === "DUPLICATE") recuperados++;
+    } catch (err) {
+      console.error(`[connectors] replay del lead ${fila.externalLeadId} falló:`, err);
+    }
+  }
+
+  return { intentados, recuperados };
 }

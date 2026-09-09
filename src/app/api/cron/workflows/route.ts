@@ -10,6 +10,16 @@ import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 import { rechazoCron } from "@/lib/cron/auth";
 
 // CAPI dispatcher con guarda (tablas C123 pueden no estar migradas aún)
+async function reintentarLeadsSafe() {
+  try {
+    const { reprocesarLeadsFallidos } = await import("@/lib/intake/connectors");
+    return await reprocesarLeadsFallidos(25);
+  } catch (err) {
+    console.error("[cron/workflows] replay de leads:", err);
+    return { intentados: 0, recuperados: 0 };
+  }
+}
+
 async function processPendingConversionsSafe() {
   try {
     const { processPendingConversions } = await import("@/lib/capi/dispatch");
@@ -72,6 +82,9 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   { nombre: "inactivity", correr: () => runInactivityRules(200) },
   { nombre: "overduePayments", correr: () => checkOverduePayments() },
   { nombre: "conversions", correr: () => processPendingConversionsSafe() },
+  // #713: los leads que quedaron en ERROR con sus campos ya mapeados se vuelven a
+  // intentar. Va al final porque no alimenta a ninguna otra etapa.
+  { nombre: "replayLeads", correr: () => reintentarLeadsSafe() },
 ];
 
 export async function GET(req: NextRequest) {
