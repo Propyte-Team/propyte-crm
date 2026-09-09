@@ -16,6 +16,7 @@ import { withChangeSource } from "@/lib/audit/change-context";
 import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
 import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 import { computeDealCommissions } from "@/lib/commission-engine/deal-commissions";
+import { ordenValidado, type ColumnaOrdenable } from "@/lib/api/orden";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -36,7 +37,10 @@ interface DealFilters {
   dateTo?: string;
   page?: number;
   pageSize?: number;
-  sortBy?: string;
+  // #745: la columna se acota a la lista blanca de src/lib/api/orden.ts, así que un
+  // nombre inventado ya no compila. Y aun así se valida en runtime, porque estos
+  // filtros pueden venir armados desde un query string.
+  sortBy?: ColumnaOrdenable<"deal">;
   sortOrder?: "asc" | "desc";
 }
 
@@ -120,9 +124,14 @@ export async function getDeals(filters: DealFilters = {}): Promise<DealsResult> 
     dateTo,
     page = 1,
     pageSize = 50,
-    sortBy = "createdAt",
-    sortOrder = "desc",
+    sortBy,
+    sortOrder,
   } = filters;
+
+  // #745: antes esto era `orderBy: { [sortBy]: sortOrder }` con el valor tal cual llegara,
+  // y una columna inexistente hacía que Prisma lanzara PrismaClientValidationError.
+  const orden = ordenValidado("deal", sortBy, sortOrder);
+  if (orden.error) throw new Error(orden.error);
 
   // Construir filtro base con RBAC
   const baseWhere = await buildRBACFilter(
@@ -173,7 +182,7 @@ export async function getDeals(filters: DealFilters = {}): Promise<DealsResult> 
         },
         _count: { select: { activities: true } },
       },
-      orderBy: { [sortBy]: sortOrder },
+      orderBy: orden.orderBy,
       skip,
       take: pageSize,
     }),

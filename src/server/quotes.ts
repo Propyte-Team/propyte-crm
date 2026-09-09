@@ -181,6 +181,49 @@ export async function updateQuote(id: string, input: unknown) {
   return { quote: serializeQuote(quote) };
 }
 
+// --------------- sendQuote ---------------
+
+/**
+ * Marca una cotización como enviada. #738 (AUD-20260903 D-14 + hallazgo N-1 del repaso).
+ *
+ * Antes esto vivía en la ruta y eran DOS escrituras sueltas: `updateQuote(status SENT)` y
+ * después un `prisma.quote.update` con `sentAt: new Date()`. Dos defectos:
+ *
+ *  1. **No era idempotente.** Cada POST pisaba `sentAt`, así que un reenvío borraba la
+ *     fecha del primer envío — y la métrica COTIZACIONES_ENVIADAS de las metas filtra por
+ *     ese campo.
+ *  2. **La fecha se escribía ANTES de comprobar si el envío era válido.** El bloque de
+ *     error se insertó en #711 después de esa escritura, así que un POST rechazado por
+ *     falta de acceso devolvía 404 y dejaba la cotización ajena marcada como enviada.
+ *
+ * Ahora es una sola escritura, después de validar, y la fecha solo se pone si no había.
+ */
+export async function sendQuote(id: string) {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const existing = await prisma.quote.findFirst({ where: { id, deletedAt: null } });
+  if (!existing) return { error: "Cotización no encontrada" };
+
+  const sinAcceso = await accesoAlNegocio(existing.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
+
+  const quote = await prisma.quote.update({
+    where: { id },
+    data: {
+      status: "SENT",
+      // La fecha del PRIMER envío es la que vale: un reenvío no la pisa.
+      ...(existing.sentAt ? {} : { sentAt: new Date() }),
+    },
+    include: {
+      createdBy: { select: { id: true, name: true } },
+      paymentPlan: { include: { schedules: { orderBy: { number: "asc" } } } },
+    },
+  });
+
+  return { quote: serializeQuote(quote) };
+}
+
 // --------------- createPaymentPlan ---------------
 
 export async function createPaymentPlan(quoteId: string, input: unknown) {
