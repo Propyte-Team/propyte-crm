@@ -1,0 +1,75 @@
+# Integración continua del CRM.
+#
+# Por qué existe: hasta ahora las 2,000 pruebas del repositorio, el chequeo de tipos y el
+# linter solo corrían cuando alguien se acordaba de correrlos en su máquina. La auditoría
+# del 2026-09-03 encontró varios defectos que un `tsc` o una prueba habrían atrapado antes
+# de llegar a producción — entre ellos un filtro que Prisma descartaba en silencio y un
+# botón que llamaba a una ruta inexistente.
+#
+# Qué NO incluye todavía, a propósito: `npm run build`. Es la comprobación más completa,
+# pero necesita decidir qué variables de entorno se le dan en CI (hay 18 sin documentar en
+# `.env.example`, según el plan de ejecución). Meterla antes de esa decisión dejaría el CI
+# rojo desde el primer día, y un CI que siempre está rojo no lo mira nadie. Cuando esas
+# variables estén definidas, se agrega como un paso más aquí.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Un push nuevo sobre la misma rama cancela la corrida anterior: no tiene sentido esperar
+# el veredicto de un commit que ya quedó atrás.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    name: Tipos, pruebas y linter
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # `prisma generate` valida el bloque `datasource`, así que exige que la variable
+      # exista aunque no se conecte a nada. Es un valor de mentira: en CI no hay base de
+      # datos y ninguna prueba la necesita (todas simulan `@/lib/db`).
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci?schema=propyte_crm"
+      # El chequeo de tipos sobre ~90 mil líneas se queda sin memoria con el límite por
+      # defecto de Node. Pasó en la máquina de desarrollo antes de subirlo aquí.
+      NODE_OPTIONS: --max-old-space-size=6144
+      # Sin telemetría anónima de Next en CI, y sin su aviso en cada corrida.
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # `postinstall` del proyecto corre `prisma generate`, así que el cliente queda
+      # generado aquí. Importa: sin él, 34 archivos de prueba no cargan.
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Los tres pasos siguientes llevan `if: '!cancelled()'` para que corran TODOS aunque
+      # uno falle. Es el mismo criterio que se aplicó al cron de workflows: enterarse de
+      # los tres problemas en una corrida es mejor que descubrirlos de uno en uno. El
+      # trabajo igual queda en rojo si cualquiera falla.
+      - name: Chequeo de tipos
+        if: '!cancelled()'
+        run: npx tsc --noEmit
+
+      - name: Pruebas
+        if: '!cancelled()'
+        run: npm test
+
+      - name: Linter
+        if: '!cancelled()'
+        run: npm run lint
