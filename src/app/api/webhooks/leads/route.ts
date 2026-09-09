@@ -6,6 +6,7 @@ import prisma from "@/lib/db";
 import { readCredentials } from "@/lib/intake/connectors";
 import { captureLead } from "@/lib/intake/capture-lead";
 import { processIncomingLead } from "@/lib/intake/connectors";
+import { buscarPorSecreto, secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 
@@ -14,18 +15,21 @@ async function resolveConnector(secret: string | null) {
   const connectors = await prisma.leadConnector.findMany({
     where: { provider: "WEBSITE", status: "ACTIVE", deletedAt: null },
   });
-  for (const c of connectors) {
-    const creds = readCredentials<{ webhookSecret?: string }>(c);
-    if (creds?.webhookSecret && creds.webhookSecret === secret) return c;
-  }
-  return null;
+  // #736: se recorren TODOS los conectores, sin corte temprano, y cada comparación es en
+  // tiempo constante. El `.find(... === ...)` anterior filtraba el prefijo del secreto y
+  // además cuántos conectores se revisaron antes de acertar.
+  return buscarPorSecreto<(typeof connectors)[number]>(
+    connectors,
+    secret,
+    (c) => readCredentials<{ webhookSecret?: string }>(c)?.webhookSecret
+  );
 }
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-webhook-secret");
   const connector = await resolveConnector(secret);
-  const envSecret = process.env.LEADS_WEBHOOK_SECRET?.trim();
-  const envOk = !!envSecret && secret === envSecret;
+  // #736: en tiempo constante, ver src/lib/crypto/secretos.ts.
+  const envOk = secretosIgualesRecortados(secret, process.env.LEADS_WEBHOOK_SECRET);
 
   if (!connector && !envOk) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { readCredentials, mapExternalFields, processIncomingLead } from "@/lib/intake/connectors";
 import { parseGoogleLeadForm, type GoogleLeadPayload } from "./parse";
+import { buscarPorSecreto } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,31 @@ export async function POST(req: NextRequest) {
   const connectors = await prisma.leadConnector.findMany({
     where: { provider: "GOOGLE_ADS", status: "ACTIVE", deletedAt: null },
   });
-  const connector = connectors.find(
-    (c) => readCredentials<{ webhookKey?: string }>(c)?.webhookKey === payload.google_key
+  // #736: en tiempo constante y sin corte temprano, ver src/lib/crypto/secretos.ts. El
+  // `.find(... === ...)` filtraba el prefijo de la llave y cuántos conectores se revisaron.
+  const connector = buscarPorSecreto<(typeof connectors)[number]>(
+    connectors,
+    payload.google_key,
+    (c) => readCredentials<{ webhookKey?: string }>(c)?.webhookKey
   );
   if (!connector) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+  // #739: el botón "enviar datos de prueba" de Google Ads llega por aquí con is_test.
+  // Antes seguía derecho a processIncomingLead, que es el único camino y hace TODO:
+  // crea el contacto, lo autoasigna a un asesor, le arranca el reloj de SLA de primera
+  // respuesta y manda un evento de conversión a Meta. O sea: probar la conexión ensuciaba
+  // la base y falseaba los indicadores.
+  //
+  // Se corta ANTES de la ingesta, pero se sella `lastSyncAt` para no perder lo único que
+  // ese botón sirve: la señal de vida del conector. `lastLeadAt` no se toca —no llegó
+  // ningún lead— así que el panel de conectores distingue "responde" de "trae prospectos".
+  if (payload.is_test) {
+    await prisma.leadConnector.update({
+      where: { id: connector.id },
+      data: { lastSyncAt: new Date() },
+    });
+    return NextResponse.json({ ok: true, status: "TEST", ignorado: true });
+  }
 
   const { externalLeadId, external } = parseGoogleLeadForm(payload);
   const defaultMap: Record<string, string> = {

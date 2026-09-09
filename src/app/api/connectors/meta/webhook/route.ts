@@ -11,6 +11,7 @@ import {
   marcarLeadFallido,
 } from "@/lib/intake/connectors";
 import { mapLead, parseRules, DEFAULT_META_RULES } from "@/lib/intake/map-lead";
+import { buscarPorSecreto } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -38,12 +39,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
   }
 
-  for (const connector of await activeMetaConnectors()) {
-    const creds = readCredentials<MetaCredentials>(connector);
-    if (creds?.verifyToken && creds.verifyToken === token) {
-      return new NextResponse(challenge, { status: 200 });
-    }
-  }
+  // #736: en tiempo constante y sin corte temprano. Riesgo menor que los otros —el
+  // verify_token solo se usa al suscribir el webhook— pero cuesta lo mismo hacerlo bien.
+  const conectores = await activeMetaConnectors();
+  const connector = buscarPorSecreto<(typeof conectores)[number]>(
+    conectores,
+    token,
+    (c: (typeof conectores)[number]) => readCredentials<MetaCredentials>(c)?.verifyToken
+  );
+  if (connector) return new NextResponse(challenge, { status: 200 });
+
   return NextResponse.json({ error: "verify_token no coincide" }, { status: 403 });
 }
 

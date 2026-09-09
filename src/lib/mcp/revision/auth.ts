@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { secretosIguales } from "@/lib/crypto/secretos";
 
 /**
  * Autorización de la puerta de revisión.
@@ -24,19 +24,10 @@ export const HINT_AUTH =
   "MCP_REVISION_TOKEN inválido o ausente. Ojo: NO es CRM_MCP_API_TOKEN (ese es de escritura), " +
   "ni MCP_BLOG_TOKEN, ni MCP_MEJORAS_TOKEN.";
 
-/**
- * Comparación en tiempo constante.
- *
- * `timingSafeEqual` revienta si los buffers miden distinto, así que la diferencia de
- * longitud se resuelve antes, devolviendo `false`: un token de otro largo es simplemente
- * un token equivocado, no una excepción.
- */
-function tokensCoinciden(recibido: string, esperado: string): boolean {
-  const a = Buffer.from(recibido, "utf8");
-  const b = Buffer.from(esperado, "utf8");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+// #736: `tokensCoinciden` era la tercera copia de la comparación en tiempo constante.
+// La única copia vive ahora en lib/crypto/secretos.ts; aquí se reexporta con el nombre
+// local para no tocar los llamadores de este módulo.
+const tokensCoinciden = secretosIguales;
 
 /**
  * De dónde puede venir el secreto, en orden de preferencia.

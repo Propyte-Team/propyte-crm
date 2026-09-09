@@ -13,6 +13,7 @@ import { parseMessengerWebhook } from "@/lib/messaging/adapters/messenger";
 import { resolveConnectorByIgBusinessId, resolveConnectorByPageId } from "@/lib/messaging/social-accounts";
 import { recordHit } from "@/lib/messaging/webhook-debug"; // [TEMPORAL] diagnóstico
 import { parseCommentWebhook } from "@/lib/comments/parse";
+import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -22,8 +23,9 @@ export async function GET(req: NextRequest) {
   const mode = url.searchParams.get("hub.mode");
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
-  const expected = process.env.META_DM_VERIFY_TOKEN?.trim();
-  if (mode === "subscribe" && expected && token === expected && challenge) {
+  // #736: en tiempo constante, ver src/lib/crypto/secretos.ts.
+  const expected = process.env.META_DM_VERIFY_TOKEN;
+  if (mode === "subscribe" && challenge && secretosIgualesRecortados(token, expected)) {
     return new NextResponse(challenge, { status: 200 });
   }
   return NextResponse.json({ error: "verify_token inválido" }, { status: 403 });

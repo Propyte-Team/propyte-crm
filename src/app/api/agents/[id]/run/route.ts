@@ -3,13 +3,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "@/lib/auth/session";
 import { runAgent } from "@/lib/agents/runner";
+import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession();
-  const cronOk = req.headers.get("x-cron-secret")?.trim() === process.env.CRON_SECRET?.trim() && !!process.env.CRON_SECRET;
+  // #736: esta es LA MISMA puerta de CRON_SECRET que la #665 blindó en lib/cron/auth.ts,
+  // pero por un route que no pasa por ese guardia, así que se quedó con el `===`. No se usa
+  // `rechazoCron` aquí porque este endpoint acepta DOS credenciales —sesión de usuario o
+  // secreto de cron— y ese helper devuelve un 401 ya armado.
+  const cronOk = secretosIgualesRecortados(
+    req.headers.get("x-cron-secret"),
+    process.env.CRON_SECRET
+  );
   if (!session?.user && !cronOk) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }

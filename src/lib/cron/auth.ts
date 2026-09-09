@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { secretosIguales } from "@/lib/crypto/secretos";
 
 /**
  * Guardia único de los endpoints de cron.
@@ -31,19 +31,16 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export type VeredictoCron = "ok" | "sin_configurar" | "por_query_string" | "invalido";
 
-function igualSeguro(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  if (x.length !== y.length) return false;
-  return timingSafeEqual(x, y);
-}
+// #736: `igualSeguro` vivía aquí. Era una de tres copias de lo mismo repartidas por el
+// repositorio, mientras diez puntos de entrada seguían con `===`. Ahora la única copia
+// está en lib/crypto/secretos.ts y este archivo la usa como todos los demás.
 
 export function veredictoCron(req: NextRequest): VeredictoCron {
   const secreto = process.env.CRON_SECRET?.trim();
   if (!secreto) return "sin_configurar";
 
   const cabecera = req.headers.get("x-cron-secret")?.trim();
-  if (cabecera && igualSeguro(cabecera, secreto)) return "ok";
+  if (secretosIguales(cabecera, secreto)) return "ok";
 
   // Se mira SOLO para poder decir «usa la cabecera». No autoriza en ningún caso, y el valor
   // no se compara ni se registra: basta con saber que venía uno.
