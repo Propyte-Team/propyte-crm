@@ -1,4 +1,16 @@
 import { z } from "zod";
+import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
+
+// ⚠️ NOTA DE ESTADO (#730, 2026-09-09): a día de hoy NINGÚN archivo importa este
+// módulo. `grep -r "validations/contact" src` devuelve solo este archivo. Los esquemas
+// que sí se usan viven en `src/server/contacts.ts` y en `src/app/api/contacts/route.ts`,
+// y los dos ya validan `leadSource` contra LEAD_SOURCE_ORDER.
+//
+// Se arregla igual, y no se borra, por dos razones. Un esquema que MIENTE es peor que
+// uno que no existe: el siguiente que lo importe se lleva un rechazo de MESSENGER —que
+// es justo el canal por el que están entrando los prospectos— sin entender por qué. Y
+// borrar archivos no es decisión de una sesión (CLAUDE.md). Si Luis prefiere quitarlo,
+// es un `git rm` y esta nota sobra.
 
 // Teléfono: se normaliza (sin espacios/guiones/paréntesis) antes de validar,
 // y se persiste normalizado — clave para dedup por teléfono
@@ -43,15 +55,22 @@ const contactBaseSchema = z.object({
   secondaryPhone: phoneSchema.optional().or(z.literal("")),
 
   // Tipo de contacto (enum ContactType)
-  contactType: z.enum([
-    "LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO",
-  ]).optional(),
+  // #730, la otra mitad: eran 6 de los 9 valores de ContactType. Faltaban EMPLEO,
+  // REFERIDOR y —el que importa— COMPRADOR, que es el DEFAULT del modelo en Prisma y el
+  // que escribe el intake: el valor por defecto del sistema no era elegible.
+  contactType: z.enum(CONTACT_TYPE_ORDER).optional(),
 
   // Fuente del lead (enum LeadSource)
-  leadSource: z.enum([
-    "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "PORTAL_INMOBILIARIO",
-    "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP", "OTRO",
-  ]),
+  // #730: esta era la última copia a mano del enum LeadSource, con 12 de los 21
+  // valores. Faltaban TIKTOK_ADS, MESSENGER, META_ADS, BASE_DE_DATOS, SELF_GEN,
+  // REGISTRO_BROKER, WEBINAR, LINKEDIN y LLAMADA_ENTRANTE — entre ellos MESSENGER,
+  // que hoy es por donde entran los prospectos (24 contactos, el último de hoy).
+  //
+  // AUD-20260710-02 ya había centralizado la lista en LEAD_SOURCE_ORDER y la había
+  // aplicado en el formulario, el listado, el detalle, server/contacts y api/contacts;
+  // este archivo se quedó fuera. La paridad con el enum de Prisma la vigila
+  // src/lib/constants.lead-source.test.ts.
+  leadSource: z.enum(LEAD_SOURCE_ORDER),
 
   // Detalle de la fuente
   leadSourceDetail: z.string().max(200).optional(),
@@ -128,6 +147,11 @@ export const searchContactSchema = z.object({
   assignedToId: z.string().uuid().optional(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
+  // NOTA (#745): este `sortBy` sigue siendo texto libre. La lista blanca de columnas
+  // ordenables vive en src/lib/api/orden.ts, que llega con el PR #51; atarlo aquí ahora
+  // haría que esta rama no compile sin ese PR. Cuando el #51 esté mezclado, esto pasa a
+  // `z.enum(ORDEN_POR_ENTIDAD.contact.columnas)`. Mientras tanto no es explotable: este
+  // esquema no lo importa nadie (ver la nota de cabecera).
   sortBy: z.string().default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });

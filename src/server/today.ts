@@ -73,7 +73,16 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
     const { start: startToday, end: endToday } = cancunDayRange(now);
     const soon = new Date(now.getTime() + 2 * 60 * 60 * 1000); // SLA en riesgo: vence en <2h
 
-    const contactScope = ownerWhere ? { assignedToId: ownerWhere } : {};
+    // #683: `contactScope` viaja como filtro de la RELACIÓN contact en los conteos de
+    // temporizadores y de conversaciones (`{ contact: contactScope }`), y ahí no había
+    // nada que descartara los contactos borrados. Con el ámbito global —cuando
+    // `ownerWhere` es null, o sea dirección y admin— el objeto quedaba vacío, así que
+    // esos dos números incluían el trabajo pendiente de contactos que ya no existen.
+    // Medido en producción el 2026-09-08: 18 de 131 contactos están borrados.
+    //
+    // Los otros dos conteos de contactos de esta vista (:90 y :92) sí lo llevaban, y de
+    // ahí venía la incoherencia: la misma pantalla contaba dos cosas con dos criterios.
+    const contactScope = { deletedAt: null, ...(ownerWhere ? { assignedToId: ownerWhere } : {}) };
     const dealScope = ownerWhere ? { assignedToId: ownerWhere } : {};
     const activityUserScope = ownerWhere ? { userId: ownerWhere } : {};
 
@@ -86,10 +95,12 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
       hotCount, hot,
       openQuotes,
     ] = await Promise.all([
-      // 1. Leads nuevos sin tocar
-      prisma.contact.count({ where: realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope }) }),
+      // 1. Leads nuevos sin tocar. El `deletedAt: null` explícito que había aquí se
+      // quitó porque ahora lo trae `contactScope` (#683) y también realLeadWhere (#682):
+      // repetirlo en el literal es un TS2783 ("se especifica más de una vez").
+      prisma.contact.count({ where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }) }),
       prisma.contact.findMany({
-        where: realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope }),
+        where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }),
         select: { id: true, firstName: true, lastName: true, phone: true, leadSource: true },
         orderBy: { createdAt: "desc" }, take: 6,
       }),

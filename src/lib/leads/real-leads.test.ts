@@ -40,3 +40,38 @@ describe("realLeadWhere", () => {
     expect(PROVISIONAL_COMMENT_LEAD.messages).toEqual({ none: { direction: "INBOUND" } });
   });
 });
+
+// Tarjeta #682. Cuatro de los nueve sitios que usan este filtro no añadían
+// `deletedAt: null` por su cuenta (pulso ×3, anomalias), y en producción el 14% de
+// los contactos están borrados: 18 de 131, medido el 2026-09-08. Estas pruebas
+// fallan contra el código anterior.
+describe("realLeadWhere — los contactos borrados no son leads (#682)", () => {
+  it("excluye los borrados aunque el llamador no lo pida", () => {
+    expect(realLeadWhere({}).deletedAt).toBeNull();
+    expect(realLeadWhere({ createdAt: { gte: new Date("2026-09-01") } }).deletedAt).toBeNull();
+  });
+
+  it("un llamador que ya lo pasaba obtiene lo mismo que antes", () => {
+    // Los cinco sitios que sí se acordaban (goals, dashboard ×2, today ×2, reports)
+    // no cambian de comportamiento: la condición se repite y da igual.
+    const out = realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never });
+
+    expect(out.deletedAt).toBeNull();
+    expect(out.contactStatus).toBe("NUEVO");
+  });
+
+  it("el filtro que recibe MANDA: se puede pedir a propósito ver los borrados", () => {
+    // El orden del spread es deliberado. Una auditoría de leads borrados es un caso
+    // legítimo y esta función no debe hacerlo imposible.
+    const soloBorrados = realLeadWhere({ deletedAt: { not: null } });
+
+    expect(soloBorrados.deletedAt).toEqual({ not: null });
+  });
+
+  it("sigue agregando la exclusión de provisionales, no la sustituye", () => {
+    const out = realLeadWhere({});
+
+    expect(out.deletedAt).toBeNull();
+    expect(out.NOT).toEqual(PROVISIONAL_COMMENT_LEAD);
+  });
+});

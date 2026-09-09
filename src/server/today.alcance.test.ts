@@ -130,3 +130,45 @@ describe("getTodayView — el día es el de Cancún (#715 A-04)", () => {
     vi.useRealTimers();
   });
 });
+
+// Tarjeta #683. `contactScope` viajaba como filtro de la relación contact en los dos
+// conteos que la usan (temporizadores en riesgo y conversaciones sin leer) y no
+// descartaba los contactos borrados. Con ámbito global el objeto quedaba vacío, así que
+// esos dos números incluían trabajo pendiente de contactos que ya no existen.
+//
+// En producción, el 2026-09-08, 18 de 131 contactos están borrados: el 14%.
+describe("getTodayView — los contactos borrados no aparecen en la vista (#683)", () => {
+  /** El filtro de la relación contact en los conteos que lo usan. */
+  function contactoEnTemporizadores(): Record<string, unknown> {
+    return slaCount.mock.calls[0][0].where.contact;
+  }
+  function contactoEnConversaciones(): Record<string, unknown> {
+    return conversationCount.mock.calls[0][0].where.contact;
+  }
+
+  it("con ámbito global (dirección) descarta los borrados en vez de no filtrar nada", async () => {
+    await getTodayView("user-1", "DIRECTOR");
+
+    // Antes esto era `{}`: sin dueño que filtrar, no quedaba ninguna condición.
+    expect(contactoEnTemporizadores().deletedAt).toBeNull();
+    expect(contactoEnConversaciones().deletedAt).toBeNull();
+  });
+
+  it("con ámbito propio conserva el dueño Y añade el borrado", async () => {
+    await getTodayView("user-1", "ASESOR_JR");
+
+    expect(contactoEnTemporizadores()).toEqual({
+      deletedAt: null,
+      assignedToId: { in: ["user-1"] },
+    });
+  });
+
+  it("los dos conteos de contactos de la vista usan el mismo criterio", async () => {
+    // La incoherencia era dentro de la MISMA pantalla: los leads nuevos sí filtraban
+    // borrados y los temporizadores no.
+    await getTodayView("user-1", "DIRECTOR");
+
+    expect(contactCount.mock.calls[0][0].where.deletedAt).toBeNull();
+    expect(contactoEnTemporizadores().deletedAt).toBeNull();
+  });
+});
