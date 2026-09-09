@@ -32,7 +32,15 @@ export async function GET(req: NextRequest) {
 
 function validSignature(rawBody: string, signature: string | null): boolean {
   const appSecret = process.env.META_DM_APP_SECRET?.trim();
-  if (!appSecret) return true; // sin secret no se valida (configurarlo en prod)
+  if (!appSecret) {
+    // Falla CERRADO (#754). Antes devolvía `true` con el comentario «sin secret no se
+    // valida», lo que convertía este webhook en un endpoint de ESCRITURA sin
+    // autenticar: cualquiera podía crear contactos y mensajes e inducir respuestas
+    // del bot a PSIDs arbitrarios. Sin secret no hay forma de distinguir a Meta de
+    // cualquier otro, así que la única respuesta correcta es rechazar.
+    console.error("[meta-dm] META_DM_APP_SECRET no configurado → webhook rechazado (401)");
+    return false;
+  }
   if (!signature?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex");
   try {
@@ -50,10 +58,11 @@ interface MetaWebhookBody {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const sigHeader = req.headers.get("x-hub-signature-256");
-  const appSecret = process.env.META_DM_APP_SECRET?.trim();
-  const sigValid: boolean | "skipped" = !appSecret ? "skipped" : validSignature(rawBody, sigHeader);
-
-  if (sigValid === false) {
+  // validSignature ya lee y valida META_DM_APP_SECRET. La segunda lectura de la env y
+  // el estado "skipped" existían sólo para alimentar el buffer de diagnóstico que se
+  // quitó en #737, y "skipped" nunca era `=== false`, así que este 401 no disparaba.
+  if (!validSignature(rawBody, sigHeader)) {
+    console.warn(`[meta-dm] firma inválida → 401 (header ${sigHeader ? "presente" : "ausente"})`);
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
@@ -61,6 +70,7 @@ export async function POST(req: NextRequest) {
   try {
     body = JSON.parse(rawBody);
   } catch {
+    console.warn("[meta-dm] JSON inválido → 400");
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
