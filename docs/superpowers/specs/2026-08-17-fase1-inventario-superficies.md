@@ -79,4 +79,4 @@ Dos salidas: renombrar el permiso a `config.sistema`, o estrechar el server acti
 
 ## 6. Lo que la fase 1 NO debe tocar
 
-`/api/admin/{agents,automation,journey,teams,territories,metadata}` y `/api/webhooks/meta-dm/debug` (marcada `[TEMPORAL]`) son fase 4 o posterior. El eje de **alcance de datos** (`src/lib/rbac/query-scope.ts`) no se toca nunca en este proyecto: gobierna qué filas ves, no a qué pantallas entras.
+`/api/admin/{agents,automation,journey,teams,territories,metadata}` son fase 4 o posterior. (`/api/webhooks/meta-dm/debug` estaba en esta lista marcada `[TEMPORAL]`; se BORRÓ en el PR #58 / tarjeta #737 porque exponía payloads crudos de DM con PII a MARKETING. No recrearla.) El eje de **alcance de datos** (`src/lib/rbac/query-scope.ts`) no se toca nunca en este proyecto: gobierna qué filas ves, no a qué pantallas entras.

@@ -73,6 +73,14 @@ export async function POST(req: NextRequest) {
     console.warn("[meta-dm] JSON inválido → 400");
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
+  // JSON.parse acepta `null`, `42` y `"texto"` sin lanzar, así que el catch de arriba
+  // no alcanza: el tipo MetaWebhookBody describe la forma esperada, no la valida. Sin
+  // esto un cuerpo de cuatro bytes `null` pasaba y reventaba en `body.object` con un
+  // 500 no manejado en vez del 400 que corresponde (#755).
+  if (!body || typeof body !== "object") {
+    console.warn("[meta-dm] cuerpo JSON que no es un objeto → 400");
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
 
   const messages =
     body.object === "instagram"
@@ -81,7 +89,6 @@ export async function POST(req: NextRequest) {
         ? parseMessengerWebhook(body as Parameters<typeof parseMessengerWebhook>[0])
         : [];
 
-  const results: Array<Record<string, unknown>> = [];
   let processed = 0;
   // Coalescing del bot (BUG 2026-07-24): cada mensaje del batch disparaba una respuesta
   // completa. Se ingiere todo con triggerBot:false y el bot responde UNA vez por
@@ -107,12 +114,7 @@ export async function POST(req: NextRequest) {
         });
       }
       processed++;
-      results.push({ channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId, ok: true });
     } catch (err) {
-      results.push({
-        channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId,
-        ok: false, error: err instanceof Error ? err.message : String(err),
-      });
       console.error("[meta-dm] inbound:", err);
     }
   }
@@ -146,16 +148,9 @@ export async function POST(req: NextRequest) {
   for (const c of parsed.comments) {
     try {
       const { handleComment } = await import("@/lib/comments/handle-comment");
-      const outcome = await handleComment(c);
+      await handleComment(c);
       commentsProcessed++;
-      results.push({ comment: c.externalCommentId, platform: c.platform, status: outcome.status });
     } catch (err) {
-      results.push({
-        comment: c.externalCommentId,
-        platform: c.platform,
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
       console.error("[meta-dm] comentario:", err);
     }
   }

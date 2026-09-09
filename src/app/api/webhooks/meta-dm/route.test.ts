@@ -240,4 +240,12 @@ describe("meta-dm webhook — autenticación de la firma", () => {
     expect(res.status).toBe(400);
     expect(handleInboundMessage).not.toHaveBeenCalled();
   });
+
+  // JSON.parse("null") no lanza, así que sin el guard de forma esto pasaba el catch
+  // y reventaba en `body.object` con un 500 no manejado (#755).
+  it.each(["null", "42", '"texto"'])("responde 400 a un cuerpo JSON que no es objeto: %s", async (crudo) => {
+    const res = await POST(req(URL_WEBHOOK, { method: "POST", body: crudo, headers: { "x-hub-signature-256": firma(crudo) } }));
+    expect(res.status).toBe(400);
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+  });
 });

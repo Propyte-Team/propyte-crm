@@ -2490,7 +2490,7 @@ Agregar el import:
 import { parseCommentWebhook } from "@/lib/comments/parse";
 ```
 
-Después del bucle `for (const t of botTargets.values())` y **antes** de `recordHit`, insertar:
+Después del bucle `for (const t of botTargets.values())` y **antes** del `return NextResponse.json(...)` final, insertar: (el ancla original era `recordHit`, borrado en el PR #58 / tarjeta #737)
 
 ```ts
   // Comentarios (entry[].changes): camino independiente del de DMs. Un fallo
