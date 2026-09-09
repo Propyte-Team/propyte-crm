@@ -59,7 +59,10 @@ describe("sendChannelMessage", () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: null, messengerPsid: null });
     sendWhatsAppMessage.mockResolvedValue({ id: "wa-msg" });
     await sendChannelMessage("WHATSAPP", "c1", "hola", "u1");
-    expect(sendWhatsAppMessage).toHaveBeenCalledWith("+521999", "hola", "c1", "u1", null);
+    // #687: la autoría viaja en el envío. Sin `{bot:true}` es un mensaje de asesor.
+    expect(sendWhatsAppMessage).toHaveBeenCalledWith(
+      "+521999", "hola", "c1", "u1", null, undefined, { autoriaBot: false },
+    );
   });
 
   it("INSTAGRAM envía por adapter con el IGSID del contacto y guarda Message OUTBOUND", async () => {
@@ -165,7 +168,8 @@ describe("sendChannelMessage", () => {
       media: { path: "2026-07/a.jpg", type: "image" },
     });
     expect(sendWhatsAppMessage).toHaveBeenCalledWith("+521999", "checa", "c1", "u1", null,
-      expect.objectContaining({ path: "2026-07/a.jpg", url: "https://sb/signed-a", type: "image" }));
+      expect.objectContaining({ path: "2026-07/a.jpg", url: "https://sb/signed-a", type: "image" }),
+      { autoriaBot: false });
   });
 
   it("media con path infirmable → rechaza claro", async () => {
@@ -176,15 +180,39 @@ describe("sendChannelMessage", () => {
     ).rejects.toThrow(/firmar/i);
   });
 
-  it("WHATSAPP con {bot:true} llama message.update con sender BOT", async () => {
+  // #687: esta prueba comprobaba que se llamara a `message.update` DESPUÉS del envío para
+  // corregir la autoría. Ese update ya no existe: la autoría viaja en el envío y la fila
+  // nace con ella, igual que en el camino de Instagram/Messenger de este mismo archivo.
+  // El contrato que hay que fijar ahora es que la marca llegue al envío, no que se corrija.
+  it("WHATSAPP con {bot:true} manda la autoría EN el envío, sin update posterior", async () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: null, messengerPsid: null });
     sendWhatsAppMessage.mockResolvedValue({ id: "wa1" });
+
     await sendChannelMessage("WHATSAPP", "c1", "hola bot", "u1", { bot: true });
-    expect(msgUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "wa1" },
-        data: expect.objectContaining({ sender: "BOT", aiGenerated: true, aiAutonomy: "L2" }),
-      })
+
+    expect(sendWhatsAppMessage).toHaveBeenCalledWith(
+      "+521999", "hola bot", "c1", "u1", null, undefined, { autoriaBot: true },
     );
+    // Y nada que corregir después: es lo que elimina la ventana en la que la fila estaba mal.
+    expect(msgUpdate).not.toHaveBeenCalled();
+  });
+
+  it("WHATSAPP con media y {bot:true}: la autoría no se pierde por llevar adjunto", async () => {
+    // Las dos ramas del canal —con y sin media— llaman a la función por separado, así que
+    // una podría quedarse sin la marca sin que la otra se enterara.
+    contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: null, messengerPsid: null });
+    sendWhatsAppMessage.mockResolvedValue({ id: "wa2" });
+
+    await sendChannelMessage("WHATSAPP", "c1", "mira", "u1", {
+      bot: true,
+      media: { path: "2026-07/a.jpg", type: "image" },
+    });
+
+    expect(sendWhatsAppMessage).toHaveBeenCalledWith(
+      "+521999", "mira", "c1", "u1", null,
+      expect.objectContaining({ path: "2026-07/a.jpg" }),
+      { autoriaBot: true },
+    );
+    expect(msgUpdate).not.toHaveBeenCalled();
   });
 });

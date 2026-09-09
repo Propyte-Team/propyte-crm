@@ -37,19 +37,18 @@ export async function sendChannelMessage(
     const c = await prisma.contact.findUnique({ where: { id: contactId }, select: { phone: true } });
     if (!c?.phone) throw new Error("Contacto sin teléfono");
     const { sendWhatsAppMessage } = await import("@/lib/twilio/whatsapp");
-    const message = media
+    // #687: la misma ventana de crear-y-corregir que tenía lib/agents/tools.ts estaba aquí
+    // para WhatsApp, mientras el camino de Instagram/Messenger de más abajo (:100-102) ya
+    // escribía la autoría dentro del `create`. Aquí el update sí se devolvía —así que un
+    // fallo habría subido en vez de perderse— pero la ventana existía igual. Ahora la
+    // autoría viaja en el envío y los tres canales de este archivo hacen lo mismo.
+    const autoria = { autoriaBot: opts.bot === true };
+    return media
       ? await sendWhatsAppMessage(c.phone, body, contactId, userId, opts.connectorId ?? null, {
           ...media,
           url: await resolveMediaUrl(media),
-        })
-      : await sendWhatsAppMessage(c.phone, body, contactId, userId, opts.connectorId ?? null);
-    if (opts.bot) {
-      return prisma.message.update({
-        where: { id: message.id },
-        data: { sender: "BOT", aiGenerated: true, aiAutonomy: "L2" },
-      });
-    }
-    return message;
+        }, autoria)
+      : await sendWhatsAppMessage(c.phone, body, contactId, userId, opts.connectorId ?? null, undefined, autoria);
   }
 
   const contact = await prisma.contact.findUnique({

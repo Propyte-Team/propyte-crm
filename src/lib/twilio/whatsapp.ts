@@ -5,6 +5,19 @@ import { findContactByPhone, normalizePhone } from "./utils";
 
 /**
  * Envía un mensaje de WhatsApp a un contacto.
+ *
+ * ## `opciones.autoriaBot` (#687)
+ *
+ * La fila del mensaje nace con su autoría puesta. Antes esta función siempre escribía
+ * `sender: "ADVISOR"` y quien enviaba en nombre del bot tenía que CORREGIRLO después con un
+ * segundo update — y en `lib/agents/tools.ts` ese update llevaba `.catch(() => {})`, así
+ * que si fallaba, un WhatsApp escrito por un agente quedaba en el hilo indistinguible de
+ * uno escrito por una persona. Sin aviso, y con la tool devolviendo `{ sent: true }`.
+ *
+ * Crear-y-corregir tiene una ventana en la que la fila está mal, y esa ventana no se cierra
+ * reportando mejor el error: se cierra no abriéndola. El camino de Instagram y Messenger de
+ * `lib/messaging/dispatcher.ts` ya lo hacía así —escribe la autoría dentro del `create`— así
+ * que esto no inventa un patrón, lo lleva al canal que se había quedado atrás.
  */
 export async function sendWhatsAppMessage(
   to: string,
@@ -12,8 +25,13 @@ export async function sendWhatsAppMessage(
   contactId: string,
   userId: string,
   connectorId?: string | null,
-  media?: { path: string; url: string; type: import("@/lib/messaging/media").ChatMediaType; filename?: string | null; mimeType?: string | null }
+  media?: { path: string; url: string; type: import("@/lib/messaging/media").ChatMediaType; filename?: string | null; mimeType?: string | null },
+  opciones?: { autoriaBot?: boolean }
 ) {
+  // El campo va con nombre en el objeto y no como séptimo booleano posicional a propósito:
+  // `sendWhatsAppMessage(tel, texto, id, uid, null, undefined, true)` no dice qué es ese
+  // `true`, y esta es la función que decide si un cliente ve un mensaje como humano o no.
+  const autoriaBot = opciones?.autoriaBot === true;
   const normalized = normalizePhone(to);
 
   // WhatsApp no renderea markdown: **x** → *x*, # títulos → *negrita* (fix 2026-07-13).
@@ -59,7 +77,11 @@ export async function sendWhatsAppMessage(
       status: delivery.status,
       externalPhone: normalized,
       conversationId: conversation.id,
-      sender: "ADVISOR",
+      // #687: los tres campos de autoría nacen juntos y en la misma escritura. Mismo
+      // criterio y mismos valores que el camino de Instagram/Messenger del dispatcher.
+      sender: autoriaBot ? "BOT" : "ADVISOR",
+      aiGenerated: autoriaBot,
+      aiAutonomy: autoriaBot ? "L2" : null,
       ...(media
         ? { mediaUrl: media.path, mediaType: media.type, mediaFilename: media.filename ?? null, mediaMimeType: media.mimeType ?? null }
         : {}),

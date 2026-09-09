@@ -172,11 +172,21 @@ export const AGENT_TOOLS: AgentTool[] = [
       const lint = lintBrandVoice(String(input.body));
       if (!lint.ok) return { sent: false, reason: `Linter de marca: ${lint.violations.join(", ")}` };
       const { sendWhatsAppMessage } = await import("@/lib/twilio/whatsapp");
-      const message = await sendWhatsAppMessage(contact.phone, String(input.body), contact.id, systemUser.id);
-      await prisma.message.update({
-        where: { id: message.id },
-        data: { sender: "BOT", aiGenerated: true, aiAutonomy: "L2" },
-      }).catch(() => {});
+      // #687: la autoría viaja EN el envío, así que la fila nace con `sender: "BOT"`,
+      // `aiGenerated: true` y `aiAutonomy: "L2"`. Antes salía el mensaje y después se
+      // corregía con un update que llevaba `.catch(() => {})`: si fallaba, un WhatsApp
+      // escrito por un agente quedaba en el hilo indistinguible de uno escrito por una
+      // persona, sin aviso en ninguna capa y con esta tool devolviendo `{ sent: true }`.
+      // Ya no hay update que pueda fallar, así que no hay ventana que reportar.
+      await sendWhatsAppMessage(
+        contact.phone,
+        String(input.body),
+        contact.id,
+        systemUser.id,
+        null,
+        undefined,
+        { autoriaBot: true },
+      );
       return { sent: true };
     },
   },
