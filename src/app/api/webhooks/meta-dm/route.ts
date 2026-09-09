@@ -11,7 +11,6 @@ import { handleInboundMessage } from "@/lib/messaging/core";
 import { parseInstagramWebhook } from "@/lib/messaging/adapters/instagram";
 import { parseMessengerWebhook } from "@/lib/messaging/adapters/messenger";
 import { resolveConnectorByIgBusinessId, resolveConnectorByPageId } from "@/lib/messaging/social-accounts";
-import { recordHit } from "@/lib/messaging/webhook-debug"; // [TEMPORAL] diagnóstico
 import { parseCommentWebhook } from "@/lib/comments/parse";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
@@ -55,11 +54,6 @@ export async function POST(req: NextRequest) {
   const sigValid: boolean | "skipped" = !appSecret ? "skipped" : validSignature(rawBody, sigHeader);
 
   if (sigValid === false) {
-    recordHit({
-      at: new Date().toISOString(), sigHeader: !!sigHeader, sigValid,
-      entryCount: 0, parsed: 0, processed: 0, results: [],
-      note: "firma inválida → 401", rawSnippet: rawBody.slice(0, 500),
-    });
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
@@ -67,11 +61,6 @@ export async function POST(req: NextRequest) {
   try {
     body = JSON.parse(rawBody);
   } catch {
-    recordHit({
-      at: new Date().toISOString(), sigHeader: !!sigHeader, sigValid,
-      entryCount: 0, parsed: 0, processed: 0, results: [],
-      note: "JSON inválido → 400", rawSnippet: rawBody.slice(0, 500),
-    });
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
@@ -161,11 +150,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  recordHit({
-    at: new Date().toISOString(), object: body.object, sigHeader: !!sigHeader, sigValid,
-    entryCount: Array.isArray(body.entry) ? body.entry.length : 0,
-    parsed: messages.length, processed, results, rawSnippet: rawBody.slice(0, 500),
-  });
   return NextResponse.json({
     ok: true,
     processed,
