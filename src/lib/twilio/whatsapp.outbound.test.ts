@@ -135,3 +135,81 @@ describe("sendWhatsAppMessage — media", () => {
     expect(msgCreate.mock.calls[0][0].data.body).toBe("[Imagen]");
   });
 });
+
+// Tarjeta #687. La fila del mensaje nacía siempre con `sender: "ADVISOR"`, y quien enviaba
+// en nombre del bot tenía que CORREGIRLA con un segundo update. En `lib/agents/tools.ts`
+// ese update llevaba `.catch(() => {})`: si fallaba, un WhatsApp escrito por un agente
+// quedaba en el hilo indistinguible de uno escrito por una persona — sin aviso en ninguna
+// capa, y con la tool devolviendo `{ sent: true }`.
+//
+// Crear-y-corregir tiene una ventana en la que la fila está mal. Esa ventana no se cierra
+// reportando mejor el error: se cierra no abriéndola.
+describe("sendWhatsAppMessage — la autoría nace con la fila (#687)", () => {
+  /** Los campos con los que se creó el Message. */
+  function filaCreada(): Record<string, unknown> {
+    return msgCreate.mock.calls[0][0].data;
+  }
+
+  it("sin opciones sigue siendo un mensaje de asesor, como antes", async () => {
+    await sendWhatsAppMessage("+5219991112233", "voy para allá", "c1", "u1");
+
+    expect(filaCreada().sender).toBe("ADVISOR");
+    expect(filaCreada().aiGenerated).toBe(false);
+    expect(filaCreada().aiAutonomy).toBeNull();
+  });
+
+  it("con autoriaBot los tres campos nacen puestos, en la misma escritura", async () => {
+    await sendWhatsAppMessage("+5219991112233", "hola, soy el bot", "c1", "u1", null, undefined, {
+      autoriaBot: true,
+    });
+
+    // Los tres juntos: `sender` decide cómo se pinta en el hilo, `aiGenerated` es lo que
+    // filtran los reportes de actividad del bot, y `aiAutonomy` el nivel declarado.
+    expect(filaCreada().sender).toBe("BOT");
+    expect(filaCreada().aiGenerated).toBe(true);
+    expect(filaCreada().aiAutonomy).toBe("L2");
+  });
+
+  it("autoriaBot: false es explícitamente humano, no ambiguo", async () => {
+    await sendWhatsAppMessage("+5219991112233", "lo escribo yo", "c1", "u1", null, undefined, {
+      autoriaBot: false,
+    });
+
+    expect(filaCreada().sender).toBe("ADVISOR");
+    expect(filaCreada().aiGenerated).toBe(false);
+  });
+
+  it("solo `true` marca bot: un valor raro no convierte un mensaje humano en automático", async () => {
+    // La comprobación es `=== true` a propósito. Si fuera un truthy suelto, un
+    // `{ autoriaBot: undefined }` mal construido en un llamador nuevo daría un resultado
+    // distinto según cómo llegara el objeto.
+    await sendWhatsAppMessage("+5219991112233", "hm", "c1", "u1", null, undefined, {
+      autoriaBot: undefined,
+    });
+
+    expect(filaCreada().sender).toBe("ADVISOR");
+  });
+
+  it("la autoría no se pierde por llevar adjunto", async () => {
+    await sendWhatsAppMessage(
+      "+5219991112233",
+      "te mando el plano",
+      "c1",
+      "u1",
+      null,
+      { path: "2026-09/plano.pdf", url: "https://sb/plano", type: "document", filename: "plano.pdf" },
+      { autoriaBot: true },
+    );
+
+    expect(filaCreada().sender).toBe("BOT");
+    expect(filaCreada().mediaFilename).toBe("plano.pdf");
+  });
+
+  it("y sigue siendo UNA sola escritura del mensaje: no hay update que corregir", async () => {
+    await sendWhatsAppMessage("+5219991112233", "hola", "c1", "u1", null, undefined, {
+      autoriaBot: true,
+    });
+
+    expect(msgCreate).toHaveBeenCalledOnce();
+  });
+});
