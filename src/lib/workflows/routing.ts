@@ -2,7 +2,8 @@
 // asigna asesor, crea SlaTimer FIRST_TOUCH y notifica. Emite lead.assigned.
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
-import { createSlaTimer } from "./sla";
+import { createSlaTimer, cumplirOrphan } from "./sla";
+import { ROLES_RUTEABLES, usuarioRuteableWhere } from "./ruteables";
 import {
   motivoSinAsignar,
   explicacion,
@@ -127,12 +128,11 @@ export async function autoRouteLead(
   });
 
   // Gate anti-test (AUD-20260710-09): usuarios QA/prueba jamás reciben leads reales.
+  // #678 (e): las tres condiciones salieron a `./ruteables` sin cambiar de valor, para que
+  // la revisión diaria pueda publicar «cuántos asesores ruteables hay» con ESTE criterio y
+  // no con una copia suya. Aquí siguen siendo las mismas.
   const excludedIds = await routingExcludedIds();
-  const routableWhere = {
-    isActive: true,
-    deletedAt: null,
-    NOT: { email: { endsWith: ".local" } },
-  };
+  const routableWhere = usuarioRuteableWhere();
 
   let assigneeId: string | null = null;
   // #678 (a): se anota por qué falla cada regla que SÍ matcheó, para poder decir después
@@ -159,9 +159,8 @@ export async function autoRouteLead(
       });
       candidates = users.map((u) => u.id);
     } else {
-      const roles = Array.isArray(targets.roles) && targets.roles.length > 0
-        ? targets.roles
-        : ["ASESOR", "ASESOR_SR", "ASESOR_JR"];
+      const roles: readonly string[] =
+        Array.isArray(targets.roles) && targets.roles.length > 0 ? targets.roles : ROLES_RUTEABLES;
       // #729: sin plaza resoluble esta regla NO asigna. Antes el filtro simplemente no se
       // aplicaba y el lead se le entregaba a cualquier asesor de cualquier plaza; la
       // migración 2026-09-03-contact-target-plaza.sql declara lo contrario: sin plaza, al
@@ -246,6 +245,18 @@ export async function autoRouteLead(
   );
 
   await createSlaTimer(contactId, "FIRST_TOUCH");
+
+  // #753: el lead consiguió dueño, así que el reloj de la bandeja de rescate SÍ se cumple
+  // aquí. Es el único sitio del reparto donde eso pasa, y hasta ahora lo cerraba cualquier
+  // mensaje saliente (ver `meetSlaTimers`), que es otra pregunta.
+  //
+  // El fallo se reporta y no tumba la asignación, igual que el ORPHAN de `sendToPond`. Y la
+  // dirección del fallo es la buena: si esto no corre, el temporizador se queda RUNNING y
+  // acaba venciendo — una falsa alarma, que se mira. Lo contrario (dejarlo caer y perder la
+  // notificación y el evento de asignación) rompería algo que el asesor sí espera.
+  await cumplirOrphan(contactId).catch((err) =>
+    console.error(`[routing] no se pudo cumplir el SlaTimer ORPHAN de ${contactId}:`, err),
+  );
 
   await prisma.notification.create({
     data: {

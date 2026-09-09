@@ -75,6 +75,7 @@ export function dbFalsa(cfg: {
     workflowEvent: modelo("workflowEvent"),
     leadConnector: modelo("leadConnector"),
     automationRule: modelo("automationRule"),
+    routingRule: modelo("routingRule"),
     user: modelo("user"),
   } as unknown as RevisionDb;
 }

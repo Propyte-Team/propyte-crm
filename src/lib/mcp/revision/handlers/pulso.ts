@@ -1,4 +1,9 @@
 import { realLeadWhere } from "@/lib/leads/real-leads";
+import {
+  ROLES_RUTEABLES,
+  asesorRuteableWhere,
+  asesorTecnicoWhere,
+} from "@/lib/workflows/ruteables";
 import { HECHOS_DECLARADOS } from "../contexto.data";
 import type { RevisionContext } from "../types";
 
@@ -59,6 +64,12 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     reglasTotales,
     usuarios,
     eventosSinProcesar,
+    reglasDeRuteoActivas,
+    reglasDeRuteoTotales,
+    asesoresRuteables,
+    asesoresTecnicos,
+    sinDuenoVivos,
+    sinDueno7d,
   ] = await Promise.all([
     // Crudo: todo lo que entró. Sirve solo para medir la brecha, nunca como volumen.
     db.contact.count({ where: { createdAt: { gte: hace24h } } }),
@@ -139,6 +150,29 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
       // fallo. Sin ese margen la métrica marca rojo cada vez que se mide.
       where: { processedAt: null, occurredAt: { lt: new Date(ahora.getTime() - 60 * 60 * 1000) } },
     }),
+    // 🚨 #678 (e) — el reparto, que era el agujero grande de esta puerta.
+    //
+    // La tarjeta lo pedía así: «hoy la revisión no puede distinguir "no hay reglas" de
+    // "las reglas no matchean", que son arreglos distintos». Y la #698 se estrelló contra
+    // eso mismo: dio por raíz «no hay a quién asignarle nada», se dieron de alta seis
+    // asesores reales, y los leads siguieron sin dueño — o sea que la raíz era otra y
+    // desde fuera no había forma de verlo.
+    //
+    // Son cuatro números y ninguno sirve solo: 0 reglas activas, 0 asesores ruteables y
+    // «reglas y asesores pero leads sin dueño» son tres causas distintas con tres arreglos
+    // distintos, y las tres producían el mismo silencio.
+    db.routingRule.count({ where: { isActive: true, deletedAt: null } }),
+    db.routingRule.count({ where: { deletedAt: null } }),
+    // 🚨 El criterio NO se escribe aquí: sale de `lib/workflows/ruteables`, el mismo módulo
+    // que usa `autoRouteLead`. Con una copia local, este número mediría la idea que la
+    // puerta tiene del reparto y no el reparto — que es el defecto de la #682 y la #730.
+    db.user.count({ where: asesorRuteableWhere() }),
+    db.user.count({ where: asesorTecnicoWhere() }),
+    // 🚨 Sin dueño, con el filtro de leads reales y SIN ventana: un lead que quedó huérfano
+    // hace tres semanas sigue huérfano hoy, y una cifra de 7 días lo esconde. El de la
+    // ventana va aparte para ver si el problema es de ahora o es acumulado.
+    db.contact.count({ where: realLeadWhere({ assignedToId: null }) }),
+    db.contact.count({ where: realLeadWhere({ assignedToId: null, createdAt: { gte: hace7d } }) }),
   ]);
 
   /**
@@ -326,6 +360,70 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
       // El número nunca se sirve desnudo: leído solo, «0 de 8» se reporta como fallo, y
       // durante el BETA es una decisión. El hecho declarado trae su fecha de caducidad.
       ...(reglasActivas === 0 && reglasTotales > 0 ? { nota: notaDeAutomatizaciones() } : {}),
+    },
+    /**
+     * #678 (e) — EL REPARTO. Por qué un lead se queda sin dueño, en conteos.
+     *
+     * Este bloque existe porque la tarjeta #678 pasó ocho días sin poderse diagnosticar:
+     * la firma del defecto era «7 leads reales, 0 temporizadores» y desde fuera no se
+     * podía saber si el reparto se llamaba y no encontraba a nadie, o si no se llamaba
+     * nunca. Las tres causas se ven aquí y cada una tiene un arreglo distinto.
+     */
+    reparto: {
+      /** Reglas de reparto (`RoutingRule`), que NO son las automatizaciones de arriba. */
+      reglas_activas: reglasDeRuteoActivas,
+      reglas_totales: reglasDeRuteoTotales,
+      /**
+       * Asesores que hoy pueden recibir un lead: activos, no borrados y con correo fuera
+       * del dominio técnico. Mismo criterio que `autoRouteLead`, importado de
+       * `lib/workflows/ruteables` — no una copia.
+       */
+      asesores_ruteables: asesoresRuteables,
+      /**
+       * Cuentas con rol de asesor que el reparto EXCLUYE por ser del dominio `.local`.
+       * Va al lado del anterior porque el par es lo que se lee: explica la diferencia con
+       * `usuarios_activos`, que cuenta por rol sin descontar este dominio.
+       */
+      asesores_tecnicos_excluidos: asesoresTecnicos,
+      roles_considerados: [...ROLES_RUTEABLES],
+      /** Leads reales sin `assignedToId`, acumulado (no de la ventana) y de la ventana. */
+      sin_dueno: sinDuenoVivos,
+      sin_dueno_7d: sinDueno7d,
+      /** Qué parte de la entrada de la semana quedó sin dueño. `null` sin denominador. */
+      proporcion_sin_dueno_7d:
+        reales7d === 0 ? null : Math.round((sinDueno7d / reales7d) * 1000) / 1000,
+      /**
+       * La lectura, porque ninguno de estos números significa nada solo. El orden importa:
+       * la primera causa que aplique es la que hay que arreglar, las siguientes no se
+       * pueden ni medir hasta entonces.
+       */
+      nota:
+        reglasDeRuteoActivas === 0
+          ? "🚨 CERO reglas de reparto activas. Ningún lead puede asignarse, por diseño: " +
+            "`autoRouteLead` recorre las reglas activas y sin ninguna sale al Pond siempre. " +
+            "Es CONFIGURACIÓN, no código, y hasta que exista una regla activa los demás " +
+            "números de este bloque no se pueden interpretar. Ojo: esto es distinto de " +
+            "`automatizaciones.activas`, que durante el BETA es 0 a propósito — las reglas " +
+            "de reparto no entran en esa decisión."
+          : asesoresRuteables === 0
+            ? "🚨 Hay reglas activas y CERO asesores ruteables: no queda nadie a quien " +
+              "asignarle un lead. Si `asesores_tecnicos_excluidos` es mayor que 0, la causa " +
+              "es que las únicas cuentas con rol de asesor son del dominio técnico, que el " +
+              "reparto excluye desde AUD-20260710-09 (le asignó un lead real a un usuario " +
+              "de prueba). El arreglo es dar de alta asesores reales, no tocar el reparto."
+            : sinDueno7d === 0
+              ? "Reglas activas y asesores ruteables, y ningún lead de la ventana quedó sin " +
+                "dueño. `sin_dueno` puede seguir siendo mayor que 0: es el acumulado de " +
+                "antes de la ventana y no se resuelve solo."
+              : "🚨 Hay reglas activas y hay asesores ruteables, y aun así " +
+                `${sinDueno7d} lead(s) de la ventana quedaron sin dueño. Descartadas las ` +
+                "dos causas de configuración, queda el reparto mismo: el motivo exacto ya " +
+                "viaja en el payload del evento `lead.orphaned` desde la #678 (a) —uno de " +
+                "`sin_reglas_activas`, `ninguna_regla_matchea`, `sin_plaza_resoluble`, " +
+                "`sin_candidatos_ruteables`, `estrategia_no_eligio`— y `sin_plaza_resoluble` " +
+                "es el más probable (#729: sin plaza resoluble la regla no asigna). " +
+                "Contrástalo con `sla.pond`: si los leads sin dueño NO tienen temporizador " +
+                "ORPHAN, el reparto no se está llamando siquiera, que es un defecto distinto.",
     },
     usuarios_activos: Object.fromEntries(usuarios.map((u) => [u.role, u._count._all])),
     eventos_sin_procesar: eventosSinProcesar,

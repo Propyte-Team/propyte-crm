@@ -61,6 +61,9 @@ type ModelosLeidos =
   | "workflowEvent"
   | "leadConnector"
   | "automationRule"
+  // #678 (e): las reglas de reparto. Hacía falta para poder distinguir «no hay reglas» de
+  // «las reglas no matchean», que son arreglos distintos y desde fuera se veían igual.
+  | "routingRule"
   | "user";
 
 export type RevisionDb = { [K in ModelosLeidos]: SoloLectura<PrismaClient[K]> };

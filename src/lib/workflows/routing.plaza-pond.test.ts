@@ -22,7 +22,12 @@ vi.mock("@/lib/db", () => ({
     notification: { create: (...a: unknown[]) => notificationCreate(...a), createMany: (...a: unknown[]) => notificationCreateMany(...a) },
   },
 }));
-vi.mock("./sla", () => ({ createSlaTimer: (...a: unknown[]) => createSlaTimer(...a) }));
+// #753: `cumplirOrphan` entra al doble porque routing.ts la llama al asignar. Aquí solo
+// hace falta que exista; quién la cumple se prueba en routing.orphan-cumplido.test.ts.
+vi.mock("./sla", () => ({
+  createSlaTimer: (...a: unknown[]) => createSlaTimer(...a),
+  cumplirOrphan: vi.fn(async () => 0),
+}));
 vi.mock("./events", () => ({ emitEvent: (...a: unknown[]) => emitEvent(...a) }));
 vi.mock("@/lib/teams/territory", () => ({ resolveTerritoryForContact: vi.fn(async () => null) }));
 vi.mock("@/lib/audit/change-context", () => ({
