@@ -95,10 +95,12 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
       hotCount, hot,
       openQuotes,
     ] = await Promise.all([
-      // 1. Leads nuevos sin tocar
-      prisma.contact.count({ where: realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope }) }),
+      // 1. Leads nuevos sin tocar. El `deletedAt: null` explícito que había aquí se
+      // quitó porque ahora lo trae `contactScope` (#683) y también realLeadWhere (#682):
+      // repetirlo en el literal es un TS2783 ("se especifica más de una vez").
+      prisma.contact.count({ where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }) }),
       prisma.contact.findMany({
-        where: realLeadWhere({ deletedAt: null, contactStatus: "NUEVO" as never, ...contactScope }),
+        where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }),
         select: { id: true, firstName: true, lastName: true, phone: true, leadSource: true },
         orderBy: { createdAt: "desc" }, take: 6,
       }),
