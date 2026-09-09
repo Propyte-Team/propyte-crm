@@ -3,6 +3,12 @@
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
 import { createSlaTimer } from "./sla";
+import {
+  motivoSinAsignar,
+  explicacion,
+  type MotivoSinAsignar,
+  type PasoDeReparto,
+} from "./routing-diagnostico";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { createHash } from "crypto";
 
@@ -51,6 +57,11 @@ async function roundRobinPick(userIds: string[], ruleId: string): Promise<string
 async function sendToPond(
   contact: { id: string; firstName: string; lastName: string; leadSource: string; targetPlaza: string | null },
   reason?: string,
+  // #678 (a): POR QUÉ no se pudo asignar. Distinto de `reason`, que dice por qué se invocó
+  // el reparto. Los cinco caminos de fallo terminaban en el mismo sitio y el evento solo
+  // llevaba el motivo de quien llamaba, así que desde fuera no se podía distinguir
+  // «no hay reglas» de «no hay a quién asignar».
+  motivo?: MotivoSinAsignar,
 ): Promise<void> {
   await createSlaTimer(contact.id, "ORPHAN").catch((err) =>
     console.error("[routing] pond: no se pudo crear el SlaTimer ORPHAN:", err),
@@ -84,6 +95,7 @@ async function sendToPond(
   await emitEvent("lead.orphaned", "contact", contact.id, {
     reason: reason ?? null,
     plaza: contact.targetPlaza ?? null,
+    motivo: motivo ?? null,
   });
 }
 
@@ -123,6 +135,10 @@ export async function autoRouteLead(
   };
 
   let assigneeId: string | null = null;
+  // #678 (a): se anota por qué falla cada regla que SÍ matcheó, para poder decir después
+  // cuál de los cinco motivos fue en vez de un `null` sin explicación.
+  const pasos: PasoDeReparto[] = [];
+
   for (const rule of rules) {
     const ctx = {
       contact: { ...contact, score: Number(contact.score) },
@@ -151,7 +167,10 @@ export async function autoRouteLead(
       // migración 2026-09-03-contact-target-plaza.sql declara lo contrario: sin plaza, al
       // Pond. Una regla que nombre su propia plaza (targets.plaza) sí puede tomarlo.
       const plazaEfectiva = targets.plaza ?? contact.targetPlaza;
-      if (!plazaEfectiva) continue;
+      if (!plazaEfectiva) {
+        pasos.push({ reglaId: rule.id, motivo: "sin_plaza_resoluble" });
+        continue;
+      }
       const users = await prisma.user.findMany({
         where: {
           role: { in: roles as never },
@@ -171,7 +190,10 @@ export async function autoRouteLead(
       if (inTerritory.length > 0) candidates = inTerritory;
     }
 
-    if (candidates.length === 0) continue;
+    if (candidates.length === 0) {
+      pasos.push({ reglaId: rule.id, motivo: "sin_candidatos_ruteables" });
+      continue;
+    }
 
     switch (rule.strategy) {
       case "ROUND_ROBIN":
@@ -193,10 +215,23 @@ export async function autoRouteLead(
         assigneeId = candidates[0] ?? null;
     }
     if (assigneeId) break;
+    // Había candidatos y la estrategia devolvió null. Es el único de los cinco motivos que
+    // sería un defecto de código y no un estado de los datos, así que conviene distinguirlo.
+    pasos.push({ reglaId: rule.id, motivo: "estrategia_no_eligio" });
   }
 
   if (!assigneeId) {
-    await sendToPond(contact, opts.reason);
+    const motivo = motivoSinAsignar(pasos, rules.length);
+    // #678 (a): el reparto deja de fallar en silencio. Antes solo quedaba el aviso a la
+    // gerencia que manda el Pond, que hay que ir a mirar; esto queda en los registros del
+    // servidor y en el payload del evento `lead.orphaned`, que es lo que permite contar
+    // cuántos leads caen a cada motivo sin abrir el CRM.
+    console.warn(
+      `[routing] lead ${contact.id} sin asignar (${motivo}): ${explicacion(motivo)}` +
+        ` · fuente=${contact.leadSource} plaza=${contact.targetPlaza ?? "sin plaza"}` +
+        ` · reglas activas=${rules.length}, evaluadas sin asignar=${pasos.length}`,
+    );
+    await sendToPond(contact, opts.reason, motivo);
     return null;
   }
 
