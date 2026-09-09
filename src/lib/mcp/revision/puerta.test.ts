@@ -28,6 +28,9 @@ const dbCompleta = () =>
     grupos: {
       "contact.groupBy": [{ leadSource: "META_ADS", _count: { _all: 9 } }],
       "deal.groupBy": [{ stage: "NEW_LEAD", _count: { _all: 4 } }],
+      // #684: el acumulado real de fallos por conector sale del log de entregas,
+      // no del contador de la fila (que se resetea en cada entrega buena).
+      "connectorLeadLog.groupBy": [],
       "actionQueue.groupBy": [{ status: "FAILED", _count: { _all: 5 } }],
       "user.groupBy": [{ role: "ASESOR_SR", _count: { _all: 3 } }],
       "slaTimer.groupBy": [{ type: "FIRST_RESPONSE", _count: { _all: 3 } }],
