@@ -54,6 +54,7 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     cola,
     colaAgotadas,
     conectores,
+    fallosPorConector,
     reglasActivas,
     reglasTotales,
     usuarios,
@@ -98,6 +99,7 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     }),
     db.leadConnector.findMany({
       select: {
+        id: true,
         name: true,
         provider: true,
         status: true,
@@ -106,6 +108,24 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
         errorCount: true,
       },
       orderBy: { name: "asc" },
+    }),
+    // 🚨 #684: los fallos DE VERDAD acumulados, contados del log de entregas.
+    //
+    // `LeadConnector.errorCount` NO acumula: markConnectorLead lo pone en 0 en cada
+    // entrega buena, así que mide «fallos seguidos desde la última entrega que salió
+    // bien». La puerta lo publicaba como `errores_acumulados`, que es lo contrario, y con
+    // ese nombre un conector que pierde uno de cada dos leads se lee en cero en cuanto el
+    // siguiente entra bien — igual que uno perfecto.
+    //
+    // El acumulado sí existe y no hace falta migración para tenerlo: es el conteo de filas
+    // ERROR de connector_lead_logs, que es la tabla donde queda cada entrega. Se cuenta
+    // aquí y se publica aparte del contador de consecutivos, porque los dos números sirven
+    // para cosas distintas: uno dice «está caído AHORA» y el otro «este conector ha fallado
+    // N veces en su vida».
+    db.connectorLeadLog.groupBy({
+      by: ["connectorId"],
+      where: { status: "ERROR" },
+      _count: { _all: true },
     }),
     db.automationRule.count({ where: { isActive: true, deletedAt: null } }),
     db.automationRule.count({ where: { deletedAt: null } }),
@@ -147,6 +167,12 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
 
   const pondEstados = porEstado(pond);
   const pondTotal = totalDe(pond);
+
+  // #684: el acumulado real de fallos por conector, del log de entregas. Un conector sin
+  // ninguna fila ERROR no aparece en el groupBy, y eso es un 0 legítimo, no una laguna.
+  const fallosHistoricos = new Map<string, number>(
+    fallosPorConector.map((f) => [f.connectorId, f._count._all]),
+  );
   const slaPorTipo = Object.fromEntries(
     Object.entries(
       slaPorEstado.reduce<Record<string, number>>((acc, f) => {
@@ -272,7 +298,25 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
            * igual. Ya lo escriben las dos vías de entrega, así que ese caso desapareció.
            */
           senal_de_vida: pull ? "ultima_sincronizacion" : "ultimo_lead",
-          errores_acumulados: c.errorCount,
+          /**
+           * #684 — DOS números, porque miden dos cosas y antes se publicaba uno con el
+           * nombre del otro.
+           *
+           * `fallos_seguidos` es el contador de la fila (`errorCount`), y su semántica real
+           * es «cuántas entregas han fallado desde la última que salió bien»:
+           * markConnectorLead lo pone en 0 en cada acierto. Sirve para una sola pregunta,
+           * que es la urgente: ¿está caído AHORA? Un 0 aquí NO significa «nunca falló».
+           *
+           * `fallos_historicos` es el acumulado de verdad, contado sobre las filas ERROR de
+           * connector_lead_logs. Es el que distingue un conector sano de uno que pierde uno
+           * de cada dos leads, que es justo lo que el nombre viejo prometía y no daba.
+           *
+           * Se publican los dos y con el nombre que les corresponde. La alternativa —hacer
+           * que `errorCount` acumule— exigía migración y además habría perdido la señal de
+           * «caído ahora», que es la que se mira primero.
+           */
+          fallos_seguidos: c.errorCount,
+          fallos_historicos: fallosHistoricos.get(c.id) ?? 0,
         };
       }),
     },

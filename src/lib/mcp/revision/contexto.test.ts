@@ -26,6 +26,9 @@ const dbBase = (activas: number, totales: number) =>
     grupos: {
       "contact.groupBy": [],
       "deal.groupBy": [],
+      // #684: el acumulado real de fallos por conector sale del log de entregas,
+      // no del contador de la fila (que se resetea en cada entrega buena).
+      "connectorLeadLog.groupBy": [],
       "actionQueue.groupBy": [],
       "slaTimer.groupBy": [],
       "user.groupBy": [],

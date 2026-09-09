@@ -41,6 +41,9 @@ function db(slaGrupos: Grupo[], leadsReales = 10) {
     grupos: {
       "contact.groupBy": [],
       "deal.groupBy": [],
+      // #684: el acumulado real de fallos por conector sale del log de entregas,
+      // no del contador de la fila (que se resetea en cada entrega buena).
+      "connectorLeadLog.groupBy": [],
       "actionQueue.groupBy": [],
       "user.groupBy": [],
       "slaTimer.groupBy": slaGrupos,

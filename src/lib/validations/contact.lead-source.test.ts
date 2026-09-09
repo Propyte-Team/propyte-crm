@@ -11,7 +11,8 @@ import { describe, it, expect } from "vitest";
 // (así corre también en el contenedor, donde el cliente no se puede descargar).
 
 import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
-import { createContactSchema } from "./contact";
+import { createContactSchema, searchContactSchema } from "./contact";
+import { ORDEN_POR_ENTIDAD } from "@/lib/api/orden";
 
 /** Un contacto mínimo válido, al que solo se le cambia la fuente. */
 function contactoCon(leadSource: string) {
@@ -88,5 +89,39 @@ describe("createContactSchema — contactType sale de CONTACT_TYPE_ORDER (#730)"
     expect(
       createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: "VENDEDOR" }).success
     ).toBe(false);
+  });
+});
+
+// #745, la parte que quedó pendiente hasta que el PR #51 se mezcló: el `sortBy` de la
+// búsqueda de contactos era texto libre, y la lista blanca de columnas vive en
+// src/lib/api/orden.ts, que no existía en main cuando se hizo el resto.
+describe("searchContactSchema — sortBy sale de la lista blanca (#745)", () => {
+  it("acepta las columnas de la entidad contacto", () => {
+    for (const columna of ORDEN_POR_ENTIDAD.contact.columnas) {
+      expect(
+        searchContactSchema.safeParse({ sortBy: columna }).success,
+        `rechazó "${columna}", que sí es ordenable`
+      ).toBe(true);
+    }
+  });
+
+  it("rechaza una columna que el listado no expone", () => {
+    // `custom` es un Json y `zohoId` es interno: ordenar por ellos nunca fue la intención.
+    expect(searchContactSchema.safeParse({ sortBy: "custom" }).success).toBe(false);
+    expect(searchContactSchema.safeParse({ sortBy: "zohoId" }).success).toBe(false);
+    expect(searchContactSchema.safeParse({ sortBy: "noExiste" }).success).toBe(false);
+  });
+
+  it("rechaza el sentido mal escrito, que es el error de dedo típico", () => {
+    expect(searchContactSchema.safeParse({ sortOrder: "ascending" }).success).toBe(false);
+    expect(searchContactSchema.safeParse({ sortOrder: "DESC" }).success).toBe(false);
+    expect(searchContactSchema.safeParse({ sortOrder: "asc" }).success).toBe(true);
+  });
+
+  it("los valores por defecto siguen siendo los de antes", () => {
+    const r = searchContactSchema.parse({});
+
+    expect(r.sortBy).toBe("createdAt");
+    expect(r.sortOrder).toBe("desc");
   });
 });

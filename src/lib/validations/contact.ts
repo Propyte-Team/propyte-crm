@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { ORDEN_POR_ENTIDAD, SENTIDOS_DE_ORDEN } from "@/lib/api/orden";
 
 // ⚠️ NOTA DE ESTADO (#730, 2026-09-09): a día de hoy NINGÚN archivo importa este
 // módulo. `grep -r "validations/contact" src` devuelve solo este archivo. Los esquemas
@@ -147,13 +148,12 @@ export const searchContactSchema = z.object({
   assignedToId: z.string().uuid().optional(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  // NOTA (#745): este `sortBy` sigue siendo texto libre. La lista blanca de columnas
-  // ordenables vive en src/lib/api/orden.ts, que llega con el PR #51; atarlo aquí ahora
-  // haría que esta rama no compile sin ese PR. Cuando el #51 esté mezclado, esto pasa a
-  // `z.enum(ORDEN_POR_ENTIDAD.contact.columnas)`. Mientras tanto no es explotable: este
-  // esquema no lo importa nadie (ver la nota de cabecera).
-  sortBy: z.string().default("createdAt"),
-  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  // #745, cerrado ahora que el PR #51 está mezclado: la columna sale de la lista blanca
+  // de la entidad, no es texto libre. La nota anterior decía «cuando el #51 esté
+  // mezclado, esto pasa a z.enum(...)», y esto es eso — un TODO cumplido que se queda
+  // escrito induce a pensar que sigue pendiente.
+  sortBy: z.enum(ORDEN_POR_ENTIDAD.contact.columnas).default("createdAt"),
+  sortOrder: z.enum(SENTIDOS_DE_ORDEN).default("desc"),
 });
 
 // --- Tipos inferidos ---
