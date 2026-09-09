@@ -26,15 +26,19 @@ function fdate(d?: Date | null) {
 }
 
 export default async function PublicQuotePage({ params }: { params: { id: string } }) {
-  const quote = await prisma.quote
-    .findFirst({
-      where: { id: params.id, deletedAt: null },
-      include: {
-        deal: { include: { contact: { select: { firstName: true, lastName: true } }, assignedTo: { select: { name: true, email: true } } } },
-        paymentPlan: { include: { schedules: { orderBy: { number: "asc" } } } },
-      },
-    })
-    .catch(() => null);
+  // #716: la búsqueda NO se envuelve en `.catch(() => null)`. Hacerlo convertía un fallo
+  // de la base en un "esta cotización no existe", que es lo peor que se le puede decir a
+  // un cliente cuyo enlace sí es válido. Si la consulta falla, que salte la frontera de
+  // error (q/error.tsx) y le ofrezca reintentar; `notFound()` queda para lo que de verdad
+  // no existe. La escritura de abajo sí sigue silenciada: es tracking, y que falle no
+  // debe impedirle ver su cotización.
+  const quote = await prisma.quote.findFirst({
+    where: { id: params.id, deletedAt: null },
+    include: {
+      deal: { include: { contact: { select: { firstName: true, lastName: true } }, assignedTo: { select: { name: true, email: true } } } },
+      paymentPlan: { include: { schedules: { orderBy: { number: "asc" } } } },
+    },
+  });
 
   if (!quote) notFound();
 

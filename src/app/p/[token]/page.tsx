@@ -14,7 +14,10 @@ function money(n: number | null | undefined, currency = "MXN") {
 }
 
 export default async function PublicShortlistPage({ params }: { params: { token: string } }) {
-  const shortlist = await getShortlistByToken(params.token).catch(() => null);
+  // #716: sin `.catch(() => null)` — un parpadeo de la base decía "esta propuesta no
+  // existe" a un cliente con un enlace válido. Ahora salta la frontera de error
+  // (p/error.tsx), que ofrece reintentar; `notFound()` queda para el token inválido.
+  const shortlist = await getShortlistByToken(params.token);
   if (!shortlist) notFound();
 
   // Tracking de apertura (no debe romper el render si falla).
