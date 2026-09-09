@@ -23,6 +23,10 @@ const dbCompleta = () =>
       "slaTimer.count": 3,
       "actionQueue.count": 5,
       "automationRule.count": 9,
+      // #678 (e): el reparto. La base falsa revienta ante una consulta sin configurar
+      // —a proposito— asi que las dos nuevas se declaran aqui.
+      "user.count": 3,
+      "routingRule.count": 1,
       "workflowEvent.count": 2,
     },
     grupos: {

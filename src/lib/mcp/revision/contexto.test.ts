@@ -20,6 +20,10 @@ const dbBase = (activas: number, totales: number) =>
       "contact.count": 10,
       "slaTimer.count": 0,
       "actionQueue.count": 0,
+      // #678 (e): el reparto. La base falsa revienta ante una consulta sin configurar
+      // —a proposito— asi que las dos nuevas se declaran aqui.
+      "user.count": 3,
+      "routingRule.count": 1,
       "workflowEvent.count": 0,
     },
     secuencias: { "automationRule.count": [activas, totales] },
