@@ -27,7 +27,9 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("./sla", () => ({ createSlaTimer: vi.fn() }));
+// #753: `cumplirOrphan` va en el doble porque routing.ts la llama al asignar. Este arnés
+// no la observa —para eso está routing.orphan-cumplido.test.ts—, solo necesita que exista.
+vi.mock("./sla", () => ({ createSlaTimer: vi.fn(), cumplirOrphan: vi.fn(async () => 0) }));
 vi.mock("./events", () => ({ emitEvent: vi.fn() }));
 vi.mock("@/lib/teams/territory", () => ({ resolveTerritoryForContact: vi.fn(async () => null) }));
 vi.mock("@/lib/audit/change-context", () => ({

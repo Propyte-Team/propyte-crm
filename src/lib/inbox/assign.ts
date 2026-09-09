@@ -115,6 +115,25 @@ export async function assignContact(opts: {
   }
 
   // Side-effects: jamás tumban la operación (lección 2026-07-24).
+
+  // #753: este es el otro de los dos sitios que cambian `assignedToId`, así que es el otro
+  // sitio donde el reloj de la bandeja de rescate se cumple de verdad. Solo cuando hay
+  // dueño: QUITAR la asignación no lo cumple —sería justo al revés— y `cumplirOrphan` no
+  // lo reabre, porque un temporizador cumplido no se reabre en este motor.
+  //
+  // Va aquí y no dentro de la transacción a propósito: la transacción es «cambiar el dueño
+  // y soltar el control del hilo», que es atómico. Cerrar el reloj no lo es, y si falla, el
+  // temporizador se queda corriendo y acaba venciendo — una falsa alarma sobre un lead que
+  // sí tiene dueño, que es la dirección de fallo aceptable.
+  if (assigneeId !== null) {
+    try {
+      const { cumplirOrphan } = await import("@/lib/workflows/sla");
+      await cumplirOrphan(contact.id);
+    } catch (e) {
+      console.error("[inbox] no se pudo cumplir el SlaTimer ORPHAN del contacto asignado", e);
+    }
+  }
+
   const contactName = `${contact.firstName} ${contact.lastName}`.trim();
   const subject =
     assigneeId === null

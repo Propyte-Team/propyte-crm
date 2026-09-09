@@ -29,6 +29,14 @@ vi.mock("@/lib/audit/change-context", () => ({
   },
 }));
 
+// #753: asignar a mano es uno de los DOS sitios que cambian `assignedToId`, así que es
+// uno de los dos que cumplen el reloj de la bandeja de rescate. El módulo entra por
+// import dinámico dentro de la función, así que el doble va al módulo, no al cliente.
+const cumplirOrphan = vi.fn();
+vi.mock("@/lib/workflows/sla", () => ({
+  cumplirOrphan: (...a: unknown[]) => cumplirOrphan(...a),
+}));
+
 import { UserRole } from "@prisma/client";
 import { assignContact } from "./assign";
 import { canOwnInboxContact } from "./roles";
@@ -44,8 +52,9 @@ const USUARIO_OK = { id: "ase-2", name: "Pedro Ruiz", email: "pedro@propyte.com"
 beforeEach(() => {
   [
     contactFindFirst, userFindFirst, activityCreate, notificationCreate,
-    txContactUpdate, txConversationUpdateMany,
+    txContactUpdate, txConversationUpdateMany, cumplirOrphan,
   ].forEach((m) => m.mockReset());
+  cumplirOrphan.mockResolvedValue(0);
   changeSourceCalls.length = 0;
   contactFindFirst.mockResolvedValue(CONTACTO_LIBRE);
   userFindFirst.mockResolvedValue(USUARIO_OK);
@@ -312,5 +321,55 @@ describe("assignContact — libera el control al reasignar (FIX 1)", () => {
       where: { contactId: "c1", controlledById: { not: null } },
       data: { controlledById: null },
     });
+  });
+});
+
+// Tarjeta #753. El reloj de la bandeja de rescate mide si el lead consiguió DUEÑO, y
+// hasta ahora no lo cerraba nadie al asignar: lo cerraba cualquier mensaje saliente, que
+// es otra pregunta. Estas cuatro pruebas fallan contra origin/main (la llamada no existe).
+describe("assignContact — cumple el reloj del Pond (#753)", () => {
+  it("asignar a un asesor cumple el ORPHAN de ese contacto", async () => {
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+
+    expect(r.ok).toBe(true);
+    expect(cumplirOrphan).toHaveBeenCalledWith("c1");
+  });
+
+  it("QUITAR la asignación NO lo cumple", async () => {
+    // El par que da sentido al anterior: dejar a un lead sin dueño es justo el estado que
+    // ese reloj existe para vigilar. Cumplirlo aquí sería cerrarlo al revés.
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "otro" });
+
+    const r = await assignContact({ contactId: "c1", assigneeId: null, actor: MANDO });
+
+    expect(r.ok).toBe(true);
+    expect(cumplirOrphan).not.toHaveBeenCalled();
+  });
+
+  it("el atajo de idempotencia no lo llama: no hubo cambio de dueño", async () => {
+    // El destino ya era el dueño: la función sale sin escribir. Llamar aquí marcaría
+    // «resuelto» un reloj sin que nada se resolviera en esta operación.
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-2" });
+
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+
+    expect(r.ok).toBe(true);
+    expect(txContactUpdate).not.toHaveBeenCalled();
+    expect(cumplirOrphan).not.toHaveBeenCalled();
+  });
+
+  it("si falla, la asignación no se cae y el fallo se reporta", async () => {
+    // Misma regla de la casa que el resto de los side-effects: «jamás tumban la
+    // operación». Y no en silencio — la lección de la #687.
+    cumplirOrphan.mockRejectedValue(new Error("db down"));
+    const errores = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
+
+    expect(r.ok).toBe(true);
+    expect(notificationCreate).toHaveBeenCalled();
+    expect(errores).toHaveBeenCalled();
+
+    errores.mockRestore();
   });
 });
