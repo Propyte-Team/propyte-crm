@@ -7,6 +7,65 @@ import { normalizePhoneE164 } from "@/lib/phone";
 import { deriveInvestmentProfile } from "./profile-mapping";
 import { captureLead } from "./capture-lead";
 
+// ============================================================
+// De qué canal viene un lead según el tipo de conexión por la que entró
+// ============================================================
+//
+// Tarjeta #685. Este mapa tenía 6 de los 19 valores de `ConnectorProvider`, y los 13
+// restantes caían a "WEBSITE": WhatsApp y los cinco portales inmobiliarios entre ellos.
+// El fallo es silencioso por diseño — el prospecto se captura bien, solo queda mal
+// etiquetado— y a partir de ahí todo reporte de «de dónde vienen mis prospectos» suma a
+// web lo que vino de un portal, que es la cifra sobre la que se decide la pauta.
+//
+// Medido en producción el 2026-09-08: las conexiones activas son 3 de INSTAGRAM y 3 de
+// MESSENGER, las dos dentro del mapa viejo, así que la atribución de hoy NO está
+// corrompida. Era una trampa puesta para el día que se conecte un portal o WhatsApp.
+//
+// Los seis que no tienen equivalente en `LeadSource` van a "OTRO" y no a "WEBSITE", que es
+// la decisión que la tarjeta dejaba abierta. El razonamiento: "WEBSITE" es una mentira
+// concreta —afirma un canal que no fue— y "OTRO" es ignorancia honesta. Un reporte con
+// prospectos en "OTRO" invita a preguntar; uno que los mete en web, no.
+export const PROVIDER_SOURCE: Record<string, string> = {
+  // Pauta y redes, con equivalente exacto
+  META: "FACEBOOK_ADS",
+  INSTAGRAM: "INSTAGRAM",
+  MESSENGER: "MESSENGER",
+  TIKTOK: "TIKTOK_ADS",
+  GOOGLE_ADS: "GOOGLE_ADS",
+  LINKEDIN: "LINKEDIN",
+  WHATSAPP: "WHATSAPP",
+  WEBSITE: "WEBSITE",
+
+  // Los cinco portales inmobiliarios comparten fuente: es lo que el enum LeadSource ofrece.
+  // Si algún día hace falta distinguirlos, el sitio para hacerlo es `leadSourceDetail`, no
+  // este mapa — separarlos aquí obligaría a ampliar LeadSource y a migrar los históricos.
+  INMUEBLES24: "PORTAL_INMOBILIARIO",
+  LAMUDI_PROPPIT: "PORTAL_INMOBILIARIO",
+  PROPIEDADES: "PORTAL_INMOBILIARIO",
+  VIVANUNCIOS: "PORTAL_INMOBILIARIO",
+  EASYBROKER: "PORTAL_INMOBILIARIO",
+
+  // Sin equivalente en LeadSource. Ver el razonamiento de "OTRO" arriba.
+  // GOOGLE es el genérico, distinto de GOOGLE_ADS: puede ser Workspace o un formulario, y
+  // asumir que es pauta sería inventar atribución de pago donde puede no haberla.
+  GOOGLE: "OTRO",
+  YOUTUBE: "OTRO",
+  PINTEREST: "OTRO",
+  ZAPIER: "OTRO",
+  MANUAL: "OTRO",
+  CUSTOM: "OTRO",
+};
+
+/**
+ * A dónde cae un proveedor que ni está en el mapa ni trae `config.defaultLeadSource`.
+ *
+ * Era "WEBSITE". Con el mapa completo esto solo se alcanza si alguien añade un valor nuevo
+ * a `ConnectorProvider` y no lo mapea — y en ese caso "OTRO" es lo correcto por la misma
+ * razón: no inventar un canal. La prueba de cobertura está para que ese caso no llegue a
+ * producción, pero el default tiene que ser honesto igualmente.
+ */
+export const SOURCE_SIN_MAPEAR = "OTRO";
+
 export function readCredentials<T = Record<string, string>>(connector: LeadConnector): T | null {
   if (!connector.credentials) return null;
   try {
@@ -207,18 +266,12 @@ export async function processIncomingLead(
   // 2. Capturar
   const connector = await prisma.leadConnector.findUnique({ where: { id: connectorId } });
   const config = (connector?.config ?? {}) as { defaultLeadSource?: string };
-  const PROVIDER_SOURCE: Record<string, string> = {
-    META: "FACEBOOK_ADS",
-    INSTAGRAM: "INSTAGRAM",
-    MESSENGER: "MESSENGER",
-    TIKTOK: "TIKTOK_ADS",
-    GOOGLE_ADS: "GOOGLE_ADS",
-    LINKEDIN: "LINKEDIN",
-  };
   // Default de `source` si el mapeo no trae uno usable (no depende de mappedFields.source,
   // así una regla que puso un valor INVÁLIDO puede recaer aquí tras sanitizar más abajo).
+  // #685: el mapa está ahora arriba, a nivel de módulo, y cubre los 19 proveedores.
   const sourceDefault =
-    config.defaultLeadSource ?? (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? "WEBSITE" : "WEBSITE");
+    config.defaultLeadSource ??
+    (connector?.provider ? PROVIDER_SOURCE[connector.provider] ?? SOURCE_SIN_MAPEAR : SOURCE_SIN_MAPEAR);
   const source = (mappedFields.source as string | undefined) ?? sourceDefault;
 
   // Copia local: no mutamos el objeto del caller (en sitio/portal es el request body).
