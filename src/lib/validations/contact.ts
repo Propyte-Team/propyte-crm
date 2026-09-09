@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
 
 // ⚠️ NOTA DE ESTADO (#730, 2026-09-09): a día de hoy NINGÚN archivo importa este
 // módulo. `grep -r "validations/contact" src` devuelve solo este archivo. Los esquemas
@@ -55,9 +55,10 @@ const contactBaseSchema = z.object({
   secondaryPhone: phoneSchema.optional().or(z.literal("")),
 
   // Tipo de contacto (enum ContactType)
-  contactType: z.enum([
-    "LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO",
-  ]).optional(),
+  // #730, la otra mitad: eran 6 de los 9 valores de ContactType. Faltaban EMPLEO,
+  // REFERIDOR y —el que importa— COMPRADOR, que es el DEFAULT del modelo en Prisma y el
+  // que escribe el intake: el valor por defecto del sistema no era elegible.
+  contactType: z.enum(CONTACT_TYPE_ORDER).optional(),
 
   // Fuente del lead (enum LeadSource)
   // #730: esta era la última copia a mano del enum LeadSource, con 12 de los 21

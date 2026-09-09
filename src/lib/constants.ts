@@ -361,6 +361,24 @@ export const URGENCY_COLORS: Record<string, string> = {
 } as const;
 
 // --- Tipo de contacto ---
+// Única fuente de verdad de los tipos de contacto, en el orden en que se ofrecen.
+// Mismo patrón que LEAD_SOURCE_ORDER y CONTACT_STATUS_ORDER, y por la misma razón (#730):
+// los z.enum escritos a mano se desincronizan del enum ContactType de Prisma sin que nada
+// avise. Faltaba sobre todo COMPRADOR, que es el DEFAULT del modelo (schema.prisma) y el
+// valor que escribe el intake, así que el valor por defecto del sistema no era elegible.
+// La paridad con el enum la vigila src/lib/constants.contact-type.test.ts.
+export const CONTACT_TYPE_ORDER = [
+  "LEAD",
+  "PROSPECTO",
+  "COMPRADOR",
+  "CLIENTE",
+  "INVERSIONISTA",
+  "BROKER_EXTERNO",
+  "REFERIDOR",
+  "REFERIDO",
+  "EMPLEO",
+] as const;
+
 export const CONTACT_TYPE_LABELS: Record<string, string> = {
   LEAD: "Lead",
   PROSPECTO: "Prospecto",

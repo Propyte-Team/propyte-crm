@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 // validación acepte lo que esa lista dice, sin necesitar el cliente de Prisma generado
 // (así corre también en el contenedor, donde el cliente no se puede descargar).
 
-import { LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { createContactSchema } from "./contact";
 
 /** Un contacto mínimo válido, al que solo se le cambia la fuente. */
@@ -62,5 +62,31 @@ describe("createContactSchema — leadSource sale de LEAD_SOURCE_ORDER (#730)", 
     // número para que un cambio accidental de la lista se note aquí también.
     expect(LEAD_SOURCE_ORDER).toHaveLength(21);
     expect(new Set(LEAD_SOURCE_ORDER).size).toBe(21);
+  });
+});
+
+// #730, la otra mitad: el z.enum de contactType tenía 6 de los 9 valores.
+describe("createContactSchema — contactType sale de CONTACT_TYPE_ORDER (#730)", () => {
+  it("acepta los 9 tipos, uno por uno", () => {
+    for (const tipo of CONTACT_TYPE_ORDER) {
+      const r = createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: tipo });
+      expect(r.success, `rechazó "${tipo}"`).toBe(true);
+    }
+  });
+
+  it("acepta COMPRADOR, que es el valor por defecto del modelo", () => {
+    // El más importante de los tres que faltaban: Prisma lo pone por defecto y el intake
+    // lo escribe, así que el tipo con el que nace la mayoría de los contactos no era
+    // elegible en este esquema.
+    const r = createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: "COMPRADOR" });
+
+    expect(r.success).toBe(true);
+  });
+
+  it("sigue siendo opcional y sigue rechazando lo inventado", () => {
+    expect(createContactSchema.safeParse(contactoCon("MESSENGER")).success).toBe(true);
+    expect(
+      createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: "VENDEDOR" }).success
+    ).toBe(false);
   });
 });
