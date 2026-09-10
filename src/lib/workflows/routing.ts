@@ -3,7 +3,7 @@
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
 import { createSlaTimer, cumplirOrphan } from "./sla";
-import { ROLES_RUTEABLES, usuarioRuteableWhere } from "./ruteables";
+import { ROLES_RUTEABLES, usuarioRuteableWhere, mandoWhere } from "./ruteables";
 import {
   motivoSinAsignar,
   explicacion,
@@ -67,12 +67,10 @@ async function sendToPond(
   await createSlaTimer(contact.id, "ORPHAN").catch((err) =>
     console.error("[routing] pond: no se pudo crear el SlaTimer ORPHAN:", err),
   );
-  const managerWhere = {
-    role: { in: ["GERENTE", "DIRECTOR", "ADMIN"] as never },
-    isActive: true,
-    deletedAt: null,
-    NOT: { email: { endsWith: ".local" } },
-  };
+  // #756: estas cuatro condiciones salieron a `./ruteables` sin cambiar de valor, porque el
+  // aviso de vencimiento necesita EL MISMO mando y una segunda copia habría divergido —
+  // el defecto de la #715 A-03, la #730 y la #682.
+  const managerWhere = mandoWhere();
   let managers = await prisma.user.findMany({
     where: { ...managerWhere, ...(contact.targetPlaza ? { plaza: contact.targetPlaza as never } : {}) },
     select: { id: true },

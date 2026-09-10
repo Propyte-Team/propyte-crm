@@ -3,6 +3,14 @@
 import prisma from "@/lib/db";
 import { selectSlaPolicy } from "./sla-select";
 import { computeDueAt, type BusinessHours } from "./business-hours";
+import { mandoWhere } from "./ruteables";
+import {
+  destinoDelVencimiento,
+  tituloDelAviso,
+  mensajeDelAviso,
+  explicacionSinAviso,
+  type TipoDeReloj,
+} from "./escalacion";
 
 // Contexto mínimo para el DSL de condiciones (contacto + attribution + plaza del asesor).
 async function loadSlaContext(contactId: string): Promise<Record<string, unknown>> {
@@ -108,7 +116,112 @@ export async function cumplirOrphan(contactId: string): Promise<number> {
   return res.count;
 }
 
-// Cron: marca BREACHED los vencidos, encadena RETRY tras FIRST_TOUCH y emite sla.breach.
+/**
+ * #756: a quién se le avisa de un vencimiento, y el aviso en sí.
+ *
+ * Va aparte del bucle para que `checkSlaBreaches` siga leyéndose de un tirón, y porque esto
+ * es best-effort: un fallo aquí NUNCA debe impedir que el reloj se marque, que se encadene
+ * el RETRY o que se emita el evento. La dirección del fallo es la buena — perder un aviso es
+ * malo, dejar de marcar vencimientos es perder el indicador entero.
+ */
+async function avisarDelVencimiento(timer: {
+  id: string;
+  contactId: string;
+  type: string;
+}): Promise<void> {
+  const contacto = await prisma.contact.findUnique({
+    where: { id: timer.contactId },
+    select: {
+      firstName: true,
+      lastName: true,
+      leadSource: true,
+      targetPlaza: true,
+      assignedToId: true,
+      assignedTo: { select: { id: true, email: true, teamLeaderId: true, plaza: true } },
+    },
+  });
+  if (!contacto) return;
+
+  const asignado = contacto.assignedTo as
+    | { id: string; email: string; teamLeaderId: string | null; plaza: string | null }
+    | null;
+
+  const destino = destinoDelVencimiento(timer.type as TipoDeReloj, {
+    asesorId: contacto.assignedToId ?? null,
+    email: asignado?.email ?? null,
+    teamLeaderId: asignado?.teamLeaderId ?? null,
+    // La plaza del ASESOR, no la del contacto: se escala a quien manda sobre esa persona.
+    plaza: asignado?.plaza ?? null,
+  });
+
+  if (destino.a === "nadie") {
+    // Se registra el motivo en vez de no hacer nada. Un aviso que no se manda y no se
+    // explica es indistinguible de uno que se perdió, y esta tarjeta nace justamente de
+    // que el vencimiento no dejaba rastro para una persona.
+    console.warn(
+      `[sla] ${timer.type} vencido en ${timer.contactId} sin avisar a nadie: ${explicacionSinAviso(destino.motivo)}`,
+    );
+    return;
+  }
+
+  const nombre = `${contacto.firstName} ${contacto.lastName}`.trim();
+  const tipo = timer.type as TipoDeReloj;
+  const base = {
+    title: tituloDelAviso(tipo),
+    type: "sla_breach",
+    link: `/contacts/${timer.contactId}`,
+  };
+
+  if (destino.a === "asesor") {
+    await prisma.notification.create({
+      data: {
+        ...base,
+        userId: destino.usuarioId,
+        message: mensajeDelAviso(tipo, nombre, contacto.leadSource, false),
+      },
+    });
+    return;
+  }
+
+  // Escalado. Al líder de equipo si el asesor tiene uno; si no, a la gerencia de su plaza,
+  // con caída a toda la gerencia — el mismo orden que `sendToPond`, para que un problema de
+  // leads siempre acabe en el escritorio de alguien.
+  let destinatarios: Array<{ id: string }> = [];
+  if (destino.teamLeaderId) {
+    destinatarios = [{ id: destino.teamLeaderId }];
+  } else {
+    const donde = mandoWhere();
+    destinatarios = await prisma.user.findMany({
+      where: { ...donde, ...(destino.plaza ? { plaza: destino.plaza as never } : {}) },
+      select: { id: true },
+    });
+    if (destinatarios.length === 0) {
+      destinatarios = await prisma.user.findMany({ where: donde, select: { id: true } });
+    }
+  }
+
+  if (destinatarios.length === 0) {
+    console.warn(`[sla] ${timer.type} vencido en ${timer.contactId}: no hay mando a quien escalar`);
+    return;
+  }
+
+  await prisma.notification.createMany({
+    data: destinatarios.map((d) => ({
+      ...base,
+      userId: d.id,
+      message: mensajeDelAviso(tipo, nombre, contacto.leadSource, true),
+    })),
+  });
+}
+
+// Cron: marca BREACHED los vencidos, encadena RETRY tras FIRST_TOUCH, avisa (#756) y emite
+// sla.breach.
+//
+// #756 — sobre repetir avisos: este barrido filtra `status: "RUNNING"` y la fila pasa a
+// BREACHED en la misma iteración, así que un reloj no se vuelve a ver por más veces que
+// corra el cron. Esa es toda la idempotencia que hace falta hoy, y hay una prueba que la
+// fija: si algún día algo devuelve un timer a RUNNING, el aviso se duplicaría y conviene que
+// la prueba lo diga antes que el usuario.
 export async function checkSlaBreaches(limit = 100): Promise<number> {
   const due = await prisma.slaTimer.findMany({
     where: { status: "RUNNING", dueAt: { lte: new Date() } },
@@ -121,6 +234,11 @@ export async function checkSlaBreaches(limit = 100): Promise<number> {
       where: { id: timer.id },
       data: { status: "BREACHED", breachedAt: new Date() },
     });
+    // Best-effort y NUNCA antes de marcar: si el aviso tumbara el barrido, un fallo de la
+    // tabla de notificaciones dejaría de marcar vencimientos, que es peor que no avisar.
+    await avisarDelVencimiento(timer).catch((err) =>
+      console.error(`[sla] no se pudo avisar del vencimiento de ${timer.id}:`, err),
+    );
     await emitEvent("sla.breach", "contact", timer.contactId, {
       timerType: timer.type,
       dueAt: timer.dueAt.toISOString(),
