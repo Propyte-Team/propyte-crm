@@ -3,7 +3,38 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { ContactType, LeadSource, LeadTemperature } from "@prisma/client";
 import { withChangeSource } from "@/lib/audit/change-context";
+
+// Auditoría 2026-09-10: el PUT de abajo SÍ validaba con zod estricto; el POST metía
+// `body.*` crudo en `prisma.contact.create`. Consecuencias medidas sobre el código:
+//
+//   · Un `firstName` numérico, un objeto en `tags` o un `assignedToId` que no es un uuid
+//     llegaban a Prisma y salían como 500 «Error al crear contacto», sin decir qué campo.
+//   · `contactType` y `temperature` fuera del enum: mismo 500 opaco.
+//   · Sin `.strict()`, un campo mal escrito (`firstname`, `phoneNumber`) se ignoraba en
+//     silencio y el contacto se creaba a medias — el peor de los dos fallos, porque
+//     devuelve 201 y nadie va a mirar.
+//
+// El esquema de creación comparte forma con el de actualización, pero aquí los tres
+// campos que el CRM necesita para dar de alta a alguien son OBLIGATORIOS.
+const zapierContactCreateSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(100),
+    lastName: z.string().trim().min(1).max(100),
+    phone: z.string().trim().min(8).max(20),
+    email: z.string().email().optional().nullable(),
+    secondaryPhone: z.string().trim().min(8).max(20).optional().nullable(),
+    contactType: z.nativeEnum(ContactType).optional(),
+    leadSource: z.nativeEnum(LeadSource).optional(),
+    leadSourceDetail: z.string().max(200).optional().nullable(),
+    residenceCity: z.string().max(100).optional().nullable(),
+    residenceCountry: z.string().max(100).optional().nullable(),
+    temperature: z.nativeEnum(LeadTemperature).optional(),
+    assignedToId: z.string().uuid().optional().nullable(),
+    tags: z.array(z.string().max(50)).max(30).optional(),
+  })
+  .strict();
 
 const zapierContactUpdateSchema = z.object({
   id: z.string().uuid(),
@@ -12,12 +43,27 @@ const zapierContactUpdateSchema = z.object({
   email: z.string().email().optional().nullable(),
   phone: z.string().min(8).max(20).optional(),
   secondaryPhone: z.string().min(8).max(20).optional().nullable(),
-  contactType: z.enum(["LEAD", "CLIENT", "INVESTOR", "REFERRAL"]).optional(),
-  leadSource: z.string().max(50).optional(),
+  // 🚨 Auditoría 2026-09-10: aquí decía `z.enum(["LEAD","CLIENT","INVESTOR","REFERRAL"])`
+  // y `temperature: z.enum(["COLD","WARM","HOT"])`. NINGUNO de esos tres valores de
+  // contactType existe en el enum de la base, que es LEAD · PROSPECTO · CLIENTE ·
+  // INVERSIONISTA · BROKER_EXTERNO · REFERIDO · EMPLEO · COMPRADOR · REFERIDOR. Sólo
+  // coincidía "LEAD". O sea que este PUT llevaba tiempo:
+  //
+  //   · rechazando con 400 los valores VÁLIDOS (CLIENTE, PROSPECTO, COMPRADOR…), y
+  //   · aceptando CLIENT / INVESTOR / REFERRAL para que Prisma los rechazara después con
+  //     un 500 opaco.
+  //
+  // Nadie lo notó porque el `data` se armaba como `Record<string, unknown>` y TypeScript
+  // no podía cruzarlo con el enum. Se descubrió al tipar el POST de arriba.
+  //
+  // Ahora los tres salen de `z.nativeEnum` sobre el enum de Prisma: si el schema cambia,
+  // esto cambia con él y no hay una segunda lista que mantener a mano.
+  contactType: z.nativeEnum(ContactType).optional(),
+  leadSource: z.nativeEnum(LeadSource).optional(),
   leadSourceDetail: z.string().max(200).optional().nullable(),
   residenceCity: z.string().max(100).optional().nullable(),
   residenceCountry: z.string().max(100).optional().nullable(),
-  temperature: z.enum(["COLD", "WARM", "HOT"]).optional(),
+  temperature: z.nativeEnum(LeadTemperature).optional(),
   assignedToId: z.string().uuid().optional().nullable(),
   tags: z.array(z.string()).optional(),
 }).strict();
@@ -29,23 +75,32 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+
+    const parsed = zapierContactCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Datos inválidos", details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    const d = parsed.data;
 
     const contact = await prisma.contact.create({
       data: {
-        firstName: body.firstName,
-        lastName: body.lastName,
-        email: body.email || null,
-        phone: body.phone,
-        secondaryPhone: body.secondaryPhone || null,
-        contactType: body.contactType || "LEAD",
-        leadSource: body.leadSource || "OTRO",
-        leadSourceDetail: body.leadSourceDetail || null,
-        residenceCity: body.residenceCity || null,
-        residenceCountry: body.residenceCountry || null,
-        temperature: body.temperature || "COLD",
-        assignedToId: body.assignedToId || null,
-        tags: body.tags || [],
+        firstName: d.firstName,
+        lastName: d.lastName,
+        email: d.email || null,
+        phone: d.phone,
+        secondaryPhone: d.secondaryPhone || null,
+        contactType: d.contactType ?? "LEAD",
+        leadSource: d.leadSource || "OTRO",
+        leadSourceDetail: d.leadSourceDetail || null,
+        residenceCity: d.residenceCity || null,
+        residenceCountry: d.residenceCountry || null,
+        temperature: d.temperature ?? "COLD",
+        assignedToId: d.assignedToId || null,
+        tags: d.tags ?? [],
       },
     });
 

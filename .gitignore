@@ -24,9 +24,11 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
-.env
-.env.production
+# Auditoría 2026-09-10: se listaban .env, .env*.local y .env.production, pero NO
+# .env.development ni .env.staging ni .env.test — que traen credenciales igual. Se invierte
+# el criterio: se ignora TODO .env* y se exceptúa el único que debe viajar (.env.example,
+# más abajo). Así un archivo de entorno nuevo queda protegido por defecto.
+.env*
 
 # vercel
 .vercel

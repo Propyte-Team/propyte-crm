@@ -44,6 +44,17 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!object || !id) return NextResponse.json({ error: "Faltan object/id" }, { status: 400 });
 
+  // Auditoría 2026-09-10: la #711 puso este control en POST y en DELETE (abajo) pero se
+  // dejó el GET, que es el que más enseña. Cualquier usuario autenticado ponía en la URL
+  // el id de un contacto o negocio ajeno y recibía sus vínculos con los nombres YA
+  // RESUELTOS por `resolveNames` — incluido el formato de negocio, que lleva el valor
+  // estimado dentro del propio nombre ("Nombre Apellido — $4,500,000").
+  //
+  // Mismo 404 que si el record no existiera: un 403 confirmaría que sí existe.
+  if (!(await puedeTocarRecord(object, id, session.user, "ver"))) {
+    return NextResponse.json({ error: "Record no encontrado o sin acceso" }, { status: 404 });
+  }
+
   const links = await prisma.recordLink.findMany({
     where: { OR: [{ fromObject: object, fromId: id }, { toObject: object, toId: id }] },
     include: { relationship: { select: { name: true, relatedListLabel: true } }, label: true },

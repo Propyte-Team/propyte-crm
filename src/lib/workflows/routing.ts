@@ -13,7 +13,9 @@ import {
 import { withChangeSource } from "@/lib/audit/change-context";
 import { createHash } from "crypto";
 
-const RR_POINTER_KEY = "workflows.routing.rr_pointer";
+// `rr_cursor` y no `rr_pointer`: cambió lo que se guarda (un contador, no el id del
+// último elegido) y las filas viejas no se pueden reinterpretar. Ver `roundRobinPick`.
+const RR_POINTER_KEY = "workflows.routing.rr_cursor";
 // AUD-20260710-09: el round-robin asignó un lead REAL a un usuario QA recién creado.
 // Gate anti-test doble: lista configurable de ids excluidos (SystemConfig) + convención
 // de correos internos/QA (dominio ".local": audit-temp@propyte.local, qa-asesor@propyte.local…).
@@ -36,21 +38,72 @@ function rrPointerKey(ruleId: string, userIds: string[]): string {
   return `${RR_POINTER_KEY}:${ruleId}:${huella}`;
 }
 
+/**
+ * Elige al siguiente asesor del turno, avanzando el puntero de forma ATÓMICA.
+ *
+ * ## El fallo que esto corrige (auditoría 2026-09-10)
+ *
+ * Antes eran tres operaciones sueltas: `findUnique` del puntero → calcular el siguiente en
+ * JavaScript → `upsert` del nuevo valor. Entre la lectura y la escritura no había nada que
+ * impidiera que otro lead entrara en medio.
+ *
+ * Dos leads simultáneos —una ráfaga de Meta Lead Ads, dos reintentos de webhook, el tick
+ * del cron pisándose con un alta manual— leían el MISMO puntero, calculaban el MISMO
+ * siguiente y los dos se lo asignaban al mismo asesor. El puntero avanzaba una sola
+ * posición, así que además el asesor que le tocaba se quedaba sin turno.
+ *
+ * En un CRM inmobiliario eso no es un detalle de reparto: los leads son la materia prima
+ * de la comisión, y el turno es el acuerdo de cómo se reparten.
+ *
+ * ## Por qué un contador y no el id del último elegido
+ *
+ * Postgres puede incrementar un número dentro de una sola sentencia y devolver el
+ * resultado; no puede "buscar el siguiente elemento de este array de JavaScript". Así que
+ * lo que se guarda ahora es un contador monótono y el índice sale de `contador % n`.
+ *
+ * La clave sigue llevando la huella de la lista de candidatos (ver `rrPointerKey`, #728),
+ * así que cada lista tiene su propio contador y el módulo siempre se calcula sobre la
+ * lista a la que ese contador pertenece.
+ *
+ * El prefijo de la clave cambia a `rr_cursor` a propósito: las filas viejas de
+ * `rr_pointer` guardan un uuid (texto), y este `UPDATE` lo trataría como número. Con
+ * prefijo nuevo las viejas quedan huérfanas y se ignoran — el único efecto es que el
+ * primer lead tras el despliegue reinicia el turno en cada lista, que es exactamente lo
+ * que ya pasaba cada vez que la lista de candidatos cambiaba.
+ */
 async function roundRobinPick(userIds: string[], ruleId: string): Promise<string | null> {
   if (userIds.length === 0) return null;
   const key = rrPointerKey(ruleId, userIds);
-  const cfg = await prisma.systemConfig.findUnique({ where: { key } });
-  const last = typeof cfg?.value === "string" ? cfg.value : "";
-  const lastIdx = userIds.indexOf(last);
-  // Explícito: sin puntero previo, o si el último elegido salió del pool, el turno
-  // arranca en el primero. Antes esto pasaba por accidente aritmético: (-1 + 1) % n === 0.
-  const next = userIds[lastIdx === -1 ? 0 : (lastIdx + 1) % userIds.length];
-  await prisma.systemConfig.upsert({
-    where: { key },
-    update: { value: next },
-    create: { key, value: next },
-  });
-  return next;
+
+  try {
+    // UNA sentencia: inserta el contador en 1, o lo incrementa si ya existe, y devuelve el
+    // valor resultante. `ON CONFLICT DO UPDATE` toma el lock de la fila, así que dos
+    // llamadas concurrentes se serializan y reciben números distintos.
+    const filas = await prisma.$queryRaw<Array<{ n: number }>>`
+      INSERT INTO "propyte_crm"."system_config" ("id", "key", "value", "updatedAt")
+      VALUES (gen_random_uuid(), ${key}, '1'::jsonb, now())
+      ON CONFLICT ("key") DO UPDATE
+        SET "value" = (COALESCE(("system_config"."value")::text::int, 0) + 1)::text::jsonb,
+            "updatedAt" = now()
+      RETURNING (("value")::text::int) AS n
+    `;
+
+    const n = filas[0]?.n;
+    if (typeof n !== "number" || !Number.isFinite(n)) {
+      throw new Error(`el contador de turno devolvió ${JSON.stringify(n)}`);
+    }
+    // El contador arranca en 1 → el primer lead va al primer candidato.
+    return userIds[(n - 1) % userIds.length];
+  } catch (err) {
+    // Nunca dejar un lead sin asignar por un fallo del contador: se cae al primer
+    // candidato, que es el mismo comportamiento que tenía la versión anterior cuando no
+    // había puntero previo. El reparto se desequilibra; el lead no se pierde.
+    console.error(
+      `[routing] el turno atómico falló para ${key}; se asigna al primer candidato:`,
+      err,
+    );
+    return userIds[0];
+  }
 }
 
 // Pond (#678): un lead que ninguna regla pudo asignar NO se pierde en silencio —

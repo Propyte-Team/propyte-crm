@@ -29,9 +29,36 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "verify_token inválido" }, { status: 403 });
 }
 
+// Auditoría 2026-09-10: este webhook falla CERRADO, igual que el de DM desde #754.
+//
+// Antes, sin `META_WA_APP_SECRET` configurada, la función devolvía `true` — o sea que la
+// ausencia de una variable de entorno abría el endpoint a cualquiera que conociera la URL,
+// y la URL está escrita en el comentario de cabecera de este mismo archivo. Quien la
+// encontrara podía inyectar mensajes entrantes falsos: dar de alta contactos, disparar al
+// bot contra ellos, arrancar temporizadores de SLA y ensuciar el inbox.
+//
+// La #754 cerró exactamente este agujero en `webhooks/meta-dm` y dejó el razonamiento
+// escrito ahí. Este endpoint —el de MAYOR volumen de los dos— se quedó fuera de aquel
+// cambio; esto es la otra mitad.
+//
+// La dirección correcta del fallo es cerrar. Un webhook que rechaza todo se nota en horas
+// —dejan de entrar mensajes y el inbox se congela, que es justo lo que la revisión diaria
+// publica—; uno que acepta todo no se nota nunca. El aviso nombra la variable para que
+// quien lea los registros sepa qué poner sin tener que averiguarlo.
+//
+// ⚠️ Al desplegar: confirma que META_WA_APP_SECRET está puesta en el entorno ANTES de
+// subir esto. Si no lo está, el webhook pasa de aceptar todo a rechazar todo y deja de
+// entrar cualquier mensaje de WhatsApp.
 function validSignature(rawBody: string, signature: string | null): boolean {
   const appSecret = process.env.META_WA_APP_SECRET?.trim();
-  if (!appSecret) return true; // sin secret configurado no se valida (configurarlo en prod)
+  if (!appSecret) {
+    console.error(
+      "[whatsapp-meta] META_WA_APP_SECRET no está configurada: se RECHAZA el webhook en vez " +
+        "de aceptarlo sin verificar. Ponla en el entorno (ver .env.example) para volver a " +
+        "recibir mensajes de WhatsApp.",
+    );
+    return false;
+  }
   if (!signature?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex");
   try {
@@ -96,7 +123,11 @@ const STATUS_MAP: Record<string, "SENT" | "DELIVERED" | "READ" | "FAILED"> = {
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
-  if (!validSignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+  const sigHeader = req.headers.get("x-hub-signature-256");
+  if (!validSignature(rawBody, sigHeader)) {
+    // Se registra si la cabecera venía o no, nunca su valor: distingue «Meta no firmó»
+    // de «la firma no cuadra», que son dos diagnósticos distintos.
+    console.warn(`[whatsapp-meta] firma inválida → 401 (header ${sigHeader ? "presente" : "ausente"})`);
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
@@ -115,6 +146,16 @@ export async function POST(req: NextRequest) {
   try {
     body = JSON.parse(rawBody);
   } catch {
+    console.warn("[whatsapp-meta] JSON inválido → 400");
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
+  // El otro gemelo de la #755, que allí se arregló sólo en meta-dm: `JSON.parse` acepta
+  // `null`, `42` y `"texto"` sin lanzar, así que el catch de arriba no alcanza. El tipo de
+  // `body` describe la forma esperada, no la valida. Sin esto un cuerpo de cuatro bytes
+  // `null` pasaba el parse y reventaba en `body.entry` con un 500 no manejado, en vez del
+  // 400 que corresponde.
+  if (!body || typeof body !== "object") {
+    console.warn("[whatsapp-meta] cuerpo JSON que no es un objeto → 400");
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 

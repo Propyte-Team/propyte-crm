@@ -161,7 +161,16 @@ export async function processEvent(eventId: string): Promise<void> {
       const specs = walkNodes(parsedActions.data, ctx);
       for (const spec of specs) {
         const runAfter = new Date(Date.now() + (spec.delayMinutes ?? 0) * 60_000);
-        await enqueueAction({
+        // Auditoría 2026-09-10: el `false` de `enqueueAction` (colisión de dedupeKey) se
+        // descartaba sin más. Como la clave incluye `dayBucket(runAfter)`, una regla sólo
+        // puede encolar la misma acción UNA VEZ AL DÍA por entidad y ruta — así que un
+        // segundo disparo legítimo (dos cambios de etapa el mismo día, por ejemplo) se
+        // caía en silencio y desde fuera parecía que la regla no había disparado.
+        //
+        // La idempotencia diaria se mantiene: es la protección contra bucles de eventos
+        // (§D.7). Lo que cambia es que ahora queda rastro de cuándo actúa, para poder
+        // distinguir «la regla no aplicó» de «aplicó y se descartó por repetida».
+        const encolada = await enqueueAction({
           ruleId: rule.id,
           actionType: spec.actionType as never,
           entityType: event.entityType,
@@ -170,6 +179,12 @@ export async function processEvent(eventId: string): Promise<void> {
           dedupeKey: `${rule.id}:${event.entityId}:${spec.actionType}:${spec.path}:${dayBucket(runAfter)}`,
           runAfter,
         });
+        if (!encolada) {
+          console.info(
+            `[workflows] regla "${rule.name}": ${spec.actionType} para ${event.entityType} ` +
+              `${event.entityId} ya estaba encolada hoy (dedupeKey diario) — no se repite`,
+          );
+        }
       }
       await prisma.automationRule.update({ where: { id: rule.id }, data: { lastFiredAt: new Date() } });
     }

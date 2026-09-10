@@ -3,6 +3,7 @@
 import type { BotConfigResolved } from "./config";
 import { getTonePreset } from "./tone-presets";
 import { catalogBrief } from "./hub-catalog";
+import { resolveBotModel } from "./model";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 
@@ -61,7 +62,7 @@ export async function askClaude(opts: {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return null; // sin llave → quien llama decide el fallback
 
-  const model = opts.model?.trim() || process.env.BOT_MODEL?.trim() || "claude-sonnet-5";
+  const model = resolveBotModel(opts.model);
   const system = opts.system ?? SAGE_SYSTEM_PROMPT;
   const body = buildClaudeRequestBody({
     model,
@@ -70,15 +71,7 @@ export async function askClaude(opts: {
     maxTokens: opts.maxTokens ?? 400,
   });
 
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const res = await pedirAClaude(body, apiKey);
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
@@ -87,6 +80,85 @@ export async function askClaude(opts: {
   const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
   const text = data.content?.find((b) => b.type === "text")?.text;
   return text?.trim() || null;
+}
+
+// ─────────────────── Timeout y reintento (auditoría 2026-09-10) ───────────────────
+//
+// Esta era la ÚNICA de las cuatro llamadas a la API que no tenía límite de tiempo.
+// `classify.ts` y `playbook/extract.ts` ya abortaban a los 4s, y el comentario de
+// extract.ts nombra el motivo: «sin límite, una API lenta puede arrastrar la request
+// completa al 502 de Hostinger». Justo el camino que le contesta al cliente
+// (bot-respond.ts) era el que corría sin red.
+//
+// El presupuesto sale del `maxDuration = 30` de los webhooks que invocan al bot, y ahí
+// dentro cabe también la ingesta del mensaje. Peor caso de esta función:
+// 10s + 0.4s + 10s ≈ 20.4s, que deja margen. No se sube el timeout ni se añade un
+// segundo reintento sin recalcular contra ese 30.
+const TIMEOUT_MS = 10_000;
+const REINTENTOS = 1; // un solo reintento: el presupuesto no da para más
+const ESPERA_BASE_MS = 400;
+
+/** 429 y 5xx son transitorios; 400/401/404 no se arreglan repitiéndolos. */
+function vaAReintentar(status: number): boolean {
+  return status === 429 || status === 408 || status >= 500;
+}
+
+/**
+ * Un POST a la API con timeout, y reintento sólo ante fallos transitorios.
+ *
+ * Antes, un 429 o un 529 (sobrecarga) dejaba al prospecto sin respuesta: `askClaude`
+ * lanzaba, `botRespond` propagaba y el webhook lo registraba y seguía. Desde fuera se veía
+ * como un bot que simplemente no contestó ese mensaje.
+ */
+async function pedirAClaude(body: unknown, apiKey: string): Promise<Response> {
+  let ultimoError: unknown = null;
+
+  for (let intento = 0; intento <= REINTENTOS; intento++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (intento < REINTENTOS && vaAReintentar(res.status)) {
+        // `retry-after` de la propia API manda sobre el backoff, topado para no
+        // comerse el presupuesto del webhook.
+        const sugerido = Number(res.headers.get("retry-after")) * 1000;
+        const espera = Number.isFinite(sugerido) && sugerido > 0
+          ? Math.min(sugerido, ESPERA_BASE_MS * 4)
+          : ESPERA_BASE_MS * (intento + 1);
+        console.warn(`[bot/claude] ${res.status} transitorio; reintento en ${espera}ms`);
+        await new Promise((r) => setTimeout(r, espera));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      // Timeout (AbortError) o fallo de red. Se reintenta una vez; si era el último
+      // intento, se propaga para que quien llama lo registre.
+      ultimoError = err;
+      if (intento < REINTENTOS) {
+        console.warn(
+          `[bot/claude] la llamada falló (${err instanceof Error ? err.name : "error"}); un reintento`,
+        );
+        await new Promise((r) => setTimeout(r, ESPERA_BASE_MS));
+        continue;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  throw ultimoError instanceof Error
+    ? ultimoError
+    : new Error("Claude API: la llamada no se pudo completar");
 }
 
 // --- Ensamblado de prompt en 4 capas (marca / tono / objetivo / catálogo) ---
