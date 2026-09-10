@@ -6,6 +6,7 @@ import { hash } from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { sendLoginCode } from "@/lib/email/mailer";
 import { z } from "zod";
+import { registrarIntento, olvidarIntentos, ipDe } from "@/lib/security/rate-limit";
 import crypto from "crypto";
 
 const requestCodeSchema = z.object({
@@ -25,6 +26,26 @@ export async function POST(req: NextRequest) {
     }
 
     const email = parsed.data.email.toLowerCase().trim();
+
+    // #714 (S-06): tope de intentos ANTES de tocar la base. El riesgo de este endpoint no
+    // es adivinar nada —el codigo se genera aqui— es usar el CRM para bombardear de correos
+    // a una persona, y de paso hacerle bcrypt(12) por cada peticion.
+    //
+    // Se cuenta por correo Y por IP, y hacen falta las dos: solo por correo, quien quiera
+    // molestar rota correos; solo por IP, quien tenga muchas IPs igual bombardea a UNA
+    // persona. El 429 no filtra nada: se cuenta antes de saber si el correo existe, asi que
+    // dice «mandaste muchas», nunca «este correo esta registrado».
+    const ip = ipDe(req.headers);
+    const porCorreo = registrarIntento("otp_solicitar", email);
+    const porIp = ip ? registrarIntento("otp_solicitar", `ip:${ip}`) : { permitido: true, esperarMs: 0 };
+    if (!porCorreo.permitido || !porIp.permitido) {
+      const esperarMs = Math.max(porCorreo.esperarMs, porIp.esperarMs);
+      return NextResponse.json(
+        { error: "Demasiadas solicitudes. Intenta de nuevo en unos minutos." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(esperarMs / 1000)) } }
+      );
+    }
+
 
     // Buscar usuario activo
     const user = await prisma.user.findUnique({
