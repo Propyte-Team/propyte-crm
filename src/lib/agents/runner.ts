@@ -5,6 +5,7 @@
 import prisma from "@/lib/db";
 import { buildSystemPrompt } from "@/lib/bot/claude";
 import { getBotConfig } from "@/lib/bot/config";
+import { resolveBotModel } from "@/lib/bot/model";
 import { toolsForAgent, type AgentTool } from "./tools";
 import { MAX_STEPS_AGOTADOS, RESPUESTA_TRUNCADA } from "./run-status";
 
@@ -111,7 +112,14 @@ export async function runAgent(
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: process.env.BOT_MODEL ?? "claude-sonnet-4-6",
+          // `??` no atrapa la cadena vacía: con `BOT_MODEL=` en el entorno el modelo se
+          // iba en blanco y la API devolvía 400 en CADA corrida de agente. Y sin `.trim()`
+          // un `\n` pegado de más en la variable daba un modelo inexistente — el error de
+          // configuración más común de este repositorio (ver lib/crypto/secretos.ts).
+          // `resolveBotModel` es la MISMA resolución que usa lib/bot/claude.ts, contra el
+          // allowlist de server/bot-config.schema.ts: leer la variable en crudo aquí
+          // permitía un modelo que la configuración del bot habría rechazado.
+          model: resolveBotModel(),
           max_tokens: maxTokens,
           system,
           messages,

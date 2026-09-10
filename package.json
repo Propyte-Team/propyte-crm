@@ -16,7 +16,8 @@
     "seed:admins": "tsx scripts/seed-admin-users.ts",
     "seed:permissions": "tsx scripts/seed-permissions.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "node --max-old-space-size=6144 ./node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
@@ -45,6 +46,7 @@
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
     "@twilio/voice-sdk": "^2.18.0",
+    "@types/sanitize-html": "^2.16.1",
     "@xyflow/react": "^12.11.1",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
@@ -62,6 +64,7 @@
     "react-dom": "^18.3.1",
     "recharts": "^2.15.0",
     "resend": "^6.9.3",
+    "sanitize-html": "^2.17.7",
     "sharp": "^0.34.5",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",

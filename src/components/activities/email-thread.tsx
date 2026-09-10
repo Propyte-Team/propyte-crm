@@ -53,9 +53,22 @@ export function EmailThread({ threadId }: { threadId: string }) {
             <span className="shrink-0">{format(new Date(m.date), "d MMM, HH:mm", { locale: es })}</span>
           </div>
           {m.bodyHtml ? (
-            <div
-              className="prose-email mt-1.5 max-h-64 overflow-y-auto text-[12px] text-[color:var(--text-secondary)] [&_a]:underline"
-              dangerouslySetInnerHTML={{ __html: m.bodyHtml }}
+            // Auditoría 2026-09-10: segunda capa. El HTML ya viene saneado del servidor
+            // (lib/email/sanitize.ts, aplicado en getThreadMessages), pero se pinta dentro
+            // de un iframe con `sandbox` VACÍO — sin allow-scripts, sin allow-same-origin,
+            // sin allow-forms. Un sandbox así no ejecuta nada: ni `<script>`, ni
+            // `onerror`, ni `javascript:`. Si algún día alguien sirve HTML por otra ruta
+            // sin pasar por el saneador, esto sigue conteniéndolo.
+            //
+            // `srcDoc` y no `src`: el contenido va inline, no hay petición que interceptar.
+            // Altura fija porque con el sandbox vacío el documento de dentro no puede
+            // mandar su alto por postMessage — y el diseño ya acotaba a max-h-64.
+            <iframe
+              sandbox=""
+              srcDoc={`<!doctype html><meta charset="utf-8"><base target="_blank"><style>html,body{margin:0;padding:0;font:12px system-ui,-apple-system,sans-serif;color:#404040;overflow-wrap:break-word}img{max-width:100%;height:auto}a{color:inherit;text-decoration:underline}table{max-width:100%}</style>${m.bodyHtml}`}
+              title={`Cuerpo del correo: ${m.subject || "(sin asunto)"}`}
+              className="mt-1.5 h-64 w-full border-0 bg-white"
+              loading="lazy"
             />
           ) : (
             <p className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap text-[12px] text-[color:var(--text-secondary)]">

@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { Prisma, UserRole } from "@prisma/client";
+import { Prisma, UserRole, Plaza } from "@prisma/client";
 
 // Roles con acceso completo a todos los usuarios
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -101,7 +101,18 @@ export async function GET(request: NextRequest) {
       }
       where.role = validRoles.length === 1 ? validRoles[0] : { in: validRoles };
     }
-    if (plaza) where.plaza = plaza as any;
+    // Una plaza fuera del enum reventaba dentro de Prisma y salía como 500 «error interno»,
+    // cuando el dato malo lo mandó quien llama. Se valida igual que `role` doce líneas
+    // arriba: 400 nombrando los valores permitidos.
+    if (plaza) {
+      if (!Object.values(Plaza).includes(plaza as Plaza)) {
+        return NextResponse.json(
+          { error: `Plaza inválida. Valores permitidos: ${Object.values(Plaza).join(", ")}` },
+          { status: 400 }
+        );
+      }
+      where.plaza = plaza as Plaza;
+    }
     if (isActive !== null && isActive !== undefined) {
       where.isActive = isActive === "true";
     }

@@ -39,6 +39,64 @@ export async function enqueueAction(input: {
   }
 }
 
+// ─────────────── Rescate de acciones encalladas (auditoría 2026-09-10) ───────────────
+//
+// `runQueue` marca la fila como RUNNING para reclamarla, y sólo la mueve a DONE/FAILED
+// cuando `executeAction` termina. Si el proceso se muere en medio —un reinicio del VPS, un
+// despliegue, o el `maxDuration = 60` del tick agotado a mitad de un envío— la fila se
+// queda en RUNNING PARA SIEMPRE: el selector de abajo sólo mira `status: "PENDING"`, así
+// que nadie la vuelve a tomar y nadie la marca como fallida.
+//
+// El resultado es la peor clase de fallo: silencioso. Un correo, un WhatsApp o una tarea
+// de seguimiento que el motor dio por encolada y que no se envía nunca, sin aparecer en
+// ningún contador de errores. Antes de esto no había una sola consulta en el repositorio
+// que leyera `ActionQueue` con estado RUNNING.
+//
+// No hace falta migración: `startedAt`, `attempts` y `maxAttempts` ya están en el modelo.
+//
+// El umbral es holgado a propósito. Una acción legítima no pasa de los 60s que dura el
+// tick; diez minutos hace imposible rescatar una que todavía esté corriendo, que sería
+// duplicar el envío — justo lo que el `dedupeKey` existe para evitar y que aquí no
+// aplicaría, porque la fila es la misma.
+const ENCALLADA_MS = 10 * 60_000;
+
+export async function recuperarEncalladas(
+  batch = 50,
+): Promise<{ reencoladas: number; agotadas: number }> {
+  const limite = new Date(Date.now() - ENCALLADA_MS);
+  const encalladas = await prisma.actionQueue.findMany({
+    where: { status: "RUNNING", startedAt: { lt: limite } },
+    orderBy: { startedAt: "asc" },
+    take: batch,
+    select: { id: true, attempts: true, maxAttempts: true, actionType: true, entityId: true },
+  });
+
+  let reencoladas = 0;
+  let agotadas = 0;
+
+  for (const item of encalladas) {
+    // `attempts` ya se incrementó al reclamarla, así que este intento cuenta.
+    const quedanIntentos = item.attempts < item.maxAttempts;
+    // Guard de estado en el WHERE: si otro runner la resucitó entre el findMany y esto,
+    // el updateMany no toca nada en vez de pisarlo.
+    const r = await prisma.actionQueue.updateMany({
+      where: { id: item.id, status: "RUNNING" },
+      data: quedanIntentos
+        ? { status: "PENDING", runAfter: new Date(), startedAt: null, error: "Reencolada: se quedó en RUNNING sin terminar" }
+        : { status: "FAILED", finishedAt: new Date(), error: `Encallada en RUNNING tras ${item.attempts} intento(s); sin reintentos restantes` },
+    });
+    if (r.count === 0) continue;
+    if (quedanIntentos) reencoladas++;
+    else agotadas++;
+    console.warn(
+      `[workflows/queue] acción encallada ${item.actionType} (${item.entityId}) → ` +
+        `${quedanIntentos ? "reencolada" : "FAILED"} (intento ${item.attempts}/${item.maxAttempts})`,
+    );
+  }
+
+  return { reencoladas, agotadas };
+}
+
 // Procesa hasta `batch` acciones vencidas. Claim optimista: updateMany con guard de status.
 export async function runQueue(batch = 20): Promise<{ ran: number; failed: number; skipped: number }> {
   const now = new Date();

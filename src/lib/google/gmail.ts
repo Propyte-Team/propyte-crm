@@ -6,6 +6,7 @@
 // Match contacto = exacto contra Contact.email (PG: sin contactos fantasma). Respeta doNotContact (PG6).
 import prisma from "@/lib/db"
 import { getGmailClient } from "./workspace.service"
+import { sanitizeEmailHtml } from "@/lib/email/sanitize"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gmail = any
@@ -442,7 +443,11 @@ export async function getThreadMessages(userId: string, threadId: string): Promi
       to: headerValue(headers, "To"),
       subject: headerValue(headers, "Subject"),
       bodyText: text,
-      bodyHtml: html || undefined,
+      // Auditoría 2026-09-10: se sanea AQUÍ, en el servidor, y no en el componente. El
+      // HTML peligroso no debe llegar al navegador siquiera: `email-thread.tsx` lo pintaba
+      // con `dangerouslySetInnerHTML` y un `<img onerror>` en un correo entrante ejecutaba
+      // código en el origen del CRM con la sesión del asesor. Ver lib/email/sanitize.ts.
+      bodyHtml: sanitizeEmailHtml(html) || undefined,
       date: new Date(internalMs || Date.now()).toISOString(),
       direction: (fromEmail && fromEmail === owner ? "OUTBOUND" : "INBOUND") as EmailDirection,
     }

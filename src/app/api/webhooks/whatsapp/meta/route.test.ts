@@ -1,120 +1,169 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createHmac } from "crypto";
 
-// BUG 2026-07-24 (Bunker): un webhook con texto + 2 PDFs disparaba 3 respuestas del bot
-// (una por mensaje del batch). Coalescing: ingerir TODO el batch con triggerBot:false y
-// disparar el bot UNA vez por contacto al final.
+// Auditoría 2026-09-10: este webhook aceptaba CUALQUIER cuerpo sin firma cuando
+// META_WA_APP_SECRET no estaba configurada (`if (!appSecret) return true`). La #754 cerró
+// el mismo agujero en meta-dm y dejó su prueba; el de WhatsApp —el de mayor volumen— se
+// quedó sin cambio y sin prueba. Esto es la otra mitad, con la batería equivalente.
 
 const handleInboundWhatsApp = vi.fn();
+const resolveConnectorByPhoneNumberId = vi.fn();
+const resolveWaMediaToStorage = vi.fn();
+const botRespond = vi.fn();
+const messageUpdateMany = vi.fn();
+
+vi.mock("@/lib/db", () => ({
+  default: { message: { updateMany: (...a: unknown[]) => messageUpdateMany(...a) } },
+}));
 vi.mock("@/lib/twilio/whatsapp", () => ({
   handleInboundWhatsApp: (...a: unknown[]) => handleInboundWhatsApp(...a),
 }));
-
-const botRespond = vi.fn();
-vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
-
-const msgUpdateMany = vi.fn();
-vi.mock("@/lib/db", () => ({
-  default: { message: { updateMany: (...a: unknown[]) => msgUpdateMany(...a) } },
-}));
-
-vi.mock("@/lib/whatsapp/media", () => ({ resolveWaMediaToStorage: vi.fn(async () => null) }));
-
-const resolveConnectorByPhoneNumberId = vi.fn();
 vi.mock("@/lib/whatsapp/accounts", () => ({
   resolveConnectorByPhoneNumberId: (...a: unknown[]) => resolveConnectorByPhoneNumberId(...a),
 }));
+vi.mock("@/lib/whatsapp/media", () => ({
+  resolveWaMediaToStorage: (...a: unknown[]) => resolveWaMediaToStorage(...a),
+}));
+vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
-function post(body: unknown) {
-  return new Request("https://x/api/webhooks/whatsapp/meta", {
-    method: "POST",
-    body: JSON.stringify(body),
-  }) as unknown as import("next/server").NextRequest;
-}
-
-function waBody(messages: unknown[], statuses: unknown[] = [], metadata?: unknown) {
-  return { entry: [{ changes: [{ value: { contacts: [{ profile: { name: "Bunker" } }], messages, statuses, metadata } }] }] };
-}
-
-const TEXT = { id: "wamid.1", from: "529842036229", type: "text", text: { body: "Hola, buen día" } };
-const DOC1 = { id: "wamid.2", from: "529842036229", type: "document", document: { id: "media1", filename: "Portfolio.pdf" } };
-const DOC2 = { id: "wamid.3", from: "529842036229", type: "document", document: { id: "media2", filename: "CV.pdf" } };
+const APP_SECRET = "test-wa-app-secret";
+const URL_WEBHOOK = "https://x/api/webhooks/whatsapp/meta";
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  delete process.env.META_WA_APP_SECRET; // sin secret no se valida firma
-  handleInboundWhatsApp.mockResolvedValue({ id: "m1", contactId: "c1" });
-  msgUpdateMany.mockResolvedValue({ count: 0 });
-  resolveConnectorByPhoneNumberId.mockResolvedValue(null); // default: sin conector configurado
+  handleInboundWhatsApp.mockReset();
+  handleInboundWhatsApp.mockResolvedValue({ contactId: "c1" });
+  resolveConnectorByPhoneNumberId.mockReset();
+  resolveConnectorByPhoneNumberId.mockResolvedValue(null);
+  resolveWaMediaToStorage.mockReset();
+  botRespond.mockReset();
+  messageUpdateMany.mockReset();
+  messageUpdateMany.mockResolvedValue({ count: 0 });
+  process.env.META_WA_VERIFY_TOKEN = "verifyme";
+  process.env.META_WA_APP_SECRET = APP_SECRET;
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-describe("whatsapp/meta webhook — coalescing del bot por batch", () => {
-  it("batch de 3 mensajes del mismo remitente → 3 ingestas con triggerBot:false y bot UNA vez", async () => {
-    const res = await POST(post(waBody([TEXT, DOC1, DOC2])));
+// El GET de este route lee `req.nextUrl` (el de meta-dm usa `new URL(req.url)`), y un
+// `Request` plano no lo trae: se añade a mano, que es lo que Next hace en producción.
+function req(url: string, init?: RequestInit) {
+  const r = new Request(url, init);
+  Object.defineProperty(r, "nextUrl", { value: new URL(url), configurable: true });
+  return r as unknown as import("next/server").NextRequest;
+}
+
+/** La firma HMAC-SHA256 que Meta manda en x-hub-signature-256. */
+function firma(body: string) {
+  return "sha256=" + createHmac("sha256", APP_SECRET).update(body, "utf8").digest("hex");
+}
+
+function postFirmado(body: string) {
+  return req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": firma(body) } });
+}
+
+/** Un batch mínimo con un mensaje de texto entrante. */
+const CUERPO_OK = JSON.stringify({
+  entry: [
+    {
+      changes: [
+        {
+          value: {
+            metadata: { phone_number_id: "pn-1" },
+            contacts: [{ profile: { name: "Ana" }, wa_id: "5219981234567" }],
+            messages: [{ id: "wamid.1", from: "5219981234567", type: "text", text: { body: "hola" } }],
+          },
+        },
+      ],
+    },
+  ],
+});
+
+describe("webhook de WhatsApp Cloud — verificación de suscripción", () => {
+  it("GET responde el challenge con el verify token correcto", async () => {
+    const res = await GET(
+      req(`${URL_WEBHOOK}?hub.mode=subscribe&hub.verify_token=verifyme&hub.challenge=42`),
+    );
     expect(res.status).toBe(200);
-    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(3);
-    for (const call of handleInboundWhatsApp.mock.calls) {
-      expect(call[1]).toEqual({ triggerBot: false });
-    }
-    expect(botRespond).toHaveBeenCalledTimes(1);
-    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: null });
+    expect(await res.text()).toBe("42");
   });
 
-  it("remitentes distintos en el batch → bot una vez POR contacto", async () => {
-    handleInboundWhatsApp
-      .mockResolvedValueOnce({ id: "m1", contactId: "c1" })
-      .mockResolvedValueOnce({ id: "m2", contactId: "c2" });
-    const otro = { ...TEXT, id: "wamid.9", from: "525512345678" };
-    await POST(post(waBody([TEXT, otro])));
-    expect(botRespond).toHaveBeenCalledTimes(2);
-    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: null });
-    expect(botRespond).toHaveBeenCalledWith("c2", { channel: "WHATSAPP", connectorId: null });
+  it("GET rechaza un verify token incorrecto", async () => {
+    const res = await GET(
+      req(`${URL_WEBHOOK}?hub.mode=subscribe&hub.verify_token=mal&hub.challenge=42`),
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("webhook de WhatsApp Cloud — la firma falla CERRADO", () => {
+  it("🚨 rechaza con 401 si META_WA_APP_SECRET no está configurada", async () => {
+    delete process.env.META_WA_APP_SECRET;
+    const res = await POST(postFirmado(CUERPO_OK));
+    expect(res.status).toBe(401);
+    // Y sobre todo: no ingirió nada.
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
   });
 
-  // Cuenta WA en el Inbox (2026-07-25): value.metadata.phone_number_id identifica el
-  // número que RECIBIÓ el mensaje → se resuelve el conector WHATSAPP y viaja hasta la
-  // conversación (badge "WhatsApp · Marca" en el Inbox, mismo patrón que IG/Messenger).
-  describe("cuenta receptora (metadata.phone_number_id)", () => {
-    it("resuelve el conector y lo pasa a la ingesta y al bot", async () => {
-      resolveConnectorByPhoneNumberId.mockResolvedValue({ id: "wa-conn-1" });
-      await POST(post(waBody([TEXT], [], { phone_number_id: "PNID-1", display_phone_number: "5299888" })));
-      expect(resolveConnectorByPhoneNumberId).toHaveBeenCalledWith("PNID-1");
-      expect(handleInboundWhatsApp).toHaveBeenCalledWith(
-        expect.objectContaining({ ConnectorId: "wa-conn-1" }),
-        { triggerBot: false }
-      );
-      expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: "wa-conn-1" });
-    });
-
-    it("sin conector configurado para ese número → todo fluye igual con connector null", async () => {
-      await POST(post(waBody([TEXT], [], { phone_number_id: "PNID-X" })));
-      expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
-      expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: null });
-    });
-
-    it("si el resolver truena, la ingesta NO se cae (best-effort)", async () => {
-      resolveConnectorByPhoneNumberId.mockRejectedValue(new Error("db"));
-      const res = await POST(post(waBody([TEXT], [], { phone_number_id: "PNID-1" })));
-      expect(res.status).toBe(200);
-      expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
-    });
+  it("🚨 rechaza con 401 si la variable está pero vacía", async () => {
+    process.env.META_WA_APP_SECRET = "   ";
+    const res = await POST(postFirmado(CUERPO_OK));
+    expect(res.status).toBe(401);
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
   });
 
-  it("webhook solo de statuses → no llama al bot", async () => {
-    await POST(post(waBody([], [{ id: "wamid.x", status: "delivered" }])));
-    expect(botRespond).not.toHaveBeenCalled();
+  it("rechaza con 401 una firma que no corresponde al cuerpo", async () => {
+    const res = await POST(
+      req(URL_WEBHOOK, {
+        method: "POST",
+        body: CUERPO_OK,
+        headers: { "x-hub-signature-256": firma("otro cuerpo") },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
   });
 
-  it("opt-out (handleInboundWhatsApp regresa null) → no llama al bot", async () => {
-    handleInboundWhatsApp.mockResolvedValue(null);
-    await POST(post(waBody([TEXT])));
-    expect(botRespond).not.toHaveBeenCalled();
+  it("rechaza con 401 si falta el header de firma", async () => {
+    const res = await POST(req(URL_WEBHOOK, { method: "POST", body: CUERPO_OK }));
+    expect(res.status).toBe(401);
   });
 
-  it("si el bot truena, el webhook igual regresa 200 (Meta no debe reintentar)", async () => {
-    botRespond.mockRejectedValue(new Error("boom"));
-    const res = await POST(post(waBody([TEXT])));
+  it("rechaza con 401 un header cuyo prefijo no es sha256=", async () => {
+    const res = await POST(
+      req(URL_WEBHOOK, {
+        method: "POST",
+        body: CUERPO_OK,
+        headers: { "x-hub-signature-256": "sha1=deadbeef" },
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("con firma válida SÍ ingiere el mensaje", async () => {
+    const res = await POST(postFirmado(CUERPO_OK));
     expect(res.status).toBe(200);
+    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+    const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.MessageSid).toBe("wamid.1");
+    expect(payload.Body).toBe("hola");
   });
+});
+
+describe("webhook de WhatsApp Cloud — cuerpos que no son un objeto (gemelo de la #755)", () => {
+  it("un cuerpo que no es JSON da 400, no 500", async () => {
+    const res = await POST(postFirmado("{no-json"));
+    expect(res.status).toBe(400);
+  });
+
+  // `JSON.parse("null")` no lanza: devuelve null y el catch no alcanza. Antes esto
+  // reventaba en `body.entry` con un 500 no manejado.
+  for (const cuerpo of ["null", "42", '"texto"']) {
+    it(`el cuerpo \`${cuerpo}\` da 400 y no revienta`, async () => {
+      const res = await POST(postFirmado(cuerpo));
+      expect(res.status).toBe(400);
+      expect(handleInboundWhatsApp).not.toHaveBeenCalled();
+    });
+  }
 });

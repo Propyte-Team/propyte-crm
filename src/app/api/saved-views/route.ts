@@ -5,6 +5,11 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 
+/** P2021 = la tabla no existe. Es lo ÚNICO que los `catch` de este archivo perdonan. */
+function esTablaSinMigrar(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "P2021";
+}
+
 const createSchema = z.object({
   name: z.string().min(1).max(80).trim(),
   module: z.string().min(2).max(40),
@@ -27,8 +32,14 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "asc" },
     });
     return NextResponse.json({ data: views });
-  } catch {
-    return NextResponse.json({ data: [] }); // tabla pendiente de migración
+  } catch (err) {
+    // Auditoría 2026-09-10: este `catch` devolvía lista vacía ante CUALQUIER error. El
+    // usuario veía «no tienes vistas guardadas» cuando en realidad la consulta falló, y
+    // eso invita a rehacer a mano un trabajo que sigue estando ahí. Sólo se perdona
+    // P2021 (la tabla aún no existe), que es lo que el `try` venía a cubrir.
+    if (esTablaSinMigrar(err)) return NextResponse.json({ data: [] });
+    console.error("[saved-views] GET:", err);
+    return NextResponse.json({ error: "No se pudieron cargar las vistas" }, { status: 500 });
   }
 }
 
@@ -53,9 +64,17 @@ export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id requerido" }, { status: 400 });
   try {
-    await prisma.savedView.deleteMany({ where: { id, ownerId: session.user.id } });
+    const r = await prisma.savedView.deleteMany({ where: { id, ownerId: session.user.id } });
+    // Antes devolvía `ok: true` pasara lo que pasara: un id inexistente, la vista de otro
+    // usuario y un fallo de la base daban la misma respuesta que un borrado real. La
+    // interfaz quitaba la fila y al recargar volvía a aparecer.
+    if (r.count === 0) {
+      return NextResponse.json({ error: "Vista no encontrada" }, { status: 404 });
+    }
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: true });
+  } catch (err) {
+    if (esTablaSinMigrar(err)) return NextResponse.json({ ok: true });
+    console.error("[saved-views] DELETE:", err);
+    return NextResponse.json({ error: "No se pudo borrar la vista" }, { status: 500 });
   }
 }

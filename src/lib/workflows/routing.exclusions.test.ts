@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const systemConfigFindUnique = vi.fn();
 const systemConfigUpsert = vi.fn();
+const queryRaw = vi.fn(async (..._a: unknown[]) => [{ n: 1 }]);
 const userFindMany = vi.fn();
 const contactFindUnique = vi.fn();
 const routingRuleFindMany = vi.fn();
@@ -16,6 +17,9 @@ const contactUpdate = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
+    // El turno del round-robin es un INSERT ... ON CONFLICT atómico desde la auditoría
+    // 2026-09-10; sin este doble, `roundRobinPick` cae a su rama de error.
+    $queryRaw: (...a: unknown[]) => queryRaw(...a),
     systemConfig: {
       findUnique: (...a: unknown[]) => systemConfigFindUnique(...a),
       upsert: (...a: unknown[]) => systemConfigUpsert(...a),

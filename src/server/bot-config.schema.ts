@@ -3,7 +3,11 @@
 // (ver https://nextjs.org/docs/messages/invalid-use-server-value).
 import { z } from "zod";
 
-export const ALLOWED_MODELS = ["claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5"] as const;
+// La lista se mudó a lib/bot/model.ts: la necesitan también lib/bot/claude.ts y
+// lib/agents/runner.ts, que leían BOT_MODEL en crudo y por tanto se saltaban este
+// allowlist. Se re-exporta para no romper a quien la importe de aquí.
+export { ALLOWED_MODELS } from "@/lib/bot/model";
+import { ALLOWED_MODELS } from "@/lib/bot/model";
 
 export const botConfigUpdateSchema = z.object({
   botEnabled: z.boolean().optional(),

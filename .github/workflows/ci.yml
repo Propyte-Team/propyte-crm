@@ -62,9 +62,14 @@ jobs:
       # uno falle. Es el mismo criterio que se aplicó al cron de workflows: enterarse de
       # los tres problemas en una corrida es mejor que descubrirlos de uno en uno. El
       # trabajo igual queda en rojo si cualquiera falla.
+      # `npm run typecheck` y no `npx tsc --noEmit`: el script lleva el límite de memoria
+      # dentro (auditoría 2026-09-10). Antes el heap sólo se subía por el NODE_OPTIONS de
+      # arriba, que existe en CI y no en la máquina de nadie — así que el comando de la
+      # documentación se quedaba sin memoria en local y pasaba en CI. Ahora es el mismo
+      # comando en los dos sitios.
       - name: Chequeo de tipos
         if: '!cancelled()'
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Pruebas
         if: '!cancelled()'

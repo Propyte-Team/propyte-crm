@@ -1,5 +1,6 @@
 import prisma from "@/lib/db";
 import type { BotTonePreset, AutonomyLevel } from "@prisma/client";
+import { resolveBotModel } from "./model";
 
 export type OpenerStyle = "WARM_NAME" | "DIRECT";
 
@@ -21,7 +22,7 @@ export const DEFAULT_BOT_CONFIG: BotConfigResolved = {
   botEnabled: true,
   tonePreset: "PROFESIONAL_CALIDO",
   autonomyLevel: "L2",
-  model: process.env.BOT_MODEL?.trim() || "claude-sonnet-5",
+  model: resolveBotModel(),
   openerStyle: "WARM_NAME",
   maxLines: 4,
   dataGateStrict: true,

@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { processPendingEvents, emitEvent } from "@/lib/workflows/events";
-import { runQueue } from "@/lib/workflows/queue";
+import { runQueue, recuperarEncalladas } from "@/lib/workflows/queue";
 import { checkSlaBreaches } from "@/lib/workflows/sla";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 import { rechazoCron } from "@/lib/cron/auth";
@@ -31,29 +31,63 @@ async function processPendingConversionsSafe() {
 
 // Parcialidades vencidas → VENCIDA + payment.overdue (WF6). Defensivo: si la tabla
 // F6 aún no está migrada, regresa 0 sin romper el tick.
+// Auditoría 2026-09-10: este `catch` devolvía 0 ante CUALQUIER error, no sólo ante la
+// tabla sin migrar. Un fallo real —una restricción violada, la conexión caída a mitad del
+// lote, un `dealId` nulo— se veía desde fuera exactamente igual que «hoy no había
+// parcialidades vencidas»: la etapa reportaba 0 y el tick salía 200. Justo el fallo que la
+// etapa existe para evitar.
+//
+// Ahora sólo se perdona P2021 (la tabla no existe), que es la única condición que este
+// `try` pretendía cubrir. Todo lo demás sube a la lista de ETAPAS, que ya reporta el
+// nombre de la etapa y devuelve 500 — el mecanismo que ya está escrito ahí abajo.
+function esTablaSinMigrar(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "P2021";
+}
+
 async function checkOverduePayments(): Promise<number> {
+  let overdue;
   try {
-    const overdue = await prisma.paymentSchedule.findMany({
+    overdue = await prisma.paymentSchedule.findMany({
       where: { status: "PENDIENTE", dueDate: { lte: new Date() } },
       take: 100,
       include: { plan: { include: { quote: { select: { dealId: true } } } } },
     });
-    for (const sched of overdue) {
-      await prisma.paymentSchedule.update({
-        where: { id: sched.id },
-        data: { status: "VENCIDA" },
-      });
-      await emitEvent("payment.overdue", "deal", sched.plan.quote.dealId, {
-        scheduleId: sched.id,
-        number: sched.number,
-        amount: String(sched.amount),
-        dueDate: sched.dueDate.toISOString(),
-      });
-    }
-    return overdue.length;
-  } catch {
-    return 0; // tabla F6 sin migrar todavía
+  } catch (err) {
+    if (esTablaSinMigrar(err)) return 0; // tabla F6 sin migrar todavía
+    throw err;
   }
+
+  let marcadas = 0;
+  for (const sched of overdue) {
+    // Por parcialidad, y no un try para todo el lote: una fila con un problema propio no
+    // debe impedir que las otras 99 se marquen.
+    try {
+      // El estado y el evento van juntos o no van. Antes eran dos escrituras sueltas: si
+      // `emitEvent` fallaba, la parcialidad quedaba VENCIDA y el aviso al asesor no salía
+      // NUNCA — y como el evento es lo que dispara el seguimiento, el cliente se quedaba
+      // sin cobrar sin que nadie se enterara. `emitEvent` sólo persiste el evento y lo
+      // procesa best-effort, así que dentro de la transacción es seguro.
+      await prisma.$transaction(async (tx) => {
+        await tx.paymentSchedule.update({
+          where: { id: sched.id },
+          data: { status: "VENCIDA" },
+        });
+        await emitEvent("payment.overdue", "deal", sched.plan.quote.dealId, {
+          scheduleId: sched.id,
+          number: sched.number,
+          amount: String(sched.amount),
+          dueDate: sched.dueDate.toISOString(),
+        });
+      });
+      marcadas++;
+    } catch (err) {
+      console.error(`[cron/workflows] parcialidad ${sched.id} no se pudo marcar vencida:`, err);
+    }
+  }
+
+  // Se devuelve lo que de verdad se marcó, no cuántas se encontraron: con el `return
+  // overdue.length` anterior, un lote entero que fallara seguía reportando el total.
+  return marcadas;
 }
 
 export const dynamic = "force-dynamic";
@@ -61,10 +95,10 @@ export const maxDuration = 60;
 
 
 /**
- * Las siete etapas del tick, cada una con su nombre y su llamada.
+ * Las etapas del tick, cada una con su nombre y su llamada.
  *
  * Están en una lista y no encadenadas en el cuerpo porque ANTES compartían un solo
- * `try`: si la primera tropezaba, las seis siguientes no llegaban a correr. Entre ellas
+ * `try`: si la primera tropezaba, las siguientes no llegaban a correr. Entre ellas
  * las que marcan los SLA vencidos y las que disparan los seguimientos programados, o sea
  * que el tiempo dejaba de pasar para todo lo que depende del reloj — y desde fuera se veía
  * igual que un día tranquilo.
@@ -76,6 +110,9 @@ export const maxDuration = 60;
  */
 const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> = [
   { nombre: "events", correr: () => processPendingEvents(50) },
+  // Va ANTES de `queue` para que lo que se rescata entre en la misma pasada en vez de
+  // esperar al minuto siguiente. Ver el comentario de `recuperarEncalladas`.
+  { nombre: "encalladas", correr: () => recuperarEncalladas(50) },
   { nombre: "queue", correr: () => runQueue(20) },
   { nombre: "slaBreaches", correr: () => checkSlaBreaches(100) },
   { nombre: "enrollments", correr: () => runEnrollments(50) },
@@ -101,7 +138,7 @@ export async function GET(req: NextRequest) {
       result[nombre] = await correr();
     } catch (err) {
       // Cada etapa se reporta con su nombre. Un «el tick falló» sin decir cuál de las
-      // siete obliga a reproducir el minuto entero para saber por dónde empezar.
+      // cuál obliga a reproducir el minuto entero para saber por dónde empezar.
       console.error(`[cron/workflows] etapa ${nombre}:`, err);
       fallos.push({
         etapa: nombre,
@@ -114,7 +151,7 @@ export async function GET(req: NextRequest) {
   result.ms = Date.now() - startedAt;
 
   /**
-   * 500 en cuanto UNA etapa falle, aunque las otras seis hayan ido bien.
+   * 500 en cuanto UNA etapa falle, aunque las demás hayan ido bien.
    *
    * Un 200 con los fallos escondidos en el cuerpo es peor que el bug que se está
    * arreglando: cualquier monitor externo mira el status, y este endpoint corre cada
