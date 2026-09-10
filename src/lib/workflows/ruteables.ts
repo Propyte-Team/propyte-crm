@@ -55,6 +55,26 @@ export function asesorRuteableWhere() {
   return { role: { in: [...ROLES_RUTEABLES] }, ...usuarioRuteableWhere() };
 }
 
+/** ¿Este correo es de una cuenta interna o de QA, y no de una persona? */
+export function esCuentaTecnica(email: string | null | undefined): boolean {
+  return typeof email === "string" && email.trim().toLowerCase().endsWith(DOMINIO_TECNICO);
+}
+
+/**
+ * Los roles de mando: a quién se escala un problema que el asesor no resolvió.
+ *
+ * Vive aquí, junto a `ROLES_RUTEABLES`, porque es la otra mitad de la misma pregunta —quién
+ * puede recibir algo— y porque ya tenía DOS copias en el repositorio: el `managerWhere` de
+ * `sendToPond` (routing.ts) y el aviso de vencimiento de la #756. Una tercera copia era
+ * cuestión de tiempo, y es exactamente el defecto de la #715 A-03, la #730 y la #682.
+ */
+export const ROLES_DE_MANDO = ["GERENTE", "DIRECTOR", "ADMIN"] as const;
+
+/** Quién es mando hoy, sin recortar por plaza. Objeto nuevo en cada llamada, como los otros. */
+export function mandoWhere() {
+  return { role: { in: [...ROLES_DE_MANDO] }, ...usuarioRuteableWhere() };
+}
+
 /**
  * El complemento: las cuentas del dominio técnico que TIENEN rol de asesor.
  *
