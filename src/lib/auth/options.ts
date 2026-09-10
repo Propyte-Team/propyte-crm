@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { compare } from "bcryptjs";
 import prisma from "@/lib/db";
+import { registrarIntento, olvidarIntentos } from "@/lib/security/rate-limit";
 
 // Extensión de tipos de NextAuth para incluir campos personalizados
 declare module "next-auth" {
@@ -62,8 +63,33 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Correo y contraseña son requeridos");
         }
 
+        const correo = credentials.email.toLowerCase().trim();
+        const politica = credentials.loginMethod === "otp" ? "otp_verificar" : "login";
+
+        // #714 (S-06): el login no tenía NINGÚN tope de intentos, y este `authorize` es la
+        // puerta de las dos credenciales — contraseña y código de acceso. El código es el
+        // caso grave: son 6 dígitos que viven 10 minutos, y hasta ahora se podían probar
+        // aquí sin límite igual que en reset-password. Por eso la política se elige según
+        // el método y no es una sola: 5 intentos para el código, 10 para la contraseña.
+        //
+        // Se cuenta ANTES de la consulta y de bcrypt, que es lo que cuesta. Y se cuenta
+        // aunque el correo no exista: si solo se contaran los usuarios reales, el propio
+        // contador diría cuáles lo son.
+        //
+        // Va por correo, no por IP: `authorize` de NextAuth no recibe las cabeceras del
+        // proxy de forma fiable, y el blanco de un ataque a una contraseña es una cuenta
+        // concreta. Lo que esto NO frena es un ataque distribuido contra muchas cuentas a
+        // la vez — está declarado en lib/security/rate-limit.ts.
+        const limite = registrarIntento(politica, correo);
+        if (!limite.permitido) {
+          const minutos = Math.ceil(limite.esperarMs / 60000);
+          throw new Error(
+            `Demasiados intentos. Espera ${minutos} minuto${minutos === 1 ? "" : "s"} e inténtalo de nuevo.`,
+          );
+        }
+
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase().trim() },
+          where: { email: correo },
           select: {
             id: true,
             email: true,
@@ -119,6 +145,11 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Credenciales inválidas");
           }
         }
+
+        // Entró: se olvidan los fallos previos de ESTE método. Quien se equivocó de
+        // contraseña nueve veces y acertó a la décima no debe arrastrar el castigo al
+        // siguiente cuarto de hora — ya demostró que la cuenta es suya.
+        olvidarIntentos(politica, correo);
 
         return {
           id: user.id,
