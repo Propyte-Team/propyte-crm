@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createHmac } from "crypto";
 
 const handleInboundMessage = vi.fn();
 const resolveByIg = vi.fn();
@@ -17,6 +18,8 @@ vi.mock("@/lib/comments/handle-comment", () => ({
 
 import { GET, POST } from "./route";
 
+const SECRETO = "app-secret-de-prueba";
+
 beforeEach(() => {
   handleInboundMessage.mockReset();
   resolveByIg.mockReset();
@@ -25,10 +28,31 @@ beforeEach(() => {
   handleComment.mockReset();
   handleComment.mockResolvedValue({ status: "procesado", logId: "log-1" });
   process.env.META_DM_VERIFY_TOKEN = "verifyme";
-  delete process.env.META_DM_APP_SECRET;
+  // #714 (S-02): esta línea decía `delete process.env.META_DM_APP_SECRET`, y las nueve
+  // pruebas de POST pasaban gracias a eso: sin secreto, la firma no se validaba y el
+  // webhook aceptaba cualquier cuerpo. O sea que el arnés estaba DOCUMENTANDO el agujero.
+  // Ahora hay secreto y `req()` firma como firma Meta, que es además lo que ocurre en
+  // producción (la variable está puesta). Las pruebas de POST sin firma que hay más abajo
+  // son las que fijan el arreglo.
+  process.env.META_DM_APP_SECRET = SECRETO;
 });
 
-function req(url: string, init?: RequestInit) { return new Request(url, init) as unknown as import("next/server").NextRequest; }
+/** La firma que Meta pone en `x-hub-signature-256` sobre el cuerpo EXACTO. */
+function firmar(body: string, secreto = SECRETO): string {
+  return `sha256=${createHmac("sha256", secreto).update(body, "utf8").digest("hex")}`;
+}
+
+/**
+ * Petición firmada. La firma se calcula sobre `init.body` tal cual: si una prueba cambia el
+ * cuerpo después de firmar, la firma deja de cuadrar — que es exactamente lo que debe pasar.
+ */
+function req(url: string, init?: RequestInit) {
+  const cabeceras = new Headers(init?.headers);
+  if (typeof init?.body === "string" && !cabeceras.has("x-hub-signature-256")) {
+    cabeceras.set("x-hub-signature-256", firmar(init.body));
+  }
+  return new Request(url, { ...init, headers: cabeceras }) as unknown as import("next/server").NextRequest;
+}
 
 describe("meta-dm webhook", () => {
   it("GET responde el challenge con verify token correcto", async () => {
@@ -178,5 +202,74 @@ describe("meta-dm webhook — comentarios", () => {
     const res = await POST(req("https://x/api/webhooks/meta-dm", { method: "POST", body }));
     expect(res.status).toBe(200);
     expect(handleComment).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Tarjeta #714 (S-02). `validSignature` devolvía `true` cuando no había secreto
+// configurado, y el POST además esquivaba la comprobación con un estado "skipped". O sea
+// que la AUSENCIA de una variable de entorno abría el webhook a cualquiera que conociera la
+// URL — y la URL está escrita en el comentario de la primera línea de route.ts.
+//
+// Las cuatro pruebas de este bloque fallan contra origin/main.
+describe("meta-dm — la firma se exige (#714 S-02)", () => {
+  const CUERPO = JSON.stringify({
+    object: "instagram",
+    entry: [{ messaging: [{ sender: { id: "IGSID-9" }, message: { mid: "mid-9", text: "hola" } }] }],
+  });
+
+  /** Petición SIN firmar: `req()` firma sola, así que aquí se construye a mano. */
+  function sinFirmar(headers?: Record<string, string>) {
+    return new Request("https://x/api/webhooks/meta-dm", {
+      method: "POST",
+      body: CUERPO,
+      headers,
+    }) as unknown as import("next/server").NextRequest;
+  }
+
+  it("sin cabecera de firma: 401 y NO se ingiere nada", async () => {
+    handleInboundMessage.mockResolvedValue({ id: "m1" });
+
+    const res = await POST(sinFirmar());
+
+    expect(res.status).toBe(401);
+    // Lo que importa no es el código: es que el mensaje falso no llegó a la base.
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("con una firma que no cuadra: 401", async () => {
+    const res = await POST(sinFirmar({ "x-hub-signature-256": firmar(CUERPO, "otro-secreto") }));
+
+    expect(res.status).toBe(401);
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("firma válida para OTRO cuerpo: 401 (no basta traer una firma cualquiera)", async () => {
+    // El caso que una comprobación mal hecha deja pasar: la firma es genuina, del mismo
+    // secreto, pero de un cuerpo distinto. Sin atar la firma AL CUERPO, un atacante que
+    // capture una petición legítima puede reenviar lo que quiera con esa firma.
+    const res = await POST(sinFirmar({ "x-hub-signature-256": firmar('{"object":"page"}') }));
+
+    expect(res.status).toBe(401);
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("SIN SECRETO CONFIGURADO rechaza, en vez de aceptar sin verificar", async () => {
+    // El corazón de la tarjeta. Antes: sin la variable, cualquier cuerpo entraba. Ahora se
+    // cierra, que es la dirección correcta del fallo — un webhook que rechaza todo se nota
+    // en horas (deja de entrar trabajo y `ultimo_lead` se congela en la revisión diaria);
+    // uno que acepta todo no se nota nunca.
+    const antes = process.env.META_DM_APP_SECRET;
+    delete process.env.META_DM_APP_SECRET;
+    const errores = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await POST(sinFirmar({ "x-hub-signature-256": firmar(CUERPO) }));
+
+    expect(res.status).toBe(401);
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+    // Y no en silencio: el aviso nombra la variable que falta.
+    expect(errores).toHaveBeenCalledWith(expect.stringContaining("META_DM_APP_SECRET"));
+
+    errores.mockRestore();
+    process.env.META_DM_APP_SECRET = antes;
   });
 });

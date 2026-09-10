@@ -30,9 +30,25 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "verify_token inválido" }, { status: 403 });
 }
 
+// #714 (S-02): sin secreto configurado, esto devolvía `true` — o sea que la ausencia de una
+// variable de entorno abría el webhook a cualquiera que conociera la URL, y la URL está en
+// el comentario de arriba de este mismo archivo. En producción hoy la variable SÍ está
+// puesta (medido: responde 401 sin firma), así que esto no cambia nada hoy: es la trampa
+// para el próximo despliegue, un entorno de pruebas o una variable que alguien borre.
+//
+// La dirección correcta del fallo es cerrar. Un webhook que rechaza todo se nota en horas
+// —dejan de entrar prospectos y `ultimo_lead` se congela, que es justo lo que la revisión
+// diaria publica—; uno que acepta todo no se nota nunca. El aviso nombra la variable para
+// que quien lea los registros sepa qué poner en vez de tener que averiguarlo.
 function validSignature(rawBody: string, signature: string | null): boolean {
   const appSecret = process.env.META_DM_APP_SECRET?.trim();
-  if (!appSecret) return true; // sin secret no se valida (configurarlo en prod)
+  if (!appSecret) {
+    console.error(
+      "[meta-dm] META_DM_APP_SECRET no está configurada: se RECHAZA el webhook en vez de " +
+        "aceptarlo sin verificar. Ponla en el entorno (ver .env.example) para volver a recibir DM.",
+    );
+    return false;
+  }
   if (!signature?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex");
   try {
@@ -50,10 +66,11 @@ interface MetaWebhookBody {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const sigHeader = req.headers.get("x-hub-signature-256");
-  const appSecret = process.env.META_DM_APP_SECRET?.trim();
-  const sigValid: boolean | "skipped" = !appSecret ? "skipped" : validSignature(rawBody, sigHeader);
 
-  if (sigValid === false) {
+  // #714 (S-02): ya no hay estado "skipped". La rama que existía —`!appSecret` →
+  // "skipped" → no se rechaza— era la mitad de arriba del mismo agujero: aunque
+  // `validSignature` cerrara, este `if` la esquivaba antes de llamarla. Se quitan las dos.
+  if (!validSignature(rawBody, sigHeader)) {
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
@@ -71,7 +88,14 @@ export async function POST(req: NextRequest) {
         ? parseMessengerWebhook(body as Parameters<typeof parseMessengerWebhook>[0])
         : [];
 
-  const results: Array<Record<string, unknown>> = [];
+  // #714, arrastre de la #737: aquí vivía `results`, un arreglo que se llenaba en cuatro
+  // sitios y NO LO LEÍA NADIE. Su único consumidor era el `recordHit` del buffer de
+  // depuración que la #737 borró, y la respuesta JSON solo devuelve conteos. Se quita
+  // ahora: una variable que se sigue llenando y nadie lee se lee como «esto se reporta a
+  // alguien», y el próximo que venga a este archivo va a buscar a quién.
+  //
+  // No se pierde información: los dos caminos de error ya dejan su `console.error` con el
+  // error real, que es lo único que había ahí que sirviera para diagnosticar.
   let processed = 0;
   // Coalescing del bot (BUG 2026-07-24): cada mensaje del batch disparaba una respuesta
   // completa. Se ingiere todo con triggerBot:false y el bot responde UNA vez por
@@ -97,12 +121,7 @@ export async function POST(req: NextRequest) {
         });
       }
       processed++;
-      results.push({ channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId, ok: true });
     } catch (err) {
-      results.push({
-        channel: msg.channel, accountId: msg.accountId ?? null, connector: !!msg.connectorId,
-        ok: false, error: err instanceof Error ? err.message : String(err),
-      });
       console.error("[meta-dm] inbound:", err);
     }
   }
@@ -136,16 +155,14 @@ export async function POST(req: NextRequest) {
   for (const c of parsed.comments) {
     try {
       const { handleComment } = await import("@/lib/comments/handle-comment");
-      const outcome = await handleComment(c);
+      // El desenlace (`outcome.status`) se sigue registrando donde de verdad se consulta:
+      // `handleComment` escribe su propia fila en el log de comentarios con el `logId` que
+      // devuelve. No se añade un aviso aquí a cambio del `results` que se fue, porque de
+      // los doce estados posibles la mayoría son desenlaces NORMALES —«propio», «anidado»,
+      // «duplicado», «sin-match»— y avisar de todos convierte el registro en ruido.
+      await handleComment(c);
       commentsProcessed++;
-      results.push({ comment: c.externalCommentId, platform: c.platform, status: outcome.status });
     } catch (err) {
-      results.push({
-        comment: c.externalCommentId,
-        platform: c.platform,
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
       console.error("[meta-dm] comentario:", err);
     }
   }
