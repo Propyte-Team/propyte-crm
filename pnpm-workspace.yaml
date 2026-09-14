@@ -1,10 +1,3 @@
-allowBuilds:
-  '@prisma/client': set this to true or false
-  '@prisma/engines': set this to true or false
-  esbuild: set this to true or false
-  prisma: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
 # pnpm 11 movio sus settings fuera de .npmrc hacia este archivo.
 # El .npmrc de al lado cubre pnpm 10 (la version que corre hoy en Hostinger);
 # esta entrada cubre pnpm 11+ por si la plataforma actualiza. Ver .npmrc para el motivo.
