@@ -59,6 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { object: st
   const object = SUPPORTED[params.object];
   if (!object) return NextResponse.json({ error: "Objeto no soportado" }, { status: 404 });
 
+  // #741: esta lectura ya NO alimenta la mezcla —la hace la base, abajo— y se queda solo
+  // como comprobación de existencia, para seguir devolviendo 404 antes de mirar permisos.
   const record = await loadRecord(object, params.id);
   if (!record) return NextResponse.json({ error: "Record no existe" }, { status: 404 });
 
@@ -88,14 +90,68 @@ export async function PATCH(req: NextRequest, { params }: { params: { object: st
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
   }
 
-  const merged = { ...((record.custom ?? {}) as object), ...(parsed.data as object) };
-  await withChangeSource({ source: "ui", actorId: session.user.id }, async (tx) => {
+  // #741 — La mezcla se hace EN LA BASE, no en memoria.
+  //
+  // EL DEFECTO: antes esta ruta leía el `custom` en la línea 62 (fuera de cualquier
+  // transacción), lo mezclaba en JavaScript con `{ ...viejo, ...nuevo }` y escribía el
+  // resultado completo. Dos personas editando campos DISTINTOS del mismo contacto casi a
+  // la vez leían las dos el mismo estado anterior, cada una escribía su copia entera
+  // encima, y la segunda borraba lo de la primera. Las dos recibían `ok: true`.
+  //
+  // POR QUÉ NO BASTA RELEER DENTRO DE LA TRANSACCIÓN, que es el arreglo que parece obvio
+  // y que la propia tarjeta ofrecía como primera opción: Prisma abre las transacciones en
+  // READ COMMITTED, y en ese nivel dos transacciones pueden leer la misma versión de la
+  // fila y la segunda escritura sigue ganando. Meter el SELECT dentro del $transaction
+  // mueve el problema de sitio sin resolverlo. Haría falta `FOR UPDATE` o Serializable con
+  // reintento; las dos son más código y más modos de fallo que esto.
+  //
+  // LO QUE SÍ LO RESUELVE: que la fila vieja la lea el propio UPDATE. El operador `||` de
+  // jsonb hace exactamente la misma mezcla superficial que el spread de JavaScript, y en
+  // READ COMMITTED un UPDATE que choca con otro sobre la misma fila espera a que el
+  // primero confirme y REEVALÚA sobre la versión ya confirmada. Así la segunda escritura
+  // se apila sobre la primera en vez de pisarla.
+  //
+  // EL `case jsonb_typeof`: reproduce el `?? {}` que había en JavaScript. Si `custom`
+  // llegara a guardar el valor JSON `null` en vez de un objeto, `'null'::jsonb || '{...}'`
+  // NO falla: devuelve el ARRAY `[null, {...}]` y corrompería el registro en silencio.
+  // Medido hoy en producción son 0 filas de 111 contactos y 1 deal, pero «hoy son cero» es
+  // justo el argumento que la #682 demostró que caduca.
+  //
+  // `updatedAt` se pone a mano porque `@updatedAt` lo aplica Prisma, no la base, y un
+  // UPDATE crudo no pasa por ahí. En UTC, que es como Prisma escribe esta columna.
+  const nuevos = JSON.stringify(parsed.data);
+  const filas = await withChangeSource({ source: "ui", actorId: session.user.id }, async (tx) => {
+    // Sin interpolar el nombre de la tabla: son dos consultas literales y `object` ya viene
+    // acotado por SUPPORTED, pero una tabla interpolada es una costumbre que se copia mal.
     if (object === "contact") {
-      await tx.contact.update({ where: { id: params.id }, data: { custom: merged } });
-    } else {
-      await tx.deal.update({ where: { id: params.id }, data: { custom: merged } });
+      return tx.$queryRaw<Array<{ custom: unknown }>>`
+        UPDATE propyte_crm.contacts
+           SET custom = (CASE WHEN jsonb_typeof(custom) = 'object' THEN custom ELSE '{}'::jsonb END)
+                        || ${nuevos}::jsonb,
+               "updatedAt" = (now() AT TIME ZONE 'utc')
+         WHERE id = ${params.id}
+        RETURNING custom`;
     }
+    return tx.$queryRaw<Array<{ custom: unknown }>>`
+      UPDATE propyte_crm.deals
+         SET custom = (CASE WHEN jsonb_typeof(custom) = 'object' THEN custom ELSE '{}'::jsonb END)
+                      || ${nuevos}::jsonb,
+             "updatedAt" = (now() AT TIME ZONE 'utc')
+       WHERE id = ${params.id}
+      RETURNING custom`;
   });
+
+  // Cero filas significa que el record desapareció entre la comprobación de acceso y el
+  // UPDATE. Mismo 404 que el resto de la ruta, en vez de responder `ok: true` sobre algo
+  // que ya no existe.
+  if (filas.length === 0) {
+    return NextResponse.json({ error: "Record no existe" }, { status: 404 });
+  }
+
+  // Lo que se devuelve es lo que quedó GUARDADO, no lo que este request creía que iba a
+  // quedar: si otra edición entró en medio, la respuesta la incluye y la pantalla se
+  // entera. Antes se devolvía la mezcla calculada en memoria, que podía no ser ya cierta.
+  const merged = (filas[0].custom ?? {}) as Record<string, unknown>;
 
   await prisma.auditLog.create({
     data: {
