@@ -80,7 +80,13 @@ describe("resetUserPassword — qué escribe", () => {
     await resetUserPassword("u-9", "PropyteSegura2026");
 
     const data = userUpdate.mock.calls[0][0].data;
-    expect(Object.keys(data)).toEqual(["passwordHash"]);
+    // El conjunto se comprueba EXACTO a propósito, y por eso crece aquí en vez de
+    // aflojarse: es lo que impide que un reseteo cambie de paso el rol o el estado
+    // activo. `passwordChangedAt` entró con la #699 y es parte del mismo hecho —cuándo
+    // se fijó esta credencial—, así que se añade a la lista; no se cambia la lista por
+    // un `toContain`, que dejaría pasar cualquier campo nuevo sin que nadie lo mire.
+    expect(Object.keys(data)).toEqual(["passwordHash", "passwordChangedAt"]);
+    expect(data.passwordChangedAt).toBeInstanceOf(Date);
     expect(data.passwordHash).not.toContain("PropyteSegura2026");
     await expect(compare("PropyteSegura2026", data.passwordHash)).resolves.toBe(true);
     await expect(compare("otraCosaDistinta", data.passwordHash)).resolves.toBe(false);

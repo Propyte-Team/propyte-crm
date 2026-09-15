@@ -75,6 +75,10 @@ export async function POST(req: NextRequest) {
       where: { id: user.id },
       data: {
         passwordHash,
+        // #699 — la fecha va en la MISMA escritura que el hash. Esta es la vía por la que
+        // el propio usuario cambia su contraseña, así que es la que más va a usarse, y sin
+        // ella el campo mentiría por omisión: nulo se leería como «nunca la cambió».
+        passwordChangedAt: new Date(),
         otpHash: null,
         otpExpiresAt: null,
       },

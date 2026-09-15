@@ -677,6 +677,13 @@ model User {
   avatarUrl     String?
   phone         String?
   passwordHash  String
+  // #699 — La columna YA EXISTE en la base desde antes de esta tarjeta; lo que faltaba era
+  // declararla aquí. Es deriva de esquema de la que ya avisa la #720 (cambios aplicados a
+  // mano sin registrar), y por eso el código no podía escribirla: el cliente generado no
+  // sabía que existiera. Comprobado contra producción: timestamp(3), nullable, sin
+  // default — idéntica a `otpExpiresAt` y `updatedAt`, así que `DateTime?` mapea exacto y
+  // NO introduce una migración.
+  passwordChangedAt DateTime?
   otpHash       String?
   otpExpiresAt  DateTime?
 

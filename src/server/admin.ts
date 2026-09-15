@@ -340,6 +340,11 @@ export async function createUser(data: {
       name: validated.name,
       email: validated.email.toLowerCase().trim(),
       passwordHash,
+      // #699 — La credencial se acaba de fijar, así que la fecha es AHORA. Dar de alta
+      // cuenta como poner la contraseña: si no se anotara aquí, la cuenta nueva sería
+      // indistinguible de una que nunca la ha cambiado, que es el estado que este campo
+      // existe para descartar.
+      passwordChangedAt: new Date(),
       role: validated.role as UserRole,
       plaza: validated.plaza as Plaza,
       careerLevel: (validated.careerLevel as CareerLevel) || "JR",
@@ -469,7 +474,13 @@ export async function resetUserPassword(userId: string, password: string) {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash },
+    // #699 — `passwordChangedAt` va SIEMPRE junto a `passwordHash`, en la misma escritura.
+    // Antes nadie escribía esta columna y estaba nula en el 100% de las cuentas, así que
+    // una rotación de credencial no se podía comprobar con datos. Se pagó caro al cerrar
+    // la #650 (contraseña de una cuenta ADMIN expuesta desde mayo): hubo que darla por
+    // buena con `updatedAt` y la palabra del operador, en vez de con el campo que existe
+    // justamente para eso.
+    data: { passwordHash, passwordChangedAt: new Date() },
   });
 
   // Sin la contraseña ni el hash: un log que guarda la credencial la deja en
