@@ -7,6 +7,7 @@ const checkSlaBreaches = vi.fn();
 const runEnrollments = vi.fn();
 const runInactivityRules = vi.fn();
 const emitEvent = vi.fn();
+const limpiarOtpVencidos = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
 /** Ejecuta el callback de `$transaction` con un `tx` mínimo. */
@@ -38,6 +39,12 @@ vi.mock("@/lib/workflows/queue", () => ({
   recuperarEncalladas: (...a: unknown[]) => recuperarEncalladas(...a),
 }));
 vi.mock("@/lib/workflows/sla", () => ({ checkSlaBreaches: (...a: unknown[]) => checkSlaBreaches(...a) }));
+// #699 (defecto 2): etapa que retira los códigos de un solo uso ya vencidos. Se dobla
+// aquí como las demás para que este archivo siga probando el AISLAMIENTO del tick y no la
+// consulta del barrido, que tiene sus propias pruebas en lib/auth/otp-limpieza.test.ts.
+vi.mock("@/lib/auth/otp-limpieza", () => ({
+  limpiarOtpVencidos: (...a: unknown[]) => limpiarOtpVencidos(...a),
+}));
 vi.mock("@/lib/workflows/scheduler", () => ({
   runEnrollments: (...a: unknown[]) => runEnrollments(...a),
   runInactivityRules: (...a: unknown[]) => runInactivityRules(...a),
@@ -65,6 +72,7 @@ beforeEach(() => {
   runInactivityRules.mockResolvedValue({ disparadas: 0 });
   paymentFindMany.mockResolvedValue([]);
   paymentUpdate.mockResolvedValue({});
+  limpiarOtpVencidos.mockResolvedValue(0);
 });
 
 /** Una parcialidad vencida tal como la selecciona `checkOverduePayments`. */
@@ -104,6 +112,36 @@ describe("GET /api/cron/workflows — aislamiento por etapa", () => {
       slaBreaches: { marcados: 1 },
     });
     expect(typeof body.ms).toBe("number");
+  });
+
+  /**
+   * #699 (defecto 2). La etapa NO lleva `try` propio, a diferencia de las que tocan tablas
+   * que pueden no estar migradas: `users` existe desde el init, así que un fallo suyo es un
+   * fallo de verdad y tiene que verse. Estas dos pruebas son lo que impide que alguien
+   * "arregle" el ruido envolviéndola en un catch que devuelva 0 — que es literalmente el
+   * defecto que la auditoría del 2026-09-10 encontró en `overduePayments`.
+   */
+  it("el barrido de códigos vencidos corre y reporta cuántos retiró", async () => {
+    limpiarOtpVencidos.mockResolvedValue(3);
+
+    const r = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await r.json();
+
+    expect(limpiarOtpVencidos).toHaveBeenCalledTimes(1);
+    expect(body.otpVencidos).toBe(3);
+    expect(r.status).toBe(200);
+  });
+
+  it("si el barrido revienta, sale con su nombre y el tick responde 500", async () => {
+    limpiarOtpVencidos.mockRejectedValue(new Error("boom en el barrido"));
+
+    const r = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await r.json();
+
+    expect(r.status).toBe(500);
+    expect(body.fallos.map((f: { etapa: string }) => f.etapa)).toContain("otpVencidos");
+    // Y no se lleva por delante a las demás: eso es el #664.
+    expect(body).toMatchObject({ events: { procesados: 3 }, queue: { corridas: 2 } });
   });
 
   it("el rescate de encalladas corre ANTES de la cola, para que entren en la misma pasada", async () => {

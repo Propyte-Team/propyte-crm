@@ -8,6 +8,7 @@ import { runQueue, recuperarEncalladas } from "@/lib/workflows/queue";
 import { checkSlaBreaches } from "@/lib/workflows/sla";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 import { rechazoCron } from "@/lib/cron/auth";
+import { limpiarOtpVencidos } from "@/lib/auth/otp-limpieza";
 
 // CAPI dispatcher con guarda (tablas C123 pueden no estar migradas aún)
 async function reintentarLeadsSafe() {
@@ -122,6 +123,11 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // #713: los leads que quedaron en ERROR con sus campos ya mapeados se vuelven a
   // intentar. Va al final porque no alimenta a ninguna otra etapa.
   { nombre: "replayLeads", correr: () => reintentarLeadsSafe() },
+  // #699 (defecto 2): retira los códigos de un solo uso que ya vencieron. Va al final por
+  // lo mismo: no alimenta a nadie. Y NO lleva `try` propio —a diferencia de las etapas con
+  // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto
+  // falla, es un fallo de verdad y tiene que subir a la lista de fallos y sacar el 500.
+  { nombre: "otpVencidos", correr: () => limpiarOtpVencidos() },
 ];
 
 export async function GET(req: NextRequest) {
