@@ -282,9 +282,31 @@ export const AGENT_TOOLS: AgentTool[] = [
  *
  * Devuelve COPIAS con el handler envuelto en `ejecutarTool`. El runner no tiene que
  * acordarse de auditar, y no puede olvidarse: no tiene acceso al handler crudo.
+ *
+ * #688 — LA IDENTIDAD LA PONE ESTE MÓDULO, NO QUIEN LLAME AL HANDLER.
+ *
+ * El filtro de la línea de abajo decide QUÉ tools se entregan mirando
+ * `systemUser.role`. Hasta este arreglo, el handler devuelto ignoraba ese `systemUser`
+ * —lo tenía en el closure y no lo usaba— y reenviaba el segundo argumento de quien
+ * invocara el handler. O sea: se comprobaba el permiso con una identidad y se podía
+ * ejecutar y FIRMAR con otra.
+ *
+ * Adónde llega esa identidad: `ejecutarTool` la pasa a `auditToolUse`, que firma el
+ * AuditLog con su `id`, y al handler real, donde `send_whatsapp` la usa como remitente
+ * y `create_task` como responsable. Un desajuste habría dejado un registro firmado por
+ * alguien que no tenía permitida esa acción, sin que nada fallara ni avisara.
+ *
+ * Hoy no mordía: los DOS llamadores que existen pasan la misma identidad en los dos
+ * puntos (comprobado, ver abajo). Pero eso era una costumbre de los llamadores, no una
+ * garantía de este módulo — y la cabecera del archivo promete lo segundo. Ahora el
+ * handler cierra sobre el `systemUser` ya validado y el segundo argumento se ignora.
+ *
+ * El parámetro sigue en el tipo `AgentTool.handler` porque los handlers CRUDOS de
+ * `AGENT_TOOLS` sí lo reciben —de `ejecutarTool`— y esa es su vía legítima. Lo que deja
+ * de existir es el camino por el que un tercero podía inyectarlo desde fuera.
  */
 export function toolsForAgent(allowedTools: string[], systemUser: User): AgentTool[] {
   return AGENT_TOOLS.filter(
     (t) => allowedTools.includes(t.name) && t.allowedRoles.includes(systemUser.role)
-  ).map((t) => ({ ...t, handler: (input, usuario) => ejecutarTool(t, input, usuario) }));
+  ).map((t) => ({ ...t, handler: (input) => ejecutarTool(t, input, systemUser) }));
 }
