@@ -12,7 +12,9 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "target": "ES2015",
     "downlevelIteration": true,
+    "ignoreDeprecations": "6.0",
     "plugins": [{ "name": "next" }],
     "paths": { "@/*": ["./src/*"] }
   },

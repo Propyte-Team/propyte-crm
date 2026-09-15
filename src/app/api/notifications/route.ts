@@ -36,12 +36,18 @@ export async function GET(request: NextRequest) {
     // Parámetros de filtro
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const type = searchParams.get("type") || undefined;
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50")));
+    // const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50")));
+    const limitParam = searchParams.get("limit") || searchParams.get("pageSize") || "50";
+    const limit = Math.min(100, Math.max(1, parseInt(limitParam)));
 
     // Construir filtros (siempre del usuario actual)
     const where: any = {
       userId: session.user.id,
     };
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
 
     if (unreadOnly) {
       where.isRead = false;
