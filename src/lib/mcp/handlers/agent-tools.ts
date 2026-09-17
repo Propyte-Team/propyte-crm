@@ -1,7 +1,7 @@
 // src/lib/mcp/handlers/agent-tools.ts
 // Wrap de AGENT_TOOLS con carga del usuario-sistema MCP.
 import prisma from "@/lib/db";
-import { AGENT_TOOLS, ejecutarTool } from "@/lib/agents/tools";
+import { AGENT_TOOLS, ejecutarTool, rolPuedeUsar } from "@/lib/agents/tools";
 import { getMcpUserId } from "../auth";
 
 async function loadSystemUser() {
@@ -17,7 +17,8 @@ export async function runAgentTool(name: string, input: Record<string, unknown>)
   if (!tool) throw new Error(`tool_desconocida: ${name}`);
   const systemUser = await loadSystemUser();
   // Honra el contrato de allowedRoles del AgentTool (hoy el usuario-sistema es ADMIN).
-  if (!tool.allowedRoles.includes(systemUser.role))
+  // #775: misma pregunta que hace `toolsForAgent`, contestada una sola vez en `rolPuedeUsar`.
+  if (!rolPuedeUsar(tool, systemUser.role))
     throw new Error(`RBAC: usuario-sistema sin permiso para ${name}`);
   // Esta es la SEGUNDA puerta por la que se ejecutan tools, y también deja constancia.
   // Auditar solo la del runner habría dejado sin registrar todo lo que entra por la
