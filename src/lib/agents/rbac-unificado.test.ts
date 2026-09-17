@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * no a una copia que hoy dice lo mismo pero puede divergir mañana.
  */
 
-const auditLogCreate = vi.fn(async () => ({}));
+const auditLogCreate = vi.fn();
 const userFindUnique = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
@@ -31,6 +31,7 @@ function toolEspiada(nombre: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auditLogCreate.mockResolvedValue({});
 });
 
 describe("#775 — un solo lugar decide el permiso, las dos puertas coinciden", () => {
