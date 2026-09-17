@@ -63,6 +63,30 @@ describe("handleRevisionMcpHttp", () => {
     );
   });
 
+  it("🚨 detrás del proxy, la cabecera anuncia el host PÚBLICO y no el interno", async () => {
+    // El fallo real, medido en producción el 2026-09-17: Passenger le entrega a Node una
+    // URL con la dirección donde escucha, y el 401 salió mandando a
+    // `https://0.0.0.0:3000/.well-known/...`. Una metadata que apunta a una URL muerta es
+    // peor que no tenerla, porque el cliente la sigue y falla.
+    const req = new Request("http://0.0.0.0:3000/api/mcp/revision", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        host: "0.0.0.0:3000",
+        "x-forwarded-host": "crm.propyte.com",
+        "x-forwarded-proto": "https",
+      },
+      body: JSON.stringify(listar),
+    });
+
+    const res = await handleRevisionMcpHttp(req, undefined, { config: configFalso(null) });
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://crm.propyte.com/.well-known/oauth-protected-resource/api/mcp/revision"',
+    );
+  });
+
   it("el 405 NO lleva WWW-Authenticate: no es un problema de credenciales", async () => {
     const res = await handleRevisionMcpHttp(new Request(URL_BASE, { method: "GET" }), EN_BASE, conBase);
     expect(res.status).toBe(405);

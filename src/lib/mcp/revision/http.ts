@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { origenPublico } from "../origen-publico";
 import { autorizarRevision, HINT_AUTH } from "./auth";
 import { crearGithubReader } from "./github";
 import { leerTokenEsperado } from "./token";
@@ -58,10 +59,7 @@ export async function handleRevisionMcpHttp(
     const headers: Record<string, string> = {};
     // Solo en el 401: los demás estados de esta puerta no son de credenciales.
     if (auth.status === 401) {
-      const metadata = new URL(
-        REVISION_RESOURCE_METADATA_PATH,
-        new URL(req.url).origin,
-      ).toString();
+      const metadata = new URL(REVISION_RESOURCE_METADATA_PATH, origenPublico(req)).toString();
       headers["WWW-Authenticate"] = `Bearer resource_metadata="${metadata}"`;
     }
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { origenPublico } from "@/lib/mcp/origen-publico";
 
 /**
  * GET /.well-known/oauth-protected-resource/api/mcp/revision — metadata RFC 9728 de la
@@ -18,7 +19,7 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const { origin } = new URL(req.url);
+  const origin = origenPublico(req);
 
   return NextResponse.json(
     {
