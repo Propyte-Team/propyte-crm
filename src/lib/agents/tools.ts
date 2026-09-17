@@ -278,6 +278,23 @@ export const AGENT_TOOLS: AgentTool[] = [
 ];
 
 /**
+ * #775 — La pregunta «¿este rol puede usar esta tool?» se contestaba dos veces: aquí
+ * (`toolsForAgent`) y en la segunda puerta (`runAgentTool`, mcp/handlers/agent-tools.ts),
+ * cada una con su propia línea `allowedRoles.includes(role)`. Las dos decían lo mismo,
+ * comprobado leyendo ambas — pero es la octava vez que una regla nace escrita dos veces
+ * en este sistema (#715 A-03, #730, #682, #684, #685, #763, #764), y en las siete
+ * anteriores la divergencia se descubrió tarde. Ahora hay un solo lugar que la contesta.
+ *
+ * Ojo: esto NO es lo mismo que `allowedTools` (qué tools tiene habilitadas ESTE agente
+ * en su ficha, propio del runner) — esa sigue viviendo solo en `toolsForAgent`, porque
+ * en la pasarela del MCP no hay agente, hay un token. Son dos preguntas distintas que
+ * hoy comparten la segunda mitad; esta función es solo esa mitad compartida.
+ */
+export function rolPuedeUsar(tool: AgentTool, role: string): boolean {
+  return tool.allowedRoles.includes(role);
+}
+
+/**
  * Las tools que este agente puede usar, con el registro ya puesto.
  *
  * Devuelve COPIAS con el handler envuelto en `ejecutarTool`. El runner no tiene que
@@ -307,6 +324,6 @@ export const AGENT_TOOLS: AgentTool[] = [
  */
 export function toolsForAgent(allowedTools: string[], systemUser: User): AgentTool[] {
   return AGENT_TOOLS.filter(
-    (t) => allowedTools.includes(t.name) && t.allowedRoles.includes(systemUser.role)
+    (t) => allowedTools.includes(t.name) && rolPuedeUsar(t, systemUser.role)
   ).map((t) => ({ ...t, handler: (input) => ejecutarTool(t, input, systemUser) }));
 }

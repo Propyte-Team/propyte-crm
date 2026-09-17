@@ -8,6 +8,9 @@ vi.mock("@/lib/db", () => ({ default: {
 const ejecutarToolSpy = vi.fn(async (tool: any, input: any, user: any) => tool.handler(input, user));
 vi.mock("@/lib/agents/tools", () => ({
   ejecutarTool: (...a: any[]) => (ejecutarToolSpy as any)(...a),
+  // #775: mismo predicado que el módulo real, para que este mock no calle una regresión
+  // si algún día `runAgentTool` deja de llamar a `rolPuedeUsar` y vuelve a su propia línea.
+  rolPuedeUsar: (tool: any, role: string) => tool.allowedRoles.includes(role),
   AGENT_TOOLS: [
     {
       name: "send_whatsapp",
