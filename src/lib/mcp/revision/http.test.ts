@@ -50,6 +50,25 @@ describe("handleRevisionMcpHttp", () => {
     expect((await res.json()).hint).toContain("MCP_REVISION_TOKEN");
   });
 
+  it("🚨 el 401 lleva WWW-Authenticate apuntando a la metadata del recurso", async () => {
+    // Sin esta cabecera un cliente MCP no tiene de dónde sacar CÓMO autenticarse, y el
+    // conector se queda en un estado que no se puede limpiar. Medido el 2026-09-17 contra
+    // Higgsfield, que sí la manda y sí monta en corridas programadas.
+    const res = await handleRevisionMcpHttp(rpc(listar), undefined, {
+      config: configFalso(null),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://crm.propyte.com/.well-known/oauth-protected-resource/api/mcp/revision"',
+    );
+  });
+
+  it("el 405 NO lleva WWW-Authenticate: no es un problema de credenciales", async () => {
+    const res = await handleRevisionMcpHttp(new Request(URL_BASE, { method: "GET" }), EN_BASE, conBase);
+    expect(res.status).toBe(405);
+    expect(res.headers.get("www-authenticate")).toBeNull();
+  });
+
   it("con el token en la RUTA —el único camino de claude.ai— devuelve las 9 tools", async () => {
     const res = await handleRevisionMcpHttp(rpc(listar), EN_BASE, conBase);
     expect(res.status).toBe(200);

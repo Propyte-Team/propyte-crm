@@ -25,6 +25,17 @@ import type { GithubReader, LectorDeConfig, RevisionContext, RevisionDb } from "
 const ACTOR = process.env.MCP_REVISION_ACTOR ?? "cowork@revision";
 
 /**
+ * Ruta del documento RFC 9728 de esta puerta, al que apunta el `WWW-Authenticate` del 401.
+ *
+ * Medido el 2026-09-17: sin esto, este origen contestaba 404 a todo `/.well-known/` y su
+ * 401 salía mudo, así que un cliente MCP no tenía de dónde sacar cómo autenticarse. Lleva
+ * el sufijo del recurso, no es el `/.well-known/oauth-protected-resource` pelado, porque
+ * es lo que dice el RFC para un recurso con path.
+ */
+export const REVISION_RESOURCE_METADATA_PATH =
+  "/.well-known/oauth-protected-resource/api/mcp/revision";
+
+/**
  * Dependencias sustituibles. En producción no se pasan y salen de `@/lib/db`.
  *
  * Existen para que la prueba de la puerta HTTP pueda ejercitar el handshake sin una base
@@ -44,7 +55,19 @@ export async function handleRevisionMcpHttp(
 
   const auth = autorizarRevision(req, token, tokenDeUrl);
   if (!auth.ok) {
-    return NextResponse.json({ error: auth.error, hint: auth.hint }, { status: auth.status });
+    const headers: Record<string, string> = {};
+    // Solo en el 401: los demás estados de esta puerta no son de credenciales.
+    if (auth.status === 401) {
+      const metadata = new URL(
+        REVISION_RESOURCE_METADATA_PATH,
+        new URL(req.url).origin,
+      ).toString();
+      headers["WWW-Authenticate"] = `Bearer resource_metadata="${metadata}"`;
+    }
+    return NextResponse.json(
+      { error: auth.error, hint: auth.hint },
+      { status: auth.status, headers },
+    );
   }
 
   let body: unknown;
