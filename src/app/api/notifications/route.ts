@@ -25,9 +25,19 @@ const markReadSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verificar autenticación
+    // Verificar autenticación.
+    //
+    // #770 (auditoría de PR): el PR #70 añadió `if (!session?.user?.id)` DESPUÉS de la
+    // línea que ya usaba `session.user.id` para construir `where`. Un guardia colocado
+    // después de la línea que protege no protege nada: si `session.user` llegara a existir
+    // sin `id` -un JWT firmado antes de que el callback de sesión lo escribiera es la vía
+    // real, no una hipotética; ver #714 S-05, las sesiones no se revalidan hasta 8 horas-,
+    // `where.userId` quedaría en `undefined`. Prisma OMITE del `where` cualquier clave en
+    // `undefined` -no es lo mismo que `null`-, así que la consulta de abajo dejaría de
+    // filtrar por usuario y listaría las notificaciones de TODOS. La comprobación se funde
+    // aquí con la de `session.user` para que no pueda existir una entre las dos líneas.
     const session = await getServerSession();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
@@ -36,7 +46,9 @@ export async function GET(request: NextRequest) {
     // Parámetros de filtro
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const type = searchParams.get("type") || undefined;
-    // const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50")));
+    // `pageSize` como alias de `limit`: lo añadió el PR #70 sin comentario. Se conserva
+    // -no es lo que se está corrigiendo aquí- pero queda documentado por si alguien lo
+    // busca: la pantalla puede mandar cualquiera de los dos nombres.
     const limitParam = searchParams.get("limit") || searchParams.get("pageSize") || "50";
     const limit = Math.min(100, Math.max(1, parseInt(limitParam)));
 
@@ -44,10 +56,6 @@ export async function GET(request: NextRequest) {
     const where: any = {
       userId: session.user.id,
     };
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
 
     if (unreadOnly) {
       where.isRead = false;
