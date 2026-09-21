@@ -149,4 +149,41 @@ describe("botRespond — agentes por segmento", () => {
     const args = systemArgs.mock.calls[0][0] as { objective?: string };
     expect(args.objective ?? "").not.toContain("IDENTIDAD");
   });
+
+  // FIX 2026-09-21 (hallazgo de Luis): antes, `agentPlaybook ?? (global)` caía al
+  // playbook global en cuanto el agente del segmento no traía uno propio, aunque SÍ
+  // hubiera un agente resuelto — así "Agente Clientes Actuales" (playbookId null a
+  // propósito, identidad "NUNCA lo vuelvas a calificar") terminaba recibiendo las 5
+  // preguntas de "Calificación base". Esta prueba habría fallado contra el código
+  // viejo (playbookFindFirst SÍ se llamaba).
+  it("agente resuelto sin playbook propio (Clientes Actuales) → NO cae al playbook global aunque haya uno activo", async () => {
+    botConfig.activePlaybookId = "pb-calificacion-base";
+    selectAgentProfile.mockResolvedValue({
+      id: "ap3", name: "Clientes Actuales", identity: "IDENTIDAD-CLIENTES-ACTUALES", tonePreset: null, playbook: null,
+    });
+    try {
+      await botRespond("c1");
+      expect(playbookFindFirst).not.toHaveBeenCalled();
+      expect(runPlaybookStep).not.toHaveBeenCalled();
+      const args = systemArgs.mock.calls[0][0] as { objective?: string };
+      expect(args.objective).toContain("IDENTIDAD-CLIENTES-ACTUALES");
+    } finally {
+      botConfig.activePlaybookId = null;
+    }
+  });
+
+  it("sin agente resuelto (LEAD/PROSPECTO sin clasificar) → SÍ cae al playbook global activo", async () => {
+    botConfig.activePlaybookId = "pb-calificacion-base";
+    selectAgentProfile.mockResolvedValue(null);
+    playbookFindFirst.mockResolvedValue({ id: "pb-calificacion-base", tasks: [{ id: "t1" }] });
+    runPlaybookStep.mockResolvedValue({ objective: "OBJ-GLOBAL", status: "IN_PROGRESS" });
+    try {
+      await botRespond("c1");
+      expect(playbookFindFirst).toHaveBeenCalled();
+      const args = systemArgs.mock.calls[0][0] as { objective?: string };
+      expect(args.objective).toContain("OBJ-GLOBAL");
+    } finally {
+      botConfig.activePlaybookId = null;
+    }
+  });
 });
