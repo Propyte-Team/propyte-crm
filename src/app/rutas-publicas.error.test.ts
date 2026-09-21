@@ -41,6 +41,9 @@ describe("fronteras de error en las rutas públicas (#716)", () => {
     const reservados = new Set([
       "api", "login", "layout.tsx", "page.tsx", "globals.css", "favicon.ico",
       "global-error.tsx", "not-found.tsx", "error.tsx", "rutas-publicas.error.test.ts",
+      // #788: agregada por el PR #73 (descubrimiento OAuth RFC 9728 de la puerta MCP).
+      // Es un endpoint técnico, no una página de cara al cliente — no necesita error.tsx.
+      ".well-known",
     ]);
     const segmentos = readdirSync(APP, { withFileTypes: true })
       .filter((e) => e.isDirectory() && !e.name.startsWith("(") && !reservados.has(e.name))
