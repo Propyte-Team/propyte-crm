@@ -158,11 +158,22 @@ export async function botRespond(
       : undefined;
 
   // Playbook configurable (Anexo Técnico §B-Task 8): el del agente del segmento manda;
-  // si el agente no trae, el global activo. Su objective gana sobre la ruta A. Cualquier
-  // error aquí cae al fallback de arriba — nunca debe impedir que el bot responda.
+  // si NO hay agente de segmento resuelto, el global activo. Su objective gana sobre la
+  // ruta A. Cualquier error aquí cae al fallback de arriba — nunca debe impedir que el
+  // bot responda.
+  //
+  // FIX 2026-09-21 (hallazgo de Luis): antes, `agentPlaybook ?? (global)` caía al
+  // playbook global en cuanto el agente del segmento no traía uno propio — así "Agente
+  // Clientes Actuales" (playbookId null, a propósito: su identidad dice "NUNCA lo
+  // vuelvas a calificar") terminaba recibiendo el objective de "Calificación base" (las
+  // 5 preguntas de comprador), que le ganaba a su propia identidad en el prompt
+  // compuesto. El fallback al global solo debe aplicar cuando NO hay ningún agente de
+  // segmento resuelto para el contacto (LEAD/PROSPECTO sin clasificar) — si sí hay
+  // agente pero decidió no traer playbook, eso es intencional y se respeta.
   const agentPlaybook = agentPlaybookOf(agentProfile);
+  const useGlobalPlaybook = !agentProfile && !!config.activePlaybookId;
   let playbookObjective: string | undefined;
-  if (agentPlaybook || config.activePlaybookId) {
+  if (agentPlaybook || useGlobalPlaybook) {
     try {
       const pb = agentPlaybook
         ?? (await prisma.botPlaybook.findFirst({

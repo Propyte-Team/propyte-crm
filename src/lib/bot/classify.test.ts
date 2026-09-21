@@ -116,13 +116,52 @@ describe("maybeClassifyContact", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("ya clasificado (marker.type) → no vuelve a llamar", async () => {
+  it("ya clasificado y algo más cambió el contactType después (marker.type != contactType) → se respeta, no reclasifica", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const { db } = mkDb();
     const done = { ...baseContact, custom: { bot_classification: { type: "EMPLEO", attempts: 1 } } };
     await maybeClassifyContact(db as never, done, msgs, "m");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // FIX 2026-09-21 (hallazgo de Luis): antes, en cuanto `marker.type` quedaba puesto la
+  // clasificación se congelaba PARA SIEMPRE — un contacto clasificado como EMPLEO que
+  // luego decía "mejor, estoy interesada en invertir" se quedaba archivado como EMPLEO
+  // y el bot seguía respondiendo con la identidad de reclutamiento. Estas pruebas
+  // habrían fallado contra el código viejo.
+  it("cambio de intención tras una clasificación previa del propio bot → SÍ reclasifica (ya no se congela)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("INVERSIONISTA")));
+    const { db, contactUpdate, auditCreate } = mkDb();
+    const yaEmpleo = {
+      ...baseContact,
+      contactType: "EMPLEO" as const,
+      custom: { bot_classification: { type: "EMPLEO", attempts: 0 } },
+    };
+    const r = await maybeClassifyContact(db as never, yaEmpleo, msgs, "m");
+    expect(r).toBe("INVERSIONISTA");
+    expect(contactUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        contactType: "INVERSIONISTA",
+        custom: expect.objectContaining({ bot_classification: expect.objectContaining({ type: "INVERSIONISTA" }) }),
+      }),
+    }));
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ changes: expect.objectContaining({ from: "EMPLEO", to: "INVERSIONISTA" }) }),
+    }));
+  });
+
+  it("reconfirma el mismo tipo ya clasificado por el bot → no escribe nada (evita ruido en cada mensaje)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("EMPLEO")));
+    const { db, contactUpdate } = mkDb();
+    const yaEmpleo = {
+      ...baseContact,
+      contactType: "EMPLEO" as const,
+      custom: { bot_classification: { type: "EMPLEO", attempts: 0 } },
+    };
+    const r = await maybeClassifyContact(db as never, yaEmpleo, msgs, "m");
+    expect(r).toBe("EMPLEO");
+    expect(contactUpdate).not.toHaveBeenCalled();
   });
 
   it("cualquier error → devuelve el tipo actual (nunca rompe al bot)", async () => {
