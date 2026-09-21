@@ -1,0 +1,774 @@
+
+> propyte-crm@0.1.0 test
+> vitest run
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/becarionativa/Documents/Propyte/propyte-crm[39m
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — descartes[2m > [22m[2msin conector activo no escribe nada
+[22m[39m[comments] sin conector activo para INSTAGRAM accountId=17841
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — envíos[2m > [22m[2msi falla la pública, el DM sale igual y el error queda textual
+[22m[39m[comments] respuesta pública falló: Error: Comment reply 368: temporarily blocked
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\comments\handle-comment.test.ts:217:38
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — envíos[2m > [22m[2msi falla el DM, la pública ya salió y el motivo se guarda
+[22m[39m[comments] private reply falló: Error: Private reply 10903: This comment is too old to reply privately
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\comments\handle-comment.test.ts:229:7
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — envíos[2m > [22m[2msi persistOpener falla (contacto u opener), sigue procesado y el DM NO se marca FAILED
+[22m[39m[comments] persistOpenerCreatingContact falló: Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\comments\handle-comment.test.ts:295:37
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — autor bloqueado[2m > [22m[2mno responde en público ni manda DM
+[22m[39m[comments] autor bloqueado (INSTAGRAM): IGSID-1 — se ignora
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — autor bloqueado[2m > [22m[2mconsulta la lista con el canal INSTAGRAM y el authorId
+[22m[39m[comments] autor bloqueado (INSTAGRAM): IGSID-42 — se ignora
+
+[90mstderr[2m | src/lib/comments/handle-comment.test.ts[2m > [22m[2mhandleComment — autor bloqueado[2m > [22m[2mun comentario de Facebook consulta el canal MESSENGER
+[22m[39m[comments] autor bloqueado (FACEBOOK): PSID-7 — se ignora
+
+ [32m✓[39m src/lib/comments/handle-comment.test.ts [2m([22m[2m33 tests[22m[2m)[22m[90m 84[2mms[22m[39m
+[90mstderr[2m | src/lib/inbox/assign.test.ts[2m > [22m[2massignContact — cronología y side-effects[2m > [22m[2msi Notification o Activity revientan, la operación sigue siendo ok
+[22m[39m[inbox] no se pudo crear la actividad de asignación Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\inbox\assign.test.ts:273:38
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+[inbox] no se pudo notificar al asignado Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\inbox\assign.test.ts:272:42
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/lib/inbox/assign.test.ts[2m > [22m[2massignContact — cronología y side-effects[2m > [22m[2mActivity revienta pero Notification SÍ se crea (son try/catch independientes)
+[22m[39m[inbox] no se pudo crear la actividad de asignación Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\inbox\assign.test.ts:279:38
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+ [32m✓[39m src/lib/inbox/assign.test.ts [2m([22m[2m31 tests[22m[2m)[22m[90m 61[2mms[22m[39m
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage[2m > [22m[2mside-effects no matan el pipeline[2m > [22m[2mactivity.create truena → el bot igual responde y la ingesta regresa el mensaje
+[22m[39m[messaging] activity inbound (INSTAGRAM) falló: Error: FK violation
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\messaging\core.test.ts:208:40
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage[2m > [22m[2mside-effects no matan el pipeline[2m > [22m[2memitEvent truena (canal WHATSAPP) → el bot igual responde
+[22m[39m[messaging] emitEvent whatsapp.replied falló: Error: engine error
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\messaging\core.test.ts:221:35
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage – identidad social (perfil Graph)[2m > [22m[2mupdate del perfil falla → el intake sigue (mensaje se crea)
+[22m[39m[messaging] applySocialProfile falló (c1): Error: db
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\messaging\core.test.ts:300:39
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage — echoes (Caso 4)[2m > [22m[2mecho sin contacto existente → skip (NO crea contacto desde echoes)
+[22m[39m[messaging] echo sin contacto (MESSENGER): PSID-user — la página escribió primero; skip
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage — echoes (Caso 4)[2m > [22m[2mFix 1 — comprobación determinista contra CommentRuleLog[2m > [22m[2mla consulta a CommentRuleLog lanza → el eco sigue el camino de siempre (ADVISOR + takeover), no rompe la ingesta
+[22m[39m[messaging] chequeo de commentRuleLog en echo falló (sigue como eco normal): Error: relation "comment_rule_logs" does not exist
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\messaging\core.test.ts:568:49
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage — remitente bloqueado[2m > [22m[2mdescarta el mensaje sin tocar contactos
+[22m[39m[messaging] inbound de remitente bloqueado (INSTAGRAM): IGSID-1 — descartado
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage — remitente bloqueado[2m > [22m[2mconsulta la lista con el canal y el senderId de WhatsApp
+[22m[39m[messaging] inbound de remitente bloqueado (WHATSAPP): +5219981234567 — descartado
+
+[90mstderr[2m | src/lib/messaging/core.test.ts[2m > [22m[2mhandleInboundMessage — el provisional deja de serlo al responder[2m > [22m[2msi el ruteo truena, la ingesta sigue: el mensaje ya está en el hilo
+[22m[39m[messaging] ruteo del primer reply de comentario falló: Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\messaging\core.test.ts:874:37
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+ [32m✓[39m src/lib/messaging/core.test.ts [2m([22m[2m74 tests[22m[2m)[22m[33m 461[2mms[22m[39m
+[90mstderr[2m | src/lib/comments/link-comment-origin.test.ts[2m > [22m[2mlinkCommentOrigin[2m > [22m[2mun fallo al rellenar el opener no impide estampar el contactId
+[22m[39m[comments] backfill del opener falló: Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\comments\link-comment-origin.test.ts:352:42
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+ [32m✓[39m src/lib/comments/link-comment-origin.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 61[2mms[22m[39m
+ [32m✓[39m src/app/api/conversations/[id]/actions/route.test.ts [2m([22m[2m32 tests[22m[2m)[22m[90m 81[2mms[22m[39m
+ [32m✓[39m src/lib/agents/runner.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+ [32m✓[39m src/server/admin.protecciones.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+ [32m✓[39m src/lib/bot/ai-actions.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m src/app/api/conversations/[id]/messages/route.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 52[2mms[22m[39m
+ [32m✓[39m src/lib/journey/rule-draft.test.ts [2m([22m[2m33 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m src/lib/journey/journey-map.test.ts [2m([22m[2m33 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/dispatcher.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — aislamiento por etapa[2m > [22m[2mcon todo en orden corre todas las etapas y responde ok
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:103:15
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — aislamiento por etapa[2m > [22m[2mel barrido de códigos vencidos corre y reporta cuántos retiró
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:127:15
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — aislamiento por etapa[2m > [22m[2msi el barrido revienta, sale con su nombre y el tick responde 500
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:138:15
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+[cron/workflows] etapa otpVencidos: Error: boom en el barrido
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:136:42
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — aislamiento por etapa[2m > [22m[2mel rescate de encalladas corre ANTES de la cola, para que entren en la misma pasada
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:158:5
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — parcialidades vencidas[2m > [22m[2mmarca cada parcialidad y emite su evento
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:243:25
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — parcialidades vencidas[2m > [22m[2mel estado y el evento van en la MISMA transacción
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:258:5
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+[90mstderr[2m | src/app/api/cron/workflows/route.test.ts[2m > [22m[2mGET /api/cron/workflows — parcialidades vencidas[2m > [22m[2mpero la tabla sin migrar (P2021) sigue perdonándose con 0
+[22m[39m[cron/workflows] replay de leads: TypeError: Cannot read properties of undefined (reading 'findMany')
+    at reprocesarLeadsFallidos [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\intake\connectors.ts:347:50[90m)[39m
+    at reintentarLeadsSafe [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:17:18[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at Module.GET [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.ts:144:24[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\cron\workflows\route.test.ts:294:15
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+
+ [32m✓[39m src/app/api/cron/workflows/route.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 312[2mms[22m[39m
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook[2m > [22m[2mprocesa igual (connectorId null) si no hay conector para la cuenta
+[22m[39m[meta-dm] sin conector activo para INSTAGRAM accountId=999
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — comentarios[2m > [22m[2mun comentario que revienta no tumba el resto del batch
+[22m[39m[meta-dm] comentario: Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\webhooks\meta-dm\route.test.ts:184:41
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mrechaza con 401 si META_DM_APP_SECRET no está configurado (falla CERRADO)
+[22m[39m[meta-dm] META_DM_APP_SECRET no configurado → webhook rechazado (401)
+[meta-dm] firma inválida → 401 (header presente)
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mrechaza con 401 una firma que no corresponde al cuerpo
+[22m[39m[meta-dm] firma inválida → 401 (header presente)
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mrechaza con 401 si falta el header de firma
+[22m[39m[meta-dm] firma inválida → 401 (header ausente)
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mrechaza con 401 un header cuyo prefijo no es sha256=
+[22m[39m[meta-dm] firma inválida → 401 (header presente)
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2macepta el cuerpo firmado correctamente y lo procesa
+[22m[39m[meta-dm] sin conector activo para MESSENGER accountId=PAGE-1
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mresponde 400 a un cuerpo firmado que no es JSON
+[22m[39m[meta-dm] JSON inválido → 400
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mresponde 400 a un cuerpo JSON que no es objeto: null
+[22m[39m[meta-dm] cuerpo JSON que no es un objeto → 400
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mresponde 400 a un cuerpo JSON que no es objeto: 42
+[22m[39m[meta-dm] cuerpo JSON que no es un objeto → 400
+
+[90mstderr[2m | src/app/api/webhooks/meta-dm/route.test.ts[2m > [22m[2mmeta-dm webhook — autenticación de la firma[2m > [22m[2mresponde 400 a un cuerpo JSON que no es objeto: "texto"
+[22m[39m[meta-dm] cuerpo JSON que no es un objeto → 400
+
+ [32m✓[39m src/app/api/webhooks/meta-dm/route.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 80[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/comment-rules/logs/[id]/retry/route.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/contexto.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/handlers/config.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+[90mstderr[2m | src/lib/workflows/routing.plaza-pond.test.ts[2m > [22m[2mautoRouteLead — ruteo por plaza[2m > [22m[2msin plaza resoluble no se fuerza asesor: cae al Pond (#729)
+[22m[39m[routing] lead c1 sin asignar (sin_plaza_resoluble): la regla matchea pero el contacto no tiene plaza y la regla no nombra una (#729) · fuente=WHATSAPP plaza=sin plaza · reglas activas=1, evaluadas sin asignar=1
+
+[90mstderr[2m | src/lib/workflows/routing.plaza-pond.test.ts[2m > [22m[2mautoRouteLead — Pond (#678)[2m > [22m[2msin candidato: crea ORPHAN, notifica a gerencia de la plaza y emite lead.orphaned; devuelve null
+[22m[39m[routing] lead c1 sin asignar (sin_candidatos_ruteables): la regla matchea y resuelve plaza, pero no quedó ningún asesor ruteable (activo, no .local, no excluido) · fuente=WHATSAPP plaza=MERIDA · reglas activas=1, evaluadas sin asignar=1
+
+[90mstderr[2m | src/lib/workflows/routing.plaza-pond.test.ts[2m > [22m[2mautoRouteLead — Pond (#678)[2m > [22m[2mPond sin gerencia en la plaza: reintenta con toda la gerencia
+[22m[39m[routing] lead c1 sin asignar (sin_candidatos_ruteables): la regla matchea y resuelve plaza, pero no quedó ningún asesor ruteable (activo, no .local, no excluido) · fuente=WHATSAPP plaza=MERIDA · reglas activas=1, evaluadas sin asignar=1
+
+ [32m✓[39m src/lib/workflows/routing.plaza-pond.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 77[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/capture.test.ts [2m([22m[2m38 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m src/app/api/records/[object]/[id]/custom/route.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m src/lib/comments/parse.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/sla.breach-aviso.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/puerta.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+[90mstderr[2m | src/lib/hub/catalog.test.ts[2m > [22m[2mmanejo de errores[2m > [22m[2mdistingue fallo de vacío legítimo
+[22m[39m[hub/catalog] listPublishedDevelopments falló {
+  err: Error: connection refused
+      at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\hub\catalog.test.ts:95:36
+      at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+      at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+      at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+      at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+  [90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+      at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+      at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+      at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+      at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+}
+
+[90mstderr[2m | src/lib/hub/catalog.test.ts[2m > [22m[2msearchCatalog (agente IA)[2m > [22m[2mante fallo devuelve error, no lista vacía silenciosa
+[22m[39m[hub/catalog] searchCatalog falló {
+  err: Error: timeout
+      at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\hub\catalog.test.ts:223:36
+      at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+      at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+      at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+      at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+  [90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+      at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+      at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+      at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+      at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+}
+
+ [32m✓[39m src/lib/hub/catalog.test.ts [2m([22m[2m27 tests[22m[2m)[22m[90m 36[2mms[22m[39m
+ [32m✓[39m src/lib/twilio/whatsapp.outbound.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/actions.send-email.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/bot/bot-respond.agents.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m src/server/agenda.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 183[2mms[22m[39m
+ [32m✓[39m src/lib/security/rate-limit.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+[90mstderr[2m | src/lib/bot/classify.test.ts[2m > [22m[2mmaybeClassifyContact[2m > [22m[2mcualquier error → devuelve el tipo actual (nunca rompe al bot)
+[22m[39m[bot] clasificador falló (c1): Error: db down
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\bot\classify.test.ts:170:37
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+ [32m✓[39m src/lib/bot/classify.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m src/lib/validations/rebuild-f1.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/reparto.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m src/server/deals.inventario.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m src/app/api/agenda/activities/route.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 81[2mms[22m[39m
+ [32m✓[39m src/lib/intake/reserva-y-replay.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/conversations/[id]/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/app/api/links/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 124[2mms[22m[39m
+ [32m✓[39m src/lib/auth/otp-limpieza.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m src/lib/comments/match.test.ts [2m([22m[2m26 tests[22m[2m)[22m[90m 89[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/catalogo-campos.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/http.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+[90mstderr[2m | src/app/api/admin/comment-rules/route.test.ts[2m > [22m[2mGET /api/admin/comment-rules[2m > [22m[2mpropaga cualquier otro error de Prisma
+[22m[39m[comment-rules] GET: Error: boom
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\app\api\admin\comment-rules\route.test.ts:120:50
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m {
+  code: [32m'P1001'[39m
+}
+
+ [32m✓[39m src/app/api/admin/comment-rules/route.test.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+ [32m✓[39m src/server/today.alcance.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 53[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/anomalias-series.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m src/lib/crypto/secretos.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 174[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/escalacion.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/busqueda-incompleta.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m src/app/api/webhooks/whatsapp/meta/route.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+[90mstderr[2m | src/lib/hub/client.test.ts[2m > [22m[2mfirmas legadas intactas[2m > [22m[2mante fallo devuelve [] para no romper a los callers
+[22m[39m[hub/catalog] listPublishedDevelopments falló {
+  err: Error: db caída
+      at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\hub\client.test.ts:64:36
+      at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+      at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+      at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+      at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+  [90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+      at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+      at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+      at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+      at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+}
+
+ [32m✓[39m src/lib/hub/client.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+[90mstderr[2m | src/lib/moderation/block-sender.test.ts[2m > [22m[2mrecordMetaResult[2m > [22m[2mno lanza si la escritura falla
+[22m[39m[moderation] no se pudo guardar el resultado de Meta (blocked-1): Error: db caída
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\moderation\block-sender.test.ts:170:37
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4mvitest[24m/dist/chunks/runBaseTests.3qpJUEJM.js:126:11
+    at withEnv [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4mvitest[24m/dist/chunks/runBaseTests.3qpJUEJM.js:90:5[90m)[39m
+
+ [32m✓[39m src/lib/moderation/block-sender.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/server/quotes.acceso.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+ [32m✓[39m src/lib/due-date.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 53[2mms[22m[39m
+ [32m✓[39m src/lib/commission-engine/for-deal.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/app/api/webhooks/zapier/deals/route.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 82[2mms[22m[39m
+ [32m✓[39m src/app/api/deals/[id]/route.patch.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+[90mstderr[2m | src/lib/workflows/horario-laboral.test.ts[2m > [22m[2mestaEnHorarioLaboral — sin agenda devuelve null, no false (#680)[2m > [22m[2muna zona horaria inválida tampoco se puede responder
+[22m[39m[workflows] estaEnHorarioLaboral: timezone inválida "No/Existe"
+
+ [32m✓[39m src/lib/workflows/horario-laboral.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/adapters/instagram.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/profile.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m src/lib/cron/auth.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/builder-model.test.ts [2m([22m[2m24 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m src/lib/contacts/duplicate-alert.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m src/lib/validations/contact.lead-source.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/lib/comments/graph.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/topes.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m src/server/deals.comisiones.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m src/lib/email/sanitize.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+[90mstderr[2m | src/lib/workflows/routing.orphan-cumplido.test.ts[2m > [22m[2mautoRouteLead — el ORPHAN se cumple al conseguir dueño (#753)[2m > [22m[2mNO asignar no lo cumple: el lead se va al Pond y su reloj sigue corriendo
+[22m[39m[routing] lead c1 sin asignar (sin_candidatos_ruteables): la regla matchea y resuelve plaza, pero no quedó ningún asesor ruteable (activo, no .local, no excluido) · fuente=WHATSAPP plaza=TULUM · reglas activas=1, evaluadas sin asignar=1
+
+ [32m✓[39m src/lib/workflows/routing.orphan-cumplido.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m src/lib/permissions/seed-data.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m src/lib/permissions/can.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m src/components/layout/nav-config.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/run.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/comment-rules/test/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 55[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/salud-conectores.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/sla-pond.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/server/shortlists.acceso.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/agents/tools.auditoria.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 68[2mms[22m[39m
+ [32m✓[39m src/lib/inbox/scope.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/server/leads-provisionales.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 251[2mms[22m[39m
+ [32m✓[39m src/lib/intake/capture-lead.provisional.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m src/lib/agents/tools.identidad.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/routing.exclusions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/app/api/auth/reset-password/route.fecha.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/sla.orphan.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/sla-denominador.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/segment-playbooks.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+[90mstderr[2m | src/lib/storage/chat-media.test.ts[2m > [22m[2muploadChatMedia[2m > [22m[2merror de storage o sin cliente → null (nunca lanza)
+[22m[39m[chat-media] upload falló: boom
+
+ [32m✓[39m src/lib/storage/chat-media.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m src/server/admin.resetPassword.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 4957[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — quién puede[2m > [22mADMIN y DIRECTOR pueden restablecer [33m1033[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — validación[2m > [22mbusca al usuario excluyendo los borrados [33m474[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — qué escribe[2m > [22mguarda un hash que valida contra la contraseña nueva, nunca el texto plano [33m1469[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — qué escribe[2m > [22msolo toca passwordHash: no cambia rol, correo ni estado activo [33m498[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — qué escribe[2m > [22mno devuelve la contraseña ni el hash a quien la pidió [33m489[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — auditoría[2m > [22mdeja rastro de quién se la cambió a quién [33m503[2mms[22m[39m
+   [33m[2m✓[22m[39m resetUserPassword — auditoría[2m > [22mla auditoría NO contiene la contraseña ni el hash [33m478[2mms[22m[39m
+[90mstderr[2m | src/app/api/webhooks/twilio/voice/twiml/route.test.ts[2m > [22m[2mvoice/twiml (salida)[2m > [22m[2mdoNotContact → Hangup sin Activity
+[22m[39m[voice/twiml] contacto c1 con doNotContact → no se marca
+
+[90mstderr[2m | src/app/api/webhooks/twilio/voice/twiml/route.test.ts[2m > [22m[2mvoice/twiml — el número lo decide el servidor, no el navegador[2m > [22m[2m🚨 sin contactId NO se marca: era el bypass de doNotContact
+[22m[39m[voice/twiml] intento de marcar sin contactId → rechazado
+
+ [32m✓[39m src/app/api/webhooks/twilio/voice/twiml/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 49[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/conexion.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/intake/provider-source.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/deals/[id]/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 71[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/comment-rules/[id]/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m src/lib/bot/bot-respond.staleness.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m src/lib/auth/password-changed-at.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 760[2mms[22m[39m
+   [33m[2m✓[22m[39m passwordChangedAt se escribe SIEMPRE junto al hash (#699)[2m > [22mtoda vía de src/ que escribe passwordHash escribe también passwordChangedAt [33m331[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/queue.recuperar.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/lib/agents/permisos.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/moderation/meta-moderation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/lib/contacts/duplicates.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/adapters/messenger.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/bot/bot-respond.channel.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m src/lib/bot/claude.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/journey/node-catalog.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/app/api/mcp/[...path]/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/outbound-sla.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/solo-lectura.test.ts [2m([22m[2m40 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m src/server/quotes.envio.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/quotes/pricing.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/routing-diagnostico.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/lib/intake/profile-mapping.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/api/orden.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/conversations.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/rpc.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m src/lib/journey/flow-adapter.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/server/quotes.plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/connectors/google/webhook/rutas.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m src/lib/validations/quote.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/handlers/connectors.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m src/lib/permissions/resolve.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/intake/map-lead.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/app/api/conversations/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m src/lib/intake/capture-lead.nota-repetido.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m src/app/api/units/rutas.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [31m❯[39m src/app/rutas-publicas.error.test.ts [2m([22m[2m12 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 33[2mms[22m[39m
+[31m   [31m×[31m fronteras de error en las rutas públicas (#716)[2m > [22mno queda ninguna ruta pública nueva sin frontera[90m 22[2mms[22m[31m[39m
+[31m     → expected [ '.well-known', 'p', 'portal', …(2) ] to deeply equal [ 'p', 'portal', 'q', 't' ][39m
+ [32m✓[39m src/lib/messaging/media.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/handlers/data.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/connectors/health/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m src/lib/agenda/grouping.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m src/app/api/webhooks/zapier/activities/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 58[2mms[22m[39m
+ [32m✓[39m src/lib/agents/rbac-unificado.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/rbac/deal-access.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/lib/whatsapp/transport.multicuenta.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/handlers/automation.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m src/lib/google/gmail.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/whatsapp/format.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+[90mstderr[2m | src/lib/bot/agent-profiles.test.ts[2m > [22m[2mselectAgentProfile[2m > [22m[2msin perfil para el tipo → null; error de BD → null (nunca lanza)
+[22m[39m[bot] selectAgentProfile falló: Error: db
+    at Object.findMany [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\bot\agent-profiles.test.ts:23:73[90m)[39m
+    at Module.selectAgentProfile [90m(C:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\bot\agent-profiles.ts:16:47[90m)[39m
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\bot\agent-profiles.test.ts:24:18
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:5
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:11[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+ [32m✓[39m src/lib/bot/agent-profiles.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m src/lib/bot/hub-catalog.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 49[2mms[22m[39m
+ [32m✓[39m src/lib/timeline/status-periods.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/api/filtros.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/leads/real-leads.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/whatsapp/transport.format.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/blocked-senders/[id]/retry/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/walk-nodes.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/journey/node-metrics.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/app/api/quotes/[id]/send/rutas.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/auth.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m src/lib/intake/capture-lead.attribution.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 52[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/sla.createTimer.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/notifications/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m src/lib/lifecycle/apply.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+[90mstderr[2m | src/lib/workflows/business-hours.test.ts[2m > [22m[2mcomputeDueAt[2m > [22m[2mtimezone inválida cae a wall-clock sin lanzar
+[22m[39m[sla] computeDueAt: timezone inválida "No/Existe"; fallback wall-clock
+[sla] computeDueAt: timezone inválida "No/Existe"; fallback wall-clock
+
+ [32m✓[39m src/lib/workflows/business-hours.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 51[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/evaluate-conditions.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/blocked-senders/[id]/unblock/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m src/lib/deals/stage-inventory.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/fallos-agotadas.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/automation/plans/[id]/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/prioridad-auditor.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/app/api/deals/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 56[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/adapters/meta-attachments.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/actions.make-call.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/dispatch.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/catalogo.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+[90mstderr[2m | src/app/api/webhooks/twilio/voice/incoming/route.test.ts[2m > [22m[2mvoice/incoming[2m > [22m[2mdesconocido → captureLead LLAMADA_ENTRANTE y va a buzón si no hay asesor; NO crea Activity
+[22m[39m[voice/incoming] llamada entrante sin asesor asignado, contacto c2 — Activity no registrada
+
+ [32m✓[39m src/app/api/webhooks/twilio/voice/incoming/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m src/lib/intake/capture-lead.contacttype.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/lib/comments/template.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/agenda/rango-dia.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/handlers/agent-tools.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/lib/connectors/registry.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/activities/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 58[2mms[22m[39m
+ [32m✓[39m src/lib/agents/run-status.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/lib/timeline/merge.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/auth.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/webhook-subscription.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/server/activities.reabrir.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/components/config/workflow-builder.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/rbac/query-scope.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/mcp/revision/redactar.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/intake/connectors.sanitize-enums.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/timeline/format.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/audit/change-context.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/server/activities.create.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/scheduler-exit.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/bot/model.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/email/compose.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/intake/connectors.senal-de-vida.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/twilio/voice.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/sla-select.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/activities/scope.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/whatsapp/media.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/connectors/test-connection.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m src/app/api/webhooks/twilio/voice/dial-action-outbound/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m src/server/commissions.filtro.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/engine.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/server/deals.updateDeal.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+ [32m✓[39m src/lib/permissions/catalog.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/validations/deal.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/webhooks/twilio/voice/dial-action/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m src/lib/constants.contact-type.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/app/api/contacts/route.schema.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/components/config/config-center.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/metadata/governance.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/journey/layout/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m src/lib/bot/config.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/lib/intake/campaign-plaza.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/templates/fill.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/inbox/roles.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/social-accounts.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/automation/plans/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m src/lib/intake/connectors.explicit-wins.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/sla-model.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 79[2mms[22m[39m
+ [32m✓[39m src/lib/intake/capture-lead.social.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m src/server/contacts-dedup.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/shortlists/shortlists-helpers.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/lifecycle/transitions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/bot/tone-presets.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/adattribution-segmentation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+[90mstderr[2m | src/lib/moderation/is-blocked.test.ts[2m > [22m[2misSenderBlocked[2m > [22m[2mfalse si la consulta truena — nunca bloquea la ingesta
+[22m[39m[moderation] isSenderBlocked falló (INSTAGRAM/IGSID-1): Error: db caída
+    at [90mC:\Users\becarionativa\Documents\Propyte\propyte-crm\[39msrc\lib\moderation\is-blocked.test.ts:40:34
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:146:14
+    at [90mfile:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:533:11
+    at runWithTimeout [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:39:7[90m)[39m
+    at runTest [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1056:17[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runSuite [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1205:15[90m)[39m
+    at runFiles [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1262:5[90m)[39m
+    at startTests [90m(file:///C:/Users/becarionativa/Documents/Propyte/propyte-crm/[39mnode_modules/[4m@vitest/runner[24m/dist/index.js:1271:3[90m)[39m
+
+ [32m✓[39m src/lib/moderation/is-blocked.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m src/lib/phone.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/app/api/activities/[id]/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 56[2mms[22m[39m
+ [32m✓[39m src/lib/comments/roles.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/app/api/webhooks/twilio/voice/recording/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m src/lib/format-price.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 41[2mms[22m[39m
+ [32m✓[39m src/app/api/activities/rutas.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/cadence-model.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/twilio/voice.config.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/crypto-google.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 55[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/journey/metrics/route.window.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/bot/bot-respond.guards.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/lib/moderation/channel.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/email/mailer.send.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/extract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/capi/hash.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/builder-templates.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m src/lib/crypto.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/goals/progress.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/twilio/whatsapp.inbound.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/load-entity-context.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/bot/brand-linter.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/constants.lead-source.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/server/bot-config.schema.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/lib/validations/connectors-creds.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/lib/validations/incoming-lead-custom.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/set-lifecycle-action.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/fields.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/lib/intake/mapping-model.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/automation/rules/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/lib/whatsapp/accounts.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/lib/messaging/connector-health.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/shortlists/quote-from-item.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/lib/format-date.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m src/lib/teams/territory.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/validations/social-connector.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/server/bot-playbook.schema.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m src/lib/activities/permissions.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/pipeline/meeting-gate.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/lib/format-financing.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/app/api/connectors/google/webhook/route.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/lib/validations/incoming-lead-source.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/lib/bot/playbook/apply.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/automation/rules/route.schema.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/lib/workflows/lifecycle-engine.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m src/app/rutas-publicas.error.test.ts[2m > [22mfronteras de error en las rutas públicas (#716)[2m > [22mno queda ninguna ruta pública nueva sin frontera
+[31m[1mAssertionError[22m: expected [ '.well-known', 'p', 'portal', …(2) ] to deeply equal [ 'p', 'portal', 'q', 't' ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  Array [[22m
+[31m+   ".well-known",[39m
+[2m    "p",[22m
+[2m    "portal",[22m
+[2m    "q",[22m
+[2m    "t",[22m
+[2m  ][22m
+
+[36m [2m❯[22m src/app/rutas-publicas.error.test.ts:[2m49:30[22m[39m
+    [90m 47| [39m      [33m.[39m[34mmap[39m((e) [33m=>[39m e[33m.[39mname)[33m;[39m
+    [90m 48| [39m
+    [90m 49| [39m    [34mexpect[39m(segmentos[33m.[39m[34msort[39m())[33m.[39m[34mtoEqual[39m([33mRUTAS_PUBLICAS[39m[33m.[39m[34mmap[39m((r) [33m=>[39m r[33m.[39mdir)[33m.[39m…
+    [90m   | [39m                             [31m^[39m
+    [90m 50| [39m  })[33m;[39m
+    [90m 51| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m259 passed[39m[22m[90m (260)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2410 passed[39m[22m[90m (2411)[39m
+[2m   Start at [22m 10:46:43
+[2m   Duration [22m 78.14s[2m (transform 8.48s, setup 0ms, collect 70.49s, tests 13.08s, environment 96ms, prepare 56.41s)[22m
+
