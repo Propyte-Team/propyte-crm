@@ -3,7 +3,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
 import { Search, Bell, LogOut } from "lucide-react"
 import {
@@ -40,12 +40,25 @@ const MODULE_LABELS: Record<string, string> = {
   "/configuracion": "Configuración",
 }
 
+type NotificationItem = {
+  id: string
+  title: string
+  message: string
+  type: string
+  isRead: boolean
+  link: string | null
+  createdAt: string
+}
+
 export function Topbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { data: session } = useSession()
   const moduleLabel =
     Object.entries(MODULE_LABELS).find(([href]) => pathname?.startsWith(href))?.[1] ?? ""
   const [unreadCount, setUnreadCount] = React.useState(0)
+  const [notifications, setNotifications] = React.useState<NotificationItem[]>([])
+  const [loadingNotifications, setLoadingNotifications] = React.useState(false)
 
   // Conteo real de notificaciones no leídas
   React.useEffect(() => {
@@ -57,6 +70,48 @@ export function Topbar() {
       })
       .catch(() => {})
   }, [session?.user])
+
+  // Antes el botón de la campana no tenía ningún manejador de click, así que
+  // no pasaba nada al darle clic. Ahora abre un panel con las notificaciones
+  // recientes (se piden al backend al abrir, /api/notifications ya existía).
+  const loadNotifications = React.useCallback(() => {
+    if (!session?.user) return
+    setLoadingNotifications(true)
+    fetch("/api/notifications?pageSize=10")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (Array.isArray(data?.data)) setNotifications(data.data)
+        if (typeof data?.unreadCount === "number") setUnreadCount(data.unreadCount)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingNotifications(false))
+  }, [session?.user])
+
+  const handleNotificationClick = (notification: NotificationItem) => {
+    if (!notification.isRead) {
+      fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notificationIds: [notification.id] }),
+      }).catch(() => {})
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === notification.id ? { ...item, isRead: true } : item))
+      )
+      setUnreadCount((prev) => Math.max(0, prev - 1))
+    }
+    if (notification.link) router.push(notification.link)
+  }
+
+  const handleMarkAllRead = () => {
+    if (unreadCount === 0) return
+    fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markAll: true }),
+    }).catch(() => {})
+    setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })))
+    setUnreadCount(0)
+  }
 
   const userName = session?.user?.name || "Usuario"
   const userEmail = session?.user?.email || ""
@@ -103,22 +158,78 @@ export function Topbar() {
         </span>
 
         {/* Notifications */}
-        <button
-          className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors"
-          style={{ color: "var(--text-secondary)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)" }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent" }}
-        >
-          <Bell className="h-4 w-4" />
-          {unreadCount > 0 && (
-            <span
-              className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
-              style={{ background: "var(--color-error)" }}
+        <DropdownMenu onOpenChange={(open) => { if (open) loadNotifications() }}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Notificaciones"
+              className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors"
+              style={{ color: "var(--text-secondary)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)" }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent" }}
             >
-              {unreadCount}
-            </span>
-          )}
-        </button>
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                  style={{ background: "var(--color-error)" }}
+                >
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-80" align="end" forceMount>
+            <DropdownMenuLabel className="flex items-center justify-between font-normal">
+              <span className="text-sm font-medium">Notificaciones</span>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  className="text-[11px] font-medium"
+                  style={{ color: "var(--color-teal)" }}
+                  onClick={(e) => { e.stopPropagation(); handleMarkAllRead() }}
+                >
+                  Marcar todas como leídas
+                </button>
+              )}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {loadingNotifications && (
+              <div className="px-2 py-4 text-center text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                Cargando...
+              </div>
+            )}
+            {!loadingNotifications && notifications.length === 0 && (
+              <div className="px-2 py-4 text-center text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                Sin notificaciones
+              </div>
+            )}
+            {!loadingNotifications && notifications.length > 0 && (
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.map((notification) => (
+                  <DropdownMenuItem
+                    key={notification.id}
+                    className="flex flex-col items-start gap-0.5 whitespace-normal py-2"
+                    onClick={() => handleNotificationClick(notification)}
+                  >
+                    <div className="flex w-full items-center gap-1.5">
+                      {!notification.isRead && (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: "var(--color-error)" }}
+                        />
+                      )}
+                      <span className="text-[13px] font-medium">{notification.title}</span>
+                    </div>
+                    <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                      {notification.message}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* User dropdown */}
         <DropdownMenu>
