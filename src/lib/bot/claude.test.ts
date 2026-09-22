@@ -52,6 +52,16 @@ describe("buildSystemPrompt (4 capas)", () => {
     expect(s.toLowerCase()).toContain("no cites precios");
   });
 
+  // FIX 2026-09-22 (hallazgo #790, pruebas en vivo de #787): el bot ofrecía conectar con
+  // el asesor, el cliente confirmaba que sí, y el bot respondía "le comparto tu interés..."
+  // SIN el token [ESCALAR] — la conversación se quedaba en modo bot, sin notificación ni
+  // aiSummary nuevo, y el cliente esperaba un contacto que nadie iba a hacer.
+  it("instruye a escalar (token) cuando el cliente confirma que quiere que su asesor lo contacte", () => {
+    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
+    expect(s).toContain("ese \"sí\" ES intención fuerte");
+    expect(s).toMatch(/confirma que sí quiere ese contacto[\s\S]*\[ESCALAR\]/);
+  });
+
   // BUG 2026-07-24 (Emily): cliente escribió en inglés y el bot contestó en español —
   // "Idioma: ES" (preferredLanguage default del intake) sonaba a directiva y le ganaba
   // a "responde en el idioma del cliente". El idioma del ÚLTIMO mensaje debe mandar.

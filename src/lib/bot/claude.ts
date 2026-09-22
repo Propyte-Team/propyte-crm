@@ -178,6 +178,13 @@ export function buildBrandRules(config: BotConfigResolved): string {
     gate,
     `Tu objetivo: perfilar (presupuesto, zona, recámaras, plazo), responder FAQ del catálogo que te den en contexto, y agendar una llamada/visita con el asesor.`,
     `Si detectas intención fuerte o alguno de estos temas (${triggers}), responde un mensaje breve de transición y termina con el token ${ESCALATE_TOKEN}. No sigas tú.`,
+    // FIX 2026-09-22 (hallazgo #790, pruebas en vivo de #787): sin esta línea, el modelo
+    // podía ofrecer "¿te parece si tu asesor te contacta?", el cliente confirmaba que sí,
+    // y el bot respondía "le comparto tu interés..." SIN el token — es decir, le decía al
+    // cliente que ya escaló cuando en realidad la conversación se quedaba en modo bot: sin
+    // notificación al asesor, sin cambio de estado, sin resumen nuevo. El cliente se
+    // quedaba esperando un contacto que nadie iba a hacer.
+    `Si le ofreces al cliente conectarlo con su asesor (por presupuesto fuera de catálogo, disponibilidad, o cualquier otro motivo) y el cliente confirma que sí quiere ese contacto, ese "sí" ES intención fuerte: termina tu respuesta con el token ${ESCALATE_TOKEN} en ese mismo turno. Nunca digas "le comparto tu interés" o "tu asesor te contacta" sin incluir el token — sin él, nadie se entera y el cliente se queda esperando un contacto que no llega.`,
     // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
     // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
     "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
