@@ -113,6 +113,19 @@ export function Topbar() {
     setUnreadCount(0)
   }
 
+  // Las notificaciones ya leídas se quedaban acumuladas para siempre, sin forma
+  // de limpiar el panel (backend nuevo: DELETE /api/notifications).
+  const handleDeleteAll = () => {
+    if (notifications.length === 0) return
+    fetch("/api/notifications", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deleteAll: true }),
+    }).catch(() => {})
+    setNotifications([])
+    setUnreadCount(0)
+  }
+
   const userName = session?.user?.name || "Usuario"
   const userEmail = session?.user?.email || ""
   const userRole = (session?.user as { role?: string })?.role || "ASESOR"
@@ -182,16 +195,27 @@ export function Topbar() {
           <DropdownMenuContent className="w-80" align="end" forceMount>
             <DropdownMenuLabel className="flex items-center justify-between font-normal">
               <span className="text-sm font-medium">Notificaciones</span>
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  className="text-[11px] font-medium"
-                  style={{ color: "var(--color-teal)" }}
-                  onClick={(e) => { e.stopPropagation(); handleMarkAllRead() }}
-                >
-                  Marcar todas como leídas
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    className="text-[11px] font-medium"
+                    style={{ color: "var(--color-teal)" }}
+                    onClick={(e) => { e.stopPropagation(); handleMarkAllRead() }}
+                  >
+                    Marcar todas como leídas
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-[11px] font-medium text-destructive"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteAll() }}
+                  >
+                    Eliminar todo
+                  </button>
+                )}
+              </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {loadingNotifications && (
