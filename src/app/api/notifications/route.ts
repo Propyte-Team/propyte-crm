@@ -1,8 +1,9 @@
 // ============================================================
 // API Route: /api/notifications
 // Gestión de notificaciones in-app del usuario
-// GET   - Listar notificaciones del usuario actual
-// PATCH - Marcar notificaciones como leídas
+// GET    - Listar notificaciones del usuario actual
+// PATCH  - Marcar notificaciones como leídas
+// DELETE - Eliminar notificaciones (#793: el panel las acumulaba para siempre)
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,6 +17,12 @@ const markReadSchema = z.object({
   notificationIds: z.array(z.string().uuid()).optional(),
   // Marcar todas las notificaciones como leídas
   markAll: z.boolean().optional(),
+});
+
+// Mismo shape que markReadSchema, para DELETE: notificationIds puntuales o deleteAll
+const deleteSchema = z.object({
+  notificationIds: z.array(z.string().uuid()).optional(),
+  deleteAll: z.boolean().optional(),
 });
 
 /**
@@ -97,9 +104,13 @@ export async function GET(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    // Verificar autenticación
+    // #794: guardia fusionado con el uso, igual que GET (ver el comentario largo de
+    // #770 ahí arriba) — antes este guardia solo comprobaba `session.user`, no `.id`,
+    // así que `session.user.id` podía llegar `undefined` al `where` de `updateMany` y
+    // Prisma lo omitía del filtro: habría marcado como leídas notificaciones de
+    // cualquier usuario, no solo las propias.
     const session = await getServerSession();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
@@ -156,6 +167,71 @@ export async function PATCH(request: NextRequest) {
     );
   } catch (error) {
     console.error("Error al marcar notificaciones:", error);
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/notifications
+ * Elimina notificaciones del usuario actual (#793: el panel las acumulaba sin
+ * límite una vez leídas, sin forma de limpiarlas).
+ * Igual que PATCH: notificationIds puntuales o deleteAll, y siempre acotado al
+ * propio usuario (guardia fusionado con el uso, ver #770/#794 arriba).
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const validation = deleteSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: "Datos inválidos", details: validation.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { notificationIds, deleteAll } = validation.data;
+
+    if (deleteAll) {
+      const result = await prisma.notification.deleteMany({
+        where: { userId: session.user.id },
+      });
+
+      return NextResponse.json({
+        message: `${result.count} notificaciones eliminadas`,
+        deletedCount: result.count,
+      });
+    }
+
+    if (notificationIds && notificationIds.length > 0) {
+      // Solo se pueden eliminar las del propio usuario
+      const result = await prisma.notification.deleteMany({
+        where: {
+          id: { in: notificationIds },
+          userId: session.user.id,
+        },
+      });
+
+      return NextResponse.json({
+        message: `${result.count} notificaciones eliminadas`,
+        deletedCount: result.count,
+      });
+    }
+
+    return NextResponse.json(
+      { error: "Debes proporcionar notificationIds o deleteAll: true" },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error("Error al eliminar notificaciones:", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }
