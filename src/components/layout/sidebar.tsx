@@ -25,11 +25,47 @@ export function Sidebar() {
   const { resolvedTheme, setTheme } = useTheme()
   const [collapsed, setCollapsed] = React.useState(false)
   const [mounted, setMounted] = React.useState(false)
+  const [unreadInbox, setUnreadInbox] = React.useState(0)
 
   React.useEffect(() => setMounted(true), [])
 
   const userRole = (session?.user as { role?: string })?.role || "ASESOR"
   const userName = session?.user?.name || "Usuario"
+
+  // #791: el Inbox no avisaba de mensajes pendientes fuera de su propia pestaña.
+  // Se sondea el conteo (mismo alcance por rol que /api/conversations, ver
+  // /api/inbox/unread-count) y se pinta un badge en el item de nav. Solo si el
+  // rol de hecho ve "Inbox" en el menú — para los que no, ni se pide.
+  const hasInboxAccess = React.useMemo(
+    () =>
+      navGroups.some((group) =>
+        group.items.some(
+          (item) => item.href === "/inbox" && (userRole === "ADMIN" || item.roles.includes(userRole))
+        )
+      ),
+    [userRole]
+  )
+
+  React.useEffect(() => {
+    if (!session?.user || !hasInboxAccess) return
+    let cancelled = false
+    const loadUnreadInbox = () => {
+      fetch("/api/inbox/unread-count")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!cancelled && typeof data?.count === "number") setUnreadInbox(data.count)
+        })
+        .catch(() => {})
+    }
+    loadUnreadInbox()
+    // Polling simple (no hay websockets en este proyecto; el mismo patrón que
+    // ya usa el badge de notificaciones del topbar, solo que aquí se repite).
+    const interval = setInterval(loadUnreadInbox, 20000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [session?.user, hasInboxAccess])
 
   const initials = userName
     .split(" ")
@@ -96,12 +132,28 @@ export function Sidebar() {
                       {isActive && (
                         <span className="absolute left-0 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-r" style={{ background: "var(--text-primary)" }} />
                       )}
-                      <Icon
-                        className="h-4 w-4 shrink-0 transition-colors"
-                        style={{ color: isActive ? "var(--text-primary)" : "var(--text-tertiary)" }}
-                        strokeWidth={isActive ? 2.2 : 1.8}
-                      />
+                      <span className="relative shrink-0">
+                        <Icon
+                          className="h-4 w-4 transition-colors"
+                          style={{ color: isActive ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                          strokeWidth={isActive ? 2.2 : 1.8}
+                        />
+                        {item.href === "/inbox" && unreadInbox > 0 && (
+                          <span
+                            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full"
+                            style={{ background: "var(--color-error)" }}
+                          />
+                        )}
+                      </span>
                       {!collapsed && <span>{item.label}</span>}
+                      {!collapsed && item.href === "/inbox" && unreadInbox > 0 && (
+                        <span
+                          className="ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold text-white"
+                          style={{ background: "var(--color-error)" }}
+                        >
+                          {unreadInbox > 99 ? "99+" : unreadInbox}
+                        </span>
+                      )}
                     </Link>
                   )
                 })}

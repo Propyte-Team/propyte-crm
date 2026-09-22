@@ -8,6 +8,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * -la comprobación antes del uso- de la única forma que sirve: viendo qué pasa cuando
  * `session.user` existe pero `id` no, que es exactamente el caso que un guardia mal
  * ubicado no cubre.
+ *
+ * #794 — PATCH tenía el mismo problema (guardia sin fundir con `session.user.id`) y
+ * nadie lo había probado; se agregan las mismas pruebas de paridad para PATCH y para
+ * el nuevo DELETE (#793) para que no vuelva a pasar desapercibido.
  */
 
 const session: { user: { id?: string; role?: string } | null } = {
@@ -17,28 +21,39 @@ vi.mock("@/lib/auth/session", () => ({ getServerSession: () => Promise.resolve(s
 
 const findMany = vi.fn();
 const count = vi.fn();
+const updateMany = vi.fn();
+const deleteMany = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     notification: {
       findMany: (...a: unknown[]) => findMany(...a),
       count: (...a: unknown[]) => count(...a),
-      updateMany: vi.fn(),
+      updateMany: (...a: unknown[]) => updateMany(...a),
+      deleteMany: (...a: unknown[]) => deleteMany(...a),
     },
   },
 }));
 
-import { GET } from "./route";
+import { GET, PATCH, DELETE } from "./route";
 
 function req(query = "") {
   return new Request(`http://t/api/notifications${query}`) as never;
 }
 
+function reqWithBody(body: unknown) {
+  return new Request("http://t/api/notifications", {
+    method: "PATCH", // el handler que corre lo decide el import (GET/PATCH/DELETE), no esto
+    body: JSON.stringify(body),
+  }) as never;
+}
+
 beforeEach(() => {
-  findMany.mockReset();
-  count.mockReset();
+  [findMany, count, updateMany, deleteMany].forEach((m) => m.mockReset());
   session.user = { id: "u1", role: "ASESOR" };
   findMany.mockResolvedValue([]);
   count.mockResolvedValue(0);
+  updateMany.mockResolvedValue({ count: 0 });
+  deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe("GET /api/notifications — autenticación", () => {
@@ -95,5 +110,94 @@ describe("GET /api/notifications — límite", () => {
 
     await GET(req("?limit=0"));
     expect(findMany.mock.calls[1][0].take).toBe(1);
+  });
+});
+
+describe("PATCH /api/notifications — autenticación (#794)", () => {
+  it("sin sesión, 401 y no toca la base", async () => {
+    session.user = null as never;
+    const res = await PATCH(reqWithBody({ markAll: true }));
+
+    expect(res.status).toBe(401);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("con sesión pero sin id, 401 y updateMany NUNCA se ejecuta (antes del fix sí se llamaba, con userId undefined)", async () => {
+    session.user = { role: "ASESOR" }; // sin id
+
+    const res = await PATCH(reqWithBody({ markAll: true }));
+
+    expect(res.status).toBe(401);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("con sesión completa y markAll, filtra por el id del usuario y nadie más", async () => {
+    await PATCH(reqWithBody({ markAll: true }));
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany.mock.calls[0][0].where).toMatchObject({ userId: "u1", isRead: false });
+  });
+
+  it("con notificationIds puntuales, el where también queda acotado al usuario", async () => {
+    await PATCH(reqWithBody({ notificationIds: ["11111111-1111-1111-1111-111111111111"] }));
+
+    expect(updateMany.mock.calls[0][0].where).toMatchObject({ userId: "u1" });
+  });
+
+  it("sin notificationIds ni markAll, 400", async () => {
+    const res = await PATCH(reqWithBody({}));
+    expect(res.status).toBe(400);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/notifications — autenticación (#793)", () => {
+  it("sin sesión, 401 y no toca la base", async () => {
+    session.user = null as never;
+    const res = await DELETE(reqWithBody({ deleteAll: true }));
+
+    expect(res.status).toBe(401);
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("con sesión pero sin id, 401 y deleteMany NUNCA se ejecuta", async () => {
+    session.user = { role: "ASESOR" }; // sin id
+
+    const res = await DELETE(reqWithBody({ deleteAll: true }));
+
+    expect(res.status).toBe(401);
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("deleteAll: borra solo las notificaciones del usuario actual", async () => {
+    deleteMany.mockResolvedValue({ count: 3 });
+    const res = await DELETE(reqWithBody({ deleteAll: true }));
+    const body = await res.json();
+
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+    expect(deleteMany.mock.calls[0][0].where).toEqual({ userId: "u1" });
+    expect(body).toEqual({ message: "3 notificaciones eliminadas", deletedCount: 3 });
+  });
+
+  it("notificationIds puntuales: el where queda acotado a esos ids Y al usuario", async () => {
+    const id = "11111111-1111-1111-1111-111111111111";
+    await DELETE(reqWithBody({ notificationIds: [id] }));
+
+    expect(deleteMany.mock.calls[0][0].where).toEqual({
+      id: { in: [id] },
+      userId: "u1",
+    });
+  });
+
+  it("sin notificationIds ni deleteAll, 400 y no toca la base", async () => {
+    const res = await DELETE(reqWithBody({}));
+    expect(res.status).toBe(400);
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("body inválido (ids que no son uuid), 400", async () => {
+    const res = await DELETE(reqWithBody({ notificationIds: ["no-es-uuid"] }));
+    expect(res.status).toBe(400);
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 });
