@@ -1,0 +1,83 @@
+From 57978cfa8418b93b76ef174a8d555767407fdfae Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 22 Sep 2026 10:52:49 -0500
+Subject: [PATCH] fix(bot): escala de verdad cuando el cliente confirma que
+ quiere que su asesor lo contacte
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Hallazgo #790 (pruebas en vivo de #787, contacto 86cb4b82, 21-sep 19:01-19:03):
+el bot ofrecía conectar con el asesor (p.ej. porque el presupuesto no calzaba
+con el catálogo), el cliente confirmaba que sí, y el bot respondía "le
+comparto tu interés... para que tu asesor te contacte" SIN el token
+[ESCALAR]. Sin el token, escalateToHuman() nunca corría: conversation.status
+se quedaba en BOT, sin notificación al asesor y sin aiSummary nuevo. El
+cliente se quedaba esperando un contacto que nadie iba a hacer.
+
+buildBrandRules() ya le decía al modelo cuándo escalar por intención fuerte o
+por los escalationTriggers configurados, pero no cubría este caso explícito:
+una confirmación del cliente tras una oferta de conectarlo con su asesor.
+Se agrega esa instrucción explícita, con la advertencia de no prometer el
+contacto sin incluir el token.
+
+aiSummary no necesita cambio: escalateToHuman() ya genera un resumen fresco
+de la conversación cada vez que se llama, así que al corregir cuándo se
+llama, el resumen queda correcto automáticamente.
+
+No se pudo correr vitest contra este cambio en este entorno: binaries.prisma.sh
+está bloqueado por la política de red del sandbox, así que @prisma/client no
+generó el query engine y cualquier test que importe claude.ts (que importa
+hub-catalog.ts -> src/lib/hub/catalog.ts -> prisma) falla al cargar, no por el
+cambio en sí (brand-linter.test.ts, sin dependencia de prisma, sí corrió y
+pasó). El test nuevo debería pasar en un entorno con prisma generate completo.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FxhtFBCQE7TkZB799a6uH3
+---
+ src/lib/bot/claude.test.ts | 10 ++++++++++
+ src/lib/bot/claude.ts      |  7 +++++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/src/lib/bot/claude.test.ts b/src/lib/bot/claude.test.ts
+index 57599074..0cf874e6 100644
+--- a/src/lib/bot/claude.test.ts
++++ b/src/lib/bot/claude.test.ts
+@@ -52,6 +52,16 @@ describe("buildSystemPrompt (4 capas)", () => {
+     expect(s.toLowerCase()).toContain("no cites precios");
+   });
+ 
++  // FIX 2026-09-22 (hallazgo #790, pruebas en vivo de #787): el bot ofrecía conectar con
++  // el asesor, el cliente confirmaba que sí, y el bot respondía "le comparto tu interés..."
++  // SIN el token [ESCALAR] — la conversación se quedaba en modo bot, sin notificación ni
++  // aiSummary nuevo, y el cliente esperaba un contacto que nadie iba a hacer.
++  it("instruye a escalar (token) cuando el cliente confirma que quiere que su asesor lo contacte", () => {
++    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
++    expect(s).toContain("ese \"sí\" ES intención fuerte");
++    expect(s).toMatch(/confirma que sí quiere ese contacto[\s\S]*\[ESCALAR\]/);
++  });
++
+   // BUG 2026-07-24 (Emily): cliente escribió en inglés y el bot contestó en español —
+   // "Idioma: ES" (preferredLanguage default del intake) sonaba a directiva y le ganaba
+   // a "responde en el idioma del cliente". El idioma del ÚLTIMO mensaje debe mandar.
+diff --git a/src/lib/bot/claude.ts b/src/lib/bot/claude.ts
+index a00a757c..5c42992b 100644
+--- a/src/lib/bot/claude.ts
++++ b/src/lib/bot/claude.ts
+@@ -178,6 +178,13 @@ export function buildBrandRules(config: BotConfigResolved): string {
+     gate,
+     `Tu objetivo: perfilar (presupuesto, zona, recámaras, plazo), responder FAQ del catálogo que te den en contexto, y agendar una llamada/visita con el asesor.`,
+     `Si detectas intención fuerte o alguno de estos temas (${triggers}), responde un mensaje breve de transición y termina con el token ${ESCALATE_TOKEN}. No sigas tú.`,
++    // FIX 2026-09-22 (hallazgo #790, pruebas en vivo de #787): sin esta línea, el modelo
++    // podía ofrecer "¿te parece si tu asesor te contacta?", el cliente confirmaba que sí,
++    // y el bot respondía "le comparto tu interés..." SIN el token — es decir, le decía al
++    // cliente que ya escaló cuando en realidad la conversación se quedaba en modo bot: sin
++    // notificación al asesor, sin cambio de estado, sin resumen nuevo. El cliente se
++    // quedaba esperando un contacto que nadie iba a hacer.
++    `Si le ofreces al cliente conectarlo con su asesor (por presupuesto fuera de catálogo, disponibilidad, o cualquier otro motivo) y el cliente confirma que sí quiere ese contacto, ese "sí" ES intención fuerte: termina tu respuesta con el token ${ESCALATE_TOKEN} en ese mismo turno. Nunca digas "le comparto tu interés" o "tu asesor te contacta" sin incluir el token — sin él, nadie se entera y el cliente se queda esperando un contacto que no llega.`,
+     // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
+     // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
+     "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
+-- 
+2.43.0
+
