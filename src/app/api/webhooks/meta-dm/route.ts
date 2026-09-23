@@ -10,7 +10,11 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { handleInboundMessage } from "@/lib/messaging/core";
 import { parseInstagramWebhook } from "@/lib/messaging/adapters/instagram";
 import { parseMessengerWebhook } from "@/lib/messaging/adapters/messenger";
-import { resolveConnectorByIgBusinessId, resolveConnectorByPageId } from "@/lib/messaging/social-accounts";
+import {
+  resolveConnectorByIgBusinessId,
+  resolveConnectorByPageId,
+  markSocialConnectorsSignatureRejected,
+} from "@/lib/messaging/social-accounts";
 import { parseCommentWebhook } from "@/lib/comments/parse";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
@@ -63,6 +67,11 @@ export async function POST(req: NextRequest) {
   // quitó en #737, y "skipped" nunca era `=== false`, así que este 401 no disparaba.
   if (!validSignature(rawBody, sigHeader)) {
     console.warn(`[meta-dm] firma inválida → 401 (header ${sigHeader ? "presente" : "ausente"})`);
+    // #767: antes este 401 no dejaba rastro en ninguna tabla — se veía IDÉNTICO a un día
+    // sin prospectos. Marca errorCount/lastError en los conectores activos de IG/Messenger
+    // (best-effort, nunca lanza) para que `fallos_seguidos` en crm_pulso distinga
+    // "no llegó nada" de "llegó y lo rechazamos".
+    await markSocialConnectorsSignatureRejected(`firma inválida (401, header ${sigHeader ? "presente" : "ausente"})`);
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
