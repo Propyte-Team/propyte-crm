@@ -4,12 +4,14 @@ import { createHmac } from "crypto";
 const handleInboundMessage = vi.fn();
 const resolveByIg = vi.fn();
 const resolveByPage = vi.fn();
+const markSignatureRejected = vi.fn();
 const botRespond = vi.fn();
 const handleComment = vi.fn();
 vi.mock("@/lib/messaging/core", () => ({ handleInboundMessage: (...a: unknown[]) => handleInboundMessage(...a) }));
 vi.mock("@/lib/messaging/social-accounts", () => ({
   resolveConnectorByIgBusinessId: (...a: unknown[]) => resolveByIg(...a),
   resolveConnectorByPageId: (...a: unknown[]) => resolveByPage(...a),
+  markSocialConnectorsSignatureRejected: (...a: unknown[]) => markSignatureRejected(...a),
 }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 vi.mock("@/lib/comments/handle-comment", () => ({
@@ -22,6 +24,8 @@ beforeEach(() => {
   handleInboundMessage.mockReset();
   resolveByIg.mockReset();
   resolveByPage.mockReset();
+  markSignatureRejected.mockReset();
+  markSignatureRejected.mockResolvedValue(undefined);
   botRespond.mockReset();
   handleComment.mockReset();
   handleComment.mockResolvedValue({ status: "procesado", logId: "log-1" });
@@ -201,37 +205,47 @@ describe("meta-dm webhook — autenticación de la firma", () => {
     entry: [{ id: "PAGE-1", messaging: [{ sender: { id: "PSID-1" }, message: { mid: "m1", text: "hola" } }] }],
   });
 
-  it("rechaza con 401 si META_DM_APP_SECRET no está configurado (falla CERRADO)", async () => {
+  // #767: antes de este arreglo, cada uno de estos 401 no dejaba rastro en ninguna
+  // tabla — se veían idénticos a un día sin prospectos. Ahora marcan errorCount/lastError
+  // en los conectores activos de IG/Messenger (best-effort, vía markSocialConnectorsSignatureRejected).
+  it("rechaza con 401 si META_DM_APP_SECRET no está configurado (falla CERRADO) y marca el rechazo", async () => {
     delete process.env.META_DM_APP_SECRET;
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": firma(body) } }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
     expect(botRespond).not.toHaveBeenCalled();
+    expect(markSignatureRejected).toHaveBeenCalledTimes(1);
   });
 
-  it("rechaza con 401 una firma que no corresponde al cuerpo", async () => {
+  it("rechaza con 401 una firma que no corresponde al cuerpo y marca el rechazo", async () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": firma("otro cuerpo") } }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(markSignatureRejected).toHaveBeenCalledTimes(1);
   });
 
-  it("rechaza con 401 si falta el header de firma", async () => {
+  it("rechaza con 401 si falta el header de firma y marca el rechazo", async () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(markSignatureRejected).toHaveBeenCalledTimes(1);
+    expect(markSignatureRejected.mock.calls[0][0]).toContain("ausente");
   });
 
-  it("rechaza con 401 un header cuyo prefijo no es sha256=", async () => {
+  it("rechaza con 401 un header cuyo prefijo no es sha256= y marca el rechazo", async () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": "sha1=deadbeef" } }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(markSignatureRejected).toHaveBeenCalledTimes(1);
+    expect(markSignatureRejected.mock.calls[0][0]).toContain("presente");
   });
 
-  it("acepta el cuerpo firmado correctamente y lo procesa", async () => {
+  it("acepta el cuerpo firmado correctamente, lo procesa y NO marca ningún rechazo", async () => {
     handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c1" });
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
     expect(handleInboundMessage).toHaveBeenCalled();
+    expect(markSignatureRejected).not.toHaveBeenCalled();
   });
 
   it("responde 400 a un cuerpo firmado que no es JSON", async () => {
