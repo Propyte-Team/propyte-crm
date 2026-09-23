@@ -447,6 +447,31 @@ export async function updateUser(
     },
   });
 
+  // #(historial de altas/bajas) — updateUser es también el camino de REACTIVAR (el
+  // botón "Activar" llama updateUser(id, { isActive: true })). Antes solo deactivateUser
+  // dejaba rastro (y ni eso, ver más abajo) — activar a alguien no quedaba escrito en
+  // ningún lado. Mismo shape que deactivateUser/deleteUserPermanently: se guarda el
+  // nombre/email del blanco tal como estaban en ese momento, para que el historial no
+  // dependa de que el usuario siga existiendo o de que no le hayan cambiado el nombre
+  // después.
+  if (validated.isActive !== undefined && validated.isActive !== existing.isActive) {
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "UPDATE",
+        entity: "User",
+        entityId: id,
+        changes: {
+          field: "isActive",
+          from: existing.isActive,
+          to: validated.isActive,
+          targetName: existing.name,
+          targetEmail: existing.email,
+        },
+      },
+    });
+  }
+
   return user;
 }
 
@@ -519,6 +544,25 @@ export async function deactivateUser(id: string) {
     select: { id: true, name: true, isActive: true },
   });
 
+  // #(historial de altas/bajas) — hasta ahora desactivar no dejaba auditoría: se veía
+  // `isActive: false` en la fila del usuario pero no quién apagó el acceso ni cuándo.
+  // Mismo patrón que deleteUserPermanently, sin datos sensibles.
+  await prisma.auditLog.create({
+    data: {
+      userId: session.user.id,
+      action: "UPDATE",
+      entity: "User",
+      entityId: id,
+      changes: {
+        field: "isActive",
+        from: true,
+        to: false,
+        targetName: existing.name,
+        targetEmail: existing.email,
+      },
+    },
+  });
+
   return user;
 }
 
@@ -568,6 +612,90 @@ export async function deleteUserPermanently(id: string) {
   });
 
   return user;
+}
+
+/**
+ * Usuarios eliminados (soft-delete: `deletedAt` no nulo) — invisibles en getUsers() y
+ * en el resto del CRM a propósito, pero alguien con acceso a Configuración → Usuarios
+ * necesita poder confirmar "sí, a fulano lo eliminé, y fue tal día" sin ir a la base
+ * de datos directamente.
+ */
+export async function getDeletedUsers() {
+  await requireAdminRole();
+
+  return prisma.user.findMany({
+    where: { deletedAt: { not: null } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      plaza: true,
+      deletedAt: true,
+    },
+    orderBy: { deletedAt: "desc" },
+  });
+}
+
+export type UserHistoryEvent = {
+  id: string;
+  kind: "activated" | "deactivated" | "deleted";
+  targetName: string;
+  targetEmail: string;
+  actorName: string;
+  createdAt: Date;
+};
+
+/**
+ * Historial de altas/bajas/eliminaciones de usuarios, para la pantalla de
+ * Configuración → Usuarios (mismo lugar que el botón "Eliminar"). Se arma a partir de
+ * AuditLog en vez de una tabla propia: activar/desactivar/eliminar ya escriben ahí
+ * (deactivateUser y updateUser fueron actualizados para hacerlo; deleteUserPermanently
+ * ya lo hacía). Filtra a mano en vez de con un `where` sobre el JSON de `changes`
+ * porque AuditLog también guarda otras cosas bajo action:"UPDATE" (p.ej. resetUserPassword)
+ * que no son parte de este historial.
+ */
+export async function getUserAuditHistory(limit = 200): Promise<UserHistoryEvent[]> {
+  await requireAdminRole();
+
+  const logs = await prisma.auditLog.findMany({
+    where: { entity: "User", action: { in: ["UPDATE", "DELETE"] } },
+    include: { user: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+
+  const events: UserHistoryEvent[] = [];
+  for (const log of logs) {
+    const changes = (log.changes ?? {}) as Record<string, unknown>;
+
+    if (log.action === "DELETE") {
+      events.push({
+        id: log.id,
+        kind: "deleted",
+        targetName: String(changes.name ?? "—"),
+        targetEmail: String(changes.email ?? "—"),
+        actorName: log.user?.name ?? "—",
+        createdAt: log.createdAt,
+      });
+      continue;
+    }
+
+    // action === "UPDATE": solo nos interesan los toggles de isActive, no otros
+    // cambios auditados (p.ej. reset de contraseña) que comparten la misma acción.
+    if (changes.field !== "isActive") continue;
+
+    events.push({
+      id: log.id,
+      kind: changes.to === true ? "activated" : "deactivated",
+      targetName: String(changes.targetName ?? "—"),
+      targetEmail: String(changes.targetEmail ?? "—"),
+      actorName: log.user?.name ?? "—",
+      createdAt: log.createdAt,
+    });
+  }
+
+  return events;
 }
 
 // ============================================================

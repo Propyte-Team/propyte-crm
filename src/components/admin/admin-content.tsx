@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, KeyRound } from "lucide-react";
+import { Plus, Pencil, Trash2, KeyRound, History } from "lucide-react";
 import {
   ROLE_LABELS,
   DEAL_TYPE_LABELS,
@@ -41,6 +41,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { UserFormDialog } from "./user-form-dialog";
 import { ResetPasswordDialog } from "./reset-password-dialog";
+import { UserHistoryDialog, type UserHistoryEventData } from "./user-history-dialog";
 import { CommissionRuleDialog } from "./commission-rule-dialog";
 import { IntegrationsTab } from "./integrations-tab";
 import { BotConfigTab } from "./bot-config-tab";
@@ -71,6 +72,17 @@ interface UserData {
   teamLeader: { id: string; name: string } | null;
   _count: { deals: number };
   createdAt: Date;
+}
+
+// Usuario eliminado (soft-delete): solo lo mínimo para identificarlo en la tabla,
+// nada que sugiera que se puede volver a editar desde aquí.
+interface DeletedUserData {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  plaza: string;
+  deletedAt: Date;
 }
 
 interface CommissionRuleData {
@@ -136,6 +148,8 @@ interface AdminContentProps {
   initialTab?: string;
   currentUserRole: string;
   initialUsers: UserData[];
+  initialDeletedUsers: DeletedUserData[];
+  initialUserHistory: UserHistoryEventData[];
   initialCommissionRules: CommissionRuleData[];
   initialSystemConfig: Record<string, unknown>;
   initialWebhooks: WebhookData[];
@@ -151,6 +165,8 @@ export function AdminContent({
   initialTab,
   currentUserRole,
   initialUsers,
+  initialDeletedUsers,
+  initialUserHistory,
   initialCommissionRules,
   initialSystemConfig,
   initialWebhooks,
@@ -173,6 +189,14 @@ export function AdminContent({
 
   // Estado local para datos
   const [users, setUsers] = useState<UserData[]>(initialUsers);
+  // Usuarios eliminados e historial: arrancan con lo que trajo el servidor al
+  // cargar la página, y los handlers de abajo (handleToggleActive, handleDeleteUser)
+  // los actualizan al vuelo para que el evento se vea de inmediato, sin esperar a un
+  // window.location.reload().
+  const [deletedUsers, setDeletedUsers] = useState<DeletedUserData[]>(initialDeletedUsers);
+  const [userHistory, setUserHistory] = useState<UserHistoryEventData[]>(initialUserHistory);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [commissionRules, setCommissionRules] = useState<CommissionRuleData[]>(initialCommissionRules);
 
   // Filtros de la tabla de usuarios
@@ -267,6 +291,19 @@ export function AdminContent({
             u.id === user.id ? { ...u, isActive: !u.isActive } : u
           )
         );
+        // El servidor ya deja el rastro en AuditLog (ver deactivateUser/updateUser en
+        // @/server/admin); esto solo lo refleja en el historial sin esperar a un reload.
+        setUserHistory((prev) => [
+          {
+            id: `optimistic-${user.id}-${Date.now()}`,
+            kind: user.isActive ? "deactivated" : "activated",
+            targetName: user.name,
+            targetEmail: user.email,
+            actorName: "Tú",
+            createdAt: new Date(),
+          },
+          ...prev,
+        ]);
         toast({
           title: user.isActive ? "Usuario desactivado" : "Usuario activado",
         });
@@ -289,6 +326,29 @@ export function AdminContent({
       try {
         await deleteUserPermanently(user.id);
         setUsers((prev) => prev.filter((u) => u.id !== user.id));
+        const deletedAt = new Date();
+        setDeletedUsers((prev) => [
+          {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            plaza: user.plaza,
+            deletedAt,
+          },
+          ...prev,
+        ]);
+        setUserHistory((prev) => [
+          {
+            id: `optimistic-${user.id}-${Date.now()}`,
+            kind: "deleted",
+            targetName: user.name,
+            targetEmail: user.email,
+            actorName: "Tú",
+            createdAt: deletedAt,
+          },
+          ...prev,
+        ]);
         toast({
           title: "Usuario eliminado",
           description: `${user.name} ya no tiene acceso al CRM.`,
@@ -385,19 +445,25 @@ export function AdminContent({
                   Gestiona los usuarios y sus roles asignados
                 </CardDescription>
               </div>
-              <Button
-                onClick={() => {
-                  setEditingUser(null);
-                  setUserDialogOpen(true);
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Usuario
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setHistoryDialogOpen(true)}>
+                  <History className="mr-2 h-4 w-4" />
+                  Ver historial
+                </Button>
+                <Button
+                  onClick={() => {
+                    setEditingUser(null);
+                    setUserDialogOpen(true);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo Usuario
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {/* Filtros */}
-              <div className="mb-4 flex gap-4">
+              <div className="mb-4 flex flex-wrap items-center gap-4">
                 <div className="w-48">
                   <Select value={roleFilter} onValueChange={setRoleFilter}>
                     <SelectTrigger>
@@ -428,6 +494,15 @@ export function AdminContent({
                     </SelectContent>
                   </Select>
                 </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input"
+                    checked={showDeleted}
+                    onChange={(e) => setShowDeleted(e.target.checked)}
+                  />
+                  Mostrar eliminados ({deletedUsers.length})
+                </label>
               </div>
 
               {/* Tabla de usuarios */}
@@ -518,10 +593,47 @@ export function AdminContent({
                         </tr>
                       );
                     })}
-                    {filteredUsers.length === 0 && (
+                    {filteredUsers.length === 0 && !showDeleted && (
                       <tr>
                         <td colSpan={7} className="py-8 text-center text-muted-foreground">
                           No se encontraron usuarios con los filtros seleccionados
+                        </td>
+                      </tr>
+                    )}
+                    {showDeleted &&
+                      deletedUsers.map((user) => (
+                        <tr key={user.id} className="border-b bg-muted/30 text-muted-foreground last:border-0">
+                          <td className="py-3 font-medium">{user.name}</td>
+                          <td className="py-3">{user.email}</td>
+                          <td className="py-3">
+                            <Badge variant="outline">
+                              {ROLE_LABELS[user.role] ?? user.role}
+                            </Badge>
+                          </td>
+                          <td className="py-3">
+                            {PLAZA_LABELS[user.plaza] ?? user.plaza}
+                          </td>
+                          <td className="py-3">-</td>
+                          <td className="py-3">
+                            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                              Eliminado
+                            </span>
+                          </td>
+                          <td className="py-3 text-xs">
+                            {new Date(user.deletedAt).toLocaleString("es-MX", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    {showDeleted && deletedUsers.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                          No hay usuarios eliminados
                         </td>
                       </tr>
                     )}
@@ -814,6 +926,13 @@ export function AdminContent({
         user={resetPasswordUser}
         onSubmit={handleResetPassword}
         isPending={isPending}
+      />
+
+      {/* Dialog de historial de usuarios (activar/desactivar/eliminar) */}
+      <UserHistoryDialog
+        open={historyDialogOpen}
+        onOpenChange={setHistoryDialogOpen}
+        events={userHistory}
       />
 
       {/* Dialog de regla de comision */}
