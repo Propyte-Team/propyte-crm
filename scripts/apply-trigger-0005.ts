@@ -166,7 +166,16 @@ async function main() {
   console.log("  1. Crear un GitHub PAT: Settings > Developer settings > Personal access tokens");
   console.log("     Scope: 'actions' (write) para el repo propyte-crm");
   console.log("  2. En Supabase SQL Editor, guardar el token:");
-  console.log("     SELECT vault.create_secret('github_pat', 'ghp_tu_token_aqui');");
+  // #328 — este ejemplo tenía los argumentos AL REVÉS: vault.create_secret(secreto, nombre,
+  // descripción) — el primero es el valor secreto (queda cifrado en `secret`), el segundo es
+  // el nombre con el que luego se busca (queda EN TEXTO PLANO en `name`, es metadato, no
+  // secreto). Con el orden de antes, el texto plano "github_pat" quedaba cifrado y el PAT de
+  // verdad quedaba de nombre — es exactamente la entrada invertida que rompió
+  // fn_dispatch_robot_if_needed() desde abril (busca `WHERE name = 'github_pat'` y nunca la
+  // encuentra). Si ya existe una fila con ese nombre, hay que borrarla antes de crear la
+  // nueva (los nombres de vault.secrets son únicos):
+  console.log("     DELETE FROM vault.secrets WHERE name = 'github_pat'; -- si ya existe una entrada (aunque esté invertida)");
+  console.log("     SELECT vault.create_secret('ghp_tu_token_aqui', 'github_pat', 'PAT usado por fn_dispatch_robot_if_needed para disparar GitHub Actions');");
   console.log("  3. (Opcional) Programar con pg_cron cada 30 min:");
   console.log("     SELECT cron.schedule('robot-dispatch', '*/30 * * * *',");
   console.log("       $$SELECT public.fn_dispatch_robot_if_needed()$$);");
