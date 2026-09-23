@@ -11,6 +11,11 @@ const userUpdate = vi.fn();
 const userCount = vi.fn();
 const configFindUnique = vi.fn();
 const configUpsert = vi.fn();
+// #(historial de altas/bajas) — deactivateUser y updateUser ahora también escriben en
+// AuditLog (antes solo lo hacían resetUserPassword y deleteUserPermanently, que no se
+// prueban en este archivo). Sin este mock, esas llamadas revientan con "Cannot read
+// properties of undefined (reading 'create')".
+const auditLogCreate = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     user: {
@@ -21,6 +26,9 @@ vi.mock("@/lib/db", () => ({
     systemConfig: {
       findUnique: (...a: unknown[]) => configFindUnique(...a),
       upsert: (...a: unknown[]) => configUpsert(...a),
+    },
+    auditLog: {
+      create: (...a: unknown[]) => auditLogCreate(...a),
     },
   },
 }));
@@ -33,7 +41,8 @@ const ADMIN_TARGET = { id: "admin-2", name: "Otro Admin", email: "admin2@nativat
 const ASESOR_TARGET = { id: "asesor-1", name: "Asesor Uno", email: "asesor@nativatulum.mx", role: "ASESOR_SR", isActive: true };
 
 beforeEach(() => {
-  for (const m of [userFindUnique, userUpdate, userCount, configFindUnique, configUpsert]) m.mockReset();
+  for (const m of [userFindUnique, userUpdate, userCount, configFindUnique, configUpsert, auditLogCreate]) m.mockReset();
+  auditLogCreate.mockResolvedValue({ id: "audit-1" });
   // Sin propietario designado por defecto: el reparto plano de siempre.
   configFindUnique.mockResolvedValue(null);
   configUpsert.mockImplementation(async (a: { create: unknown }) => a.create);

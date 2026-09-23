@@ -1,6 +1,6 @@
 // Pagina de administracion: componente servidor con verificacion de rol
 import { getServerSession } from "@/lib/auth/session";
-import { getUsers, getCommissionRules, getSystemConfig, getWebhookConfigs, getApiKeys } from "@/server/admin";
+import { getUsers, getDeletedUsers, getUserAuditHistory, getCommissionRules, getSystemConfig, getWebhookConfigs, getApiKeys } from "@/server/admin";
 import { getBotConfigForAdmin } from "@/server/bot-config";
 import { listPlaybooks } from "@/server/bot-playbook";
 import { listAgentProfiles } from "@/server/bot-agents";
@@ -34,8 +34,10 @@ export default async function AdminPage({
     .catch(() => [] as string[]);
 
   // Obtener datos en paralelo
-  const [users, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles] = await Promise.all([
+  const [users, deletedUsers, userHistory, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles] = await Promise.all([
     getUsers(),
+    getDeletedUsers(),
+    getUserAuditHistory(),
     getCommissionRules(),
     getSystemConfig(),
     getWebhookConfigs(),
@@ -53,6 +55,8 @@ export default async function AdminPage({
         initialTab={searchParams?.tab}
         currentUserRole={session.user.role}
         initialUsers={users}
+        initialDeletedUsers={deletedUsers}
+        initialUserHistory={userHistory}
         initialCommissionRules={commissionRules}
         initialSystemConfig={systemConfig}
         initialWebhooks={webhooks}
