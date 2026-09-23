@@ -76,13 +76,19 @@ interface UserData {
 
 // Usuario eliminado (soft-delete): solo lo mínimo para identificarlo en la tabla,
 // nada que sugiera que se puede volver a editar desde aquí.
+//
+// `deletedAt` es `Date | null` y no solo `Date` porque así lo tipa Prisma para la
+// columna (nullable en el schema): el `where: { deletedAt: { not: null } }` de
+// getDeletedUsers() lo garantiza en tiempo de ejecución, pero TypeScript no estrecha
+// el tipo de retorno de Prisma a partir de un filtro — sigue siendo `Date | null` en
+// el tipo, aunque en la práctica nunca llegue null aquí.
 interface DeletedUserData {
   id: string;
   name: string;
   email: string;
   role: string;
   plaza: string;
-  deletedAt: Date;
+  deletedAt: Date | null;
 }
 
 interface CommissionRuleData {
@@ -620,13 +626,15 @@ export function AdminContent({
                             </span>
                           </td>
                           <td className="py-3 text-xs">
-                            {new Date(user.deletedAt).toLocaleString("es-MX", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {user.deletedAt
+                              ? new Date(user.deletedAt).toLocaleString("es-MX", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "-"}
                           </td>
                         </tr>
                       ))}
