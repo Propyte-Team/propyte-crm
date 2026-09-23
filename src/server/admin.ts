@@ -454,10 +454,11 @@ export async function updateUser(
  * Restablece la contraseña de otro usuario. Devuelve solo datos de
  * identificación: ni la contraseña ni el hash vuelven a quien la pidió.
  *
- * OJO: la sesión de esa persona NO se cierra. NextAuth v4 usa JWT y el token
- * vive hasta expirar, así que cambiar la contraseña no expulsa a quien ya
- * estuviera dentro. Si algún día hace falta echar a alguien de inmediato, eso
- * es invalidación de sesiones y es un trabajo aparte.
+ * La sesión de esa persona SÍ se cierra, aunque no desde aquí: esta función solo
+ * escribe `passwordChangedAt` (como siempre); es el callback `jwt` de
+ * `lib/auth/options.ts`, al revalidar en la siguiente lectura de sesión, el que ve un
+ * `passwordChangedAt` más nuevo que el `iat` del token y lo marca revocado. Quien ya
+ * estuviera dentro con el navegador abierto tiene que volver a iniciar sesión.
  */
 export async function resetUserPassword(userId: string, password: string) {
   const session = await requirePasswordResetRole();
@@ -516,6 +517,54 @@ export async function deactivateUser(id: string) {
     where: { id },
     data: { isActive: false },
     select: { id: true, name: true, isActive: true },
+  });
+
+  return user;
+}
+
+/**
+ * Elimina PERMANENTEMENTE a un usuario — a diferencia de deactivateUser(), esto NO se
+ * deshace desde esta pantalla.
+ *
+ * Sigue siendo un soft-delete a nivel de base (pone `deletedAt` e `isActive:false`, no
+ * borra la fila): un asesor con años de contactos, tratos, mensajes y actividades
+ * encima no se puede borrar de verdad sin decidir qué pasa con todo eso — esa
+ * reasignación es la #734 y es aparte. Lo que SÍ hace esta función, y es la diferencia
+ * real con desactivar, es cortar el acceso de inmediato: el callback `jwt` de
+ * `lib/auth/options.ts` revalida `deletedAt` contra la base en cada lectura de sesión,
+ * así que la próxima vez que esa persona (o su navegador ya abierto) pida cualquier
+ * dato, su sesión sale como cerrada — no hay que esperar a que el JWT expire solo.
+ *
+ * Mismas reglas A, C y D que deactivateUser/updateUser (ver assertUserMutationAllowed):
+ * eliminar a alguien es, para esas reglas, el mismo caso que desactivarlo — nadie se
+ * elimina a sí mismo, y no se puede dejar el sistema sin ningún ADMIN activo.
+ */
+export async function deleteUserPermanently(id: string) {
+  const session = await requireAdminRole();
+
+  const existing = await prisma.user.findUnique({
+    where: { id, deletedAt: null },
+  });
+  if (!existing) throw new Error("Usuario no encontrado");
+
+  await assertUserMutationAllowed(session, existing, { settingInactive: true });
+
+  const user = await prisma.user.update({
+    where: { id },
+    data: { isActive: false, deletedAt: new Date() },
+    select: { id: true, name: true, email: true },
+  });
+
+  // Es la acción más destructiva de este panel: queda su propio rastro de auditoría,
+  // con quién la hizo y a quién le tocó, sin la contraseña ni ningún dato sensible.
+  await prisma.auditLog.create({
+    data: {
+      userId: session.user.id,
+      action: "DELETE",
+      entity: "User",
+      entityId: id,
+      changes: { name: existing.name, email: existing.email, role: existing.role },
+    },
   });
 
   return user;
