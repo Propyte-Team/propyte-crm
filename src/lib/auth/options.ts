@@ -33,6 +33,10 @@ declare module "next-auth/jwt" {
     role: string;
     plaza: string;
     careerLevel: string;
+    // #79x — marca puesta por el callback jwt de abajo cuando la revalidación contra la
+    // base detecta que esta sesión ya no debe seguir viva. No se persiste en la cookie
+    // como "revocado para siempre": se vuelve a calcular en cada lectura de sesión.
+    revoked?: boolean;
   }
 }
 
@@ -42,7 +46,11 @@ export const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
-    maxAge: 8 * 60 * 60, // 8 horas
+    // #79x — bajado de 8h a 5h a pedido explícito (decisión de negocio, no un hallazgo
+    // de auditoría): una sesión inactiva se cae más rápido. Sigue siendo "hasta 5h", no
+    // "5h desde el login": NextAuth reemite el JWT (con un `iat`/`exp` nuevos) en cada
+    // lectura de sesión, así que alguien activo no se desloguea a media tarea.
+    maxAge: 5 * 60 * 60, // 5 horas
   },
 
   pages: {
@@ -164,17 +172,62 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
+    // #79x — hasta aquí, este callback solo copiaba datos de `user` AL INICIAR SESIÓN y
+    // nunca volvía a preguntarle a la base nada después: un usuario eliminado o al que le
+    // acababan de cambiar la contraseña seguía con el CRM abierto hasta que su JWT
+    // expirara solo (hasta 5h, ver session.maxAge). Ver también la tarjeta #777: esa
+    // sigue abierta a propósito — DESACTIVAR (isActive:false) NO revalida aquí, fue una
+    // decisión explícita dejar ese caso como estaba. Esto solo cubre las dos revocaciones
+    // "duras": baja definitiva (deletedAt) y cambio de contraseña (passwordChangedAt).
     async jwt({ token, user }) {
       if (user) {
+        // Login fresco: los datos vienen de `authorize()`, que YA validó isActive contra
+        // la base en ese mismo instante — no hace falta repetir la consulta aquí.
         token.id = user.id;
         token.role = user.role;
         token.plaza = user.plaza;
         token.careerLevel = user.careerLevel;
+        token.revoked = false;
+        return token;
       }
+
+      // Re-lectura de una sesión ya existente (getServerSession, /api/auth/session, el
+      // polling de useSession en el cliente): aquí es donde antes no se comprobaba nada.
+      try {
+        const current = await prisma.user.findUnique({
+          where: { id: token.id },
+          select: { deletedAt: true, passwordChangedAt: true },
+        });
+
+        const eliminado = !current || current.deletedAt !== null;
+        // `token.iat` (segundos, estándar JWT) es la última vez que ESTE JWT se firmó —
+        // no el login original: NextAuth lo re-firma en cada lectura de sesión, así que
+        // esta comparación sigue siendo correcta con una sesión que rueda.
+        const passwordCambiadaDespues =
+          !!current?.passwordChangedAt &&
+          typeof token.iat === "number" &&
+          current.passwordChangedAt.getTime() > token.iat * 1000;
+
+        if (eliminado || passwordCambiadaDespues) {
+          token.revoked = true;
+        }
+      } catch (err) {
+        // Best-effort: si la base no responde, no tumbamos la sesión de todo el mundo por
+        // un error transitorio de conexión — se mantiene el token tal como estaba.
+        console.error("[auth] no se pudo revalidar la sesión:", err);
+      }
+
       return token;
     },
 
     async session({ session, token }) {
+      // Con el token marcado, `null` es el patrón documentado de NextAuth v4 para forzar
+      // el cierre de sesión: useSession()/getServerSession() devuelven "sin sesión" en
+      // vez de repetir los datos viejos. El tipo de esta función no incluye `null` en su
+      // firma (solo Session | DefaultSession) aunque el propio NextAuth lo acepte en
+      // runtime — de ahí el `as any`, acotado a esta única línea.
+      if (token.revoked) return null as any;
+
       if (session.user) {
         session.user.id = token.id;
         session.user.role = token.role;

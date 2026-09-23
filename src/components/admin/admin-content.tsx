@@ -31,6 +31,7 @@ import {
   createUser,
   updateUser,
   deactivateUser,
+  deleteUserPermanently,
   resetUserPassword,
   createCommissionRule,
   updateCommissionRule,
@@ -275,6 +276,29 @@ export function AdminContent({
     });
   }
 
+  async function handleDeleteUser(user: UserData) {
+    // A diferencia de desactivar (reversible con un clic), esto es definitivo desde
+    // esta pantalla — por eso, y solo aquí, se pide confirmación explícita antes de
+    // llamar al servidor.
+    const confirmado = window.confirm(
+      `¿Eliminar definitivamente a ${user.name}? Su sesión (si tiene una abierta) se cerrará en cuanto vuelva a pedir datos al CRM. Esta acción no se puede deshacer desde aquí.`
+    );
+    if (!confirmado) return;
+
+    startTransition(async () => {
+      try {
+        await deleteUserPermanently(user.id);
+        setUsers((prev) => prev.filter((u) => u.id !== user.id));
+        toast({
+          title: "Usuario eliminado",
+          description: `${user.name} ya no tiene acceso al CRM.`,
+        });
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+    });
+  }
+
   // --- Handlers de reglas de comision ---
 
   async function handleCreateRule(data: Record<string, unknown>) {
@@ -478,6 +502,16 @@ export function AdminContent({
                                 disabled={isPending}
                               >
                                 {user.isActive ? "Desactivar" : "Activar"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Eliminar definitivamente"
+                                aria-label={`Eliminar definitivamente a ${user.name}`}
+                                onClick={() => handleDeleteUser(user)}
+                                disabled={isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-red-500" />
                               </Button>
                             </div>
                           </td>
