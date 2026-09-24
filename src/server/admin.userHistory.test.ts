@@ -83,6 +83,9 @@ describe("deactivateUser deja rastro en AuditLog", () => {
 
 describe("updateUser deja rastro en AuditLog solo cuando isActive realmente cambia", () => {
   it("reactivar (isActive:true) escribe un UPDATE con from:false, to:true", async () => {
+    // Reactivar exige ADMIN (Regla E, ver admin.protecciones.test.ts) — DIRECTOR
+    // (el rol default de este archivo) ya no basta para este caso puntual.
+    session.user.role = "ADMIN";
     const inactivo = { ...ASESOR_TARGET, isActive: false };
     userFindUnique.mockResolvedValue(inactivo);
 
@@ -107,6 +110,7 @@ describe("updateUser deja rastro en AuditLog solo cuando isActive realmente camb
   });
 
   it("mandar el mismo valor que ya tenía (isActive:true sobre un activo) no escribe nada", async () => {
+    session.user.role = "ADMIN"; // idem: isActive:true pasa por la Regla E
     userFindUnique.mockResolvedValue(ASESOR_TARGET); // ya está isActive:true
 
     await updateUser(ASESOR_TARGET.id, { isActive: true });

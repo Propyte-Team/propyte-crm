@@ -81,12 +81,13 @@ async function getAdminOwnerId(): Promise<string | null> {
  * @param session sesión del actor, ya validada por requireAdminRole()
  * @param target usuario objetivo, tal como está ANTES de la operación
  * @param opts.settingInactive true si esta llamada pondría isActive en false
+ * @param opts.settingActive true si esta llamada pondría isActive en true (reactivar)
  * @param opts.settingRole el nuevo role solicitado, si la operación lo cambia
  */
 async function assertUserMutationAllowed(
   session: { user: { id: string; role: string } },
   target: { id: string; role: UserRole; isActive: boolean },
-  opts: { settingInactive?: boolean; settingRole?: string } = {}
+  opts: { settingInactive?: boolean; settingActive?: boolean; settingRole?: string } = {}
 ) {
   const actorRole = session.user.role;
   const actorId = session.user.id;
@@ -95,6 +96,14 @@ async function assertUserMutationAllowed(
   // propia sesión sin que nadie más se diera cuenta ni pudiera revertirlo.
   if (opts.settingInactive && target.id === actorId) {
     throw new Error("No puedes desactivar tu propia cuenta");
+  }
+
+  // Regla E: reactivar a alguien exige ser ADMIN. Desactivar (y eliminar) los sigue
+  // pudiendo hacer cualquier rol admin (GERENTE/DIRECTOR/ADMIN, vía requireAdminRole)
+  // — cerrar el acceso de alguien es reversible y de bajo riesgo. Volver a abrirlo es
+  // la decisión que #797 pidió reservar al Administrador.
+  if (opts.settingActive && actorRole !== "ADMIN") {
+    throw new Error("Solo un Administrador puede activar a un usuario desactivado");
   }
 
   // Regla A: quién puede tocar a un ADMIN.
@@ -402,6 +411,7 @@ export async function updateUser(
   // acepte hoy el esquema de validación, y sigue firme aunque eso cambie.
   await assertUserMutationAllowed(session, existing, {
     settingInactive: data.isActive === false,
+    settingActive: data.isActive === true,
     settingRole: data.role,
   });
 
