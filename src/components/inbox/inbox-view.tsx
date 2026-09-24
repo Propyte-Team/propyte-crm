@@ -193,6 +193,9 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const [tplQuery, setTplQuery] = useState<string | null>(null); // null = dropdown cerrado
   const [tplIndex, setTplIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Contenedor con scroll real de los mensajes (bottomRef solo es el centinela al
+  // final, útil para scrollIntoView pero no para leer la posición actual del scroll).
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   // Último thread.id cargado con éxito. loadThread es un useCallback con deps [] (para
@@ -306,7 +309,23 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
     } catch { /* polling: silencioso */ }
   }, [filter, search]);
 
-  const loadThread = useCallback(async (id: string) => {
+  // #801 — el polling de 5s (más abajo) volvía a pedir el hilo completo y
+  // scrollIntoView() mandaba SIEMPRE al fondo, sin condición: cualquiera que subiera a
+  // leer mensajes viejos quedaba de vuelta abajo en cuanto tocaba el siguiente tick (a
+  // los 5s como mucho). Este umbral decide cuándo es seguro reengancharse al fondo solo
+  // porque el usuario ya estaba ahí, no porque llegó un refresco de fondo.
+  const NEAR_BOTTOM_PX = 120;
+  function isNearBottom() {
+    const el = messagesContainerRef.current;
+    if (!el) return true; // sin contenedor medible (primera carga): no hay nada que respetar
+    return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  }
+
+  const loadThread = useCallback(async (id: string, opts: { forceScrollBottom?: boolean } = {}) => {
+    // Se mide ANTES del fetch: si se mide después, el usuario pudo haber alcanzado a
+    // scrollear entre el fetch y el setThread, pero lo que importa es dónde estaba
+    // parado cuando se decidió refrescar, no una fracción de segundo después.
+    const shouldStickToBottom = opts.forceScrollBottom || isNearBottom();
     try {
       const res = await fetch(`/api/conversations/${id}`);
       // 404 = perdimos el alcance sobre el hilo (lo asignaron a otro, lo cerraron, o nos
@@ -327,7 +346,13 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
       }
       if (res.ok) {
         setThread((await res.json()).data);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 50);
+        // Solo reengancha el scroll al fondo si se pidió explícitamente (abrir un hilo,
+        // enviar un mensaje propio) o si la persona ya estaba viendo lo más reciente.
+        // Si subió a leer historial, un refresco de fondo (polling) ya no la manda de
+        // vuelta abajo sin que lo haya pedido.
+        if (shouldStickToBottom) {
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 50);
+        }
       }
     } catch { /* silencioso */ }
   }, []);
@@ -338,7 +363,7 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   useEffect(() => {
     clearPendingMedia(); // el adjunto pendiente pertenece al hilo anterior
     setTplQuery(null);
-    if (selectedId) loadThread(selectedId);
+    if (selectedId) loadThread(selectedId, { forceScrollBottom: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, loadThread]);
 
@@ -450,7 +475,9 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
         setComposer("");
         setAsNote(false);
         clearPendingMedia();
-        await loadThread(selectedId);
+        // forceScrollBottom: acabas de mandar un mensaje, tienes que verlo aparecer
+        // aunque hubieras subido a leer historial mientras lo escribías.
+        await loadThread(selectedId, { forceScrollBottom: true });
         // El envío puede disparar auto-claim (POST .../messages en el server); sin
         // refrescar la lista, el badge "Sin asignar" del listado queda obsoleto hasta
         // el próximo poll de 5s.
@@ -649,7 +676,7 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
             )}
 
             {/* Mensajes */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
               {thread.messages.map((m) => {
                 const inbound = m.direction === "INBOUND";
                 return (
