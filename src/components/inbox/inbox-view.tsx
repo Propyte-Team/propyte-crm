@@ -345,7 +345,27 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
         return;
       }
       if (res.ok) {
-        setThread((await res.json()).data);
+        const data = (await res.json()).data as ThreadDetail;
+        // #802 — el servidor vuelve a FIRMAR todas las URLs de medios en cada respuesta
+        // (mismo archivo, firma distinta) porque el polling de 5s pide el hilo completo
+        // sin `?since=`. Si se reemplaza el mensaje entero, el <video>/<img> de
+        // MessageMedia recibe un `src` distinto para un mensaje que YA se había visto, y
+        // el navegador lo trata como una fuente nueva: corta la reproducción del video y
+        // lo recarga desde cero cada 5s. El archivo detrás de un mensaje ya creado nunca
+        // cambia, así que para mensajes que ya conocíamos nos quedamos con la mediaUrl
+        // que ya se estaba usando en vez de la recién firmada.
+        setThread((prev) => {
+          if (!prev || prev.id !== data.id) return data;
+          const knownMediaUrl = new Map(
+            prev.messages.filter((m) => m.mediaUrl).map((m) => [m.id, m.mediaUrl] as const)
+          );
+          return {
+            ...data,
+            messages: data.messages.map((m) =>
+              m.mediaUrl && knownMediaUrl.has(m.id) ? { ...m, mediaUrl: knownMediaUrl.get(m.id)! } : m
+            ),
+          };
+        });
         // Solo reengancha el scroll al fondo si se pidió explícitamente (abrir un hilo,
         // enviar un mensaje propio) o si la persona ya estaba viendo lo más reciente.
         // Si subió a leer historial, un refresco de fondo (polling) ya no la manda de
