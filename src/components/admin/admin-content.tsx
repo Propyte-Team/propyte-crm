@@ -576,14 +576,20 @@ export function AdminContent({
                                   <KeyRound className="h-3.5 w-3.5" />
                                 </Button>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleToggleActive(user)}
-                                disabled={isPending}
-                              >
-                                {user.isActive ? "Desactivar" : "Activar"}
-                              </Button>
+                              {/* Reactivar (isActive:false -> true) exige rol ADMIN en el
+                                  servidor (Regla E, @/server/admin) — se oculta el botón para
+                                  quien no es ADMIN en vez de dejarlo tronar con un 403. Desactivar
+                                  sigue disponible para cualquier rol admin, sin cambios. */}
+                              {(user.isActive || currentUserRole === "ADMIN") && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleToggleActive(user)}
+                                  disabled={isPending}
+                                >
+                                  {user.isActive ? "Desactivar" : "Activar"}
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"

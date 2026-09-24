@@ -203,6 +203,45 @@ describe("Regla D — no se puede desactivar al último ADMIN activo", () => {
   });
 });
 
+describe("Regla E — reactivar a alguien exige ser ADMIN", () => {
+  it("GERENTE no puede reactivar a un ASESOR desactivado", async () => {
+    session.user.role = "GERENTE";
+    userFindUnique.mockResolvedValue({ ...ASESOR_TARGET, isActive: false });
+
+    await expect(updateUser(ASESOR_TARGET.id, { isActive: true })).rejects.toThrow(/solo un administrador puede activar/i);
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("DIRECTOR no puede reactivar a un ASESOR desactivado", async () => {
+    session.user.role = "DIRECTOR";
+    userFindUnique.mockResolvedValue({ ...ASESOR_TARGET, isActive: false });
+
+    await expect(updateUser(ASESOR_TARGET.id, { isActive: true })).rejects.toThrow(/solo un administrador puede activar/i);
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN sí puede reactivar a un ASESOR desactivado", async () => {
+    session.user.role = "ADMIN";
+    userFindUnique.mockResolvedValue({ ...ASESOR_TARGET, isActive: false });
+
+    await expect(updateUser(ASESOR_TARGET.id, { isActive: true })).resolves.toMatchObject({
+      id: ASESOR_TARGET.id,
+    });
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("desactivar sigue sin exigir ADMIN (solo reactivar lo exige)", async () => {
+    session.user.role = "GERENTE";
+    session.user.id = "gerente-1";
+    userFindUnique.mockResolvedValue(ASESOR_TARGET); // isActive:true
+
+    await expect(updateUser(ASESOR_TARGET.id, { isActive: false })).resolves.toMatchObject({
+      id: ASESOR_TARGET.id,
+    });
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("El blindaje no rompe el trabajo normal", () => {
   it("GERENTE puede seguir editando a un usuario NO-ADMIN (ASESOR)", async () => {
     session.user.role = "GERENTE";
