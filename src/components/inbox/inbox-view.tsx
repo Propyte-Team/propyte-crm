@@ -637,20 +637,20 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
               className="flex items-center justify-between gap-2 px-4 py-2"
               style={{ background: "var(--bg-sidebar)", borderBottom: "1px solid var(--border-subtle)" }}
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex flex-1 items-center gap-2 min-w-0 overflow-hidden">
                 <ContactAvatar url={thread.contact.avatarUrl} size={24} />
                 <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                   {thread.contact.firstName} {thread.contact.lastName}
                 </span>
-                <span className="badge badge-neutral whitespace-nowrap">
+                <span className="badge badge-neutral whitespace-nowrap shrink-0">
                   {channelAccountLabel(thread.channel, thread.connector)}
                 </span>
-                <span className={cn("badge", thread.status === "BOT" ? "badge-neutral" : "badge-teal")}>
+                <span className={cn("badge shrink-0", thread.status === "BOT" ? "badge-neutral" : "badge-teal")}>
                   {thread.status === "BOT" ? "🤖 Bot activo" : isHuman && iControl ? "Controlas tú" : `Controla ${thread.controlledBy?.name ?? "—"}`}
                 </span>
-                {thread.contact.whatsappOptOut && <span className="badge badge-error">Opt-out</span>}
+                {thread.contact.whatsappOptOut && <span className="badge badge-error shrink-0">Opt-out</span>}
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <AssignControl
                   assignedTo={thread.contact.assignedTo}
                   userId={userId}
