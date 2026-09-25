@@ -43,15 +43,25 @@ export function AssignControl({ assignedTo, userId, userRole, onAssign }: Assign
       // Escape devuelve el foco al disparador: si no, al desmontarse el ítem enfocado
       // el foco se cae al <body> y quien navega con teclado pierde el sitio.
       if (e.key === "Escape") {
+        // InboxView también escucha Escape en `document` (fase de burbuja) para
+        // cerrar el hilo abierto. Este listener se registra en captura a propósito:
+        // la fase de captura de `document` siempre corre antes que su propia fase
+        // de burbuja, sin importar cuál de los dos se montó primero — así que
+        // stopPropagation() aquí garantiza que Escape cierre SOLO este menú y
+        // nunca llegue a cerrar también la conversación en el mismo tecleo.
+        // (stopImmediatePropagation no habría bastado: si InboxView ya se montó
+        // antes de abrir este menú, su listener de burbuja se ejecuta igual, así
+        // que la solución real es la fase, no el método de corte.)
+        e.stopPropagation();
         setOpen(false);
         triggerRef.current?.focus();
       }
     }
     document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
     };
   }, [open]);
 

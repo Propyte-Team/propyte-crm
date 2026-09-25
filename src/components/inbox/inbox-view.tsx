@@ -396,6 +396,23 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
     return () => clearInterval(t);
   }, [loadList, loadThread, selectedId]);
 
+  // Esc cierra el hilo abierto y regresa al placeholder "Selecciona una
+  // conversación" — antes la única salida era navegar a otra sección del menú
+  // y volver. Mismo efecto que markSpam / el guard de loadThread al "salir".
+  // Solo vive mientras hay un hilo abierto. Fase de burbuja a propósito: es el
+  // "último recurso" — si el menú de AssignControl (captura + stopPropagation)
+  // o el buscador de plantillas del composer (stopPropagation en el propio
+  // textarea) ya consumieron su Escape, este listener nunca llega a ejecutarse
+  // para esa misma tecla.
+  useEffect(() => {
+    if (!selectedId) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setSelectedId(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [selectedId]);
+
   async function doAction(action: string) {
     if (!selectedId) return;
     const res = await fetch(`/api/conversations/${selectedId}/actions`, {
@@ -847,7 +864,10 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                     if (e.key === "ArrowDown" && tplMatches.length) { e.preventDefault(); setTplIndex((i) => (i + 1) % tplMatches.length); return; }
                     if (e.key === "ArrowUp" && tplMatches.length) { e.preventDefault(); setTplIndex((i) => (i - 1 + tplMatches.length) % tplMatches.length); return; }
                     if ((e.key === "Enter" || e.key === "Tab") && tplMatches[tplIndex]) { e.preventDefault(); insertTemplate(tplMatches[tplIndex]); return; }
-                    if (e.key === "Escape") { e.preventDefault(); setTplQuery(null); return; }
+                    // stopPropagation: sin esto, la tecla también burbujea hasta el
+                    // listener de document que cierra el hilo (ver más abajo), y un
+                    // solo Escape cerraría el buscador de plantillas Y la conversación.
+                    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setTplQuery(null); return; }
                   }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
