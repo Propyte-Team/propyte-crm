@@ -10,10 +10,8 @@ import { updateQuote } from "@/server/quotes";
 import prisma from "@/lib/db";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {
@@ -41,10 +39,8 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {

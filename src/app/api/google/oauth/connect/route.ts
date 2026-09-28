@@ -12,7 +12,7 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const state = randomBytes(24).toString("hex")
-  cookies().set("g_oauth_state", state, {
+  (await cookies()).set("g_oauth_state", state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

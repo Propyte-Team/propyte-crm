@@ -43,9 +43,21 @@ async function handle(req: NextRequest, segments: string[]) {
 }
 
 // Next.js 14: params is a plain object (not Promise)
-type P = { params: { path: string[] } };
-export async function GET(req: NextRequest, { params }: P) { return handle(req, params.path); }
-export async function POST(req: NextRequest, { params }: P) { return handle(req, params.path); }
-export async function PATCH(req: NextRequest, { params }: P) { return handle(req, params.path); }
-export async function PUT(req: NextRequest, { params }: P) { return handle(req, params.path); }
+type P = { params: Promise<{ path: string[] }> };
+export async function GET(req: NextRequest, props: P) {
+  const params = await props.params;
+  return handle(req, params.path);
+}
+export async function POST(req: NextRequest, props: P) {
+  const params = await props.params;
+  return handle(req, params.path);
+}
+export async function PATCH(req: NextRequest, props: P) {
+  const params = await props.params;
+  return handle(req, params.path);
+}
+export async function PUT(req: NextRequest, props: P) {
+  const params = await props.params;
+  return handle(req, params.path);
+}
 // Sin DELETE: el route no lo exporta → 405 automático.

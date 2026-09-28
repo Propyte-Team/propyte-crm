@@ -9,10 +9,8 @@ import { getServerSession } from "@/lib/auth/session";
 import { getDocumentsByDeal, addDocument } from "@/server/quotes";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
 
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {
@@ -30,10 +28,8 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {

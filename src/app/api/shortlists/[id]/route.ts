@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { sendShortlist, updateShortlistTitle, softDeleteShortlist } from "@/server/shortlists";
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {
@@ -24,7 +25,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {

@@ -6,7 +6,8 @@ import { getServerSession } from "@/lib/auth/session";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
@@ -21,7 +22,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ data: agent });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !MANAGE_ROLES.includes(session.user.role)) {
     return NextResponse.json({ error: "Solo Dirección/Admin" }, { status: 403 });

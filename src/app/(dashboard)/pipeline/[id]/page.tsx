@@ -7,10 +7,11 @@ import { getDeal } from "@/server/deals";
 import { DealDetailClient } from "./deal-detail-client";
 
 interface DealDetailPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
-export default async function DealDetailPage({ params }: DealDetailPageProps) {
+export default async function DealDetailPage(props: DealDetailPageProps) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 

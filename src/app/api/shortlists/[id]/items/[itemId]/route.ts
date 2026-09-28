@@ -4,8 +4,9 @@ import { removeItem, updateItemNote } from "@/server/shortlists";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; itemId: string } }
+  props: { params: Promise<{ id: string; itemId: string }> }
 ) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {
@@ -21,8 +22,9 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string; itemId: string } }
+  props: { params: Promise<{ id: string; itemId: string }> }
 ) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {

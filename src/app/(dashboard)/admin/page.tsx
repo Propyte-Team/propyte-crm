@@ -8,11 +8,12 @@ import prisma from "@/lib/db";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
 
-export default async function AdminPage({
-  searchParams,
-}: {
-  searchParams: { tab?: string };
-}) {
+export default async function AdminPage(
+  props: {
+    searchParams: Promise<{ tab?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   // Obtener sesion y verificar rol
   const session = await getServerSession();
   if (!session?.user) redirect("/login");

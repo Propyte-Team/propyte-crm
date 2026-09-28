@@ -8,10 +8,8 @@ import { getServerSession } from "@/lib/auth/session";
 import { sendQuote } from "@/server/quotes";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
 
-export async function POST(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {

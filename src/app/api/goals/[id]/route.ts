@@ -4,7 +4,8 @@ import { deleteGoal } from "@/server/goals";
 
 const SET_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER"];
 
-export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (!SET_ROLES.includes(session.user.role as string)) {

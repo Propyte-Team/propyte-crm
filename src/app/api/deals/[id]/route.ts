@@ -123,10 +123,8 @@ async function verifyDealAccess(dealId: string, userId: string, userRole: string
  * GET /api/deals/[id]
  * Obtiene detalle completo de un deal con todas sus relaciones.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {
@@ -164,10 +162,8 @@ export async function GET(
  * - Crea actividad por cada cambio de etapa
  * - Actualiza estado de unidad si aplica
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {

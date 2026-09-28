@@ -4,7 +4,8 @@ import prisma from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: Request, { params }: { params: { slug: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const profile = await prisma.userProfile.findUnique({
     where: { cardSlug: params.slug },
     include: { user: { select: { name: true, email: true, isActive: true } } },

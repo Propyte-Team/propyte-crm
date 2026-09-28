@@ -28,7 +28,8 @@ const sendSchema = z
   // el path de media debe ser del bucket (no URLs arbitrarias que Meta descargaría)
   .refine((d) => !d.media || !/^https?:\/\//i.test(d.media.path), { message: "media.path inválido" });
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 

@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const code = url.searchParams.get("code")
   const state = url.searchParams.get("state")
-  const cookieState = cookies().get("g_oauth_state")?.value
-  cookies().delete("g_oauth_state")
+  const cookieState = (await cookies()).get("g_oauth_state")?.value
+  (await cookies()).delete("g_oauth_state")
 
   if (url.searchParams.get("error")) return settingsRedirect(req, "error")
   if (!code || !state || !cookieState || state !== cookieState) return settingsRedirect(req, "state_error")

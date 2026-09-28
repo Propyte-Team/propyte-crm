@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ["@prisma/client", "bcryptjs", "sharp"],
-  },
+  // Next 15: esta clave se graduó de "experimental" y se movió a la raíz
+  // (antes era experimental.serverComponentsExternalPackages).
+  serverExternalPackages: ["@prisma/client", "bcryptjs", "sharp"],
   async headers() {
     return [
       {

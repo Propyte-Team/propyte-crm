@@ -6,10 +6,11 @@ import { ContactDetail } from "@/components/contacts/contact-detail";
 import { resolveCoreFieldAccess, stripHiddenCoreFields } from "@/lib/metadata/core-fields";
 
 interface ContactPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
-export default async function ContactDetailPage({ params }: ContactPageProps) {
+export default async function ContactDetailPage(props: ContactPageProps) {
+  const params = await props.params;
   // Verificar sesión activa
   const session = await getServerSession();
   if (!session?.user) {
