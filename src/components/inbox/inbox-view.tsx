@@ -404,10 +404,21 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   // o el buscador de plantillas del composer (stopPropagation en el propio
   // textarea) ya consumieron su Escape, este listener nunca llega a ejecutarse
   // para esa misma tecla.
+  //
+  // setThread(null) es la parte que faltaba en el intento anterior: el panel
+  // se decide con `!thread` (línea ~646), no con `!selectedId` — igual que en
+  // el guard 404 de loadThread (línea ~343) y en markSpam (línea ~493), que sí
+  // limpian ambos. Con solo `setSelectedId(null)`, el listener se desmontaba
+  // bien (confirmado en vivo: getEventListeners(document).keydown pasaba de 3
+  // a 2 al presionar Esc) pero `thread` seguía con los datos del hilo viejo,
+  // así que la pantalla se quedaba mostrando la conversación de todos modos.
   useEffect(() => {
     if (!selectedId) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setSelectedId(null);
+      if (e.key === "Escape") {
+        setSelectedId(null);
+        setThread(null);
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
