@@ -81,7 +81,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.5.26",
-    "postcss": "^8.4.49",
+    "postcss": "^8.5.28",
     "prisma": "^6.2.1",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
@@ -90,6 +90,32 @@
   },
   "overrides": {
     "@auth/core": "0.41.3",
-    "axios": "1.20.0"
+    "axios": "1.20.0",
+    "nanoid": "3.3.19",
+    "browserslist": "4.28.7",
+    "js-yaml": "4.3.2",
+    "defu": "6.1.5",
+    "flatted": "3.4.2",
+    "next": {
+      "postcss": "8.5.28"
+    },
+    "micromatch": {
+      "picomatch": "2.3.2"
+    },
+    "anymatch": {
+      "picomatch": "2.3.2"
+    },
+    "readdirp": {
+      "picomatch": "2.3.2"
+    },
+    "tinyglobby": {
+      "picomatch": "4.0.4"
+    },
+    "minimatch@3.1.5": {
+      "brace-expansion": "1.1.18"
+    },
+    "minimatch@9.0.9": {
+      "brace-expansion": "2.1.4"
+    }
   }
 }
