@@ -40,7 +40,8 @@ const ASSIGN_MSG_BY_CODE = {
   "conflicto": "El hilo cambió, recarga",
 } as const;
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 

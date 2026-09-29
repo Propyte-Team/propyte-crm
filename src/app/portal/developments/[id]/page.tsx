@@ -6,10 +6,11 @@ import { getPortalDevelopmentDetail } from "@/server/portal";
 import { PortalDevelopmentDetail } from "@/components/portal/portal-development-detail";
 
 interface Props {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
-export default async function PortalDevelopmentPage({ params }: Props) {
+export default async function PortalDevelopmentPage(props: Props) {
+  const params = await props.params;
   // Verificar sesión y rol
   const session = await getServerSession();
 

@@ -27,10 +27,8 @@ function errToResponse(error: unknown) {
   return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const body = await request.json();
     const validation = updateActivitySchema.safeParse(body);
@@ -56,10 +54,8 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const result = await deleteActivity(params.id);
     return NextResponse.json({ data: result });

@@ -9,7 +9,8 @@ import { puedeCorrerAgentes, inputFueraDeTope } from "@/lib/agents/permisos";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   // #736: esta es LA MISMA puerta de CRON_SECRET que la #665 blindó en lib/cron/auth.ts,
   // pero por un route que no pasa por ese guardia, así que se quedó con el `===`. No se usa

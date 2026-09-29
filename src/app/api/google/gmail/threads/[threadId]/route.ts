@@ -8,7 +8,8 @@ import { GWNotConnectedError } from "@/lib/google/workspace.service"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(_req: Request, { params }: { params: { threadId: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ threadId: string }> }) {
+  const params = await props.params;
   const session = await getServerSession()
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 

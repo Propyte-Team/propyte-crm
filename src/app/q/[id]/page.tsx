@@ -25,7 +25,8 @@ function fdate(d?: Date | null) {
   return d ? new Date(d).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" }) : "—";
 }
 
-export default async function PublicQuotePage({ params }: { params: { id: string } }) {
+export default async function PublicQuotePage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // #716: la búsqueda NO se envuelve en `.catch(() => null)`. Hacerlo convertía un fallo
   // de la base en un "esta cotización no existe", que es lo peor que se le puede decir a
   // un cliente cuyo enlace sí es válido. Si la consulta falla, que salte la frontera de

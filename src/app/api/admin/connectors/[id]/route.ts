@@ -16,7 +16,8 @@ const patchSchema = z.object({
   fieldMap: fieldMapSchema.optional(),
 });
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -58,7 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ data: connector });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });

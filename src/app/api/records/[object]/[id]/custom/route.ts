@@ -17,7 +17,11 @@ async function loadRecord(object: "contact" | "deal", id: string) {
   return prisma.deal.findUnique({ where: { id }, select: { id: true, custom: true } });
 }
 
-export async function GET(req: NextRequest, { params }: { params: { object: string; id: string } }) {
+export async function GET(
+  req: NextRequest,
+  props: { params: Promise<{ object: string; id: string }> }
+) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
@@ -52,7 +56,11 @@ export async function GET(req: NextRequest, { params }: { params: { object: stri
   });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { object: string; id: string } }) {
+export async function PATCH(
+  req: NextRequest,
+  props: { params: Promise<{ object: string; id: string }> }
+) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 

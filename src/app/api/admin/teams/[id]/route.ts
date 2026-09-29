@@ -6,7 +6,8 @@ import { getServerSession } from "@/lib/auth/session";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !MANAGE_ROLES.includes(session.user.role)) {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
@@ -25,7 +26,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // Agregar miembro (mueve de equipo = DELETE en uno + POST en otro; historial intacto)
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !MANAGE_ROLES.includes(session.user.role)) {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
@@ -49,7 +51,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ data: member }, { status: 201 });
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !MANAGE_ROLES.includes(session.user.role)) {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });

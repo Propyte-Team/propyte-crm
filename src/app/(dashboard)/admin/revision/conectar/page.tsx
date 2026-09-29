@@ -29,7 +29,7 @@ export default async function ConectarRevisionPage() {
   if (!puedeVerTokenRevision(session.user.role)) redirect("/dashboard");
 
   const { token, origen, rotadoEn } = await leerTokenEsperado(prisma);
-  const host = headers().get("host") ?? "crm.propyte.com";
+  const host = (await headers()).get("host") ?? "crm.propyte.com";
   const datos = datosDeConexion({
     host,
     token,

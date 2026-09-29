@@ -30,7 +30,7 @@ function pedir(method: string, token: string | null, path = "automation/rules") 
   } as never;
 }
 
-const params = { params: { path: ["automation", "rules"] } };
+const params = { params: Promise.resolve({ path: ["automation", "rules"] }) };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -38,6 +38,9 @@ beforeEach(() => {
   process.env.CRM_MCP_READONLY_TOKEN = LECTURA;
   userFindUnique.mockResolvedValue({ id: "u-mcp" });
   handler.mockResolvedValue({ ok: true });
+  // Este `params` es el del dispatch interno de resolveRoute (Record<string,string> síncrono,
+  // ver src/lib/mcp/dispatch.ts) — NO el params:Promise<...> de la firma de ruta de Next 15.
+  // No envolver en Promise.resolve: route.params se usa sin await dentro de handle().
   resolveRoute.mockReturnValue({ handler: (...a: unknown[]) => handler(...a), params: {} });
 });
 

@@ -39,7 +39,8 @@ const MESSAGE_CHANNEL_LABELS: Record<string, string> = {
   MESSENGER: "Messenger",
 };
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {

@@ -50,7 +50,7 @@ function req(body: unknown) {
   }) as never;
 }
 
-const PARAMS = { params: { id: "conv-1" } };
+const PARAMS = { params: Promise.resolve({ id: "conv-1" }) };
 
 // Fixture del findUnique del bloque assign. Por default: hilo LIBRE (sin dueño), que es
 // lo que ve todo el mundo — el alcance se prueba explícitamente donde importa.

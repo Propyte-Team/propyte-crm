@@ -17,7 +17,7 @@ function req(body: unknown) {
   }) as never;
 }
 
-const ctx = { params: { id: "act-1" } };
+const ctx = { params: Promise.resolve({ id: "act-1" }) };
 
 beforeEach(() => {
   updateActivity.mockReset();

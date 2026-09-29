@@ -10,8 +10,9 @@ import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string; scheduleId: string } }
+  props: { params: Promise<{ id: string; scheduleId: string }> }
 ) {
+  const params = await props.params;
   try {
     const session = await getServerSession();
     if (!session?.user) {

@@ -8,11 +8,12 @@ export const dynamic = "force-dynamic";
 
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
 
-export default async function DevelopmentDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function DevelopmentDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 

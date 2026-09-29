@@ -5,7 +5,8 @@ import QRCode from "qrcode";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: Request, { params }: { params: { slug: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const profile = await prisma.userProfile.findUnique({
     where: { cardSlug: params.slug },
     select: { id: true, user: { select: { isActive: true } } },

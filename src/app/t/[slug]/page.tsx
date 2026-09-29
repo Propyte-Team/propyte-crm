@@ -13,7 +13,8 @@ async function getProfile(slug: string) {
   });
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const profile = await getProfile(params.slug);
   if (!profile || !profile.user.isActive) return { title: "Propyte" };
   return {
@@ -27,7 +28,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
 }
 
-export default async function CardPage({ params }: { params: { slug: string } }) {
+export default async function CardPage(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const profile = await getProfile(params.slug);
   if (!profile || !profile.user.isActive) notFound();
 

@@ -83,7 +83,7 @@ const TEAM_LEADER = { user: { id: "tl1", role: "TEAM_LEADER" } };
 describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
   it("401 sin sesión, sin tocar la BD", async () => {
     getServerSession.mockResolvedValue(null);
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(401);
     expect(findUnique).not.toHaveBeenCalled();
   });
@@ -91,14 +91,14 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
   it("GERENTE (vista completa) ve un hilo asignado a OTRO asesor → 200", async () => {
     getServerSession.mockResolvedValue(GERENTE);
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "otro-asesor" } }));
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(200);
   });
 
   it("ASESOR_SR: hilo de OTRO → 404 y NO se marca leído", async () => {
     getServerSession.mockResolvedValue(ASESOR_SR);
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "otro-asesor" } }));
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
   });
@@ -106,7 +106,7 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
   it("ASESOR_SR: hilo propio (assignedToId = su id) → 200 y SÍ se marca leído", async () => {
     getServerSession.mockResolvedValue(ASESOR_SR);
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u3" } }));
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(200);
     expect(update).toHaveBeenCalledWith({ where: { id: "conv1" }, data: { unreadCount: 0 } });
   });
@@ -114,7 +114,7 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
   it("ASESOR_SR: hilo SIN asignar → 200 (la cola libre es visible para todos)", async () => {
     getServerSession.mockResolvedValue(ASESOR_SR);
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(200);
     expect(update).toHaveBeenCalled();
   });
@@ -129,7 +129,7 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
         },
       })
     );
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
         },
       })
     );
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(200);
     expect(update).toHaveBeenCalled();
   });
@@ -159,7 +159,7 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
         },
       })
     );
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     const body = await res.json();
     expect(body.data.contact.assignedTo).toEqual({ id: "rep-1", name: "Reporte" });
     expect(JSON.stringify(body)).not.toContain("teamLeaderId");
@@ -168,7 +168,7 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
   it("hilo inexistente → 404 (comportamiento previo intacto)", async () => {
     getServerSession.mockResolvedValue(ASESOR_SR);
     findUnique.mockResolvedValue(null);
-    const res = await GET(req(), { params: { id: "conv1" } });
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
   });
@@ -177,11 +177,11 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
     getServerSession.mockResolvedValue(ASESOR_SR);
 
     findUnique.mockResolvedValueOnce(convWith({ contact: { assignedToId: "otro-asesor" } }));
-    const resPermiso = await GET(req(), { params: { id: "conv1" } });
+    const resPermiso = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     const bodyPermiso = await resPermiso.json();
 
     findUnique.mockResolvedValueOnce(null);
-    const resInexistente = await GET(req(), { params: { id: "conv1" } });
+    const resInexistente = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
     const bodyInexistente = await resInexistente.json();
 
     expect(resPermiso.status).toBe(404);

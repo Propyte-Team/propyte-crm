@@ -26,8 +26,14 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const code = url.searchParams.get("code")
   const state = url.searchParams.get("state")
-  const cookieState = cookies().get("g_oauth_state")?.value
-  cookies().delete("g_oauth_state")
+  // Next 15: cookies() ahora es async. Una sola llamada, asignada a una variable — este
+  // archivo no usa punto y coma, y encadenar dos `(await cookies())` en líneas seguidas
+  // (lo que generó el codemod) se pega por ASI con la línea de arriba (quedaba
+  // interpretado como `...?.value(await cookies()).delete(...)`, llamando `.value` como
+  // función).
+  const cookieStore = await cookies()
+  const cookieState = cookieStore.get("g_oauth_state")?.value
+  cookieStore.delete("g_oauth_state")
 
   if (url.searchParams.get("error")) return settingsRedirect(req, "error")
   if (!code || !state || !cookieState || state !== cookieState) return settingsRedirect(req, "state_error")

@@ -8,7 +8,8 @@ import { blockOnMeta } from "@/lib/moderation/meta-moderation";
 import { recordMetaResult } from "@/lib/moderation/block-sender";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
 
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (!canMarkSpam(session.user.role)) {

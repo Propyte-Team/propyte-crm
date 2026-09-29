@@ -56,7 +56,7 @@ it("pasa connectorId de la conversación a sendChannelMessage", async () => {
   // select, así que el fixture viejo (sin el campo) ejercitaba una forma inexistente.
   findUnique.mockResolvedValue(convWith());
   const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-  await POST(r, { params: { id: "conv1" } });
+  await POST(r, { params: Promise.resolve({ id: "conv1" }) });
   expect(sendChannelMessage).toHaveBeenCalledWith("INSTAGRAM", "c1", "hola", "u1", { connectorId: "conn_ig", media: null });
 });
 
@@ -64,7 +64,7 @@ it("acepta media sin texto y lo pasa a sendChannelMessage", async () => {
   findUnique.mockResolvedValue(convWith({ channel: "MESSENGER", connectorId: "conn_ms" }));
   const media = { path: "2026-07/a.jpg", type: "image", filename: "a.jpg", mimeType: "image/jpeg" };
   const r = new Request("https://x", { method: "POST", body: JSON.stringify({ media }) }) as never;
-  const res = await POST(r, { params: { id: "conv1" } });
+  const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
   expect(res.status).toBe(201);
   expect(sendChannelMessage).toHaveBeenCalledWith("MESSENGER", "c1", "", "u1", { connectorId: "conn_ms", media });
 });
@@ -78,7 +78,7 @@ it("rechaza mensaje sin texto NI media, nota interna con media, y media.path con
   ];
   for (const body of cases) {
     const r = new Request("https://x", { method: "POST", body: JSON.stringify(body) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(400);
   }
   expect(sendChannelMessage).not.toHaveBeenCalled();
@@ -93,7 +93,7 @@ describe("gate de asignación + auto-claim", () => {
       convWith({ contact: { assignedToId: "u2", assignedTo: { teamLeaderId: "tl-x" } } })
     );
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(404);
     expect(sendChannelMessage).not.toHaveBeenCalled();
   });
@@ -103,11 +103,11 @@ describe("gate de asignación + auto-claim", () => {
       convWith({ contact: { assignedToId: "u2", assignedTo: { teamLeaderId: "tl-x" } } })
     );
     const rPermiso = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const resPermiso = await POST(rPermiso, { params: { id: "conv1" } });
+    const resPermiso = await POST(rPermiso, { params: Promise.resolve({ id: "conv1" }) });
 
     findUnique.mockResolvedValueOnce(null);
     const rInexistente = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const resInexistente = await POST(rInexistente, { params: { id: "conv1" } });
+    const resInexistente = await POST(rInexistente, { params: Promise.resolve({ id: "conv1" }) });
 
     expect(resPermiso.status).toBe(404);
     expect(resPermiso.status).toBe(resInexistente.status);
@@ -118,7 +118,7 @@ describe("gate de asignación + auto-claim", () => {
     getServerSession.mockResolvedValue({ user: { id: "mgr1", role: "GERENTE" } });
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u2" } }));
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(201);
     expect(assignContact).not.toHaveBeenCalled();
   });
@@ -127,7 +127,7 @@ describe("gate de asignación + auto-claim", () => {
     getServerSession.mockResolvedValue({ user: { id: "mgr1", role: "GERENTE" } });
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(201);
     expect(assignContact).not.toHaveBeenCalled();
   });
@@ -136,7 +136,7 @@ describe("gate de asignación + auto-claim", () => {
     getServerSession.mockResolvedValue({ user: { id: "u3", role: "ASESOR_SR" } });
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(201);
     expect(assignContact).toHaveBeenCalledWith({
       contactId: "c1",
@@ -154,7 +154,7 @@ describe("gate de asignación + auto-claim", () => {
     getServerSession.mockResolvedValue({ user: { id: "u3", role: "ASESOR_SR" } });
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u3" } }));
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(201);
     expect(assignContact).not.toHaveBeenCalled();
   });
@@ -162,7 +162,7 @@ describe("gate de asignación + auto-claim", () => {
   it("nota interna en hilo ajeno → 201, sin gate y sin auto-claim", async () => {
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u2" } }));
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "nota", internalNote: true }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(201);
     expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(assignContact).not.toHaveBeenCalled();
@@ -175,7 +175,7 @@ describe("gate de asignación + auto-claim", () => {
       findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
       assignContact.mockRejectedValue(new Error("boom"));
       const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-      const res = await POST(r, { params: { id: "conv1" } });
+      const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
       expect(res.status).toBe(201);
       expect(errSpy).toHaveBeenCalled();
     } finally {
@@ -193,7 +193,7 @@ describe("gate de asignación + auto-claim", () => {
       findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
       assignContact.mockResolvedValue({ ok: false, code: "conflicto" });
       const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-      const res = await POST(r, { params: { id: "conv1" } });
+      const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
       expect(res.status).toBe(201);
       expect(errSpy).toHaveBeenCalledWith("[inbox] auto-claim no aplicado", "conflicto");
     } finally {
@@ -206,7 +206,7 @@ describe("gate de asignación + auto-claim", () => {
     findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
     sendChannelMessage.mockRejectedValue(new Error("fallo de envío"));
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(422);
     expect(assignContact).not.toHaveBeenCalled();
   });
@@ -220,7 +220,7 @@ describe("gate de asignación + auto-claim", () => {
       convWith({ contact: { assignedToId: "rep1", assignedTo: { teamLeaderId: "tl1" } } })
     );
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(201);
     expect(assignContact).not.toHaveBeenCalled();
   });
@@ -231,7 +231,7 @@ describe("gate de asignación + auto-claim", () => {
       convWith({ contact: { assignedToId: "u2", assignedTo: { teamLeaderId: "otro-tl" } } })
     );
     const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-    const res = await POST(r, { params: { id: "conv1" } });
+    const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
     expect(res.status).toBe(404);
     expect(sendChannelMessage).not.toHaveBeenCalled();
   });
@@ -248,7 +248,7 @@ describe("gate de asignación + auto-claim", () => {
       getServerSession.mockResolvedValue({ user: { id: "h1", role: "HOSTESS" } });
       findUnique.mockResolvedValue(convWith({ contact: { assignedToId: null } }));
       const r = new Request("https://x", { method: "POST", body: JSON.stringify({ body: "hola" }) }) as never;
-      const res = await POST(r, { params: { id: "conv1" } });
+      const res = await POST(r, { params: Promise.resolve({ id: "conv1" }) });
       expect(res.status).toBe(201);
       expect(assignContact).not.toHaveBeenCalled();
       expect(errSpy).not.toHaveBeenCalled();

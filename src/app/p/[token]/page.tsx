@@ -13,7 +13,8 @@ function money(n: number | null | undefined, currency = "MXN") {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
 }
 
-export default async function PublicShortlistPage({ params }: { params: { token: string } }) {
+export default async function PublicShortlistPage(props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // #716: sin `.catch(() => null)` — un parpadeo de la base decía "esta propuesta no
   // existe" a un cliente con un enlace válido. Ahora salta la frontera de error
   // (p/error.tsx), que ofrece reintentar; `notFound()` queda para el token inválido.
@@ -21,7 +22,7 @@ export default async function PublicShortlistPage({ params }: { params: { token:
   if (!shortlist) notFound();
 
   // Tracking de apertura (no debe romper el render si falla).
-  const ua = headers().get("user-agent");
+  const ua = (await headers()).get("user-agent");
   await recordView(shortlist.id, ua).catch(() => null);
 
   const contactName = shortlist.contact

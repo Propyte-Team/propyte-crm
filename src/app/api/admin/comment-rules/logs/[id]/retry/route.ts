@@ -33,7 +33,8 @@ function errorText(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 500);
 }
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession();
   if (!session?.user || !canManageCommentRules(session.user.role)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
