@@ -42,7 +42,6 @@ async function handle(req: NextRequest, segments: string[]) {
   }
 }
 
-// Next.js 14: params is a plain object (not Promise)
 type P = { params: Promise<{ path: string[] }> };
 export async function GET(req: NextRequest, props: P) {
   const params = await props.params;

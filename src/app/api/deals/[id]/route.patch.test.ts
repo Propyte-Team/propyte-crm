@@ -61,7 +61,7 @@ function req(body: unknown) {
   }) as never;
 }
 
-const params = { params: { id: DEAL_ID } };
+const params = { params: Promise.resolve({ id: DEAL_ID }) };
 
 function dealEnEtapa(stage: string, extra: Record<string, unknown> = {}) {
   dealFindUnique.mockResolvedValue({

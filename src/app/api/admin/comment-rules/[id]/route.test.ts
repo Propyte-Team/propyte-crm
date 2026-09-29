@@ -28,7 +28,7 @@ function req(body: unknown) {
 }
 
 function ctx(id = "rule-1") {
-  return { params: { id } };
+  return { params: Promise.resolve({ id }) };
 }
 
 const CURRENT = { id: "rule-1", connectorId: "conn-ig", phrases: ["info"] };

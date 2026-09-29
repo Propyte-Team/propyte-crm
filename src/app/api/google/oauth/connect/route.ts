@@ -12,7 +12,13 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const state = randomBytes(24).toString("hex")
-  (await cookies()).set("g_oauth_state", state, {
+  // Next 15: cookies() ahora es async. Se asigna a una variable en vez de encadenar
+  // `(await cookies()).set(...)` directamente — este archivo no usa punto y coma, y esa
+  // forma generada por el codemod se pega por ASI con la línea de arriba (quedaba
+  // interpretado como `randomBytes(24).toString("hex")(await cookies()).set(...)`,
+  // llamando el string como función y usando `state` en su propio inicializador).
+  const cookieStore = await cookies()
+  cookieStore.set("g_oauth_state", state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

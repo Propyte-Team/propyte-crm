@@ -21,13 +21,19 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * `params` es un objeto plano, NO una promesa: este repo va en Next 14. La firma con
- * `Promise` es de Next 15 y `tsc --noEmit` no la delata —valida la anotación que uno
- * escribe, no la que Next espera—; el que falla es `next build`.
+ * Next 15 (#805): `params` llega envuelto en una promesa. Este archivo se salvó del
+ * codemod `next-async-request-api` porque no usa la forma `export async function
+ * POST(req, {params})` que el codemod reconoce — aquí un solo `handler` se reasigna a
+ * los cinco verbos. `tsc --noEmit` tampoco lo delataba solo: valida la anotación que uno
+ * escribe, no la que Next espera en tiempo de build — lo que sí lo destapa es el
+ * validador que genera `next build`/`next dev` en `.next/types/**`.
  */
-type Ctx = { params: { token: string } };
+type Ctx = { params: Promise<{ token: string }> };
 
-const handler = async (req: Request, ctx: Ctx) => handleRevisionMcpHttp(req, ctx.params.token);
+const handler = async (req: Request, ctx: Ctx) => {
+  const { token } = await ctx.params;
+  return handleRevisionMcpHttp(req, token);
+};
 
 export const POST = handler;
 // El resto de métodos existe para contestar 405 con el motivo —la autorización los

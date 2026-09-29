@@ -27,7 +27,7 @@ vi.mock("@/lib/messaging/social-accounts", () => ({ getSocialPageToken: () => "T
 
 import { POST } from "./route";
 
-const PARAMS = { params: { id: "blocked-1" } };
+const PARAMS = { params: Promise.resolve({ id: "blocked-1" }) };
 const request = () => new Request("http://x", { method: "POST" }) as never;
 
 beforeEach(() => {

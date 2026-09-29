@@ -91,7 +91,9 @@ function req(body: unknown) {
     body: JSON.stringify(body),
   }) as never;
 }
-const params = (object = "contact") => ({ params: { object, id: ID } });
+// Next 15: los route handlers reciben `params` como Promise (#805) — el helper de prueba
+// tiene que envolver el objeto igual, para que coincida con la firma real de PATCH/GET.
+const params = (object = "contact") => ({ params: Promise.resolve({ object, id: ID }) });
 
 /** Lo que la base devuelve en el RETURNING, o sea lo que quedó GUARDADO. */
 function baseDevuelve(custom: unknown) {

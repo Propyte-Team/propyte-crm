@@ -44,7 +44,7 @@ function req() {
 }
 
 function ctx(id = "log-1") {
-  return { params: { id } };
+  return { params: Promise.resolve({ id }) };
 }
 
 const CONNECTOR = { id: "conn-1", status: "ACTIVE", deletedAt: null, credentials: "cipher" };

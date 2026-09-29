@@ -34,7 +34,7 @@ const PRIMER_ENVIO = new Date("2026-09-01T15:00:00.000Z");
 function enviar() {
   return POST(
     new Request(`http://t/api/quotes/${QUOTE}/send`, { method: "POST" }) as never,
-    { params: { id: QUOTE } }
+    { params: Promise.resolve({ id: QUOTE }) }
   );
 }
 

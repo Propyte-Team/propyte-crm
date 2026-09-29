@@ -55,7 +55,7 @@ vi.mock("@/lib/audit/change-context", () => ({
 
 import { PATCH } from "./route";
 
-const ctx = { params: { id: "deal-1" } };
+const ctx = { params: Promise.resolve({ id: "deal-1" }) };
 
 function req(body: unknown) {
   return new Request("http://localhost/api/deals/deal-1", {
