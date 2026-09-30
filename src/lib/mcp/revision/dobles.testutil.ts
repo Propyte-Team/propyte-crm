@@ -35,13 +35,26 @@ export function dbFalsa(cfg: {
   grupos?: Grupos;
   listas?: Grupos;
   fechas?: Record<string, Date[]>;
+  /**
+   * Espía opcional: se llama con los argumentos REALES que el handler pasó a cada
+   * `modelo.metodo`, antes de devolver el valor configurado.
+   *
+   * Este doble responde por clave `modelo.metodo` sin mirar el `where` — no simula un
+   * filtro de verdad, así que no sirve para probar que una consulta filtra por
+   * `deletedAt` o cualquier otra condición (#682, #778): una prueba que solo mirara el
+   * resultado configurado pasaría en verde aunque alguien borrara el filtro del código.
+   * `capturarArgs` es lo que permite esa prueba: se guardan los argumentos tal cual llegan
+   * y la prueba los compara contra lo que el handler debería enviar.
+   */
+  capturarArgs?: (clave: string, args: unknown) => void;
 }): RevisionDb {
-  const { conteos = {}, secuencias = {}, grupos = {}, listas = {}, fechas = {} } = cfg;
+  const { conteos = {}, secuencias = {}, grupos = {}, listas = {}, fechas = {}, capturarArgs } = cfg;
   const consumidas: Record<string, number> = {};
 
   const modelo = (nombre: string) => ({
-    count: async () => {
+    count: async (args?: unknown) => {
       const k = `${nombre}.count`;
+      capturarArgs?.(k, args);
       if (k in secuencias) {
         const i = consumidas[k] ?? 0;
         consumidas[k] = i + 1;
@@ -52,13 +65,15 @@ export function dbFalsa(cfg: {
       if (!(k in conteos)) throw new Error(`doble sin configurar: ${k}`);
       return conteos[k];
     },
-    groupBy: async () => {
+    groupBy: async (args?: unknown) => {
       const k = `${nombre}.groupBy`;
+      capturarArgs?.(k, args);
       if (!(k in grupos)) throw new Error(`doble sin configurar: ${k}`);
       return grupos[k];
     },
-    findMany: async () => {
+    findMany: async (args?: unknown) => {
       const k = `${nombre}.findMany`;
+      capturarArgs?.(k, args);
       if (k in listas) return listas[k];
       if (k in fechas) return fechas[k];
       throw new Error(`doble sin configurar: ${k}`);

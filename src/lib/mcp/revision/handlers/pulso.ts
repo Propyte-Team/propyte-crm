@@ -85,7 +85,11 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
       where: realLeadWhere({ createdAt: { gte: hace7d } }),
       _count: { _all: true },
     }),
-    db.deal.groupBy({ by: ["stage"], _count: { _all: true } }),
+    // 🚨 #682: filtrado por `deletedAt: null`, igual que `automationRule`, `user` y
+    // `routingRule` unas líneas más abajo. Un deal borrado lógicamente no debe contarse
+    // en la distribución por etapa — es la misma clase de defecto que el #778 de
+    // `leadConnector`, ya corregido más abajo.
+    db.deal.groupBy({ by: ["stage"], where: { deletedAt: null }, _count: { _all: true } }),
     // 🚨 Agrupado por estado, no contando solo los BREACHED. La diferencia es el
     // DENOMINADOR: un `incumplidos_7d: 0` sin total no distingue «cumplimos todo» de
     // «no se creó ni un temporizador», y las dos cosas producen el mismo cero verde.
@@ -108,7 +112,14 @@ export async function pulso(_args: unknown, ctx: RevisionContext) {
     db.actionQueue.count({
       where: { status: "FAILED", attempts: { gte: 3 } },
     }),
+    // 🚨 #778: filtrado por `deletedAt: null`. Sin este filtro la puerta publicaba
+    // conectores dados de baja (3 de 9 en la medición del 2026-09-15, los tres de META en
+    // status PAUSED) como si siguieran vivos-en-pausa — un `status` que los disfraza en
+    // vez de delatarlos. `fallos_historicos` (el groupBy de connectorLeadLog de abajo)
+    // sigue sin filtrar a propósito: el histórico de un conector borrado es histórico
+    // igual, y filtrarlo aquí solo lo escondería sin borrar el hecho de que ocurrió.
     db.leadConnector.findMany({
+      where: { deletedAt: null },
       select: {
         id: true,
         name: true,
