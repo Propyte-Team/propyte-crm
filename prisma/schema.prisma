@@ -786,6 +786,13 @@ model Contact {
   hubContactId      String?
   instagramId       String?         @unique
   messengerPsid     String?         @unique
+  // BSUID de WhatsApp (`contacts[].user_id`). Meta lo manda en TODOS los webhooks
+  // entrantes desde abril de 2026; el teléfono (`wa_id`) es condicional —solo llega
+  // dentro de la ventana de 30 días, que se evalúa POR NÚMERO DE NEGOCIO—. Mismo
+  // patrón que instagramId/messengerPsid. Formato: país ISO alpha-2 + punto + hasta
+  // 128 alfanuméricos (US.13491208655302741918); se guarda ÍNTEGRO, recortarlo hace
+  // fallar el envío. Hoy solo se persiste: el emparejado sigue yendo por teléfono.
+  whatsappUserId    String?         @unique
 
   // Dedup / merge (confirmación humana salvo phone+email idénticos — Anexo B §K G.6)
   mergedIntoId String?

@@ -11,9 +11,13 @@ const resolveConnectorByPhoneNumberId = vi.fn();
 const resolveWaMediaToStorage = vi.fn();
 const botRespond = vi.fn();
 const messageUpdateMany = vi.fn();
+const contactUpdateMany = vi.fn();
 
 vi.mock("@/lib/db", () => ({
-  default: { message: { updateMany: (...a: unknown[]) => messageUpdateMany(...a) } },
+  default: {
+    message: { updateMany: (...a: unknown[]) => messageUpdateMany(...a) },
+    contact: { updateMany: (...a: unknown[]) => contactUpdateMany(...a) },
+  },
 }));
 vi.mock("@/lib/twilio/whatsapp", () => ({
   handleInboundWhatsApp: (...a: unknown[]) => handleInboundWhatsApp(...a),
@@ -40,6 +44,8 @@ beforeEach(() => {
   botRespond.mockReset();
   messageUpdateMany.mockReset();
   messageUpdateMany.mockResolvedValue({ count: 0 });
+  contactUpdateMany.mockReset();
+  contactUpdateMany.mockResolvedValue({ count: 1 });
   process.env.META_WA_VERIFY_TOKEN = "verifyme";
   process.env.META_WA_APP_SECRET = APP_SECRET;
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -166,4 +172,181 @@ describe("webhook de WhatsApp Cloud — cuerpos que no son un objeto (gemelo de 
       expect(handleInboundWhatsApp).not.toHaveBeenCalled();
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// BSUID (business-scoped user id) — 2026-09-30
+//
+// Meta manda `contacts[].user_id` en TODOS los webhooks entrantes desde abril de
+// 2026 y hasta hoy se tiraba. El teléfono (`wa_id`) es CONDICIONAL: solo viene si
+// hubo interacción en los últimos 30 días o el usuario está en el contact book, y
+// esa ventana se evalúa POR NÚMERO DE NEGOCIO. El BSUID, en cambio, siempre está.
+//
+// Este paso es deliberadamente ADITIVO: guarda el identificador y NO toca el
+// emparejado de contactos, que sigue yendo por teléfono. Cambiar el matcher es el
+// paso siguiente del diseño y el de mayor riesgo (duplicados); mezclarlo aquí es
+// justo lo que el orden del diseño prohíbe.
+// ---------------------------------------------------------------------------
+describe("webhook de WhatsApp Cloud — BSUID", () => {
+  /** Un batch con un mensaje cuyo contacto trae `user_id`. */
+  function cuerpoConBsuid(contacts: unknown[], from = "5219981234567") {
+    return JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "pn-1" },
+                contacts,
+                messages: [{ id: "wamid.1", from, type: "text", text: { body: "hola" } }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("persiste el user_id en el contacto que acaba de ingerir", async () => {
+    const res = await POST(
+      postFirmado(
+        cuerpoConBsuid([
+          { profile: { name: "Ana" }, wa_id: "5219981234567", user_id: "MX.13491208655302741918" },
+        ]),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(contactUpdateMany).toHaveBeenCalledTimes(1);
+    const [args] = contactUpdateMany.mock.calls[0] as [
+      { where: Record<string, unknown>; data: Record<string, unknown> },
+    ];
+    expect(args.data).toEqual({ whatsappUserId: "MX.13491208655302741918" });
+    expect(args.where.id).toBe("c1");
+  });
+
+  // El BSUID se manda COMPLETO —país + punto + alfanuméricos—; recortar el país o
+  // el punto hace fallar la petición de envío contra Meta. Se guarda tal cual llega.
+  it("guarda el BSUID íntegro, con su prefijo de país y su punto", async () => {
+    await POST(
+      postFirmado(
+        cuerpoConBsuid([{ wa_id: "5219981234567", user_id: "US.13491208655302741918" }]),
+      ),
+    );
+    const [args] = contactUpdateMany.mock.calls[0] as [{ data: { whatsappUserId: string } }];
+    expect(args.data.whatsappUserId).toBe("US.13491208655302741918");
+  });
+
+  // No pisar un BSUID ya guardado: la condición viaja en el WHERE, no en un
+  // read-then-write, para que dos mensajes del mismo batch no se pisen entre ellos.
+  it("no pisa un BSUID ya guardado: la condición va en el WHERE", async () => {
+    await POST(
+      postFirmado(cuerpoConBsuid([{ wa_id: "5219981234567", user_id: "MX.111" }])),
+    );
+    const [args] = contactUpdateMany.mock.calls[0] as [{ where: Record<string, unknown> }];
+    expect(args.where.whatsappUserId).toBeNull();
+  });
+
+  // Escribir el BSUID EQUIVOCADO en un contacto es peor que no escribir ninguno:
+  // queda un identificador único apuntando a otra persona. `contacts[]` trae una
+  // entrada por remitente, así que se empareja por wa_id contra el `from` del
+  // mensaje en vez de tomar `contacts[0]` a ciegas.
+  it("con dos remitentes en el batch, a cada contacto le toca SU user_id", async () => {
+    const cuerpo = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "pn-1" },
+                contacts: [
+                  { wa_id: "5219990000000", user_id: "MX.otro" },
+                  { wa_id: "5219981234567", user_id: "MX.correcto" },
+                ],
+                messages: [
+                  { id: "wamid.1", from: "5219981234567", type: "text", text: { body: "hola" } },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await POST(postFirmado(cuerpo));
+
+    expect(contactUpdateMany).toHaveBeenCalledTimes(1);
+    const [args] = contactUpdateMany.mock.calls[0] as [{ data: { whatsappUserId: string } }];
+    expect(args.data.whatsappUserId).toBe("MX.correcto");
+  });
+
+  // Si no se puede saber de quién es el user_id, no se escribe: adivinar deja el
+  // identificador en el contacto equivocado y el UNIQUE lo vuelve irreversible.
+  it("no adivina: con varios remitentes y ninguno que case, no escribe nada", async () => {
+    const cuerpo = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "pn-1" },
+                contacts: [
+                  { wa_id: "5219990000000", user_id: "MX.uno" },
+                  { wa_id: "5219991111111", user_id: "MX.dos" },
+                ],
+                messages: [
+                  { id: "wamid.1", from: "5219982222222", type: "text", text: { body: "hola" } },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await POST(postFirmado(cuerpo));
+
+    expect(contactUpdateMany).not.toHaveBeenCalled();
+  });
+
+  // Fuera de la ventana de 30 días Meta omite `wa_id` y el identificador que viaja
+  // en el mensaje es el propio BSUID. El emparejado por user_id cubre ese caso.
+  it("empareja por user_id cuando el webhook llega sin wa_id", async () => {
+    await POST(
+      postFirmado(
+        cuerpoConBsuid([{ profile: { name: "Ana" }, user_id: "MX.sin-telefono" }], "MX.sin-telefono"),
+      ),
+    );
+    const [args] = contactUpdateMany.mock.calls[0] as [{ data: { whatsappUserId: string } }];
+    expect(args.data.whatsappUserId).toBe("MX.sin-telefono");
+  });
+
+  it("un webhook sin user_id no escribe nada", async () => {
+    await POST(postFirmado(CUERPO_OK));
+    expect(contactUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("si no hubo contacto (opt-out, no capturable) no escribe nada", async () => {
+    handleInboundWhatsApp.mockResolvedValue(null);
+    await POST(
+      postFirmado(cuerpoConBsuid([{ wa_id: "5219981234567", user_id: "MX.111" }])),
+    );
+    expect(contactUpdateMany).not.toHaveBeenCalled();
+  });
+
+  // Guardar el BSUID es best-effort: es un dato de más, no un requisito de la
+  // ingesta. Un choque de UNIQUE o una caída de la BD no puede tumbar el webhook,
+  // porque Meta reintenta y el mensaje acabaría duplicándose en el inbox.
+  it("🚨 si la escritura del BSUID falla, la ingesta NO se cae", async () => {
+    contactUpdateMany.mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+
+    const res = await POST(
+      postFirmado(cuerpoConBsuid([{ wa_id: "5219981234567", user_id: "MX.111" }])),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, processed: 1 });
+  });
 });
