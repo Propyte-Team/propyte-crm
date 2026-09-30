@@ -101,6 +101,63 @@ interface MetaStatus {
   status: string; // sent | delivered | read | failed
 }
 
+/**
+ * Entrada de `contacts[]`: una por remitente del batch.
+ * - `user_id` (BSUID) → SIEMPRE presente desde abril de 2026, haya o no teléfono.
+ * - `wa_id` (teléfono) → CONDICIONAL: solo si hubo interacción en los últimos 30 días
+ *   o el usuario está en el contact book. Esa ventana se evalúa POR NÚMERO DE NEGOCIO.
+ * - `username` → solo si el usuario lo adoptó. Todavía no se persiste.
+ */
+interface MetaContact {
+  profile?: { name?: string };
+  wa_id?: string;
+  user_id?: string;
+  username?: string;
+}
+
+/**
+ * BSUID del remitente de ESTE mensaje, o null si no se puede saber con certeza.
+ *
+ * Se empareja la entrada de `contacts[]` contra el `from` del mensaje por teléfono
+ * (`wa_id`) o por el propio BSUID (`user_id`), que es lo que viaja cuando Meta omite
+ * el teléfono. Con una sola entrada se usa esa —el caso normal, y lo que este webhook
+ * ya asumía para el nombre de perfil—.
+ *
+ * Con varias entradas y ninguna que case se devuelve null a propósito: escribir el
+ * BSUID equivocado deja una columna UNIQUE apuntando a otra persona, y eso es peor
+ * que no escribir nada y mucho más difícil de deshacer que volver a guardarlo en el
+ * siguiente mensaje, porque el BSUID vuelve a llegar cada vez.
+ */
+function bsuidDelRemitente(contacts: MetaContact[] | undefined, from: string): string | null {
+  const lista = contacts ?? [];
+  const entrada =
+    lista.find((c) => c.wa_id === from || c.user_id === from) ??
+    (lista.length === 1 ? lista[0] : undefined);
+  return entrada?.user_id ?? null;
+}
+
+/**
+ * Guarda el BSUID en el contacto — best-effort y aditivo.
+ *
+ * `updateMany` con `whatsappUserId: null` en el WHERE, y no un `findUnique` seguido
+ * de `update`: es UNA sentencia, así que dos mensajes del mismo remitente en el mismo
+ * batch no se pisan, y nunca sobrescribe un BSUID ya guardado. Cuando ya está puesto
+ * el UPDATE no afecta filas y se acabó.
+ *
+ * El `.catch` no es decorativo y la prueba lo fija: esto va DENTRO del bucle de
+ * mensajes, y sin él un choque de UNIQUE (dos contactos reclamando el mismo BSUID,
+ * p. ej. un duplicado previo del dedup) abortaría la ingesta del mensaje. Meta
+ * reintentaría el batch entero y el inbox acabaría con el mensaje duplicado. El BSUID
+ * es un dato de más: si no se puede guardar hoy, vuelve a llegar en el siguiente
+ * mensaje. La ingesta no se negocia.
+ */
+async function guardarBsuid(contactId: string, bsuid: string | null) {
+  if (!bsuid) return;
+  await prisma.contact
+    .updateMany({ where: { id: contactId, whatsappUserId: null }, data: { whatsappUserId: bsuid } })
+    .catch((err) => console.error(`[whatsapp-meta] no se pudo guardar el BSUID de ${contactId}:`, err));
+}
+
 function extractBody(msg: MetaMessage): string {
   if (msg.text?.body) return msg.text.body;
   if (msg.button?.text) return msg.button.text;
@@ -136,7 +193,7 @@ export async function POST(req: NextRequest) {
       changes?: Array<{
         value?: {
           metadata?: { phone_number_id?: string; display_phone_number?: string };
-          contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>;
+          contacts?: MetaContact[];
           messages?: MetaMessage[];
           statuses?: MetaStatus[];
         };
@@ -221,6 +278,7 @@ export async function POST(req: NextRequest) {
           }, { triggerBot: false });
           if (saved?.contactId) {
             botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
+            await guardarBsuid(saved.contactId, bsuidDelRemitente(value.contacts, msg.from));
           }
           processed++;
         } catch (err) {
