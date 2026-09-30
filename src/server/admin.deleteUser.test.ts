@@ -28,6 +28,12 @@ vi.mock("@/lib/db", () => ({
 
 import { deleteUserPermanently } from "./admin";
 
+// #799 — deleteUserPermanently ya no LANZA sus errores de negocio: los devuelve
+// como `{ error }` (ver conErroresDeNegocio en admin.ts).
+async function esperarError(promesa: Promise<unknown>, regex: RegExp) {
+  await expect(promesa).resolves.toMatchObject({ error: expect.stringMatching(regex) });
+}
+
 const ADMIN_TARGET = { id: "admin-2", name: "Otro Admin", email: "admin2@nativatulum.mx", role: "ADMIN", isActive: true };
 const ASESOR_TARGET = { id: "asesor-1", name: "Asesor Uno", email: "asesor@nativatulum.mx", role: "ASESOR_SR", isActive: true };
 
@@ -51,7 +57,7 @@ describe("deleteUserPermanently — reutiliza las mismas reglas que deactivateUs
     session.user.role = "DIRECTOR";
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
 
-    await expect(deleteUserPermanently(ADMIN_TARGET.id)).rejects.toThrow(/administrador/i);
+    await esperarError(deleteUserPermanently(ADMIN_TARGET.id), /administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -62,7 +68,7 @@ describe("deleteUserPermanently — reutiliza las mismas reglas que deactivateUs
     userFindUnique.mockResolvedValue(self);
     userCount.mockResolvedValue(3);
 
-    await expect(deleteUserPermanently("actor-1")).rejects.toThrow(/propia cuenta/i);
+    await esperarError(deleteUserPermanently("actor-1"), /propia cuenta/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -72,7 +78,7 @@ describe("deleteUserPermanently — reutiliza las mismas reglas que deactivateUs
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
     userCount.mockResolvedValue(1);
 
-    await expect(deleteUserPermanently(ADMIN_TARGET.id)).rejects.toThrow(/último administrador/i);
+    await esperarError(deleteUserPermanently(ADMIN_TARGET.id), /último administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -81,7 +87,7 @@ describe("deleteUserPermanently — reutiliza las mismas reglas que deactivateUs
     // devolver null para simular ese caso.
     userFindUnique.mockResolvedValue(null);
 
-    await expect(deleteUserPermanently("ya-eliminado")).rejects.toThrow(/no encontrado/i);
+    await esperarError(deleteUserPermanently("ya-eliminado"), /no encontrado/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 });

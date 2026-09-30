@@ -18,6 +18,51 @@ import { generateApiKeyPair } from "@/lib/auth/api-key";
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
 /**
+ * #799 — Errores DE NEGOCIO: permisos, validación, "ya existe", "no encontrado".
+ *
+ * Por qué existe esta clase. Next.js App Router, en producción, no garantiza que el
+ * mensaje de una excepción lanzada desde una Server Action llegue siempre al cliente
+ * como una promesa rechazada normal — un caso real (#799, 2026-09-24) mostró la
+ * pantalla genérica de error de Next ("An error occurred in the Server Components
+ * render...") en vez del aviso legible de siempre, para un rechazo que el código
+ * maneja exactamente igual que cualquier otro que SÍ se ve bien. No se pudo confirmar
+ * el mecanismo exacto sin logs de servidor, pero la solución no depende de conocerlo:
+ * un error de negocio deja de lanzarse y pasa a ser un valor de retorno normal
+ * (`{ error: string }`), y un valor de retorno nunca puede convertirse en una pantalla
+ * de error de Next, sea cual sea la causa real del síntoma.
+ *
+ * Los errores que NO son de negocio (un fallo real de Prisma, un bug) siguen
+ * lanzándose tal cual: esos sí deben verse como lo que son.
+ */
+class BusinessRuleError extends Error {}
+
+/** Extrae un mensaje legible de un error DE NEGOCIO, o null si no lo es. */
+function mensajeDeErrorDeNegocio(e: unknown): string | null {
+  if (e instanceof BusinessRuleError) return e.message;
+  if (e instanceof z.ZodError) return e.issues[0]?.message ?? "Datos inválidos";
+  return null;
+}
+
+/**
+ * Envuelve una Server Action "de negocio" (autorización, validación, conflictos)
+ * para que sus rechazos esperados vuelvan como `{ error }` en vez de lanzarse.
+ *
+ * Ver `BusinessRuleError` arriba para el porqué. Solo se usa en las funciones que el
+ * cliente llama desde un botón con try/catch + toast (@/components/admin/admin-content);
+ * las funciones de solo lectura que arman los datos iniciales de la página siguen
+ * lanzando como antes — ahí un fallo de autorización debe verse como un error real.
+ */
+async function conErroresDeNegocio<T>(fn: () => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await fn();
+  } catch (e) {
+    const mensaje = mensajeDeErrorDeNegocio(e);
+    if (mensaje !== null) return { error: mensaje };
+    throw e;
+  }
+}
+
+/**
  * Restablecer la contraseña de otra persona es más peligroso que el resto del
  * panel: quien puede hacerlo puede ENTRAR COMO esa persona. Un GERENTE con este
  * poder podría tomar la cuenta de un DIRECTOR, así que se queda fuera — sigue
@@ -31,9 +76,9 @@ const PASSWORD_RESET_ROLES = ["ADMIN", "DIRECTOR"];
  */
 async function requireAdminRole() {
   const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  if (!session?.user) throw new BusinessRuleError("No autorizado");
   if (!ADMIN_ROLES.includes(session.user.role)) {
-    throw new Error("Acceso denegado: se requiere rol de Director o Gerente");
+    throw new BusinessRuleError("Acceso denegado: se requiere rol de Director o Gerente");
   }
   return session;
 }
@@ -41,9 +86,9 @@ async function requireAdminRole() {
 /** Guardia estrecha para restablecer contraseñas. Ver PASSWORD_RESET_ROLES. */
 async function requirePasswordResetRole() {
   const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  if (!session?.user) throw new BusinessRuleError("No autorizado");
   if (!PASSWORD_RESET_ROLES.includes(session.user.role)) {
-    throw new Error("Acceso denegado: solo un Administrador o Director puede restablecer contraseñas");
+    throw new BusinessRuleError("Acceso denegado: solo un Administrador o Director puede restablecer contraseñas");
   }
   return session;
 }
@@ -95,7 +140,7 @@ async function assertUserMutationAllowed(
   // Regla C: si alguien pudiera desactivarse a sí mismo, quedaría fuera de su
   // propia sesión sin que nadie más se diera cuenta ni pudiera revertirlo.
   if (opts.settingInactive && target.id === actorId) {
-    throw new Error("No puedes desactivar tu propia cuenta");
+    throw new BusinessRuleError("No puedes desactivar tu propia cuenta");
   }
 
   // Regla E: reactivar a alguien exige ser ADMIN. Desactivar (y eliminar) los sigue
@@ -103,7 +148,7 @@ async function assertUserMutationAllowed(
   // — cerrar el acceso de alguien es reversible y de bajo riesgo. Volver a abrirlo es
   // la decisión que #797 pidió reservar al Administrador.
   if (opts.settingActive && actorRole !== "ADMIN") {
-    throw new Error("Solo un Administrador puede activar a un usuario desactivado");
+    throw new BusinessRuleError("Solo un Administrador puede activar a un usuario desactivado");
   }
 
   // Regla A: quién puede tocar a un ADMIN.
@@ -111,7 +156,7 @@ async function assertUserMutationAllowed(
   // Piso: hay que ser ADMIN. Sin esto un DIRECTOR o GERENTE —que pasan el
   // mismo requireAdminRole()— podría desactivar a quien está por encima.
   if (target.role === "ADMIN" && actorRole !== "ADMIN") {
-    throw new Error("Solo un Administrador puede modificar a otro Administrador");
+    throw new BusinessRuleError("Solo un Administrador puede modificar a otro Administrador");
   }
 
   // Techo: si hay un propietario designado, es el ÚNICO que puede actuar sobre
@@ -124,7 +169,7 @@ async function assertUserMutationAllowed(
   if (target.role === "ADMIN" && target.id !== actorId) {
     const ownerId = await getAdminOwnerId();
     if (ownerId && actorId !== ownerId) {
-      throw new Error(
+      throw new BusinessRuleError(
         "Solo el Administrador propietario puede modificar a otro Administrador"
       );
     }
@@ -134,7 +179,7 @@ async function assertUserMutationAllowed(
   // esto la Regla A no protege nada: cualquiera se autopromueve primero y
   // luego ya puede tocar ADMINs con el rol recién adquirido.
   if (opts.settingRole === "ADMIN" && actorRole !== "ADMIN") {
-    throw new Error("Solo un Administrador puede asignar el rol de Administrador");
+    throw new BusinessRuleError("Solo un Administrador puede asignar el rol de Administrador");
   }
 
   // Regla D: no dejar el sistema sin ningún ADMIN activo, porque nadie podría
@@ -156,7 +201,7 @@ async function assertUserMutationAllowed(
       where: { role: "ADMIN", isActive: true, deletedAt: null },
     });
     if (activeAdmins <= 1) {
-      throw new Error(
+      throw new BusinessRuleError(
         "Este es el último Administrador activo: no se puede desactivar ni cambiarle el rol"
       );
     }
@@ -329,6 +374,7 @@ export async function createUser(data: {
   sedetusNumber?: string | null;
   sedetusExpiry?: string | null;
 }) {
+  return conErroresDeNegocio(async () => {
   await requireAdminRole();
 
   // Validar datos con Zod
@@ -338,7 +384,7 @@ export async function createUser(data: {
   const existing = await prisma.user.findUnique({
     where: { email: validated.email.toLowerCase().trim() },
   });
-  if (existing) throw new Error("Ya existe un usuario con este correo electrónico");
+  if (existing) throw new BusinessRuleError("Ya existe un usuario con este correo electrónico");
 
   // Hash de la contraseña
   const passwordHash = await hash(validated.password, 12);
@@ -376,6 +422,7 @@ export async function createUser(data: {
   });
 
   return user;
+  });
 }
 
 /**
@@ -397,6 +444,7 @@ export async function updateUser(
     isActive?: boolean;
   }
 ) {
+  return conErroresDeNegocio(async () => {
   const session = await requireAdminRole();
 
   // Verificar que el usuario existe (antes de validar con Zod: a quién se
@@ -404,7 +452,7 @@ export async function updateUser(
   const existing = await prisma.user.findUnique({
     where: { id, deletedAt: null },
   });
-  if (!existing) throw new Error("Usuario no encontrado");
+  if (!existing) throw new BusinessRuleError("Usuario no encontrado");
 
   // Reglas A-D, evaluadas sobre `data` tal cual llegó (no sobre el resultado
   // de Zod): así el candado de autorización no depende de qué valores de rol
@@ -423,7 +471,7 @@ export async function updateUser(
     const emailTaken = await prisma.user.findUnique({
       where: { email: validated.email.toLowerCase().trim() },
     });
-    if (emailTaken) throw new Error("Ya existe un usuario con este correo electrónico");
+    if (emailTaken) throw new BusinessRuleError("Ya existe un usuario con este correo electrónico");
   }
 
   // Construir datos de actualización
@@ -483,6 +531,7 @@ export async function updateUser(
   }
 
   return user;
+  });
 }
 
 /**
@@ -496,6 +545,7 @@ export async function updateUser(
  * estuviera dentro con el navegador abierto tiene que volver a iniciar sesión.
  */
 export async function resetUserPassword(userId: string, password: string) {
+  return conErroresDeNegocio(async () => {
   const session = await requirePasswordResetRole();
 
   const { password: validPassword } = resetPasswordSchema.parse({ password });
@@ -504,7 +554,7 @@ export async function resetUserPassword(userId: string, password: string) {
     where: { id: userId, deletedAt: null },
     select: { id: true, name: true, email: true },
   });
-  if (!target) throw new Error("Usuario no encontrado");
+  if (!target) throw new BusinessRuleError("Usuario no encontrado");
 
   const passwordHash = await hash(validPassword, 12);
 
@@ -532,18 +582,20 @@ export async function resetUserPassword(userId: string, password: string) {
   });
 
   return { id: target.id, name: target.name, email: target.email };
+  });
 }
 
 /**
  * Desactiva un usuario (soft deactivate, no borra).
  */
 export async function deactivateUser(id: string) {
+  return conErroresDeNegocio(async () => {
   const session = await requireAdminRole();
 
   const existing = await prisma.user.findUnique({
     where: { id, deletedAt: null },
   });
-  if (!existing) throw new Error("Usuario no encontrado");
+  if (!existing) throw new BusinessRuleError("Usuario no encontrado");
 
   // Mismas reglas A, C y D que updateUser — ver assertUserMutationAllowed.
   await assertUserMutationAllowed(session, existing, { settingInactive: true });
@@ -574,6 +626,7 @@ export async function deactivateUser(id: string) {
   });
 
   return user;
+  });
 }
 
 /**
@@ -594,12 +647,13 @@ export async function deactivateUser(id: string) {
  * elimina a sí mismo, y no se puede dejar el sistema sin ningún ADMIN activo.
  */
 export async function deleteUserPermanently(id: string) {
+  return conErroresDeNegocio(async () => {
   const session = await requireAdminRole();
 
   const existing = await prisma.user.findUnique({
     where: { id, deletedAt: null },
   });
-  if (!existing) throw new Error("Usuario no encontrado");
+  if (!existing) throw new BusinessRuleError("Usuario no encontrado");
 
   await assertUserMutationAllowed(session, existing, { settingInactive: true });
 
@@ -622,6 +676,7 @@ export async function deleteUserPermanently(id: string) {
   });
 
   return user;
+  });
 }
 
 /**
@@ -735,6 +790,7 @@ export async function createCommissionRule(data: {
   percentage: number;
   isActive?: boolean;
 }) {
+  return conErroresDeNegocio(async () => {
   await requireAdminRole();
 
   const validated = createCommissionRuleSchema.parse(data);
@@ -750,6 +806,7 @@ export async function createCommissionRule(data: {
   });
 
   return rule;
+  });
 }
 
 /**
@@ -765,12 +822,13 @@ export async function updateCommissionRule(
     isActive?: boolean;
   }
 ) {
+  return conErroresDeNegocio(async () => {
   await requireAdminRole();
 
   const validated = updateCommissionRuleSchema.parse(data);
 
   const existing = await prisma.commissionRule.findUnique({ where: { id } });
-  if (!existing) throw new Error("Regla de comisión no encontrada");
+  if (!existing) throw new BusinessRuleError("Regla de comisión no encontrada");
 
   const updateData: Record<string, unknown> = {};
   if (validated.dealType !== undefined) updateData.dealType = validated.dealType;
@@ -786,19 +844,22 @@ export async function updateCommissionRule(
   });
 
   return rule;
+  });
 }
 
 /**
  * Elimina una regla de comisión.
  */
 export async function deleteCommissionRule(id: string) {
+  return conErroresDeNegocio(async () => {
   await requireAdminRole();
 
   const existing = await prisma.commissionRule.findUnique({ where: { id } });
-  if (!existing) throw new Error("Regla de comisión no encontrada");
+  if (!existing) throw new BusinessRuleError("Regla de comisión no encontrada");
 
   await prisma.commissionRule.delete({ where: { id } });
   return { success: true };
+  });
 }
 
 // ============================================================
@@ -828,10 +889,11 @@ export async function getSystemConfig() {
  * Actualiza o crea una entrada de configuración del sistema (upsert).
  */
 export async function updateSystemConfig(key: string, value: unknown) {
+  return conErroresDeNegocio(async () => {
   const session = await requireAdminRole();
 
   if (!key || typeof key !== "string") {
-    throw new Error("La clave de configuración es requerida");
+    throw new BusinessRuleError("La clave de configuración es requerida");
   }
 
   // La clave del propietario se protege a sí misma: solo el propietario actual
@@ -843,11 +905,11 @@ export async function updateSystemConfig(key: string, value: unknown) {
   // requireAdminRole() los haya dejado pasar.
   if (key === ADMIN_OWNER_KEY) {
     if (session.user.role !== "ADMIN") {
-      throw new Error("Solo un Administrador puede designar al propietario");
+      throw new BusinessRuleError("Solo un Administrador puede designar al propietario");
     }
     const ownerId = await getAdminOwnerId();
     if (ownerId && session.user.id !== ownerId) {
-      throw new Error("Solo el propietario actual puede transferir la propiedad");
+      throw new BusinessRuleError("Solo el propietario actual puede transferir la propiedad");
     }
   }
 
@@ -858,6 +920,7 @@ export async function updateSystemConfig(key: string, value: unknown) {
   });
 
   return config;
+  });
 }
 
 // ============================================================

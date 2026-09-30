@@ -145,6 +145,16 @@ const ADMIN_TAB_TITLES: Record<string, string> = {
 };
 const DEFAULT_ADMIN_TAB = "users";
 
+/**
+ * #799 — las Server Actions de @/server/admin ya no LANZAN sus errores de negocio
+ * (permisos, validación, "ya existe"): los devuelven como `{ error }`. Ver el
+ * comentario de `conErroresDeNegocio` en admin.ts para el porqué. Este guard es lo
+ * que permite distinguir ese caso del valor de éxito antes de usarlo.
+ */
+function esErrorDeNegocio<T>(resultado: T | { error: string }): resultado is { error: string } {
+  return typeof resultado === "object" && resultado !== null && "error" in resultado;
+}
+
 /** Roles que pueden restablecer contraseñas — pareado con PASSWORD_RESET_ROLES
  *  de @/server/admin. Esto solo decide si se DIBUJA el botón; el permiso real
  *  lo aplica el server action. */
@@ -246,10 +256,14 @@ export function AdminContent({
   async function handleCreateUser(data: Record<string, unknown>) {
     startTransition(async () => {
       try {
-        const newUser = await createUser(data as any);
+        const result = await createUser(data as any);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         // Recargar datos refrescando la pagina
         window.location.reload();
-        toast({ title: "Usuario creado", description: `${(newUser as any).name} fue creado exitosamente` });
+        toast({ title: "Usuario creado", description: `${result.name} fue creado exitosamente` });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -259,7 +273,11 @@ export function AdminContent({
   async function handleUpdateUser(id: string, data: Record<string, unknown>) {
     startTransition(async () => {
       try {
-        await updateUser(id, data as any);
+        const result = await updateUser(id, data as any);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         window.location.reload();
         toast({ title: "Usuario actualizado" });
       } catch (error: any) {
@@ -272,6 +290,10 @@ export function AdminContent({
     startTransition(async () => {
       try {
         const target = await resetUserPassword(userId, password);
+        if (esErrorDeNegocio(target)) {
+          toast({ title: "Error", description: target.error, variant: "destructive" });
+          return;
+        }
         setResetPasswordUser(null);
         toast({
           title: "Contraseña restablecida",
@@ -286,10 +308,12 @@ export function AdminContent({
   async function handleToggleActive(user: UserData) {
     startTransition(async () => {
       try {
-        if (user.isActive) {
-          await deactivateUser(user.id);
-        } else {
-          await updateUser(user.id, { isActive: true });
+        const result = user.isActive
+          ? await deactivateUser(user.id)
+          : await updateUser(user.id, { isActive: true });
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
         }
         // Actualizar estado local
         setUsers((prev) =>
@@ -330,7 +354,11 @@ export function AdminContent({
 
     startTransition(async () => {
       try {
-        await deleteUserPermanently(user.id);
+        const result = await deleteUserPermanently(user.id);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         setUsers((prev) => prev.filter((u) => u.id !== user.id));
         const deletedAt = new Date();
         setDeletedUsers((prev) => [
@@ -370,7 +398,11 @@ export function AdminContent({
   async function handleCreateRule(data: Record<string, unknown>) {
     startTransition(async () => {
       try {
-        await createCommissionRule(data as any);
+        const result = await createCommissionRule(data as any);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         window.location.reload();
         toast({ title: "Regla de comisión creada" });
       } catch (error: any) {
@@ -382,7 +414,11 @@ export function AdminContent({
   async function handleUpdateRule(id: string, data: Record<string, unknown>) {
     startTransition(async () => {
       try {
-        await updateCommissionRule(id, data as any);
+        const result = await updateCommissionRule(id, data as any);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         window.location.reload();
         toast({ title: "Regla actualizada" });
       } catch (error: any) {
@@ -394,7 +430,11 @@ export function AdminContent({
   async function handleDeleteRule(id: string) {
     startTransition(async () => {
       try {
-        await deleteCommissionRule(id);
+        const result = await deleteCommissionRule(id);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         setCommissionRules((prev) => prev.filter((r) => r.id !== id));
         toast({ title: "Regla eliminada" });
       } catch (error: any) {
@@ -408,7 +448,11 @@ export function AdminContent({
   async function handleSaveConfig() {
     startTransition(async () => {
       try {
-        await updateSystemConfig("activity_agreement", configValues);
+        const result = await updateSystemConfig("activity_agreement", configValues);
+        if (esErrorDeNegocio(result)) {
+          toast({ title: "Error", description: result.error, variant: "destructive" });
+          return;
+        }
         toast({ title: "Configuración guardada exitosamente" });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });

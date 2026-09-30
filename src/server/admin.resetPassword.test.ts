@@ -19,6 +19,19 @@ vi.mock("@/lib/db", () => ({
 
 import { resetUserPassword } from "./admin";
 
+// #799 — resetUserPassword ya no LANZA sus errores de negocio (permisos,
+// validación, "no encontrado"): los devuelve como `{ error }` (ver
+// conErroresDeNegocio en admin.ts).
+async function esperarError(promesa: Promise<unknown>, regex?: RegExp) {
+  const resultado = await promesa;
+  if (regex) {
+    expect(resultado).toMatchObject({ error: expect.stringMatching(regex) });
+  } else {
+    expect(resultado).toHaveProperty("error");
+  }
+  return resultado as { error: string };
+}
+
 const TARGET = { id: "u-9", name: "Design", email: "design@nativatulum.mx", role: "MARKETING" };
 
 beforeEach(() => {
@@ -44,14 +57,14 @@ describe("resetUserPassword — quién puede", () => {
   // entrar como él. Sigue administrando usuarios; solo no reparte credenciales.
   it("GERENTE NO puede: sería escalación de privilegios", async () => {
     session.user.role = "GERENTE";
-    await expect(resetUserPassword("u-9", "unaClaveLarga1")).rejects.toThrow(/denegado/i);
+    await esperarError(resetUserPassword("u-9", "unaClaveLarga1"), /denegado/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
   it("los demás roles tampoco", async () => {
     for (const role of ["TEAM_LEADER", "ASESOR_SR", "ASESOR_JR", "MARKETING", "HOSTESS"]) {
       session.user.role = role;
-      await expect(resetUserPassword("u-9", "unaClaveLarga1")).rejects.toThrow(/denegado/i);
+      await esperarError(resetUserPassword("u-9", "unaClaveLarga1"), /denegado/i);
     }
     expect(userUpdate).not.toHaveBeenCalled();
   });
@@ -59,13 +72,13 @@ describe("resetUserPassword — quién puede", () => {
 
 describe("resetUserPassword — validación", () => {
   it("rechaza contraseñas de menos de 8 caracteres", async () => {
-    await expect(resetUserPassword("u-9", "corta7c")).rejects.toThrow();
+    await esperarError(resetUserPassword("u-9", "corta7c"));
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
   it("404 si el usuario no existe o está borrado", async () => {
     userFindUnique.mockResolvedValue(null);
-    await expect(resetUserPassword("fantasma", "unaClaveLarga1")).rejects.toThrow(/no encontrado/i);
+    await esperarError(resetUserPassword("fantasma", "unaClaveLarga1"), /no encontrado/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
