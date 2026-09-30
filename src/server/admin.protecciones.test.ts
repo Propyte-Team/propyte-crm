@@ -35,6 +35,15 @@ vi.mock("@/lib/db", () => ({
 
 import { deactivateUser, updateUser, updateSystemConfig } from "./admin";
 
+// #799 — deactivateUser/updateUser/updateSystemConfig ya no LANZAN sus errores de
+// negocio: los devuelven como `{ error }` (ver conErroresDeNegocio en admin.ts). Este
+// helper es el equivalente de `.rejects.toThrow(regex)` para ese nuevo shape.
+async function esperarError(promesa: Promise<unknown>, regex: RegExp) {
+  const resultado = await promesa;
+  expect(resultado).toMatchObject({ error: expect.stringMatching(regex) });
+  return resultado as { error: string };
+}
+
 // Objetivos de prueba reutilizables. isActive siempre parte en true salvo que
 // el caso lo cambie explícitamente.
 const ADMIN_TARGET = { id: "admin-2", name: "Otro Admin", email: "admin2@nativatulum.mx", role: "ADMIN", isActive: true };
@@ -62,7 +71,7 @@ describe("Regla A — actuar sobre un ADMIN exige ser ADMIN", () => {
     session.user.role = "GERENTE";
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
 
-    await expect(deactivateUser(ADMIN_TARGET.id)).rejects.toThrow(/administrador/i);
+    await esperarError(deactivateUser(ADMIN_TARGET.id), /administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -70,7 +79,7 @@ describe("Regla A — actuar sobre un ADMIN exige ser ADMIN", () => {
     session.user.role = "DIRECTOR";
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
 
-    await expect(deactivateUser(ADMIN_TARGET.id)).rejects.toThrow(/administrador/i);
+    await esperarError(deactivateUser(ADMIN_TARGET.id), /administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -78,7 +87,7 @@ describe("Regla A — actuar sobre un ADMIN exige ser ADMIN", () => {
     session.user.role = "GERENTE";
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
 
-    await expect(updateUser(ADMIN_TARGET.id, { name: "Nuevo Nombre" })).rejects.toThrow(/administrador/i);
+    await esperarError(updateUser(ADMIN_TARGET.id, { name: "Nuevo Nombre" }), /administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -101,7 +110,7 @@ describe("Regla B — promover a ADMIN exige ser ADMIN", () => {
     session.user.role = "GERENTE";
     userFindUnique.mockResolvedValue(ASESOR_TARGET);
 
-    await expect(updateUser(ASESOR_TARGET.id, { role: "ADMIN" })).rejects.toThrow(/administrador/i);
+    await esperarError(updateUser(ASESOR_TARGET.id, { role: "ADMIN" }), /administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -111,7 +120,7 @@ describe("Regla B — promover a ADMIN exige ser ADMIN", () => {
     const self = { id: "gerente-1", name: "Un Gerente", email: "gerente@nativatulum.mx", role: "GERENTE", isActive: true };
     userFindUnique.mockResolvedValue(self);
 
-    await expect(updateUser("gerente-1", { role: "ADMIN" })).rejects.toThrow(/administrador/i);
+    await esperarError(updateUser("gerente-1", { role: "ADMIN" }), /administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 });
@@ -124,7 +133,7 @@ describe("Regla C — nadie se desactiva a sí mismo", () => {
     userFindUnique.mockResolvedValue(self);
     userCount.mockResolvedValue(3); // que no sea también el último ADMIN
 
-    await expect(deactivateUser("actor-1")).rejects.toThrow(/propia cuenta/i);
+    await esperarError(deactivateUser("actor-1"), /propia cuenta/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -134,7 +143,7 @@ describe("Regla C — nadie se desactiva a sí mismo", () => {
     const self = { id: "actor-1", name: "Actor", email: "actor@nativatulum.mx", role: "DIRECTOR", isActive: true };
     userFindUnique.mockResolvedValue(self);
 
-    await expect(updateUser("actor-1", { isActive: false })).rejects.toThrow(/propia cuenta/i);
+    await esperarError(updateUser("actor-1", { isActive: false }), /propia cuenta/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 });
@@ -146,7 +155,7 @@ describe("Regla D — no se puede desactivar al último ADMIN activo", () => {
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
     userCount.mockResolvedValue(1); // el objetivo es el único ADMIN activo
 
-    await expect(deactivateUser(ADMIN_TARGET.id)).rejects.toThrow(/último administrador/i);
+    await esperarError(deactivateUser(ADMIN_TARGET.id), /último administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -156,7 +165,7 @@ describe("Regla D — no se puede desactivar al último ADMIN activo", () => {
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
     userCount.mockResolvedValue(1);
 
-    await expect(updateUser(ADMIN_TARGET.id, { isActive: false })).rejects.toThrow(/último administrador/i);
+    await esperarError(updateUser(ADMIN_TARGET.id, { isActive: false }), /último administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -170,7 +179,7 @@ describe("Regla D — no se puede desactivar al último ADMIN activo", () => {
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
     userCount.mockResolvedValue(1);
 
-    await expect(updateUser(ADMIN_TARGET.id, { role: "GERENTE" })).rejects.toThrow(/último administrador/i);
+    await esperarError(updateUser(ADMIN_TARGET.id, { role: "GERENTE" }), /último administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -180,7 +189,7 @@ describe("Regla D — no se puede desactivar al último ADMIN activo", () => {
     userFindUnique.mockResolvedValue({ ...ADMIN_TARGET, id: "admin-solo" });
     userCount.mockResolvedValue(1);
 
-    await expect(updateUser("admin-solo", { role: "DIRECTOR" })).rejects.toThrow(/último administrador/i);
+    await esperarError(updateUser("admin-solo", { role: "DIRECTOR" }), /último administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -208,7 +217,7 @@ describe("Regla E — reactivar a alguien exige ser ADMIN", () => {
     session.user.role = "GERENTE";
     userFindUnique.mockResolvedValue({ ...ASESOR_TARGET, isActive: false });
 
-    await expect(updateUser(ASESOR_TARGET.id, { isActive: true })).rejects.toThrow(/solo un administrador puede activar/i);
+    await esperarError(updateUser(ASESOR_TARGET.id, { isActive: true }), /solo un administrador puede activar/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -216,7 +225,7 @@ describe("Regla E — reactivar a alguien exige ser ADMIN", () => {
     session.user.role = "DIRECTOR";
     userFindUnique.mockResolvedValue({ ...ASESOR_TARGET, isActive: false });
 
-    await expect(updateUser(ASESOR_TARGET.id, { isActive: true })).rejects.toThrow(/solo un administrador puede activar/i);
+    await esperarError(updateUser(ASESOR_TARGET.id, { isActive: true }), /solo un administrador puede activar/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -274,16 +283,14 @@ describe("El blindaje no rompe el trabajo normal", () => {
 
     // El esquema Zod de updateUser no incluye "ADMIN" entre los roles
     // asignables (ADMIN se administra fuera de este panel), así que la
-    // llamada igual falla — pero por VALIDACIÓN, no por autorización: la
-    // Regla B no debe ser lo que la bloquee cuando el actor sí es ADMIN.
-    let error: unknown;
-    try {
-      await updateUser(ASESOR_TARGET.id, { role: "ADMIN" });
-    } catch (e) {
-      error = e;
-    }
-    expect(error).toBeDefined();
-    expect((error as Error).message).not.toMatch(/solo un administrador/i);
+    // llamada igual devuelve un error — pero de VALIDACIÓN (Zod), no de
+    // autorización: la Regla B no debe ser lo que la bloquee cuando el actor
+    // sí es ADMIN. Zod también es un error "de negocio" (ver
+    // mensajeDeErrorDeNegocio en admin.ts), así que esto también resuelve
+    // como `{ error }` en vez de lanzar.
+    const resultado = await updateUser(ASESOR_TARGET.id, { role: "ADMIN" });
+    expect(resultado).toHaveProperty("error");
+    expect((resultado as { error: string }).error).not.toMatch(/solo un administrador/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 });
@@ -294,7 +301,7 @@ describe("No filtra información de más", () => {
     userFindUnique.mockResolvedValue(ADMIN_TARGET);
     userCount.mockResolvedValue(1);
 
-    await expect(deactivateUser(ADMIN_TARGET.id)).rejects.toThrow(/^Solo un Administrador puede modificar a otro Administrador$/);
+    await esperarError(deactivateUser(ADMIN_TARGET.id), /^Solo un Administrador puede modificar a otro Administrador$/);
   });
 });
 
@@ -325,7 +332,7 @@ describe("Propietario — un solo ADMIN puede tocar a los demás ADMIN", () => {
     userFindUnique.mockResolvedValue({ ...OTRO_ADMIN, id: "fluksic-1" });
     conPropietario(PROPIETARIO);
 
-    await expect(updateUser("fluksic-1", { name: "Felipe" })).rejects.toThrow(/propietario/i);
+    await esperarError(updateUser("fluksic-1", { name: "Felipe" }), /propietario/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -335,7 +342,7 @@ describe("Propietario — un solo ADMIN puede tocar a los demás ADMIN", () => {
     userFindUnique.mockResolvedValue({ ...OTRO_ADMIN, id: "fluksic-1" });
     conPropietario(PROPIETARIO);
 
-    await expect(deactivateUser("fluksic-1")).rejects.toThrow(/propietario/i);
+    await esperarError(deactivateUser("fluksic-1"), /propietario/i);
     expect(userUpdate).not.toHaveBeenCalled();
   });
 
@@ -373,7 +380,7 @@ describe("La clave del propietario se protege a sí misma", () => {
     session.user.id = "conrad-1";
     configFindUnique.mockResolvedValue({ key: "admin_owner_user_id", value: "luis-1" });
 
-    await expect(updateSystemConfig("admin_owner_user_id", "conrad-1")).rejects.toThrow(/propietario actual/i);
+    await esperarError(updateSystemConfig("admin_owner_user_id", "conrad-1"), /propietario actual/i);
     expect(configUpsert).not.toHaveBeenCalled();
   });
 
@@ -398,7 +405,7 @@ describe("La clave del propietario se protege a sí misma", () => {
     session.user.id = "gerente-1";
     configFindUnique.mockResolvedValue(null);
 
-    await expect(updateSystemConfig("admin_owner_user_id", "gerente-1")).rejects.toThrow(/administrador/i);
+    await esperarError(updateSystemConfig("admin_owner_user_id", "gerente-1"), /administrador/i);
     expect(configUpsert).not.toHaveBeenCalled();
   });
 
