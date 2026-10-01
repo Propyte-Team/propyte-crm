@@ -6,8 +6,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // exactamente el texto que salió por la red.
 
 const deliverWhatsApp = vi.fn();
+const deliverMetaTemplate = vi.fn();
+const activeProvider = vi.fn();
 vi.mock("@/lib/whatsapp/transport", () => ({
   deliverWhatsApp: (...a: unknown[]) => deliverWhatsApp(...a),
+  deliverMetaTemplate: (...a: unknown[]) => deliverMetaTemplate(...a),
+  activeProvider: () => activeProvider(),
   mediaSupportsCaption: (t: string) => ["image", "document", "video", "gif"].includes(t),
 }));
 
@@ -38,11 +42,13 @@ vi.mock("@/lib/whatsapp/accounts", () => ({
   resolveWhatsAppSender: (...a: unknown[]) => resolveWhatsAppSender(...a),
 }));
 
-import { sendWhatsAppMessage } from "./whatsapp";
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from "./whatsapp";
 
 beforeEach(() => {
   vi.resetAllMocks();
   deliverWhatsApp.mockResolvedValue({ externalId: "wamid.X", status: "SENT" });
+  deliverMetaTemplate.mockResolvedValue({ externalId: "wamid.T", status: "SENT" });
+  activeProvider.mockReturnValue("meta_cloud");
   ensureConversation.mockResolvedValue({ id: "conv1" });
   convUpdate.mockResolvedValue({ id: "conv1" });
   msgCreate.mockResolvedValue({ id: "m1" });
@@ -111,6 +117,43 @@ describe("sendWhatsAppMessage — multicuenta", () => {
     ).rejects.toThrow(/phoneNumberId/);
 
     expect(deliverWhatsApp).not.toHaveBeenCalled();
+  });
+});
+
+// #828: antes de esto, sendWhatsAppTemplate no recibía connectorId EN ABSOLUTO —
+// con una sola línea es invisible, pero con 2+ marcas activas cualquier plantilla
+// (el camino para retomar a alguien fuera de la ventana de 24h) salía siempre por
+// el número global del env, mientras el envío normal ya resolvía bien su línea.
+// Mismo criterio y misma batería que "sendWhatsAppMessage — multicuenta".
+describe("sendWhatsAppTemplate — multicuenta (#828)", () => {
+  it("sin connector: sale por el número global del env (setup de una sola línea, no-regresión)", async () => {
+    await sendWhatsAppTemplate("+5219991112233", "recordatorio_cita", ["Ana"], "c1", "u1");
+    expect(resolveWhatsAppSender).toHaveBeenCalledWith(undefined);
+    expect(deliverMetaTemplate).toHaveBeenCalledWith(
+      expect.any(String), "recordatorio_cita", "es_MX", ["Ana"], null,
+    );
+  });
+
+  it("con connector: la plantilla sale por LA MISMA línea con la que entró la conversación", async () => {
+    const sender = { phoneNumberId: "PN_NATIVA", accessToken: "tok_nativa", brand: "Nativa" };
+    resolveWhatsAppSender.mockResolvedValue(sender);
+
+    await sendWhatsAppTemplate("+5219991112233", "recordatorio_cita", ["Ana"], "c1", "u1", "connector-nativa");
+
+    expect(resolveWhatsAppSender).toHaveBeenCalledWith("connector-nativa");
+    expect(deliverMetaTemplate).toHaveBeenCalledWith(
+      expect.any(String), "recordatorio_cita", "es_MX", ["Ana"], sender,
+    );
+  });
+
+  it("si el connector está mal configurado NO se envía la plantilla por el número equivocado", async () => {
+    resolveWhatsAppSender.mockRejectedValue(new Error("no tiene phoneNumberId o accessToken"));
+
+    await expect(
+      sendWhatsAppTemplate("+5219991112233", "recordatorio_cita", ["Ana"], "c1", "u1", "connector-roto"),
+    ).rejects.toThrow(/phoneNumberId/);
+
+    expect(deliverMetaTemplate).not.toHaveBeenCalled();
   });
 });
 
