@@ -109,6 +109,15 @@ export async function sendWhatsAppMessage(
 
 /**
  * Envía un template de WhatsApp Business API.
+ *
+ * `connectorId` (#828): igual que en `sendWhatsAppMessage`, la línea por la que debe
+ * salir con 2+ marcas activas. Antes de #828 esta función no lo recibía en absoluto
+ * y SIEMPRE salía por el número global del env — con una sola línea es invisible,
+ * pero en cuanto se prende una segunda, cualquier plantilla (el camino para
+ * retomar a alguien fuera de la ventana de 24h) le llega al cliente desde el
+ * número equivocado, mientras el envío normal (que sí resolvía `connectorId`)
+ * salía bien. `resolveWhatsAppSender` ya lanza si el connector existe pero le
+ * faltan credenciales — aquí no se decide nada nuevo, solo se deja de omitirlo.
  */
 export async function sendWhatsAppTemplate(
   to: string,
@@ -116,15 +125,18 @@ export async function sendWhatsAppTemplate(
   templateParams: string[],
   contactId: string,
   userId: string,
+  connectorId?: string | null,
   language: string = "es_MX"
 ) {
   const normalized = normalizePhone(to);
 
   // Plantilla aprobada — necesaria fuera de la ventana de 24h (business-initiated)
   const { activeProvider, deliverMetaTemplate } = await import("@/lib/whatsapp/transport");
+  const { resolveWhatsAppSender } = await import("@/lib/whatsapp/accounts");
+  const sender = await resolveWhatsAppSender(connectorId);
   let externalId: string;
   if (activeProvider() === "meta_cloud") {
-    const delivery = await deliverMetaTemplate(normalized, templateName, language, templateParams);
+    const delivery = await deliverMetaTemplate(normalized, templateName, language, templateParams, sender);
     externalId = delivery.externalId;
   } else {
     const client = getTwilioClient();
