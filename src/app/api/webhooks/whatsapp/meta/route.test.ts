@@ -350,3 +350,70 @@ describe("webhook de WhatsApp Cloud — BSUID", () => {
     expect(await res.json()).toEqual({ ok: true, processed: 1 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// #827 — a handleInboundWhatsApp le llega el teléfono REAL (wa_id), nunca el BSUID
+// disfrazado de teléfono, y el BSUID viaja aparte en WhatsAppUserId.
+// ---------------------------------------------------------------------------
+describe("webhook de WhatsApp Cloud — #827 From real vs. BSUID-only", () => {
+  function cuerpoConBsuid(contacts: unknown[], from = "5219981234567") {
+    return JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "pn-1" },
+                contacts,
+                messages: [{ id: "wamid.1", from, type: "text", text: { body: "hola" } }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("con wa_id presente: From lleva el teléfono real y WhatsAppUserId el BSUID (comportamiento de siempre)", async () => {
+    await POST(
+      postFirmado(cuerpoConBsuid([{ wa_id: "5219981234567", user_id: "MX.123" }])),
+    );
+    const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.From).toBe("whatsapp:+5219981234567");
+    expect(payload.WhatsAppUserId).toBe("MX.123");
+  });
+
+  it("sin wa_id (fuera de la ventana de 30 días): From es null, NUNCA el BSUID disfrazado de teléfono", async () => {
+    await POST(
+      postFirmado(cuerpoConBsuid([{ user_id: "MX.sin-telefono" }], "MX.sin-telefono")),
+    );
+    const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.From).toBeNull();
+    expect(payload.WhatsAppUserId).toBe("MX.sin-telefono");
+  });
+
+  it("batch ambiguo (varios remitentes, ninguno casa): From null y sin BSUID — no adivina a quién pertenece el mensaje", async () => {
+    const cuerpo = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "pn-1" },
+                contacts: [
+                  { wa_id: "5219990000000", user_id: "MX.uno" },
+                  { wa_id: "5219991111111", user_id: "MX.dos" },
+                ],
+                messages: [{ id: "wamid.1", from: "5219982222222", type: "text", text: { body: "hola" } }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    await POST(postFirmado(cuerpo));
+    const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.From).toBeNull();
+    expect(payload.WhatsAppUserId).toBeNull();
+  });
+});

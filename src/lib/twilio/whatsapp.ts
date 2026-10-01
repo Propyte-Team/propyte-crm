@@ -1,7 +1,7 @@
 // Servicio de WhatsApp via Twilio — envío, templates y recepción
 import { prisma } from "@/lib/db";
 import { getTwilioClient } from "./client";
-import { findContactByPhone, normalizePhone } from "./utils";
+import { findContactByPhone, findContactByWhatsAppUserId, normalizePhone } from "./utils";
 
 /**
  * Envía un mensaje de WhatsApp a un contacto.
@@ -173,12 +173,19 @@ export async function sendWhatsAppTemplate(
 }
 
 /**
- * Procesa un WhatsApp entrante desde el webhook de Twilio.
+ * Procesa un WhatsApp entrante desde el webhook de Twilio o de Meta Cloud API.
  * Delega el intake agnóstico en handleInboundMessage (core). Solo retiene
  * lo específico de WhatsApp: opt-out por keyword antes de continuar el flujo.
+ *
+ * `From: null` (#827): el webhook de Meta Cloud lo manda así cuando el remitente no
+ * trae `wa_id` (fuera de la ventana de 30 días o sin contact-book) — no hay teléfono
+ * real para este mensaje, solo el BSUID en `WhatsAppUserId`. Twilio SIEMPRE manda un
+ * teléfono real, así que ese caller nunca pasa `From: null`.
  */
 export async function handleInboundWhatsApp(payload: {
-  From: string;
+  From: string | null;
+  /** BSUID del remitente (#826/#827) — presente en todo webhook de Meta, con o sin teléfono. */
+  WhatsAppUserId?: string | null;
   Body: string;
   MessageSid: string;
   NumMedia?: string;
@@ -190,13 +197,19 @@ export async function handleInboundWhatsApp(payload: {
   /** Conector WHATSAPP del número que RECIBIÓ el mensaje (metadata.phone_number_id). */
   ConnectorId?: string | null;
 }, opts: { triggerBot?: boolean } = {}) {
-  const rawPhone = payload.From.replace("whatsapp:", "");
+  const rawPhone = payload.From ? payload.From.replace("whatsapp:", "") : null;
+  const bsuid = payload.WhatsAppUserId ?? null;
 
   // Opt-out por keyword (§I.3 paso 7) — específico de WhatsApp.
-  // Si aplica, marca el contacto y NO continúa el flujo normal.
+  // Si aplica, marca el contacto y NO continúa el flujo normal. Sin teléfono real
+  // (#827) se busca por BSUID; sin ninguno de los dos no hay a quién marcar.
   const optOutWords = ["BAJA", "STOP", "ALTO", "UNSUBSCRIBE"];
   if (optOutWords.includes(payload.Body.trim().toUpperCase())) {
-    const contact = await findContactByPhone(rawPhone);
+    const contact = rawPhone
+      ? await findContactByPhone(rawPhone)
+      : bsuid
+        ? await findContactByWhatsAppUserId(bsuid)
+        : null;
     if (contact) {
       await prisma.contact.update({
         where: { id: contact.id },
@@ -212,7 +225,11 @@ export async function handleInboundWhatsApp(payload: {
   const { handleInboundMessage } = await import("@/lib/messaging/core");
   return handleInboundMessage({
     channel: "WHATSAPP",
-    senderId: normalizePhone(rawPhone),
+    // #827: sin teléfono real, senderId pasa a ser el propio BSUID (sin decorar) y
+    // senderIdIsPhone:false le avisa al core que no lo trate como teléfono.
+    senderId: rawPhone ? normalizePhone(rawPhone) : bsuid ?? "desconocido",
+    senderIdIsPhone: rawPhone !== null,
+    whatsappUserId: bsuid,
     externalMessageId: payload.MessageSid,
     text: payload.Body,
     mediaUrl: payload.MediaUrl0 || null,
