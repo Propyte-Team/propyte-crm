@@ -55,15 +55,30 @@ const SOURCE: Record<MessagingChannel, "WHATSAPP" | "INSTAGRAM" | "MESSENGER"> =
   MESSENGER: "MESSENGER",
 };
 
-/** Busca el contacto por el id propio del canal. Para WHATSAPP usa match flexible (exacto + últimos 10 dígitos). */
-async function findContactByChannel(channel: MessagingChannel, senderId: string) {
+/**
+ * Busca el contacto por el id propio del canal. Para WHATSAPP usa match flexible
+ * (exacto + últimos 10 dígitos) y, desde #827, también por BSUID (`whatsappUserId`).
+ *
+ * `wa.senderIsPhone === false` (#827): `senderId` no es un teléfono — Meta mandó el
+ * mensaje sin `wa_id` (fuera de la ventana de 30 días o sin contact-book) y lo único
+ * identificable es el BSUID. Incluir el `senderId` crudo en las cláusulas de teléfono
+ * en ese caso arriesgaba un falso match (`endsWith` de 10 caracteres cualquiera del
+ * BSUID contra un teléfono real) — se omiten y se busca solo por `whatsappUserId`.
+ */
+async function findContactByChannel(
+  channel: MessagingChannel,
+  senderId: string,
+  wa?: { userId?: string | null; senderIsPhone?: boolean },
+) {
   if (channel === "WHATSAPP") {
+    const or: Array<Record<string, unknown>> = [];
+    if (wa?.senderIsPhone !== false) {
+      or.push({ phone: senderId }, { phone: { endsWith: senderId.slice(-10) } });
+    }
+    if (wa?.userId) or.push({ whatsappUserId: wa.userId });
+    if (or.length === 0) return null; // ni teléfono real ni BSUID: nada con que buscar
     return prisma.contact.findFirst({
-      where: {
-        OR: [{ phone: senderId }, { phone: { endsWith: senderId.slice(-10) } }],
-        deletedAt: null,
-        mergedIntoId: null,
-      },
+      where: { OR: or, deletedAt: null, mergedIntoId: null },
       include: { assignedTo: { select: { id: true, name: true } } },
     });
   }
@@ -97,7 +112,10 @@ async function handleEchoMessage(msg: IncomingMessage) {
   const own = await prisma.message.findUnique({ where: { externalMessageId: msg.externalMessageId } });
   if (own) return own;
 
-  const contact = await findContactByChannel(msg.channel, msg.senderId);
+  const contact = await findContactByChannel(msg.channel, msg.senderId, {
+    userId: msg.whatsappUserId,
+    senderIsPhone: msg.senderIdIsPhone,
+  });
   if (!contact) {
     console.warn(`[messaging] echo sin contacto (${msg.channel}): ${msg.senderId} — la página escribió primero; skip`);
     return null;
@@ -195,7 +213,10 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     return null;
   }
 
-  let contact = await findContactByChannel(msg.channel, msg.senderId);
+  let contact = await findContactByChannel(msg.channel, msg.senderId, {
+    userId: msg.whatsappUserId,
+    senderIsPhone: msg.senderIdIsPhone,
+  });
 
   // Identidad social: perfil Graph SOLO cuando el contacto es nuevo o sigue placeholder
   // (1 llamada por contacto, no por mensaje). Best-effort: null jamás bloquea el intake.
@@ -206,6 +227,20 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   }
 
   if (!contact) {
+    // #827: WhatsApp sin teléfono real (`wa_id` ausente) y sin match previo por BSUID
+    // es un remitente que hoy no se puede dar de alta — Contact.phone es NOT NULL y
+    // decidir qué hacer con un contacto sin teléfono es la propia #830 (una decisión
+    // que necesita medir impacto, no una implementación de esta tarjeta). Lo que SÍ es
+    // responsabilidad de #827 es no inventar un "teléfono" a partir del BSUID —el bug
+    // original: el mismo humano terminaba con dos contactos—, así que se descarta con
+    // traza clara en vez de crear uno con un teléfono basura.
+    if (msg.channel === "WHATSAPP" && msg.senderIdIsPhone === false) {
+      console.warn(
+        `[messaging] WhatsApp sin teléfono y sin contacto por BSUID conocido (${msg.whatsappUserId ?? "sin bsuid"}): ` +
+          `alta sin teléfono es #830, no #827 — mensaje descartado`,
+      );
+      return null;
+    }
     const { captureLead } = await import("@/lib/intake/capture-lead");
     const idField =
       msg.channel === "INSTAGRAM" ? { instagramId: msg.senderId }

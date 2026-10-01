@@ -53,6 +53,20 @@ export interface IncomingMessage {
   isEcho?: boolean;
   /** `message.app_id` del echo (app que lo envió), si Meta lo incluye. */
   echoAppId?: string | null;
+  /**
+   * BSUID (Business-Scoped User ID) de WhatsApp (#826/#827) — identificador persistente
+   * de Meta, presente en TODO webhook de WhatsApp Cloud API desde abril de 2026,
+   * independiente de si hay teléfono. Solo aplica a channel WHATSAPP.
+   */
+  whatsappUserId?: string | null;
+  /**
+   * #827: false cuando `senderId` NO es un teléfono real. Meta omite `wa_id` fuera de
+   * la ventana de 30 días (evaluada por número de negocio) y entonces lo único que
+   * viaja en el mensaje es el propio BSUID — sin esta bandera, `senderId` se trataba
+   * como teléfono de todos modos y el mismo humano terminaba con dos contactos. Solo
+   * aplica a channel WHATSAPP; se omite (equivale a true) en todos los demás casos.
+   */
+  senderIdIsPhone?: boolean;
 }
 
 /** Resultado de un envío saliente por un adapter. */

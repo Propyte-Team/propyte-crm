@@ -675,6 +675,74 @@ describe("handleInboundMessage – regresiones WhatsApp", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// #827 — reconocer al contacto por teléfono O por BSUID (evitar duplicados)
+//
+// Hoy (#826) el BSUID solo se GUARDA sobre un contacto ya resuelto por teléfono.
+// El problema que #827 cierra es el de ARRIBA: cuando Meta manda el mensaje SIN
+// `wa_id` (fuera de ventana de 30 días), `senderId` deja de ser un teléfono real —
+// tratarlo como tal (bug original) producía un contacto fantasma por cada persona
+// que ya existía con su teléfono real.
+// ---------------------------------------------------------------------------
+describe("handleInboundMessage – #827 BSUID en la resolución de contacto", () => {
+  beforeEach(() => {
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+    convUpdate.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true });
+    msgCreate.mockResolvedValue({ id: "m1" });
+    activityCreate.mockResolvedValue({});
+  });
+
+  it("con teléfono real, añade whatsappUserId al OR (match aditivo, no-regresión)", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage({ ...wa, whatsappUserId: "MX.123" });
+    expect(contactFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([{ phone: "+529991112233" }, { whatsappUserId: "MX.123" }]),
+        }),
+      }),
+    );
+  });
+
+  it("sin teléfono real (senderIdIsPhone:false), el OR busca SOLO por whatsappUserId — nunca por el BSUID como si fuera teléfono", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage({ ...wa, senderId: "MX.sin-telefono", senderIdIsPhone: false, whatsappUserId: "MX.sin-telefono" });
+    const [args] = contactFindFirst.mock.calls[0] as [{ where: { OR: unknown[] } }];
+    expect(args.where.OR).toEqual([{ whatsappUserId: "MX.sin-telefono" }]);
+  });
+
+  it("mensaje sin teléfono que SÍ matchea un contacto existente por BSUID: no crea uno nuevo", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c-existente", assignedToId: "u1", firstName: "A", lastName: "B", whatsappOptOut: false });
+    const result = await handleInboundMessage({
+      ...wa, senderId: "MX.sin-telefono", senderIdIsPhone: false, whatsappUserId: "MX.sin-telefono",
+    });
+    expect(captureLead).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: "m1" });
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ contactId: "c-existente" }) }),
+    );
+  });
+
+  it("mensaje sin teléfono y sin match por BSUID: NO inventa un contacto con un teléfono basura (descarta, no llama a captureLead)", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    const result = await handleInboundMessage({
+      ...wa, senderId: "MX.nuevo-sin-telefono", senderIdIsPhone: false, whatsappUserId: "MX.nuevo-sin-telefono",
+    });
+    expect(captureLead).not.toHaveBeenCalled();
+    expect(msgCreate).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it("mensaje sin teléfono y sin BSUID (caso límite): ni siquiera consulta — nada con qué buscar", async () => {
+    const result = await handleInboundMessage({
+      ...wa, senderId: "desconocido", senderIdIsPhone: false, whatsappUserId: null,
+    });
+    expect(contactFindFirst).not.toHaveBeenCalled();
+    expect(captureLead).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+});
+
 // Fix 3 (code review): el mock de @/lib/db no declaraba commentRuleLog, así que en
 // CADA test no-WhatsApp de handleInboundMessage el hook a linkCommentOrigin (real,
 // no mockeado) reventaba con TypeError al tocar prisma.commentRuleLog.findFirst — su

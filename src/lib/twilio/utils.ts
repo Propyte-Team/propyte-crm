@@ -55,3 +55,15 @@ export async function findContactByPhone(phone: string) {
 
   return contact;
 }
+
+/**
+ * Busca un contacto por BSUID de WhatsApp (#827).
+ * Se usa cuando el mensaje llega sin teléfono real (`wa_id` ausente) y lo único
+ * identificable es el BSUID — p. ej. para el opt-out por keyword.
+ */
+export async function findContactByWhatsAppUserId(whatsappUserId: string) {
+  return prisma.contact.findFirst({
+    where: { deletedAt: null, whatsappUserId },
+    include: { assignedTo: { select: { id: true, name: true } } },
+  });
+}

@@ -116,24 +116,24 @@ interface MetaContact {
 }
 
 /**
- * BSUID del remitente de ESTE mensaje, o null si no se puede saber con certeza.
+ * Entrada de `contacts[]` que corresponde a ESTE mensaje, o undefined si no se puede
+ * saber con certeza.
  *
- * Se empareja la entrada de `contacts[]` contra el `from` del mensaje por teléfono
- * (`wa_id`) o por el propio BSUID (`user_id`), que es lo que viaja cuando Meta omite
- * el teléfono. Con una sola entrada se usa esa —el caso normal, y lo que este webhook
- * ya asumía para el nombre de perfil—.
+ * Se empareja contra el `from` del mensaje por teléfono (`wa_id`) o por el propio
+ * BSUID (`user_id`), que es lo que viaja cuando Meta omite el teléfono. Con una sola
+ * entrada se usa esa —el caso normal, y lo que este webhook ya asumía para el nombre
+ * de perfil—.
  *
- * Con varias entradas y ninguna que case se devuelve null a propósito: escribir el
- * BSUID equivocado deja una columna UNIQUE apuntando a otra persona, y eso es peor
- * que no escribir nada y mucho más difícil de deshacer que volver a guardarlo en el
- * siguiente mensaje, porque el BSUID vuelve a llegar cada vez.
+ * Con varias entradas y ninguna que case se devuelve undefined a propósito: de aquí
+ * salen tanto el BSUID a guardar (#826) como el teléfono real con el que #827 resuelve
+ * o da de alta el contacto — adivinar cualquiera de los dos dejaría el mensaje pegado
+ * a la persona equivocada (BSUID en una columna UNIQUE ajena, o un contacto nuevo que
+ * en realidad ya existía), y eso es peor y más difícil de deshacer que soltar el
+ * mensaje y dejar que el BSUID real vuelva a llegar en el siguiente.
  */
-function bsuidDelRemitente(contacts: MetaContact[] | undefined, from: string): string | null {
+function entradaDelRemitente(contacts: MetaContact[] | undefined, from: string): MetaContact | undefined {
   const lista = contacts ?? [];
-  const entrada =
-    lista.find((c) => c.wa_id === from || c.user_id === from) ??
-    (lista.length === 1 ? lista[0] : undefined);
-  return entrada?.user_id ?? null;
+  return lista.find((c) => c.wa_id === from || c.user_id === from) ?? (lista.length === 1 ? lista[0] : undefined);
 }
 
 /**
@@ -261,8 +261,17 @@ export async function POST(req: NextRequest) {
           if (mediaType && mediaRef?.id) {
             stored = await resolveWaMediaToStorage(mediaRef.id);
           }
+          // #827: `wa_id` es el teléfono REAL de este remitente — solo se usa ese, nunca
+          // `msg.from` a ciegas, porque fuera de la ventana de 30 días `msg.from` ES el
+          // BSUID y tratarlo como teléfono es justo el bug que duplicaba contactos.
+          // Sin `wa_id` se manda `From: null` y el BSUID viaja aparte en `WhatsAppUserId`
+          // para que el core lo reconozca por ese identificador en vez de inventar uno.
+          const entrada = entradaDelRemitente(value.contacts, msg.from);
+          const bsuid = entrada?.user_id ?? null;
+          const realPhone = entrada?.wa_id ?? null;
           const saved = await handleInboundWhatsApp({
-            From: `whatsapp:+${msg.from}`,
+            From: realPhone ? `whatsapp:+${realPhone}` : null,
+            WhatsAppUserId: bsuid,
             Body: extractBody(msg),
             MessageSid: msg.id, // wamid → idempotencia por UNIQUE
             ProfileName: profileName,
@@ -278,7 +287,7 @@ export async function POST(req: NextRequest) {
           }, { triggerBot: false });
           if (saved?.contactId) {
             botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
-            await guardarBsuid(saved.contactId, bsuidDelRemitente(value.contacts, msg.from));
+            await guardarBsuid(saved.contactId, bsuid);
           }
           processed++;
         } catch (err) {
