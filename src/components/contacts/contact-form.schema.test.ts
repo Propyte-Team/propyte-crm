@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { contactFormSchema } from "./contact-form";
+import { contactFormSchema, buildSubmitData } from "./contact-form";
 
 // #830: mismo criterio que el schema del servidor (route.ts) — probado aquí sin
 // montar el componente (el repo no trae jsdom/Testing Library). Esto es la parte
@@ -53,5 +53,44 @@ describe("contactFormSchema — #830 teléfono opcional con Usuario de WhatsApp"
   it("con AMBOS teléfono y whatsappUserId: pasa (no es ni/o exclusivo)", () => {
     const r = contactFormSchema.safeParse({ ...BASE, phone: "+5219991112233", whatsappUserId: "MX.1" });
     expect(r.success).toBe(true);
+  });
+});
+
+// Bug reportado 2026-10-02: en Editar Contacto, vaciar el Teléfono (dejando el
+// campo en blanco) parecía guardarse sin error, pero el número viejo seguía
+// apareciendo después. Causa: `buildSubmitData` convertía phone/whatsappUserId
+// vacíos a `undefined`, y `JSON.stringify` OMITE las claves en `undefined` — un
+// PUT sin la clave "phone" significa "no tocar este campo" para el servidor, no
+// "vaciarlo". Esta batería fija que esas dos claves SIEMPRE viajan explícitas,
+// para que una regresión futura (alguien "simplificando" buildSubmitData) truene
+// aquí en vez de en el CRM de alguien más.
+describe("buildSubmitData — #830 bug: vaciar Teléfono/Usuario de WhatsApp al editar no se guardaba", () => {
+  it("phone vacío viaja como \"\" explícito — NUNCA como clave ausente/undefined", () => {
+    const data = buildSubmitData({ phone: "", whatsappUserId: "MX.1" }, []);
+    expect("phone" in data).toBe(true);
+    expect(data.phone).toBe("");
+    // JSON.stringify es el mecanismo real del bug: si `phone` fuera `undefined`,
+    // la clave desaparecería del body que de verdad viaja al servidor.
+    expect(JSON.parse(JSON.stringify(data))).toHaveProperty("phone", "");
+  });
+
+  it("whatsappUserId vacío viaja como \"\" explícito — mismo criterio, en el otro sentido", () => {
+    const data = buildSubmitData({ phone: "+5219991112233", whatsappUserId: "" }, []);
+    expect("whatsappUserId" in data).toBe(true);
+    expect(data.whatsappUserId).toBe("");
+    expect(JSON.parse(JSON.stringify(data))).toHaveProperty("whatsappUserId", "");
+  });
+
+  it("con valor, phone y whatsappUserId se preservan tal cual (no-regresión)", () => {
+    const data = buildSubmitData({ phone: "+5219991112233", whatsappUserId: "MX.1" }, []);
+    expect(data.phone).toBe("+5219991112233");
+    expect(data.whatsappUserId).toBe("MX.1");
+  });
+
+  it("otros campos opcionales SÍ se siguen convirtiendo a undefined al vaciarse (comportamiento preexistente, sin cambios)", () => {
+    const data = buildSubmitData({ email: "", secondaryPhone: "", residenceCity: "" }, []);
+    expect(data.email).toBeUndefined();
+    expect(data.secondaryPhone).toBeUndefined();
+    expect(data.residenceCity).toBeUndefined();
   });
 });
