@@ -77,10 +77,42 @@ async function findContactByChannel(
     }
     if (wa?.userId) or.push({ whatsappUserId: wa.userId });
     if (or.length === 0) return null; // ni teléfono real ni BSUID: nada con que buscar
-    return prisma.contact.findFirst({
+
+    const include = { assignedTo: { select: { id: true, name: true } } };
+    const primero = await prisma.contact.findFirst({
       where: { OR: or, deletedAt: null, mergedIntoId: null },
-      include: { assignedTo: { select: { id: true, name: true } } },
+      include,
     });
+
+    // Desempate: las dos cláusulas del OR pueden casar con contactos DISTINTOS (un
+    // duplicado que ya existía), y `findFirst` sin `orderBy` devuelve una fila
+    // ARBITRARIA — el mismo remitente caería hoy en un contacto y mañana en el otro,
+    // partiendo el hilo del cliente sin que nadie se entere.
+    //
+    // Gana el BSUID: Meta lo garantiza estable por persona, mientras que un teléfono
+    // se recicla y puede acabar en manos de otra. (Decisión de Luis, 2026-10-01.)
+    //
+    // La segunda consulta solo ocurre cuando de verdad hay ambigüedad: hay BSUID, se
+    // buscó también por teléfono, y lo que volvió NO es el del BSUID. Si el primero ya
+    // era el del BSUID, o no había teléfono en el OR, no hay nada que desempatar y
+    // esto no cuesta nada.
+    if (primero && wa?.userId && wa.senderIsPhone !== false && primero.whatsappUserId !== wa.userId) {
+      const porBsuid = await prisma.contact.findFirst({
+        where: { whatsappUserId: wa.userId, deletedAt: null, mergedIntoId: null },
+        include,
+      });
+      if (porBsuid && porBsuid.id !== primero.id) {
+        // Se avisa pero NO se fusiona: la fusión es siempre decisión humana en
+        // /duplicados (regla de oro de lib/contacts/duplicate-alert.ts). Unir dos
+        // fichas a partir de una señal ambigua no se puede deshacer.
+        console.warn(
+          `[messaging] WhatsApp con identificadores en conflicto: BSUID → ${porBsuid.id}, ` +
+            `teléfono → ${primero.id}. Gana el BSUID; revisar y fusionar a mano en /duplicados.`,
+        );
+        return porBsuid;
+      }
+    }
+    return primero;
   }
   const where = channel === "INSTAGRAM" ? { instagramId: senderId } : { messengerPsid: senderId };
   return prisma.contact.findFirst({
