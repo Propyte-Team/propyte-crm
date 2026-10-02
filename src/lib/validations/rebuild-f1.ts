@@ -241,6 +241,9 @@ export const incomingLeadSchema = z
     socialLeadId: z.string().max(120).optional(),
     instagramId: z.string().min(1).max(120).optional(),
     messengerPsid: z.string().min(1).max(120).optional(),
+    // BSUID de WhatsApp: país ISO alpha-2 + punto + hasta 128 alfanuméricos (131 máx.).
+    // El margen es a propósito: recortarlo haría fallar el envío contra Meta.
+    whatsappUserId: z.string().min(1).max(140).optional(),
     // Todos los campos crudos del formulario (Meta/TikTok/Google/LinkedIn) → Contact.custom.
     // Preserva preguntas custom (presupuesto, urgencia, etc.) sin perder nada.
     custom: z.record(z.unknown()).optional(),
@@ -260,7 +263,10 @@ export const incomingLeadSchema = z
       .optional(),
     temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   })
-  .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {
+  // El BSUID cuenta como identificador válido por sí solo. Sin esto, un lead de
+  // WhatsApp que llega SIN teléfono —lo normal fuera de la ventana de 30 días— se
+  // rechazaría entero aquí y no se podría ni crear el contacto.
+  .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid || !!d.whatsappUserId, {
     message: "Se requiere teléfono, email o identificador social",
     path: ["phone"],
   });

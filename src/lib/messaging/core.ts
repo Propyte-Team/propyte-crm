@@ -55,17 +55,69 @@ const SOURCE: Record<MessagingChannel, "WHATSAPP" | "INSTAGRAM" | "MESSENGER"> =
   MESSENGER: "MESSENGER",
 };
 
-/** Busca el contacto por el id propio del canal. Para WHATSAPP usa match flexible (exacto + últimos 10 dígitos). */
-async function findContactByChannel(channel: MessagingChannel, senderId: string) {
+/**
+ * ¿`senderId` tiene pinta de teléfono?
+ *
+ * 💀 Importa más de lo que parece: la búsqueda flexible de WhatsApp casa por los
+ * ÚLTIMOS 10 CARACTERES, y los de un BSUID son dígitos
+ * (`MX.13491208655302741918` → `5302741918`). Dejar entrar un BSUID a esa búsqueda
+ * lo haría casar por puro accidente con el teléfono de otra persona, y el hilo
+ * acabaría colgado de un contacto que no tiene nada que ver.
+ */
+function pareceTelefono(senderId: string): boolean {
+  // Solo dígitos (con `+` opcional). No se comprueba la LONGITUD a propósito: adivinar
+  // cuántos dígitos tiene un teléfono válido en todos los países es justo el tipo de
+  // suposición que luego rechaza números buenos. Lo que de verdad distingue a un BSUID
+  // es que lleva letras y un punto, y eso esto ya lo descarta.
+  return /^\+?\d+$/.test(senderId);
+}
+
+/**
+ * Busca el contacto por el id propio del canal. Para WHATSAPP usa match flexible
+ * (exacto + últimos 10 dígitos) **y además el BSUID**.
+ *
+ * Por qué mira los dos: Meta manda el teléfono solo dentro de la ventana de 30
+ * días, y esa ventana se evalúa POR NÚMERO DE NEGOCIO. Mirando únicamente el
+ * teléfono, el mismo humano entra dos veces —una dentro de la ventana y otra
+ * fuera— y los duplicados se enredan con el módulo de dedup (`mergedIntoId`).
+ *
+ * Si los dos identificadores apuntan a contactos DISTINTOS **gana el BSUID**
+ * (decisión de Luis, 2026-10-01): Meta lo garantiza estable por persona, mientras
+ * que un teléfono se recicla y puede acabar en manos de otra. Se avisa por consola
+ * y **no se fusiona nada**: la fusión es siempre decisión humana en /duplicados
+ * (regla de oro de `lib/contacts/duplicate-alert.ts`).
+ */
+async function findContactByChannel(
+  channel: MessagingChannel,
+  senderId: string,
+  whatsappUserId?: string | null,
+) {
+  const include = { assignedTo: { select: { id: true, name: true } } };
   if (channel === "WHATSAPP") {
-    return prisma.contact.findFirst({
-      where: {
-        OR: [{ phone: senderId }, { phone: { endsWith: senderId.slice(-10) } }],
-        deletedAt: null,
-        mergedIntoId: null,
-      },
-      include: { assignedTo: { select: { id: true, name: true } } },
-    });
+    const porBsuid = whatsappUserId
+      ? await prisma.contact.findFirst({
+          where: { whatsappUserId, deletedAt: null, mergedIntoId: null },
+          include,
+        })
+      : null;
+    const porTelefono = pareceTelefono(senderId)
+      ? await prisma.contact.findFirst({
+          where: {
+            OR: [{ phone: senderId }, { phone: { endsWith: senderId.slice(-10) } }],
+            deletedAt: null,
+            mergedIntoId: null,
+          },
+          include,
+        })
+      : null;
+
+    if (porBsuid && porTelefono && porBsuid.id !== porTelefono.id) {
+      console.warn(
+        `[messaging] WhatsApp con identificadores en conflicto: BSUID → ${porBsuid.id}, ` +
+          `teléfono → ${porTelefono.id}. Gana el BSUID; revisar y fusionar a mano en /duplicados.`,
+      );
+    }
+    return porBsuid ?? porTelefono;
   }
   const where = channel === "INSTAGRAM" ? { instagramId: senderId } : { messengerPsid: senderId };
   return prisma.contact.findFirst({
@@ -195,7 +247,42 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     return null;
   }
 
-  let contact = await findContactByChannel(msg.channel, msg.senderId);
+  let contact = await findContactByChannel(msg.channel, msg.senderId, msg.whatsappUserId);
+
+  // Rellenar el teléfono del contacto emparejado por BSUID cuando lo tenía vacío.
+  //
+  // Por qué: `captureLead` escribe `phone: phone ?? ""` para esquivar el NOT NULL de la
+  // columna, así que un contacto que nació sin teléfono queda con cadena vacía — y el
+  // match flexible por teléfono NO vuelve a encontrarlo nunca. Sin esto, cada mensaje
+  // suyo creaba otro contacto. Ahora el BSUID lo reencuentra y, en cuanto Meta vuelve a
+  // mandar el teléfono (ventana de 30 días reabierta, contact book o
+  // REQUEST_CONTACT_INFO), el contacto vuelve al circuito normal.
+  //
+  // Solo si estaba VACÍO: un teléfono real ya guardado no se pisa jamás.
+  if (
+    contact &&
+    msg.channel === "WHATSAPP" &&
+    !contact.phone?.trim() &&
+    pareceTelefono(msg.senderId)
+  ) {
+    try {
+      const { withChangeSource } = await import("@/lib/audit/change-context");
+      // `?? contact` y no asignación directa: mismo idioma que `applySocialProfile`.
+      // Rellenar el teléfono es una mejora oportunista, así que si el update devuelve
+      // vacío o falla, el contacto que ya teníamos sigue siendo válido y el mensaje
+      // entra igual. Pisarlo con `undefined` tiraría la ingesta entera por un extra.
+      contact =
+        (await withChangeSource({ source: "whatsapp_bsuid" }, (tx) =>
+          tx.contact.update({
+            where: { id: contact!.id },
+            data: { phone: msg.senderId },
+            include: { assignedTo: { select: { id: true, name: true } } },
+          })
+        )) ?? contact;
+    } catch (err) {
+      console.warn(`[messaging] no se pudo rellenar el teléfono de ${contact.id}:`, err);
+    }
+  }
 
   // Identidad social: perfil Graph SOLO cuando el contacto es nuevo o sigue placeholder
   // (1 llamada por contacto, no por mensaje). Best-effort: null jamás bloquea el intake.
@@ -207,10 +294,18 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
 
   if (!contact) {
     const { captureLead } = await import("@/lib/intake/capture-lead");
+    // El BSUID viaja junto al teléfono para que el contacto NAZCA con él: si solo se
+    // escribiera después, dos mensajes simultáneos del mismo remitente (o un reintento
+    // de Meta) no se verían entre ellos y crearían dos contactos — justo lo que este
+    // paso existe para evitar. Y si el remitente llegó sin teléfono, no se inventa uno:
+    // los últimos 10 caracteres del BSUID son dígitos y acabarían pareciendo un número.
     const idField =
       msg.channel === "INSTAGRAM" ? { instagramId: msg.senderId }
       : msg.channel === "MESSENGER" ? { messengerPsid: msg.senderId }
-      : { phone: msg.senderId };
+      : {
+          ...(pareceTelefono(msg.senderId) ? { phone: msg.senderId } : {}),
+          ...(msg.whatsappUserId ? { whatsappUserId: msg.whatsappUserId } : {}),
+        };
     // `connectorId` viaja desde el webhook hasta aquí. Pasarlo no es cosmético: es lo
     // que deja atribuir el lead a su conector y marcarle señal de vida y errores, cosa
     // que hasta ahora solo hacía la vía de formularios de anuncio.

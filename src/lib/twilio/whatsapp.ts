@@ -189,6 +189,8 @@ export async function handleInboundWhatsApp(payload: {
   ProfileName?: string;
   /** Conector WHATSAPP del número que RECIBIÓ el mensaje (metadata.phone_number_id). */
   ConnectorId?: string | null;
+  /** BSUID del remitente (`contacts[].user_id`), si el webhook lo trajo. */
+  WaUserId?: string | null;
 }, opts: { triggerBot?: boolean } = {}) {
   const rawPhone = payload.From.replace("whatsapp:", "");
 
@@ -196,7 +198,16 @@ export async function handleInboundWhatsApp(payload: {
   // Si aplica, marca el contacto y NO continúa el flujo normal.
   const optOutWords = ["BAJA", "STOP", "ALTO", "UNSUBSCRIBE"];
   if (optOutWords.includes(payload.Body.trim().toUpperCase())) {
-    const contact = await findContactByPhone(rawPhone);
+    // El BSUID va PRIMERO y no es un adorno: `findContactByPhone` solo mira el
+    // teléfono, así que un «BAJA» de alguien que llegó sin él no encontraba a nadie
+    // y la baja se perdía en silencio. Eso es cumplimiento, no una mejora: la
+    // persona pidió no recibir más mensajes y el CRM le seguía escribiendo.
+    const contact =
+      (payload.WaUserId
+        ? await prisma.contact.findFirst({
+            where: { whatsappUserId: payload.WaUserId, deletedAt: null, mergedIntoId: null },
+          })
+        : null) ?? (await findContactByPhone(rawPhone));
     if (contact) {
       await prisma.contact.update({
         where: { id: contact.id },
@@ -221,5 +232,6 @@ export async function handleInboundWhatsApp(payload: {
     mediaFilename: payload.MediaFilename ?? null,
     profileName: payload.ProfileName ?? null,
     connectorId: payload.ConnectorId ?? null,
+    whatsappUserId: payload.WaUserId ?? null,
   }, opts);
 }

@@ -261,11 +261,15 @@ export async function POST(req: NextRequest) {
           if (mediaType && mediaRef?.id) {
             stored = await resolveWaMediaToStorage(mediaRef.id);
           }
+          const bsuid = bsuidDelRemitente(value.contacts, msg.from);
           const saved = await handleInboundWhatsApp({
             From: `whatsapp:+${msg.from}`,
             Body: extractBody(msg),
             MessageSid: msg.id, // wamid → idempotencia por UNIQUE
             ProfileName: profileName,
+            // El BSUID entra al intake, no solo se guarda después: es lo que permite
+            // reencontrar al remitente cuando Meta deja de mandar su teléfono.
+            ...(bsuid ? { WaUserId: bsuid } : {}),
             ...(connectorId ? { ConnectorId: connectorId } : {}),
             ...(stored && mediaType
               ? {
@@ -278,7 +282,10 @@ export async function POST(req: NextRequest) {
           }, { triggerBot: false });
           if (saved?.contactId) {
             botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
-            await guardarBsuid(saved.contactId, bsuidDelRemitente(value.contacts, msg.from));
+            // Red de seguridad para los contactos que YA existían y se emparejaron por
+            // teléfono: el intake solo escribe el BSUID al crear. Es un no-op cuando ya
+            // está puesto, porque la condición viaja en el WHERE.
+            await guardarBsuid(saved.contactId, bsuid);
           }
           processed++;
         } catch (err) {

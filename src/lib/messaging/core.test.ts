@@ -1020,3 +1020,145 @@ describe("handleInboundMessage — el inbound del lead NO cumple el SLA (#702)",
     expect(meetSlaTimers).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Emparejado por BSUID — paso 2 del diseño de WhatsApp multicuenta.
+//
+// Hasta ahora el matcher de WhatsApp solo miraba el teléfono. Como Meta omite el
+// teléfono fuera de la ventana de 30 días —y esa ventana se evalúa POR NÚMERO DE
+// NEGOCIO—, el mismo humano entraba dos veces: una con teléfono y otra sin él.
+// Esto es lo que hay que tener ANTES de prender el segundo número.
+//
+// Decisiones tomadas con Luis el 2026-10-01:
+//  · Si los dos identificadores apuntan a contactos DISTINTOS, **gana el BSUID**:
+//    Meta lo garantiza estable por persona, mientras que un teléfono se recicla y
+//    puede acabar en manos de otra. Se notifica duplicado y NUNCA se auto-fusiona
+//    (regla de oro de lib/contacts/duplicate-alert.ts).
+//  · El teléfono se rellena SOLO si estaba vacío.
+// ---------------------------------------------------------------------------
+describe("handleInboundMessage — emparejado por BSUID (WhatsApp)", () => {
+  const BSUID = "MX.13491208655302741918";
+  const TEL = "+5219981234567";
+  const waBase = {
+    channel: "WHATSAPP" as const,
+    senderId: TEL,
+    externalMessageId: "wamid-1",
+    text: "hola",
+    whatsappUserId: BSUID,
+  };
+
+  /** Contacto mínimo tal como lo devuelve el include del matcher. */
+  function contacto(id: string, extra: Record<string, unknown> = {}) {
+    return {
+      id,
+      assignedToId: "u1",
+      firstName: "A",
+      lastName: "B",
+      custom: {},
+      phone: TEL,
+      whatsappUserId: BSUID,
+      ...extra,
+    };
+  }
+
+  it("busca por whatsappUserId, no solo por teléfono", async () => {
+    contactFindFirst.mockResolvedValue(contacto("c1"));
+
+    await handleInboundMessage(waBase);
+
+    const consultas = contactFindFirst.mock.calls.map(([a]) => (a as { where: Record<string, unknown> }).where);
+    expect(consultas.some((w) => w.whatsappUserId === BSUID)).toBe(true);
+  });
+
+  // El caso que justifica todo el paso: mismo humano, un contacto por identificador.
+  it("si el BSUID y el teléfono apuntan a contactos DISTINTOS, gana el BSUID", async () => {
+    contactFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      where.whatsappUserId ? contacto("c-bsuid") : contacto("c-telefono", { whatsappUserId: null }),
+    );
+
+    await handleInboundMessage(waBase);
+
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ contactId: "c-bsuid" }) }),
+    );
+  });
+
+  // Regla de oro del repo: la fusión es SIEMPRE decisión humana (/duplicados).
+  it("🚨 cuando discrepan NO fusiona: solo deja el duplicado detectado", async () => {
+    contactFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      where.whatsappUserId ? contacto("c-bsuid") : contacto("c-telefono", { whatsappUserId: null }),
+    );
+
+    await handleInboundMessage(waBase);
+
+    const escrituras = [...contactUpdate.mock.calls, ...contactTxUpdate.mock.calls];
+    for (const [arg] of escrituras) {
+      expect((arg as { data: Record<string, unknown> }).data).not.toHaveProperty("mergedIntoId");
+    }
+  });
+
+  it("sin BSUID en el webhook, se comporta igual que antes (solo teléfono)", async () => {
+    contactFindFirst.mockResolvedValue(contacto("c1"));
+
+    await handleInboundMessage({ ...waBase, whatsappUserId: null });
+
+    const consultas = contactFindFirst.mock.calls.map(([a]) => (a as { where: Record<string, unknown> }).where);
+    expect(consultas.every((w) => w.whatsappUserId === undefined)).toBe(true);
+  });
+
+  // 💀 Los últimos 10 caracteres de un BSUID son DÍGITOS ("MX.13491208655302741918"
+  // → "5302741918"), así que la búsqueda flexible por teléfono puede casar por puro
+  // accidente con el teléfono de otra persona. Cuando el remitente llega sin
+  // teléfono, no hay nada que buscar por teléfono.
+  it("💀 con remitente sin teléfono NO busca por teléfono (el BSUID acabaría en 10 dígitos)", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c-nuevo", isNew: true, assignedToId: "u1" });
+
+    await handleInboundMessage({ ...waBase, senderId: BSUID });
+
+    const consultas = contactFindFirst.mock.calls.map(([a]) => (a as { where: Record<string, unknown> }).where);
+    expect(consultas.some((w) => JSON.stringify(w).includes("endsWith"))).toBe(false);
+  });
+
+  it("el contacto nuevo nace ya con su BSUID", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c-nuevo", isNew: true, assignedToId: "u1" });
+
+    await handleInboundMessage(waBase);
+
+    expect(captureLead).toHaveBeenCalledWith(
+      expect.objectContaining({ whatsappUserId: BSUID }),
+      expect.anything(),
+    );
+  });
+
+  // El agujero que encontré en el paso 1: captureLead escribe phone = "" y después
+  // el matcher por teléfono no vuelve a encontrar ese contacto NUNCA, así que cada
+  // mensaje le creaba otro. Si llega el teléfono, se rellena y vuelve al circuito.
+  it("rellena el teléfono del contacto emparejado por BSUID si estaba vacío", async () => {
+    contactFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      where.whatsappUserId ? contacto("c-sin-tel", { phone: "" }) : null,
+    );
+
+    await handleInboundMessage(waBase);
+
+    const relleno = [...contactUpdate.mock.calls, ...contactTxUpdate.mock.calls].find(
+      ([a]) => (a as { data: Record<string, unknown> }).data.phone !== undefined,
+    );
+    expect(relleno).toBeDefined();
+    expect((relleno![0] as { data: { phone: string } }).data.phone).toBe(TEL);
+  });
+
+  it("🚨 NUNCA pisa un teléfono real ya guardado", async () => {
+    contactFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      where.whatsappUserId ? contacto("c-con-tel", { phone: "+5219990000000" }) : null,
+    );
+
+    await handleInboundMessage(waBase);
+
+    const escrituras = [...contactUpdate.mock.calls, ...contactTxUpdate.mock.calls];
+    for (const [arg] of escrituras) {
+      expect((arg as { data: Record<string, unknown> }).data.phone).toBeUndefined();
+    }
+  });
+});

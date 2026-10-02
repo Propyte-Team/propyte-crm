@@ -92,11 +92,16 @@ export async function captureLead(
   const phone = lead.phone ? normalizePhoneE164(lead.phone) : null;
   const instagramId = lead.instagramId;
   const messengerPsid = lead.messengerPsid;
+  const whatsappUserId = lead.whatsappUserId;
   const dedupOr: object[] = [];
   if (phone) dedupOr.push({ phone });
   if (lead.email) dedupOr.push({ email: lead.email });
   if (instagramId) dedupOr.push({ instagramId });
   if (messengerPsid) dedupOr.push({ messengerPsid });
+  // El BSUID dedup igual que los ids sociales: es el ÚNICO identificador que Meta
+  // garantiza en todos los webhooks de WhatsApp. Sin esta línea, el mismo humano se
+  // da de alta otra vez en cuanto deja de venir su teléfono.
+  if (whatsappUserId) dedupOr.push({ whatsappUserId });
 
   const existing = dedupOr.length
     ? await prisma.contact.findFirst({
@@ -192,6 +197,7 @@ export async function captureLead(
       tags: [],
       instagramId: instagramId ?? null,
       messengerPsid: messengerPsid ?? null,
+      whatsappUserId: whatsappUserId ?? null,
       ...(lead.temperature ? { temperature: lead.temperature } : {}),
       // Perfil de Inversión derivado del formulario (normalizado a enums del CRM)
       investmentProfile: lead.investmentProfile ?? null,

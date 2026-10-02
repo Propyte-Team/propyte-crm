@@ -36,6 +36,13 @@ export interface IncomingMessage {
   profileName?: string | null;
   /** Id del conector (cuenta WhatsApp / página FB) que recibió el mensaje. */
   connectorId?: string | null;
+  /**
+   * BSUID de WhatsApp (`contacts[].user_id`) del remitente — solo canal WHATSAPP.
+   * Meta lo manda SIEMPRE; el teléfono es condicional y desaparece fuera de la
+   * ventana de 30 días, que se evalúa por número de negocio. Por eso el matcher
+   * mira este campo además de `senderId`: sin él, el mismo humano entra dos veces.
+   */
+  whatsappUserId?: string | null;
   /** Id de la cuenta receptora del webhook: IG Business ID (objeto instagram) o Page ID (objeto page). */
   accountId?: string | null;
   /** Referral de anuncios/m.me (messaging_referrals o postback.referral) — Caso 2 social↔ads linking. */
