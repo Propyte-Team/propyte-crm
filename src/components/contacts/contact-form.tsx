@@ -170,6 +170,40 @@ const TEMPERATURE_OPTIONS = [
   { value: "DEAD", label: "Muerto" },
 ];
 
+/**
+ * Arma el body a mandar al servidor a partir del estado del formulario.
+ *
+ * Exportada y separada de `handleSubmit` para poder probarla sin montar el
+ * componente (el repo no trae jsdom/Testing Library) — este es exactamente el
+ * punto donde se originó el bug reportado el 2026-10-02: convertir `phone`/
+ * `whatsappUserId` vacíos a `undefined` aquí hacía que `JSON.stringify` OMITIERA
+ * esas claves del body de un PUT, y el servidor lee una clave ausente como "no
+ * tocar este campo" — nunca como "vaciarlo". Quitar el teléfono en Editar
+ * Contacto parecía guardarse (sin error) pero el valor viejo se quedaba intacto.
+ * phone y whatsappUserId se mandan tal cual (incluido "" cuando se vacían a
+ * propósito); el resto de los campos opcionales sí se sigue convirtiendo a
+ * `undefined` porque para esos "no tocar" y "vaciar" nunca se ha distinguido
+ * (comportamiento preexistente, fuera del alcance de este arreglo — ver #835).
+ */
+export function buildSubmitData(formData: Partial<ContactFormData>, tags: string[]) {
+  return {
+    ...formData,
+    tags,
+    // Convertir cadenas vacías a undefined para campos opcionales — EXCEPTO
+    // phone y whatsappUserId, que deben poder viajar como "" explícito (ver el
+    // comentario de la función).
+    email: formData.email || undefined,
+    secondaryPhone: formData.secondaryPhone || undefined,
+    leadSourceDetail: formData.leadSourceDetail || undefined,
+    residenceCity: formData.residenceCity || undefined,
+    residenceCountry: formData.residenceCountry || undefined,
+    nationality: formData.nationality || undefined,
+    preferredZone: formData.preferredZone || undefined,
+    budgetMin: formData.budgetMin || undefined,
+    budgetMax: formData.budgetMax || undefined,
+  };
+}
+
 export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) {
   // Estado del formulario
   const [formData, setFormData] = useState<Partial<ContactFormData>>({
@@ -243,22 +277,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
       .map((t: string) => t.trim())
       .filter((t: string) => t.length > 0);
 
-    const submitData = {
-      ...formData,
-      tags,
-      // Convertir cadenas vacías a undefined para campos opcionales
-      email: formData.email || undefined,
-      phone: formData.phone || undefined,
-      secondaryPhone: formData.secondaryPhone || undefined,
-      whatsappUserId: formData.whatsappUserId || undefined,
-      leadSourceDetail: formData.leadSourceDetail || undefined,
-      residenceCity: formData.residenceCity || undefined,
-      residenceCountry: formData.residenceCountry || undefined,
-      nationality: formData.nationality || undefined,
-      preferredZone: formData.preferredZone || undefined,
-      budgetMin: formData.budgetMin || undefined,
-      budgetMax: formData.budgetMax || undefined,
-    };
+    const submitData = buildSubmitData(formData, tags);
 
     // Validar con Zod
     const validation = contactFormSchema.safeParse(submitData);
