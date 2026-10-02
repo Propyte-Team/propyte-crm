@@ -18,11 +18,13 @@ vi.mock("@/lib/whatsapp/transport", () => ({
 const msgCreate = vi.fn();
 const actCreate = vi.fn();
 const convUpdate = vi.fn();
+const contactFindUnique = vi.fn();
 vi.mock("@/lib/db", () => {
   const db = {
     message: { create: (...a: unknown[]) => msgCreate(...a) },
     activity: { create: (...a: unknown[]) => actCreate(...a) },
     conversation: { update: (...a: unknown[]) => convUpdate(...a) },
+    contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
   };
   return { default: db, prisma: db };
 });
@@ -56,6 +58,7 @@ beforeEach(() => {
   meetSlaTimers.mockResolvedValue(undefined);
   // Sin connector → número global del env (setup de una sola línea).
   resolveWhatsAppSender.mockResolvedValue(null);
+  contactFindUnique.mockResolvedValue(null);
 });
 
 describe("sendWhatsAppMessage — markdown → formato WhatsApp (todos los emisores)", () => {
@@ -68,14 +71,14 @@ describe("sendWhatsAppMessage — markdown → formato WhatsApp (todos los emiso
     );
 
     const expected = "Agendo para *mañana a las 7 AM* — un asesor te contacta.";
-    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), expected, undefined, null);
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), expected, undefined, null, null);
     expect(msgCreate.mock.calls[0][0].data.body).toBe(expected);
     expect(actCreate.mock.calls[0][0].data.description).toBe(expected);
   });
 
   it("texto sin markdown pasa sin cambios", async () => {
     await sendWhatsAppMessage("+5219991112233", "hola, ¿cómo vas?", "c1", "u1");
-    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "hola, ¿cómo vas?", undefined, null);
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "hola, ¿cómo vas?", undefined, null, null);
     expect(msgCreate.mock.calls[0][0].data.body).toBe("hola, ¿cómo vas?");
   });
 });
@@ -91,7 +94,7 @@ describe("sendWhatsAppMessage — multicuenta", () => {
     await sendWhatsAppMessage("+5219991112233", "va", "c1", "u1", "connector-nativa");
 
     expect(resolveWhatsAppSender).toHaveBeenCalledWith("connector-nativa");
-    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "va", undefined, sender);
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "va", undefined, sender, null);
   });
 
   it("el texto aparte de un sticker también sale por la misma línea", async () => {
@@ -104,9 +107,9 @@ describe("sendWhatsAppMessage — multicuenta", () => {
 
     // Las DOS entregas (texto suelto + media) llevan el mismo emisor: si solo una
     // lo llevara, el cliente vería la conversación partida entre dos números.
-    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma", undefined, sender);
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma", undefined, sender, null);
     expect(deliverWhatsApp).toHaveBeenNthCalledWith(2, expect.any(String), "toma",
-      expect.objectContaining({ url: "https://sb/s.webp" }), sender);
+      expect.objectContaining({ url: "https://sb/s.webp" }), sender, null);
   });
 
   it("si el connector está mal configurado NO se envía por el número equivocado", async () => {
@@ -130,7 +133,7 @@ describe("sendWhatsAppTemplate — multicuenta (#828)", () => {
     await sendWhatsAppTemplate("+5219991112233", "recordatorio_cita", ["Ana"], "c1", "u1");
     expect(resolveWhatsAppSender).toHaveBeenCalledWith(undefined);
     expect(deliverMetaTemplate).toHaveBeenCalledWith(
-      expect.any(String), "recordatorio_cita", "es_MX", ["Ana"], null,
+      expect.any(String), "recordatorio_cita", "es_MX", ["Ana"], null, null,
     );
   });
 
@@ -142,7 +145,7 @@ describe("sendWhatsAppTemplate — multicuenta (#828)", () => {
 
     expect(resolveWhatsAppSender).toHaveBeenCalledWith("connector-nativa");
     expect(deliverMetaTemplate).toHaveBeenCalledWith(
-      expect.any(String), "recordatorio_cita", "es_MX", ["Ana"], sender,
+      expect.any(String), "recordatorio_cita", "es_MX", ["Ana"], sender, null,
     );
   });
 
@@ -157,14 +160,70 @@ describe("sendWhatsAppTemplate — multicuenta (#828)", () => {
   });
 });
 
+// #829 — sin teléfono real (`to` llega "" desde el caller, mismo sentinel que el
+// alta de leads email-only), se envía por BSUID. Con teléfono se usa SIEMPRE el
+// teléfono, aunque también haya BSUID guardado: nunca al revés.
+describe("sendWhatsAppMessage — envío por BSUID sin teléfono (#829)", () => {
+  it("con teléfono, deliverWhatsApp recibe bsuid=null aunque el contacto tenga uno guardado (el teléfono manda)", async () => {
+    await sendWhatsAppMessage("+5219991112233", "hola", "c1", "u1");
+    expect(deliverWhatsApp).toHaveBeenCalledWith(expect.any(String), "hola", undefined, null, null);
+    expect(contactFindUnique).not.toHaveBeenCalled(); // con teléfono, ni se consulta el BSUID
+  });
+
+  it("sin teléfono (\"\"), busca el BSUID del contacto y lo manda como destinatario (to:null)", async () => {
+    contactFindUnique.mockResolvedValue({ whatsappUserId: "MX.sin-telefono" });
+    await sendWhatsAppMessage("", "hola", "c1", "u1");
+    expect(contactFindUnique).toHaveBeenCalledWith({ where: { id: "c1" }, select: { whatsappUserId: true } });
+    expect(deliverWhatsApp).toHaveBeenCalledWith(null, "hola", undefined, null, "MX.sin-telefono");
+  });
+
+  it("persiste el BSUID en externalPhone cuando no hay teléfono (nunca un teléfono inventado)", async () => {
+    contactFindUnique.mockResolvedValue({ whatsappUserId: "MX.sin-telefono" });
+    await sendWhatsAppMessage("", "hola", "c1", "u1");
+    expect(msgCreate.mock.calls[0][0].data.externalPhone).toBe("MX.sin-telefono");
+  });
+
+  it("sin teléfono y sin BSUID guardado: falla claro, nunca intenta entregar", async () => {
+    contactFindUnique.mockResolvedValue(null);
+    await expect(sendWhatsAppMessage("", "hola", "c1", "u1")).rejects.toThrow(/no tiene teléfono ni BSUID/);
+    expect(deliverWhatsApp).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendWhatsAppTemplate — envío por BSUID sin teléfono (#829)", () => {
+  it("sin teléfono, busca el BSUID y lo pasa a deliverMetaTemplate", async () => {
+    contactFindUnique.mockResolvedValue({ whatsappUserId: "MX.sin-telefono" });
+    await sendWhatsAppTemplate("", "recordatorio_cita", ["Ana"], "c1", "u1");
+    expect(deliverMetaTemplate).toHaveBeenCalledWith(
+      null, "recordatorio_cita", "es_MX", ["Ana"], null, "MX.sin-telefono",
+    );
+  });
+
+  it("sin teléfono y sin BSUID: falla claro, nunca intenta entregar", async () => {
+    contactFindUnique.mockResolvedValue(null);
+    await expect(
+      sendWhatsAppTemplate("", "recordatorio_cita", ["Ana"], "c1", "u1"),
+    ).rejects.toThrow(/no tiene teléfono ni BSUID/);
+    expect(deliverMetaTemplate).not.toHaveBeenCalled();
+  });
+
+  it("sin teléfono, por Twilio (sin soporte de BSUID): falla claro en vez de mandar \"whatsapp:null\"", async () => {
+    activeProvider.mockReturnValue("twilio");
+    contactFindUnique.mockResolvedValue({ whatsappUserId: "MX.sin-telefono" });
+    await expect(
+      sendWhatsAppTemplate("", "recordatorio_cita", ["Ana"], "c1", "u1"),
+    ).rejects.toThrow(/Twilio/);
+  });
+});
+
 describe("sendWhatsAppMessage — media", () => {
   it("sticker con texto → texto aparte primero, luego media; Message persiste media", async () => {
     await sendWhatsAppMessage("+5219991112233", "toma", "c1", "u1", null, {
       path: "2026-07/s.webp", url: "https://sb/s.webp", type: "sticker", mimeType: "image/webp",
     });
-    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma", undefined, null);
+    expect(deliverWhatsApp).toHaveBeenNthCalledWith(1, expect.any(String), "toma", undefined, null, null);
     expect(deliverWhatsApp).toHaveBeenNthCalledWith(2, expect.any(String), "toma",
-      expect.objectContaining({ url: "https://sb/s.webp", type: "sticker" }), null);
+      expect.objectContaining({ url: "https://sb/s.webp", type: "sticker" }), null, null);
     expect(msgCreate.mock.calls[0][0].data).toMatchObject({
       mediaUrl: "2026-07/s.webp", mediaType: "sticker", mediaMimeType: "image/webp",
     });

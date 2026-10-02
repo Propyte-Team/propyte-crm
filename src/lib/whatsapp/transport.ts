@@ -64,15 +64,28 @@ export function activeProvider(): WhatsAppProvider {
   return "twilio";
 }
 
+/**
+ * A quién se dirige el mensaje: `to` (teléfono E.164) manda SIEMPRE que exista,
+ * incluso si también hay `bsuid` guardado (#829) — mandar al teléfono es lo que
+ * mantiene viva la ventana de 30 días y hace que Meta lo siga incluyendo en los
+ * webhooks. Solo se usa el BSUID cuando no hay teléfono real para el contacto.
+ */
+function campoDestinatario(to: string | null, bsuid?: string | null): Record<string, unknown> {
+  if (to) return { to: to.replace("+", "") };
+  if (bsuid) return { recipient: bsuid };
+  throw new Error("WhatsApp: no hay teléfono ni BSUID para el destinatario — no se puede enviar.");
+}
+
 // ---------------------------------------------------------------------------
 // Driver META Cloud API (Graph) — texto libre dentro de la ventana de 24h.
 // Fuera de ventana Meta responde 131047 → error claro (requiere plantilla).
 // ---------------------------------------------------------------------------
 async function deliverViaMetaCloud(
-  toE164: string,
+  to: string | null,
   body: string,
   media?: DeliveryMedia,
-  sender?: WhatsAppSender | null
+  sender?: WhatsAppSender | null,
+  bsuid?: string | null
 ): Promise<DeliveryResult> {
   const { phoneNumberId, token } = metaCredentials(sender);
 
@@ -93,7 +106,7 @@ async function deliverViaMetaCloud(
     body: JSON.stringify({
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to: toE164.replace("+", ""),
+      ...campoDestinatario(to, bsuid),
       ...content,
     }),
   });
@@ -111,6 +124,15 @@ async function deliverViaMetaCloud(
         `Fuera de la ventana de 24h de WhatsApp (${code}): se requiere plantilla aprobada. ${detail}`
       );
     }
+    // #829: plantillas de autenticación (one-tap/zero-tap/copy-code) no aceptan
+    // BSUID como destinatario — hoy no se usan en Propyte, pero si alguna vez se
+    // activan, este es el error que Meta regresa y hay que distinguirlo del resto
+    // en vez de dejarlo caer en el genérico de abajo.
+    if (code === 131062) {
+      throw new Error(
+        `WhatsApp (${code}): este tipo de mensaje no acepta destinatario por BSUID — hace falta el teléfono. ${detail}`
+      );
+    }
     throw new Error(`Meta Cloud API ${code ?? res.status}: ${detail}`);
   }
 
@@ -121,11 +143,12 @@ async function deliverViaMetaCloud(
 
 // Plantilla aprobada (para business-initiated fuera de ventana / cadencias)
 export async function deliverMetaTemplate(
-  toE164: string,
+  to: string | null,
   templateName: string,
   language: string,
   bodyParams: string[] = [],
-  sender?: WhatsAppSender | null
+  sender?: WhatsAppSender | null,
+  bsuid?: string | null
 ): Promise<DeliveryResult> {
   const { phoneNumberId, token } = metaCredentials(sender);
   const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
@@ -133,7 +156,7 @@ export async function deliverMetaTemplate(
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       messaging_product: "whatsapp",
-      to: toE164.replace("+", ""),
+      ...campoDestinatario(to, bsuid),
       type: "template",
       template: {
         name: templateName,
@@ -149,7 +172,13 @@ export async function deliverMetaTemplate(
     error?: { code?: number; message?: string };
   };
   if (!res.ok || data.error) {
-    throw new Error(`Meta template ${data.error?.code ?? res.status}: ${data.error?.message ?? ""}`);
+    const code = data.error?.code;
+    if (code === 131062) {
+      throw new Error(
+        `WhatsApp (${code}): esta plantilla no acepta destinatario por BSUID — hace falta el teléfono. ${data.error?.message ?? ""}`
+      );
+    }
+    throw new Error(`Meta template ${code ?? res.status}: ${data.error?.message ?? ""}`);
   }
   return { externalId: data.messages?.[0]?.id ?? "", status: "SENT" };
 }
@@ -157,7 +186,12 @@ export async function deliverMetaTemplate(
 // ---------------------------------------------------------------------------
 // Driver Twilio (alterno — requiere cuenta)
 // ---------------------------------------------------------------------------
-async function deliverViaTwilio(toE164: string, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
+async function deliverViaTwilio(to: string | null, body: string, media?: DeliveryMedia): Promise<DeliveryResult> {
+  // #829: el envío por BSUID es una extensión de la Cloud API de Meta — Twilio no
+  // la tiene. Sin teléfono, aquí no hay nada que intentar.
+  if (!to) {
+    throw new Error("WhatsApp vía Twilio requiere teléfono — el envío por BSUID solo existe en Meta Cloud API.");
+  }
   const { getTwilioClient } = await import("@/lib/twilio/client");
   const from = process.env.TWILIO_WHATSAPP_NUMBER;
   if (!from) throw new Error("TWILIO_WHATSAPP_NUMBER no configurado");
@@ -165,7 +199,7 @@ async function deliverViaTwilio(toE164: string, body: string, media?: DeliveryMe
   const msg = await client.messages.create({
     body,
     from: `whatsapp:${from}`,
-    to: `whatsapp:${toE164}`,
+    to: `whatsapp:${to}`,
     ...(media ? { mediaUrl: [media.url] } : {}),
   });
   return { externalId: msg.sid, status: "SENT" };
@@ -175,18 +209,22 @@ async function deliverViaTwilio(toE164: string, body: string, media?: DeliveryMe
  * @param sender Línea por la que debe salir el mensaje (multicuenta). Si se
  *   omite, sale por el número global del env — correcto con una sola línea.
  *   El driver Twilio lo ignora: ahí el número emisor vive en TWILIO_WHATSAPP_NUMBER.
+ * @param bsuid (#829) Destinatario por BSUID cuando `to` es `null` (sin teléfono
+ *   real). Se ignora si `to` viene con valor — el teléfono manda siempre. El
+ *   driver Twilio no lo soporta: sin `to`, lanza.
  */
 export async function deliverWhatsApp(
-  toE164: string,
+  to: string | null,
   body: string,
   media?: DeliveryMedia,
-  sender?: WhatsAppSender | null
+  sender?: WhatsAppSender | null,
+  bsuid?: string | null
 ): Promise<DeliveryResult> {
   // Última línea de defensa: WhatsApp no renderea markdown (**x**, # títulos) —
   // se normaliza a formato nativo (*x*) para TODO emisor, con ambos drivers.
   // Idempotente: sendWhatsAppMessage ya la aplica antes de persistir el body.
   const text = formatForWhatsApp(body);
   return activeProvider() === "meta_cloud"
-    ? deliverViaMetaCloud(toE164, text, media, sender)
-    : deliverViaTwilio(toE164, text, media);
+    ? deliverViaMetaCloud(to, text, media, sender, bsuid)
+    : deliverViaTwilio(to, text, media);
 }

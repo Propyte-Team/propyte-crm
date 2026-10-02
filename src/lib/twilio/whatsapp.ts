@@ -32,7 +32,23 @@ export async function sendWhatsAppMessage(
   // `sendWhatsAppMessage(tel, texto, id, uid, null, undefined, true)` no dice qué es ese
   // `true`, y esta es la función que decide si un cliente ve un mensaje como humano o no.
   const autoriaBot = opciones?.autoriaBot === true;
-  const normalized = normalizePhone(to);
+
+  // #829: sin teléfono real se envía por BSUID. `to` llega "" para estos contactos
+  // (mismo sentinel que usa el alta sin teléfono de leads email-only en capture-lead.ts
+  // — Contact.phone sigue NOT NULL). Con teléfono se usa SIEMPRE el teléfono, aunque
+  // también haya BSUID guardado: es lo que mantiene viva la ventana de 30 días y lo
+  // que hace que Meta lo siga incluyendo en los webhooks — nunca al revés.
+  let normalized: string | null = null;
+  let bsuid: string | null = null;
+  if (to) {
+    normalized = normalizePhone(to);
+  } else {
+    const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { whatsappUserId: true } });
+    bsuid = contact?.whatsappUserId ?? null;
+    if (!bsuid) {
+      throw new Error(`Contacto ${contactId} no tiene teléfono ni BSUID de WhatsApp guardado — no se puede enviar.`);
+    }
+  }
 
   // WhatsApp no renderea markdown: **x** → *x*, # títulos → *negrita* (fix 2026-07-13).
   // Se convierte AQUÍ (antes de entregar Y de persistir) para que Message.body y
@@ -53,11 +69,11 @@ export async function sendWhatsAppMessage(
 
   // audio/sticker no aceptan caption → el texto (si hay) viaja como mensaje aparte ANTES
   if (media && text && !mediaSupportsCaption(media.type)) {
-    await deliverWhatsApp(normalized, text, undefined, sender);
+    await deliverWhatsApp(normalized, text, undefined, sender, bsuid);
   }
   const delivery = media
-    ? await deliverWhatsApp(normalized, text, { url: media.url, type: media.type, filename: media.filename }, sender)
-    : await deliverWhatsApp(normalized, text, undefined, sender);
+    ? await deliverWhatsApp(normalized, text, { url: media.url, type: media.type, filename: media.filename }, sender, bsuid)
+    : await deliverWhatsApp(normalized, text, undefined, sender, bsuid);
 
   // Hilo de conversación (Anexo B §I) — el saliente también vive en el hilo
   const { ensureConversation } = await import("@/lib/messaging/conversations");
@@ -75,7 +91,10 @@ export async function sendWhatsAppMessage(
       body: persistedBody,
       twilioSid: delivery.externalId, // wamid (Meta) o SID (Twilio)
       status: delivery.status,
-      externalPhone: normalized,
+      // #829: sin teléfono real, guarda el BSUID — mismo criterio que #827 adoptó para
+      // senderId/externalPhone en el inbound: puede no ser un teléfono, y eso es preferible
+      // a guardar vacío o inventar uno.
+      externalPhone: normalized ?? bsuid,
       conversationId: conversation.id,
       // #687: los tres campos de autoría nacen juntos y en la misma escritura. Mismo
       // criterio y mismos valores que el camino de Instagram/Messenger del dispatcher.
@@ -128,7 +147,19 @@ export async function sendWhatsAppTemplate(
   connectorId?: string | null,
   language: string = "es_MX"
 ) {
-  const normalized = normalizePhone(to);
+  // #829: mismo criterio que sendWhatsAppMessage — sin teléfono real se envía por
+  // BSUID (solo lo soporta Meta Cloud API; Twilio no tiene esta extensión).
+  let normalized: string | null = null;
+  let bsuid: string | null = null;
+  if (to) {
+    normalized = normalizePhone(to);
+  } else {
+    const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { whatsappUserId: true } });
+    bsuid = contact?.whatsappUserId ?? null;
+    if (!bsuid) {
+      throw new Error(`Contacto ${contactId} no tiene teléfono ni BSUID de WhatsApp guardado — no se puede enviar.`);
+    }
+  }
 
   // Plantilla aprobada — necesaria fuera de la ventana de 24h (business-initiated)
   const { activeProvider, deliverMetaTemplate } = await import("@/lib/whatsapp/transport");
@@ -136,9 +167,12 @@ export async function sendWhatsAppTemplate(
   const sender = await resolveWhatsAppSender(connectorId);
   let externalId: string;
   if (activeProvider() === "meta_cloud") {
-    const delivery = await deliverMetaTemplate(normalized, templateName, language, templateParams, sender);
+    const delivery = await deliverMetaTemplate(normalized, templateName, language, templateParams, sender, bsuid);
     externalId = delivery.externalId;
   } else {
+    if (!normalized) {
+      throw new Error("Plantilla de WhatsApp vía Twilio requiere teléfono — el envío por BSUID solo existe en Meta Cloud API.");
+    }
     const client = getTwilioClient();
     const from = process.env.TWILIO_WHATSAPP_NUMBER;
     if (!from) throw new Error("TWILIO_WHATSAPP_NUMBER no configurado");
@@ -160,7 +194,8 @@ export async function sendWhatsAppTemplate(
       twilioSid: externalId,
       templateName,
       status: "SENT",
-      externalPhone: normalized,
+      // #829: puede no ser un teléfono — mismo criterio que sendWhatsAppMessage.
+      externalPhone: normalized ?? bsuid,
     },
   });
 
