@@ -11,11 +11,15 @@ const resolveConnectorByPhoneNumberId = vi.fn();
 const resolveWaMediaToStorage = vi.fn();
 const botRespond = vi.fn();
 const messageUpdateMany = vi.fn();
+const messageFindFirst = vi.fn();
 const contactUpdateMany = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
-    message: { updateMany: (...a: unknown[]) => messageUpdateMany(...a) },
+    message: {
+      updateMany: (...a: unknown[]) => messageUpdateMany(...a),
+      findFirst: (...a: unknown[]) => messageFindFirst(...a),
+    },
     contact: { updateMany: (...a: unknown[]) => contactUpdateMany(...a) },
   },
 }));
@@ -44,6 +48,8 @@ beforeEach(() => {
   botRespond.mockReset();
   messageUpdateMany.mockReset();
   messageUpdateMany.mockResolvedValue({ count: 0 });
+  messageFindFirst.mockReset();
+  messageFindFirst.mockResolvedValue(null);
   contactUpdateMany.mockReset();
   contactUpdateMany.mockResolvedValue({ count: 1 });
   process.env.META_WA_VERIFY_TOKEN = "verifyme";
@@ -415,5 +421,69 @@ describe("webhook de WhatsApp Cloud — #827 From real vs. BSUID-only", () => {
     const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
     expect(payload.From).toBeNull();
     expect(payload.WhatsAppUserId).toBeNull();
+  });
+});
+
+// #829: el acuse (sent/delivered/read) sigue emparejándose con su Message SOLO por
+// wamid (twilioSid = statuses[].id) — eso no cambia aquí, a propósito (no hay un caso
+// conocido donde falle). Lo nuevo es aprovechar el BSUID que trae el acuse para
+// completar Contact.whatsappUserId cuando todavía no lo teníamos, best-effort.
+function cuerpoConStatus(status: Record<string, unknown>) {
+  return JSON.stringify({
+    entry: [{ changes: [{ value: { metadata: { phone_number_id: "pn-1" }, statuses: [status] } }] }],
+  });
+}
+
+describe("webhook de WhatsApp Cloud — #829 BSUID del destinatario en los acuses", () => {
+  it("acuse con recipient_user_id: el Message se actualiza por wamid igual que siempre", async () => {
+    await POST(postFirmado(cuerpoConStatus({ id: "wamid.1", status: "delivered", recipient_user_id: "MX.1" })));
+    expect(messageUpdateMany).toHaveBeenCalledWith({
+      where: { twilioSid: "wamid.1" },
+      data: { status: "DELIVERED" },
+    });
+  });
+
+  it("con recipient_user_id, busca el contactId del Message y completa su BSUID si faltaba", async () => {
+    messageFindFirst.mockResolvedValue({ contactId: "c1" });
+    await POST(postFirmado(cuerpoConStatus({ id: "wamid.1", status: "sent", recipient_user_id: "MX.1" })));
+    expect(messageFindFirst).toHaveBeenCalledWith({ where: { twilioSid: "wamid.1" }, select: { contactId: true } });
+    expect(contactUpdateMany).toHaveBeenCalledWith({
+      where: { id: "c1", whatsappUserId: null },
+      data: { whatsappUserId: "MX.1" },
+    });
+  });
+
+  it("también lo toma de contacts[].user_id si recipient_user_id no viene", async () => {
+    messageFindFirst.mockResolvedValue({ contactId: "c1" });
+    await POST(
+      postFirmado(
+        cuerpoConStatus({ id: "wamid.1", status: "read", contacts: [{ wa_id: "521999", user_id: "MX.2" }] }),
+      ),
+    );
+    expect(contactUpdateMany).toHaveBeenCalledWith({
+      where: { id: "c1", whatsappUserId: null },
+      data: { whatsappUserId: "MX.2" },
+    });
+  });
+
+  it("sin BSUID en el acuse (failed, p. ej.): ni siquiera busca el Message — no hay nada que completar", async () => {
+    await POST(postFirmado(cuerpoConStatus({ id: "wamid.1", status: "failed" })));
+    expect(messageFindFirst).not.toHaveBeenCalled();
+    expect(contactUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("BSUID presente pero no se encuentra el Message: no truena, simplemente no completa nada", async () => {
+    messageFindFirst.mockResolvedValue(null);
+    await expect(
+      POST(postFirmado(cuerpoConStatus({ id: "wamid.fantasma", status: "sent", recipient_user_id: "MX.1" }))),
+    ).resolves.toBeDefined();
+    expect(contactUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("status desconocido: se descarta antes de llegar al BSUID — ni status ni completar el contacto", async () => {
+    messageFindFirst.mockResolvedValue({ contactId: "c1" });
+    await POST(postFirmado(cuerpoConStatus({ id: "wamid.1", status: "deleted", recipient_user_id: "MX.1" })));
+    expect(messageUpdateMany).not.toHaveBeenCalled();
+    expect(contactUpdateMany).not.toHaveBeenCalled();
   });
 });

@@ -99,6 +99,20 @@ function mediaRefOf(msg: MetaMessage): MetaMediaRef | null {
 interface MetaStatus {
   id: string;
   status: string; // sent | delivered | read | failed
+  /**
+   * #829: BSUID del destinatario. Meta lo manda en sent/delivered/read (se omite en
+   * failed) como identificador estable del destinatario — incluso cuando el mensaje
+   * se mandó por teléfono, no solo cuando se usó el BSUID para direccionar el envío.
+   *
+   * Se usa ÚNICAMENTE para completar Contact.whatsappUserId cuando todavía no lo
+   * teníamos (mismo criterio que `guardarBsuid` en el lado entrante, best-effort).
+   * El emparejamiento del acuse con su Message sigue siendo por wamid (twilioSid =
+   * st.id), que no depende de cómo se direccionó el envío — no hay un caso conocido
+   * donde ese emparejamiento falle, así que a propósito NO se toca.
+   */
+  recipient_user_id?: string;
+  recipient_id?: string;
+  contacts?: MetaContact[];
 }
 
 /**
@@ -248,6 +262,19 @@ export async function POST(req: NextRequest) {
           where: { twilioSid: st.id },
           data: { status: mapped },
         }).catch(() => {});
+
+        // #829: el acuse trae el BSUID del destinatario — se aprovecha para
+        // completar Contact.whatsappUserId si todavía no lo teníamos (p. ej. le
+        // mandamos por teléfono pero nunca nos había llegado un entrante suyo).
+        // Best-effort y aditivo, igual que guardarBsuid: si no hay BSUID en este
+        // acuse, o no se encuentra el Message, no pasa nada.
+        const bsuid = st.recipient_user_id ?? st.contacts?.find((c) => c.user_id)?.user_id ?? null;
+        if (bsuid) {
+          const msg = await prisma.message
+            .findFirst({ where: { twilioSid: st.id }, select: { contactId: true } })
+            .catch(() => null);
+          if (msg?.contactId) await guardarBsuid(msg.contactId, bsuid);
+        }
       }
 
       // Mensajes entrantes → mismo pipeline que Twilio (inbox/SLA/opt-out); bot al final
