@@ -28,12 +28,37 @@ const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
 // Roles que pueden ver pero no modificar
 const READ_ONLY_ROLES = ["MARKETING", "HOSTESS", "MANTENIMIENTO"];
 
+// #830: el teléfono deja de ser el único identificador para contactar por WhatsApp.
+// Si hay whatsappUserId (BSUID que manda Meta), el teléfono puede faltar — se exige
+// al menos uno de los dos (ver `.refine` al final de `createContactSchema`, y el
+// chequeo equivalente en PUT más abajo, que no puede usar ese mismo `.refine` porque
+// PUT valida con `createContactSchema.partial()` y `.partial()` no existe sobre un
+// ZodEffects). NO se toca Contact.phone en el schema de Prisma — sigue NOT NULL;
+// se reutiliza el mismo sentinel `phone: ""` que ya usan los leads solo-email
+// (capture-lead.ts).
+const optionalPhone = z
+  .string()
+  .trim()
+  .max(15)
+  .optional()
+  .or(z.literal(""))
+  .refine((v) => !v || v.length >= 10, { message: "El teléfono debe tener al menos 10 dígitos" });
+
+const optionalWhatsappUserId = z
+  .string()
+  .trim()
+  .max(50)
+  .optional()
+  .or(z.literal(""))
+  .refine((v) => !v || v.length >= 3, { message: "Usuario de WhatsApp inválido" });
+
 // Esquema de validación para crear contacto
-const createContactSchema = z.object({
+const contactCoreFields = z.object({
   firstName: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(100).trim(),
   lastName: z.string().min(2, "El apellido debe tener al menos 2 caracteres").max(100).trim(),
   email: z.string().email("Email inválido").toLowerCase().trim().optional().or(z.literal("")),
-  phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
+  phone: optionalPhone,
+  whatsappUserId: optionalWhatsappUserId,
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
   // Única fuente de verdad = CONTACT_STATUS_ORDER (constants.ts) — evita el bug clásico
@@ -62,6 +87,16 @@ const createContactSchema = z.object({
   purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional().nullable(),
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional().nullable(),
 });
+
+// Usado tal cual por POST (exige al menos un identificador de contacto). PUT usa
+// `contactCoreFields.partial()` en vez de este — un ZodEffects (lo que deja `.refine`)
+// no tiene `.partial()`, y de cualquier forma una edición parcial no siempre toca
+// phone/whatsappUserId, así que ese chequeo se hace a mano en PUT contra el valor
+// EFECTIVO (lo que llega en el body, o si no, lo que ya tenía el contacto).
+const createContactSchema = contactCoreFields.refine(
+  (data) => Boolean(data.phone) || Boolean(data.whatsappUserId),
+  { message: "Captura un teléfono o un Usuario de WhatsApp", path: ["phone"] }
+);
 
 /**
  * GET /api/contacts
@@ -257,15 +292,35 @@ export async function POST(request: NextRequest) {
 
     const data = validation.data;
 
-    // Verificar duplicado por teléfono
-    const existing = await prisma.contact.findFirst({
-      where: { phone: data.phone, deletedAt: null },
-    });
-    if (existing) {
-      return NextResponse.json(
-        { error: "Ya existe un contacto con este número de teléfono" },
-        { status: 409 }
-      );
+    // Verificar duplicado por teléfono — #830: solo si viene teléfono. Sin este
+    // guard, el SEGUNDO contacto solo-WhatsApp (phone: "") se rechazaría como
+    // "duplicado" del primero, porque "" === "".
+    if (data.phone) {
+      const existing = await prisma.contact.findFirst({
+        where: { phone: data.phone, deletedAt: null },
+      });
+      if (existing) {
+        return NextResponse.json(
+          { error: "Ya existe un contacto con este número de teléfono" },
+          { status: 409 }
+        );
+      }
+    }
+
+    // #830: mismo criterio para el Usuario de WhatsApp — la columna es @unique en
+    // Prisma, así que sin este chequeo explícito un choque cae en el P2002 genérico
+    // de más abajo ("Ya existe un contacto con esos datos únicos") en vez de decir
+    // específicamente cuál es el dato repetido.
+    if (data.whatsappUserId) {
+      const existingWa = await prisma.contact.findFirst({
+        where: { whatsappUserId: data.whatsappUserId, deletedAt: null },
+      });
+      if (existingWa) {
+        return NextResponse.json(
+          { error: "Ya existe un contacto con este Usuario de WhatsApp" },
+          { status: 409 }
+        );
+      }
     }
 
     // Validar que el asesor asignado exista antes de crear (BUG-04: evita FK P2003 → 500 opaco)
@@ -293,7 +348,10 @@ export async function POST(request: NextRequest) {
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email || null,
-        phone: data.phone,
+        // #830: Contact.phone sigue NOT NULL — mismo sentinel "" que capture-lead.ts
+        // usa para leads solo-email. Nunca null: el schema de Prisma no lo acepta.
+        phone: data.phone || "",
+        whatsappUserId: data.whatsappUserId || null,
         secondaryPhone: data.secondaryPhone || null,
         contactType: data.contactType || "COMPRADOR",
         leadSource: data.leadSource,
@@ -373,7 +431,7 @@ export async function PUT(request: NextRequest) {
 
     // Parsear y validar el body (parcial)
     const body = await request.json();
-    const validation = createContactSchema.partial().safeParse(body);
+    const validation = contactCoreFields.partial().safeParse(body);
 
     if (!validation.success) {
       return NextResponse.json(
@@ -396,6 +454,22 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // #830: no se puede usar el `.refine` de createContactSchema aquí (PUT valida con
+    // `contactCoreFields.partial()`, y un ZodEffects no tiene `.partial()`). Se chequea
+    // a mano contra el valor EFECTIVO — lo que llega en el body, o si no se tocó, lo
+    // que ya tenía el contacto — y solo cuando el body de verdad toca uno de los dos
+    // campos (si no los toca, no hay nada nuevo que validar).
+    if (data.phone !== undefined || data.whatsappUserId !== undefined) {
+      const efectivoPhone = data.phone !== undefined ? data.phone : existing.phone;
+      const efectivoWa = data.whatsappUserId !== undefined ? data.whatsappUserId : existing.whatsappUserId;
+      if (!efectivoPhone && !efectivoWa) {
+        return NextResponse.json(
+          { error: "Captura un teléfono o un Usuario de WhatsApp" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Si se cambia el teléfono, verificar duplicado
     if (data.phone && data.phone !== existing.phone) {
       const duplicate = await prisma.contact.findFirst({
@@ -409,12 +483,29 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Si se cambia el Usuario de WhatsApp, verificar duplicado (columna @unique)
+    if (data.whatsappUserId && data.whatsappUserId !== existing.whatsappUserId) {
+      const duplicateWa = await prisma.contact.findFirst({
+        where: { whatsappUserId: data.whatsappUserId, deletedAt: null, id: { not: id } },
+      });
+      if (duplicateWa) {
+        return NextResponse.json(
+          { error: "Ya existe un contacto con este Usuario de WhatsApp" },
+          { status: 409 }
+        );
+      }
+    }
+
     // Construir objeto de actualización
     const updateData: Prisma.ContactUpdateInput = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
     if (data.lastName !== undefined) updateData.lastName = data.lastName;
     if (data.email !== undefined) updateData.email = data.email || null;
     if (data.phone !== undefined) updateData.phone = data.phone;
+    // whatsappUserId es nullable (String? @unique) — a diferencia de phone, limpiarlo
+    // debe guardar NULL, nunca "": dos filas con whatsappUserId: "" sí chocarían contra
+    // el índice único (NULL es la única excepción que Postgres no cuenta como duplicado).
+    if (data.whatsappUserId !== undefined) updateData.whatsappUserId = data.whatsappUserId || null;
     if (data.secondaryPhone !== undefined) updateData.secondaryPhone = data.secondaryPhone || null;
     if (data.contactType !== undefined) updateData.contactType = data.contactType;
     if (data.contactStatus !== undefined) updateData.contactStatus = data.contactStatus;

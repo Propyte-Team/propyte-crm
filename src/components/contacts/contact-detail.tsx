@@ -238,6 +238,11 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
   }
 
   const openWhatsApp = () => {
+    // #830: wa.me es un esquema de enlace que solo entiende números — no tiene
+    // equivalente por Usuario de WhatsApp (BSUID), así que sin teléfono no hay a
+    // dónde abrir. El botón se deshabilita más abajo para este caso; esto es el
+    // respaldo si de todos modos se llegara a invocar.
+    if (!contact.phone) return;
     const cleanPhone = contact.phone.replace(/[\s\-()]/g, "");
     window.open(`https://wa.me/${cleanPhone}`, "_blank");
   };
@@ -325,7 +330,12 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn-secondary text-[13px]" onClick={openWhatsApp}>
+          <button
+            className="btn-secondary text-[13px]"
+            onClick={openWhatsApp}
+            disabled={!contact.phone}
+            title={!contact.phone ? "Sin teléfono — escríbele desde el Inbox con su Usuario de WhatsApp" : undefined}
+          >
             <MessageCircle className="h-4 w-4" /> WhatsApp
           </button>
           <button className="btn-secondary text-[13px]" onClick={() => setActiveCall(true)} disabled={activeCall}>
@@ -366,6 +376,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             {gText("lastName", "Apellido")}
             {gText("phone", "Teléfono")}
             {gText("secondaryPhone", "Teléfono 2")}
+            {gText("whatsappUserId", "Usuario de WhatsApp")}
             {gText("email", "Email", { type: "email" })}
             {gSelect("preferredLanguage", "Idioma", [
               { value: "ES", label: "Español" },

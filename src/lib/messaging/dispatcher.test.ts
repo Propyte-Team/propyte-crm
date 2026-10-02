@@ -65,6 +65,46 @@ describe("sendChannelMessage", () => {
     );
   });
 
+  // #830: antes de esto, el guard de arriba exigía teléfono SIEMPRE y reventaba
+  // aquí mismo — antes de llegar a sendWhatsAppMessage, que #829 ya resuelve por
+  // Usuario de WhatsApp (BSUID) cuando `to` llega vacío. Sin este cambio, un
+  // contacto solo-WhatsApp quedaba guardado pero incontactable desde el Inbox/bot,
+  // que son justo los dos caminos que pasan por sendChannelMessage.
+  describe("WHATSAPP — contacto sin teléfono, solo Usuario de WhatsApp (#830)", () => {
+    it("con whatsappUserId pero sin teléfono: NO revienta, delega en sendWhatsAppMessage con phone tal cual (vacío)", async () => {
+      contactFindUnique.mockResolvedValue({
+        id: "c1", phone: "", whatsappUserId: "MX.sin-telefono", instagramId: null, messengerPsid: null,
+      });
+      sendWhatsAppMessage.mockResolvedValue({ id: "wa-msg" });
+      await sendChannelMessage("WHATSAPP", "c1", "hola", "u1");
+      // El BSUID lo resuelve sendWhatsAppMessage internamente (#829) — aquí solo
+      // importa que el guard no bloqueó el envío.
+      expect(sendWhatsAppMessage).toHaveBeenCalledWith(
+        "", "hola", "c1", "u1", null, undefined, { autoriaBot: false },
+      );
+    });
+
+    it("sin teléfono y sin whatsappUserId: falla claro, nunca llega a intentar el envío", async () => {
+      contactFindUnique.mockResolvedValue({
+        id: "c1", phone: "", whatsappUserId: null, instagramId: null, messengerPsid: null,
+      });
+      await expect(sendChannelMessage("WHATSAPP", "c1", "hola", "u1")).rejects.toThrow(
+        /Contacto sin teléfono ni Usuario de WhatsApp/,
+      );
+      expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+    });
+
+    it("select de Prisma pide whatsappUserId además de phone (si no, el fallback nunca se entera de que existe)", async () => {
+      contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: null, messengerPsid: null });
+      sendWhatsAppMessage.mockResolvedValue({ id: "wa-msg" });
+      await sendChannelMessage("WHATSAPP", "c1", "hola", "u1");
+      expect(contactFindUnique).toHaveBeenCalledWith({
+        where: { id: "c1" },
+        select: { phone: true, whatsappUserId: true },
+      });
+    });
+  });
+
   it("INSTAGRAM envía por adapter con el IGSID del contacto y guarda Message OUTBOUND", async () => {
     contactFindUnique.mockResolvedValue({ id: "c1", phone: "+521999", instagramId: "IGSID-1", messengerPsid: null });
     connectorFindUnique.mockResolvedValue({ id: "conn1", status: "ACTIVE", credentials: "enc" });
