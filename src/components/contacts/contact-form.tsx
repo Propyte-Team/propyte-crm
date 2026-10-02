@@ -28,12 +28,30 @@ const phoneField = z
       .regex(/^\+?\d{10,15}$/, "Teléfono inválido: usa 10 a 15 dígitos (ej. +52 984 123 4567)")
   );
 
-const contactFormSchema = z.object({
-  firstName: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(100),
-  lastName: z.string().min(2, "El apellido debe tener al menos 2 caracteres").max(100),
-  email: z.string().email("Email inválido").optional().or(z.literal("")),
-  phone: phoneField,
-  secondaryPhone: phoneField.optional().or(z.literal("")),
+// #830: el teléfono deja de ser el único identificador posible para contactar por
+// WhatsApp — si se da un Usuario de WhatsApp (whatsappUserId / BSUID), el teléfono
+// puede quedar vacío. Se exige al menos uno de los dos (refine más abajo). El
+// Usuario de WhatsApp no tiene un formato único — hoy es el BSUID que manda Meta
+// (p. ej. "MX.13491208655302741918"), así que solo se valida longitud y que no
+// traiga espacios, sin imponerle la forma exacta del BSUID.
+const whatsappUserIdField = z
+  .string()
+  .trim()
+  .min(3, "Usuario de WhatsApp inválido")
+  .max(50, "Usuario de WhatsApp inválido")
+  .regex(/^\S+$/, "No debe contener espacios");
+
+// Exportado solo para poder probar la validación sin montar el componente (el repo
+// no trae jsdom/Testing Library — ver route.test.ts del lado servidor para el mismo
+// criterio ya probado de punta a punta contra la API).
+export const contactFormSchema = z
+  .object({
+    firstName: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(100),
+    lastName: z.string().min(2, "El apellido debe tener al menos 2 caracteres").max(100),
+    email: z.string().email("Email inválido").optional().or(z.literal("")),
+    phone: phoneField.optional().or(z.literal("")),
+    secondaryPhone: phoneField.optional().or(z.literal("")),
+    whatsappUserId: whatsappUserIdField.optional().or(z.literal("")),
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
   contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
   leadSource: z.enum(LEAD_SOURCE_ORDER),
@@ -53,7 +71,11 @@ const contactFormSchema = z.object({
   assignedToId: z.string().uuid().optional().nullable(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
-});
+  })
+  .refine((data) => Boolean(data.phone) || Boolean(data.whatsappUserId), {
+    message: "Captura un teléfono o un Usuario de WhatsApp",
+    path: ["phone"],
+  });
 
 // --- Tipos del formulario ---
 type ContactFormData = z.infer<typeof contactFormSchema>;
@@ -156,6 +178,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
     email: initialData?.email || "",
     phone: initialData?.phone || "",
     secondaryPhone: initialData?.secondaryPhone || "",
+    whatsappUserId: initialData?.whatsappUserId || "",
     preferredLanguage: initialData?.preferredLanguage || "ES",
     contactType: initialData?.contactType || "COMPRADOR",
     leadSource: initialData?.leadSource || "OTRO",
@@ -225,7 +248,9 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
       tags,
       // Convertir cadenas vacías a undefined para campos opcionales
       email: formData.email || undefined,
+      phone: formData.phone || undefined,
       secondaryPhone: formData.secondaryPhone || undefined,
+      whatsappUserId: formData.whatsappUserId || undefined,
       leadSourceDetail: formData.leadSourceDetail || undefined,
       residenceCity: formData.residenceCity || undefined,
       residenceCountry: formData.residenceCountry || undefined,
@@ -330,7 +355,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="phone">Teléfono *</Label>
+            <Label htmlFor="phone">Teléfono</Label>
             <Input
               id="phone"
               value={formData.phone || ""}
@@ -349,6 +374,23 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
               onChange={(e) => updateField("secondaryPhone", e.target.value)}
               placeholder="+52 984 765 4321"
             />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="whatsappUserId">Usuario de WhatsApp</Label>
+            <Input
+              id="whatsappUserId"
+              value={formData.whatsappUserId || ""}
+              onChange={(e) => updateField("whatsappUserId", e.target.value)}
+              placeholder="Ej. MX.13491208655302741918"
+            />
+            <p className="text-xs text-muted-foreground">
+              Captura un Teléfono o un Usuario de WhatsApp — con al menos uno de los dos basta.
+              El Usuario de WhatsApp normalmente se completa solo cuando el contacto escribe por
+              primera vez; captúralo a mano solo si ya lo conoces (por ejemplo, de otro contacto).
+            </p>
+            {errors.whatsappUserId && (
+              <p className="text-xs text-destructive">{errors.whatsappUserId}</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="preferredLanguage">Idioma preferido</Label>

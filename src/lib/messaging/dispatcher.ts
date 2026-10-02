@@ -34,8 +34,18 @@ export async function sendChannelMessage(
   }
 
   if (channel === "WHATSAPP") {
-    const c = await prisma.contact.findUnique({ where: { id: contactId }, select: { phone: true } });
-    if (!c?.phone) throw new Error("Contacto sin teléfono");
+    // #830: antes este guard exigía teléfono SIEMPRE y reventaba aquí mismo, antes de
+    // llegar a `sendWhatsAppMessage` — que #829 ya dejó listo para mandar por
+    // whatsappUserId (BSUID) cuando no hay teléfono. Sin este cambio, un contacto
+    // solo-WhatsApp (habilitado por #830) quedaba guardado pero INCONTACTABLE desde el
+    // Inbox y el bot, que son justo los dos caminos que pasan por aquí. `c.phone` sigue
+    // pasando tal cual (puede ser "") — `sendWhatsAppMessage` ya resuelve el BSUID del
+    // contacto internamente cuando `to` llega vacío.
+    const c = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { phone: true, whatsappUserId: true },
+    });
+    if (!c?.phone && !c?.whatsappUserId) throw new Error("Contacto sin teléfono ni Usuario de WhatsApp");
     const { sendWhatsAppMessage } = await import("@/lib/twilio/whatsapp");
     // #687: la misma ventana de crear-y-corregir que tenía lib/agents/tools.ts estaba aquí
     // para WhatsApp, mientras el camino de Instagram/Messenger de más abajo (:100-102) ya

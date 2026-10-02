@@ -18,6 +18,7 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     { key: "lastName", label: "Apellido", group: "Datos" },
     { key: "phone", label: "Teléfono", group: "Datos" },
     { key: "secondaryPhone", label: "Teléfono 2", group: "Datos" },
+    { key: "whatsappUserId", label: "Usuario de WhatsApp", group: "Datos" },
     { key: "email", label: "Email", group: "Datos" },
     { key: "preferredLanguage", label: "Idioma", group: "Datos" },
     { key: "residenceCity", label: "Ciudad", group: "Ubicación" },
