@@ -1088,3 +1088,92 @@ describe("handleInboundMessage — el inbound del lead NO cumple el SLA (#702)",
     expect(meetSlaTimers).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Desempate BSUID vs teléfono.
+//
+// #827 dejó la búsqueda como un solo `findFirst` con `OR: [teléfono, BSUID]`. Eso
+// resuelve el caso normal, pero cuando los dos identificadores apuntan a contactos
+// DISTINTOS —un duplicado que ya existía— `findFirst` sin `orderBy` devuelve una
+// fila ARBITRARIA: el mismo remitente puede caer hoy en un contacto y mañana en el
+// otro, y el hilo del cliente queda partido sin que nadie se entere.
+//
+// Decisión de Luis (2026-10-01): **gana el BSUID**. Meta lo garantiza estable por
+// persona; un teléfono se recicla y puede acabar en manos de otra. Y NUNCA se
+// fusiona solo: la fusión es decisión humana en /duplicados (regla de oro de
+// lib/contacts/duplicate-alert.ts).
+// ---------------------------------------------------------------------------
+describe("handleInboundMessage — desempate BSUID vs teléfono (WhatsApp)", () => {
+  const BSUID = "MX.13491208655302741918";
+  const TEL = "+5219981234567";
+  const wa = {
+    channel: "WHATSAPP" as const,
+    senderId: TEL,
+    externalMessageId: "wamid-desempate",
+    text: "hola",
+    whatsappUserId: BSUID,
+  };
+
+  function contacto(id: string, whatsappUserId: string | null) {
+    return { id, assignedToId: "u1", firstName: "A", lastName: "B", custom: {}, phone: TEL, whatsappUserId };
+  }
+
+  it("🚨 con dos contactos candidatos, gana el del BSUID", async () => {
+    // El del teléfono va PRIMERO en la lista a propósito: si el código se quedara
+    // con el primero que devuelve la base, este test lo caza.
+    contactFindFirst.mockImplementation(async ({ where }) =>
+      where.whatsappUserId ? contacto("c-bsuid", BSUID) : contacto("c-telefono", null),
+    );
+
+    await handleInboundMessage(wa);
+
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ contactId: "c-bsuid" }) }),
+    );
+  });
+
+  it("🚨 avisa del conflicto para que se revise a mano", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    contactFindFirst.mockImplementation(async ({ where }) =>
+      where.whatsappUserId ? contacto("c-bsuid", BSUID) : contacto("c-telefono", null),
+    );
+
+    await handleInboundMessage(wa);
+
+    const avisos = warn.mock.calls.flat().join(" ");
+    expect(avisos).toContain("c-telefono");
+    expect(avisos).toContain("c-bsuid");
+    warn.mockRestore();
+  });
+
+  it("🚨 NO fusiona nada: la fusión es decisión humana", async () => {
+    contactFindFirst.mockImplementation(async ({ where }) =>
+      where.whatsappUserId ? contacto("c-bsuid", BSUID) : contacto("c-telefono", null),
+    );
+
+    await handleInboundMessage(wa);
+
+    for (const [arg] of [...contactUpdate.mock.calls, ...contactTxUpdate.mock.calls]) {
+      expect((arg as { data: Record<string, unknown> }).data).not.toHaveProperty("mergedIntoId");
+    }
+  });
+
+  it("con un solo candidato se comporta igual que antes", async () => {
+    contactFindFirst.mockResolvedValue(contacto("c-unico", null));
+
+    await handleInboundMessage(wa);
+
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ contactId: "c-unico" }) }),
+    );
+  });
+
+  it("sin candidatos sigue el camino de alta (no inventa contacto)", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c-nuevo", isNew: true, assignedToId: "u1" });
+
+    await handleInboundMessage(wa);
+
+    expect(captureLead).toHaveBeenCalled();
+  });
+});
