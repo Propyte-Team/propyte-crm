@@ -1,0 +1,544 @@
+From 1f9993a02a3c3b300b473999c7a8852e56a004d4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 8 Oct 2026 13:15:31 -0500
+Subject: [PATCH] =?UTF-8?q?fix(#844):=20dos=20mensajes=20simult=C3=A1neos?=
+ =?UTF-8?q?=20de=20una=20persona=20nueva=20ya=20no=20crean=20dos=20contact?=
+ =?UTF-8?q?os?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Caso real (3-oct-2026, WhatsApp): una persona nueva mandó dos mensajes con 70 ms de
+diferencia. Son dos peticiones de webhook distintas; las dos corrieron "¿ya existe
+este contacto?" antes de que la otra lo creara, las dos contestaron "no" y las dos
+hicieron contact.create (6 ms de diferencia): dos fichas, dos conversaciones, un bot
+en cada una (una en BOT, la otra escalada a HUMAN). Contact.phone no tiene restricción
+única (duplicados históricos, teléfonos vacíos de contactos solo-correo), así que la
+base no lo frenaba.
+
+- intake-lock.ts (nuevo): withIntakeLock(llave, fn) toma un advisory lock de Postgres
+  a nivel de TRANSACCIÓN (pg_advisory_xact_lock(hashtextextended(...))) y entrega a fn
+  el cliente de esa transacción. La petición que llega segunda espera a que termine la
+  primera y, al buscar, ya ve el contacto creado. Se suelta solo al terminar la
+  transacción (también si hay error), y sirve con el pooler de Supabase en modo
+  transacción (el candado de sesión no). Con llave nula corre directo. Acotado con
+  maxWait 5 s / timeout 15 s. La sintaxis se verificó contra la base real (PG 17).
+- capture-lead.ts: la búsqueda de duplicado y el alta (incluida la consulta de plaza por
+  conector) corren dentro del candado, TODAS por la conexión de la transacción (usar el
+  prisma global ahí ocuparía dos conexiones por alta y se atoraría con un pool chico).
+  Todo lo demás (nota de lead repetido, atribución, eventos, ruteo, SLA) queda igual y
+  corre después, ya con el candado soltado. Llave: teléfono, o psid de Messenger,
+  instagramId o correo (el primero que exista).
+- No fusiona los duplicados que ya existen: eso sigue siendo decisión humana desde
+  /duplicados.
+
+Pruebas: capture-lead.carrera.test.ts reproduce la carrera (sin candado: 2 altas, el
+defecto original; con candado: 1 alta y el segundo mensaje reutiliza el contacto;
+teléfonos distintos no se esperan) e intake-lock.test.ts (6). Los otros 5 archivos
+capture-lead.*.test.ts solo reciben un mock que deja pasar el candado.
+Se comparó la suite completa contra main: cero fallas nuevas (las 17 que quedan son las
+del Prisma incompleto del sandbox y también están en main).
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FxhtFBCQE7TkZB799a6uH3
+---
+ .../intake/capture-lead.attribution.test.ts   |   9 ++
+ src/lib/intake/capture-lead.carrera.test.ts   |  98 ++++++++++++++++
+ .../intake/capture-lead.contacttype.test.ts   |   9 ++
+ .../intake/capture-lead.nota-repetido.test.ts |   9 ++
+ .../intake/capture-lead.provisional.test.ts   |   9 ++
+ src/lib/intake/capture-lead.social.test.ts    |   9 ++
+ src/lib/intake/capture-lead.ts                | 108 ++++++++++--------
+ src/lib/intake/intake-lock.test.ts            |  66 +++++++++++
+ src/lib/intake/intake-lock.ts                 |  68 +++++++++++
+ 9 files changed, 339 insertions(+), 46 deletions(-)
+ create mode 100644 src/lib/intake/capture-lead.carrera.test.ts
+ create mode 100644 src/lib/intake/intake-lock.test.ts
+ create mode 100644 src/lib/intake/intake-lock.ts
+
+diff --git a/src/lib/intake/capture-lead.attribution.test.ts b/src/lib/intake/capture-lead.attribution.test.ts
+index e12bcb31..dadcf7fe 100644
+--- a/src/lib/intake/capture-lead.attribution.test.ts
++++ b/src/lib/intake/capture-lead.attribution.test.ts
+@@ -27,6 +27,15 @@ vi.mock("@/lib/db", () => ({
+ vi.mock("@/lib/workflows/routing", () => ({ autoRouteLead: vi.fn(async () => "u1") }));
+ vi.mock("@/lib/workflows/events", () => ({ emitEvent: vi.fn() }));
+ 
++// #844: captureLead serializa búsqueda + alta con un advisory lock de Postgres
++// (intake-lock.ts). Aquí no hay Postgres: el candado pasa de largo y entrega el mismo
++// db simulado como "transacción". La carrera real se prueba en capture-lead.carrera.test.ts.
++vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
++  const { default: db } = await import("@/lib/db");
++  return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
++});
++
+ import { captureLead } from "./capture-lead";
+ 
+ beforeEach(() => {
+diff --git a/src/lib/intake/capture-lead.carrera.test.ts b/src/lib/intake/capture-lead.carrera.test.ts
+new file mode 100644
+index 00000000..5fc5acc2
+--- /dev/null
++++ b/src/lib/intake/capture-lead.carrera.test.ts
+@@ -0,0 +1,98 @@
++import { describe, it, expect, vi, beforeEach } from "vitest";
++
++// #844 — dos mensajes casi simultáneos de una persona NUEVA por WhatsApp creaban dos
++// contactos. Caso real 2026-10-03: contactos creados con 6 ms de diferencia, mismo teléfono.
++//
++// Aquí se simula una base con latencia real entre "buscar" y "crear" (un await entre
++// cada operación, como en Postgres) para que las dos peticiones se entrelacen.
++
++type Row = { id: string; phone: string; assignedToId: string | null };
++
++// vi.hoisted: los vi.mock se elevan al inicio del archivo, así que lo que usan sus
++// fábricas tiene que declararse igual de arriba.
++const { rows, state, db } = vi.hoisted(() => {
++  const rows: Array<{ id: string; phone: string; assignedToId: string | null }> = [];
++  const state = { creates: 0 };
++  const db = {
++    leadConnector: { findUnique: async () => null },
++    contact: {
++      findFirst: async ({ where }: { where: { OR: Array<{ phone?: string }> } }) => {
++        await new Promise((r) => setTimeout(r, 5)); // latencia de la consulta
++        const phones = where.OR.map((c) => c.phone).filter(Boolean);
++        return rows.find((r) => phones.includes(r.phone)) ?? null;
++      },
++      create: async ({ data }: { data: { phone: string } }) => {
++        await new Promise((r) => setTimeout(r, 5));
++        state.creates++;
++        const row = { id: `c-${state.creates}`, phone: data.phone, assignedToId: null };
++        rows.push(row);
++        return row;
++      },
++      update: async () => ({}),
++    },
++    activity: { create: async () => ({}) },
++    user: { findFirst: async () => ({ id: "u-admin" }) },
++    adAttribution: { findUnique: async () => null, create: async () => ({}) },
++  };
++  return { rows, state, db };
++});
++vi.mock("@/lib/db", () => ({ default: db }));
++vi.mock("@/lib/workflows/routing", () => ({ autoRouteLead: vi.fn(async () => null) }));
++vi.mock("@/lib/workflows/events", () => ({ emitEvent: vi.fn() }));
++vi.mock("@/lib/capi/events", () => ({ recordConversionEvent: vi.fn() }));
++
++// El candado de prueba: exclusión mutua por llave, igual que pg_advisory_xact_lock —
++// quien llega segundo espera a que el primero termine por completo.
++const lock = vi.hoisted(() => ({ on: true, colas: new Map<string, Promise<unknown>>() }));
++vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
++  return {
++    ...actual,
++    withIntakeLock: async (key: string | null, fn: (d: unknown) => Promise<unknown>) => {
++      if (!lock.on || !key) return fn(db);
++      const previa = lock.colas.get(key) ?? Promise.resolve();
++      const mia = previa.then(() => fn(db));
++      lock.colas.set(key, mia.catch(() => undefined));
++      return mia;
++    },
++  };
++});
++
++import { captureLead } from "./capture-lead";
++
++const mensaje = (texto: string) =>
++  captureLead({ source: "WHATSAPP", firstName: "Tisiano", lastName: "(por identificar)", phone: "+529841364211", message: texto });
++
++beforeEach(() => {
++  rows.length = 0;
++  state.creates = 0;
++  lock.colas.clear();
++  lock.on = true;
++});
++
++describe("captureLead — carrera entre dos mensajes simultáneos de la misma persona (#844)", () => {
++  it("SIN el candado la carrera se reproduce: dos altas del mismo teléfono (el defecto original)", async () => {
++    lock.on = false;
++    const [a, b] = await Promise.all([mensaje("Hola! Buenos días"), mensaje("Mi nombre es Tisiano")]);
++
++    expect(state.creates).toBe(2);
++    expect(a.contactId).not.toBe(b.contactId);
++  });
++
++  it("CON el candado: una sola alta; el segundo mensaje reutiliza el contacto del primero", async () => {
++    const [a, b] = await Promise.all([mensaje("Hola! Buenos días"), mensaje("Mi nombre es Tisiano")]);
++
++    expect(state.creates).toBe(1);
++    expect(a.contactId).toBe(b.contactId);
++    // exactamente uno de los dos fue el alta; el otro es "lead repetido"
++    expect([a.isNew, b.isNew].filter(Boolean)).toHaveLength(1);
++  });
++
++  it("teléfonos DISTINTOS no se esperan entre sí: cada uno crea su contacto", async () => {
++    const otro = captureLead({ source: "WHATSAPP", firstName: "Ana", lastName: "X", phone: "+529981112233", message: "hola" });
++    const [a, b] = await Promise.all([mensaje("hola"), otro]);
++
++    expect(state.creates).toBe(2);
++    expect(a.contactId).not.toBe(b.contactId);
++  });
++});
+diff --git a/src/lib/intake/capture-lead.contacttype.test.ts b/src/lib/intake/capture-lead.contacttype.test.ts
+index 14cb082e..f253c58a 100644
+--- a/src/lib/intake/capture-lead.contacttype.test.ts
++++ b/src/lib/intake/capture-lead.contacttype.test.ts
+@@ -16,6 +16,15 @@ vi.mock("@/lib/db", () => ({
+ vi.mock("@/lib/workflows/routing", () => ({ autoRouteLead: vi.fn(async () => ({ assignedToId: "u1" })) }));
+ vi.mock("@/lib/workflows/events", () => ({ emitEvent: vi.fn() }));
+ 
++// #844: captureLead serializa búsqueda + alta con un advisory lock de Postgres
++// (intake-lock.ts). Aquí no hay Postgres: el candado pasa de largo y entrega el mismo
++// db simulado como "transacción". La carrera real se prueba en capture-lead.carrera.test.ts.
++vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
++  const { default: db } = await import("@/lib/db");
++  return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
++});
++
+ import { captureLead } from "./capture-lead";
+ 
+ beforeEach(() => { findFirst.mockReset(); create.mockReset(); });
+diff --git a/src/lib/intake/capture-lead.nota-repetido.test.ts b/src/lib/intake/capture-lead.nota-repetido.test.ts
+index 067bd63b..1ac42f32 100644
+--- a/src/lib/intake/capture-lead.nota-repetido.test.ts
++++ b/src/lib/intake/capture-lead.nota-repetido.test.ts
+@@ -19,6 +19,15 @@ vi.mock("@/lib/db", () => ({
+ vi.mock("@/lib/workflows/routing", () => ({ autoRouteLead: vi.fn(async () => "u1") }));
+ vi.mock("@/lib/workflows/events", () => ({ emitEvent: vi.fn() }));
+ 
++// #844: captureLead serializa búsqueda + alta con un advisory lock de Postgres
++// (intake-lock.ts). Aquí no hay Postgres: el candado pasa de largo y entrega el mismo
++// db simulado como "transacción". La carrera real se prueba en capture-lead.carrera.test.ts.
++vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
++  const { default: db } = await import("@/lib/db");
++  return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
++});
++
+ import { captureLead } from "./capture-lead";
+ 
+ /**
+diff --git a/src/lib/intake/capture-lead.provisional.test.ts b/src/lib/intake/capture-lead.provisional.test.ts
+index fa588f46..c142babb 100644
+--- a/src/lib/intake/capture-lead.provisional.test.ts
++++ b/src/lib/intake/capture-lead.provisional.test.ts
+@@ -35,6 +35,15 @@ vi.mock("@/lib/capi/events", () => ({
+   recordConversionEvent: (...a: unknown[]) => recordConversionEvent(...a),
+ }));
+ 
++// #844: captureLead serializa búsqueda + alta con un advisory lock de Postgres
++// (intake-lock.ts). Aquí no hay Postgres: el candado pasa de largo y entrega el mismo
++// db simulado como "transacción". La carrera real se prueba en capture-lead.carrera.test.ts.
++vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
++  const { default: db } = await import("@/lib/db");
++  return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
++});
++
+ import { captureLead } from "./capture-lead";
+ 
+ /** Tipos de evento emitidos, en orden. */
+diff --git a/src/lib/intake/capture-lead.social.test.ts b/src/lib/intake/capture-lead.social.test.ts
+index e55794c9..698577fa 100644
+--- a/src/lib/intake/capture-lead.social.test.ts
++++ b/src/lib/intake/capture-lead.social.test.ts
+@@ -16,6 +16,15 @@ vi.mock("@/lib/db", () => ({
+ vi.mock("@/lib/workflows/routing", () => ({ autoRouteLead: vi.fn(async () => ({ assignedToId: "u1" })) }));
+ vi.mock("@/lib/workflows/events", () => ({ emitEvent: vi.fn() }));
+ 
++// #844: captureLead serializa búsqueda + alta con un advisory lock de Postgres
++// (intake-lock.ts). Aquí no hay Postgres: el candado pasa de largo y entrega el mismo
++// db simulado como "transacción". La carrera real se prueba en capture-lead.carrera.test.ts.
++vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
++  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
++  const { default: db } = await import("@/lib/db");
++  return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
++});
++
+ import { captureLead } from "./capture-lead";
+ 
+ beforeEach(() => { findFirst.mockReset(); create.mockReset(); });
+diff --git a/src/lib/intake/capture-lead.ts b/src/lib/intake/capture-lead.ts
+index f533fa05..e4fc0f4d 100644
+--- a/src/lib/intake/capture-lead.ts
++++ b/src/lib/intake/capture-lead.ts
+@@ -6,6 +6,7 @@ import prisma from "@/lib/db";
+ import { incomingLeadSchema, type IncomingLead } from "@/lib/validations/rebuild-f1";
+ import { normalizePhoneE164 } from "@/lib/phone";
+ import { resolveTargetPlaza } from "@/lib/intake/campaign-plaza";
++import { withIntakeLock, intakeLockKey } from "@/lib/intake/intake-lock";
+ 
+ export interface CaptureResult {
+   contactId: string | null;
+@@ -98,11 +99,65 @@ export async function captureLead(
+   if (instagramId) dedupOr.push({ instagramId });
+   if (messengerPsid) dedupOr.push({ messengerPsid });
+ 
+-  const existing = dedupOr.length
+-    ? await prisma.contact.findFirst({
+-        where: { OR: dedupOr as never, deletedAt: null, mergedIntoId: null },
+-      })
+-    : null;
++  // #844: búsqueda + alta bajo un mismo candado por identificador. Sin esto, dos mensajes
++  // casi simultáneos de una persona nueva corrían la búsqueda antes de que la otra
++  // petición creara el contacto, y los dos creaban el suyo (ver intake-lock.ts). Todo lo
++  // que lleva `db.` va por la conexión de la transacción que tiene el candado.
++  const outcome = await withIntakeLock(
++    intakeLockKey({ phone, messengerPsid, instagramId, email: lead.email }),
++    async (db) => {
++      const found = dedupOr.length
++        ? await db.contact.findFirst({
++            where: { OR: dedupOr as never, deletedAt: null, mergedIntoId: null },
++          })
++        : null;
++      if (found) return { existing: found, created: null };
++
++      // Plaza objetivo del lead (reparto por plaza): de la campaña/anuncio o del conector.
++      let connectorName: string | null = null;
++      if (opts.connectorId) {
++        connectorName =
++          (await db.leadConnector.findUnique({ where: { id: opts.connectorId }, select: { name: true } }))?.name ?? null;
++      }
++      const targetPlaza = resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
++
++      // --- Contacto nuevo ---
++      const created = await db.contact.create({
++        data: {
++          firstName: lead.firstName,
++          lastName: lead.lastName,
++          phone: phone ?? "", // schema actual exige phone; email-only guarda vacío normalizable después
++          email: lead.email ?? null,
++          leadSource: lead.source,
++          leadSourceDetail: lead.sourceDetail ?? null,
++          preferredLanguage: lead.language ?? "ES",
++          contactType: lead.contactType ?? "COMPRADOR",
++          contactStatus: "NUEVO",
++          lifecycleStage: "LEAD",
++          targetPlaza,
++          lastActivityAt: new Date(),
++          tags: [],
++          instagramId: instagramId ?? null,
++          messengerPsid: messengerPsid ?? null,
++          ...(lead.temperature ? { temperature: lead.temperature } : {}),
++          // Perfil de Inversión derivado del formulario (normalizado a enums del CRM)
++          investmentProfile: lead.investmentProfile ?? null,
++          propertyType: lead.propertyType ?? null,
++          purchaseTimeline: lead.purchaseTimeline ?? null,
++          budgetMin: lead.budgetMin ?? null,
++          budgetMax: lead.budgetMax ?? null,
++          paymentMethod: lead.paymentMethod ?? null,
++          purchaseModality: lead.purchaseModality ?? null,
++          rentalStrategy: lead.rentalStrategy ?? null,
++          preferredZone: lead.preferredZone ?? null,
++          // Todos los campos crudos del formulario (no se pierde nada de info)
++          ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
++        },
++      });
++      return { existing: null, created };
++    },
++  );
++  const existing = outcome.existing;
+ 
+   if (existing) {
+     // Lead repetido: NO crear; registrar el toque y refrescar actividad.
+@@ -166,47 +221,8 @@ export async function captureLead(
+     return { contactId: existing.id, isNew: false, assignedToId: existing.assignedToId };
+   }
+ 
+-  // Plaza objetivo del lead (reparto por plaza): de la campaña/anuncio o del conector.
+-  let connectorName: string | null = null;
+-  if (opts.connectorId) {
+-    connectorName =
+-      (await prisma.leadConnector.findUnique({ where: { id: opts.connectorId }, select: { name: true } }))?.name ?? null;
+-  }
+-  const targetPlaza = resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
+-
+-  // --- Contacto nuevo ---
+-  const contact = await prisma.contact.create({
+-    data: {
+-      firstName: lead.firstName,
+-      lastName: lead.lastName,
+-      phone: phone ?? "", // schema actual exige phone; email-only guarda vacío normalizable después
+-      email: lead.email ?? null,
+-      leadSource: lead.source,
+-      leadSourceDetail: lead.sourceDetail ?? null,
+-      preferredLanguage: lead.language ?? "ES",
+-      contactType: lead.contactType ?? "COMPRADOR",
+-      contactStatus: "NUEVO",
+-      lifecycleStage: "LEAD",
+-      targetPlaza,
+-      lastActivityAt: new Date(),
+-      tags: [],
+-      instagramId: instagramId ?? null,
+-      messengerPsid: messengerPsid ?? null,
+-      ...(lead.temperature ? { temperature: lead.temperature } : {}),
+-      // Perfil de Inversión derivado del formulario (normalizado a enums del CRM)
+-      investmentProfile: lead.investmentProfile ?? null,
+-      propertyType: lead.propertyType ?? null,
+-      purchaseTimeline: lead.purchaseTimeline ?? null,
+-      budgetMin: lead.budgetMin ?? null,
+-      budgetMax: lead.budgetMax ?? null,
+-      paymentMethod: lead.paymentMethod ?? null,
+-      purchaseModality: lead.purchaseModality ?? null,
+-      rentalStrategy: lead.rentalStrategy ?? null,
+-      preferredZone: lead.preferredZone ?? null,
+-      // Todos los campos crudos del formulario (no se pierde nada de info)
+-      ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
+-    },
+-  });
++  const contact = outcome.created;
++  if (!contact) throw new Error("captureLead: ni contacto existente ni alta (invariante)");
+ 
+   // Atribución publicitaria si viene en el payload (Anexo §B.4)
+   if (hasAttributionData(lead)) {
+diff --git a/src/lib/intake/intake-lock.test.ts b/src/lib/intake/intake-lock.test.ts
+new file mode 100644
+index 00000000..4190deda
+--- /dev/null
++++ b/src/lib/intake/intake-lock.test.ts
+@@ -0,0 +1,66 @@
++import { describe, it, expect, vi, beforeEach } from "vitest";
++
++const executeRaw = vi.fn();
++const transaction = vi.fn();
++vi.mock("@/lib/db", () => ({
++  default: {
++    $transaction: (...a: unknown[]) => transaction(...a),
++    marca: "prisma-global",
++  },
++}));
++
++import { withIntakeLock, intakeLockKey } from "./intake-lock";
++
++beforeEach(() => {
++  vi.resetAllMocks();
++  executeRaw.mockResolvedValue(1);
++  // transacción falsa: entrega un `tx` identificable y respeta el valor de retorno
++  transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
++    cb({ $executeRaw: executeRaw, marca: "tx" }),
++  );
++});
++
++describe("withIntakeLock", () => {
++  it("toma el advisory lock transaccional con el prefijo y entrega el cliente de la TRANSACCIÓN a fn", async () => {
++    const visto = vi.fn(async (db: { marca?: string }) => db.marca);
++
++    const r = await withIntakeLock("+529841364211", visto as never);
++
++    expect(r).toBe("tx"); // fn recibió el tx, no el prisma global (un pool chico se atoraría)
++    expect(executeRaw).toHaveBeenCalledTimes(1);
++    // template tag: [strings[], ...valores] — el valor lleva el prefijo del candado
++    expect(executeRaw.mock.calls[0].slice(1)).toEqual(["contact-intake:+529841364211"]);
++    expect(executeRaw.mock.calls[0][0].join("?")).toContain("pg_advisory_xact_lock(hashtextextended(");
++  });
++
++  it("acota la espera y la duración de la transacción", async () => {
++    await withIntakeLock("k", (async () => 1) as never);
++    expect(transaction.mock.calls[0][1]).toEqual({ maxWait: 5000, timeout: 15000 });
++  });
++
++  it("sin llave (nada con qué deduplicar) corre directo, sin transacción ni candado", async () => {
++    const visto = vi.fn(async (db: { marca?: string }) => db.marca);
++
++    const r = await withIntakeLock(null, visto as never);
++
++    expect(r).toBe("prisma-global");
++    expect(transaction).not.toHaveBeenCalled();
++  });
++
++  it("si fn falla, el error se propaga (el candado lo suelta la transacción al abortar)", async () => {
++    await expect(withIntakeLock("k", (async () => { throw new Error("boom"); }) as never)).rejects.toThrow("boom");
++  });
++});
++
++describe("intakeLockKey", () => {
++  it("usa el primer identificador que exista: teléfono > psid > instagram > correo", () => {
++    expect(intakeLockKey({ phone: "+52", email: "a@b.c" })).toBe("+52");
++    expect(intakeLockKey({ messengerPsid: "ps", instagramId: "ig", email: "a@b.c" })).toBe("ps");
++    expect(intakeLockKey({ instagramId: "ig", email: "a@b.c" })).toBe("ig");
++    expect(intakeLockKey({ email: "a@b.c" })).toBe("a@b.c");
++  });
++  it("sin identificadores → null", () => {
++    expect(intakeLockKey({})).toBeNull();
++    expect(intakeLockKey({ phone: "", email: null })).toBeNull();
++  });
++});
+diff --git a/src/lib/intake/intake-lock.ts b/src/lib/intake/intake-lock.ts
+new file mode 100644
+index 00000000..abbeb383
+--- /dev/null
++++ b/src/lib/intake/intake-lock.ts
+@@ -0,0 +1,68 @@
++// Serializa el alta de un mismo contacto cuando llegan dos peticiones a la vez.
++//
++// El defecto (#844, caso real del 3-oct-2026): una persona nueva escribió dos mensajes
++// por WhatsApp con 70 ms de diferencia. Cada mensaje es una petición de webhook
++// distinta; las dos corrieron "¿ya existe este contacto?" antes de que la otra lo
++// creara, las dos contestaron "no" y las dos hicieron contact.create — 6 ms de
++// diferencia entre las dos altas. Resultado: dos fichas de la misma persona, cada una
++// con su conversación y su bot, una en BOT y la otra escalada a HUMAN.
++//
++// Contact.phone no tiene restricción única (hay duplicados históricos y teléfonos
++// vacíos de contactos que solo traen correo), así que la base no lo frena. Aquí se
++// frena de otra forma: la petición que llega segunda ESPERA a que termine la primera
++// y, al correr su búsqueda, ya ve el contacto creado.
++//
++// Cómo: un advisory lock de Postgres a nivel de TRANSACCIÓN (pg_advisory_xact_lock).
++// Se suelta solo al terminar la transacción —con éxito o con error—, así que no puede
++// quedar un candado huérfano, y funciona con el pooler de Supabase en modo
++// transacción (uno de sesión, pg_advisory_lock, NO: la sesión no es de quien lo pide).
++//
++// `fn` recibe el cliente de la transacción y TODO lo que deba quedar serializado
++// (la búsqueda y el alta) tiene que usarlo. No es un detalle estético: si `fn` usara el
++// `prisma` global mientras la transacción tiene el candado agarrado, cada alta
++// ocuparía dos conexiones a la vez, y con un pool chico (connection_limit=1 es común
++// con pgbouncer) la segunda conexión nunca llegaría: el candado esperaría a `fn` y `fn`
++// esperaría una conexión.
++import type { Prisma } from "@prisma/client";
++import prisma from "@/lib/db";
++
++/**
++ * Corre `fn` con un candado exclusivo sobre `key`. Con `key` nulo (nada con qué
++ * deduplicar) no hay nada que serializar: corre directo, sin transacción.
++ *
++ * El nombre del candado lleva prefijo para no chocar con otros usos de advisory locks
++ * en la misma base. Se usa `hashtextextended(…, 0)` (bigint): el `hashtext` de 32 bits
++ * da colisiones —inofensivas, solo serializan dos altas que no tenían por qué esperarse—
++ * mucho más seguido.
++ */
++export async function withIntakeLock<T>(
++  key: string | null,
++  fn: (db: Prisma.TransactionClient) => Promise<T>,
++): Promise<T> {
++  if (!key) return fn(prisma);
++  return prisma.$transaction(
++    async (tx) => {
++      await tx.$executeRaw`select pg_advisory_xact_lock(hashtextextended(${"contact-intake:" + key}, 0))`;
++      return fn(tx);
++    },
++    // maxWait: cuánto esperar por una conexión; timeout: cuánto puede durar todo.
++    // Una alta normal dura milisegundos; esto solo acota el peor caso para que una
++    // petición colgada no deje a las demás esperando para siempre.
++    { maxWait: 5_000, timeout: 15_000 },
++  );
++}
++
++/**
++ * Llave de serialización de un lead: el identificador con el que se deduplica. Una sola
++ * llave por lead (la primera que exista) — el caso real es el mismo teléfono llegando
++ * dos veces; serializar por CADA identificador a la vez exigiría ordenar candados para
++ * no provocar bloqueos mutuos, y no hace falta para este defecto.
++ */
++export function intakeLockKey(ids: {
++  phone?: string | null;
++  messengerPsid?: string | null;
++  instagramId?: string | null;
++  email?: string | null;
++}): string | null {
++  return ids.phone || ids.messengerPsid || ids.instagramId || ids.email || null;
++}
+-- 
+2.43.0
+
