@@ -9,7 +9,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, CheckSquare, Loader2, StickyNote, Trash2, User } from "lucide-react";
+import { CalendarClock, Check, CheckSquare, Loader2, Phone, StickyNote, Trash2, User } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import {
   BUCKET_ORDER,
@@ -20,8 +20,9 @@ import {
   type AgendaItem,
 } from "@/lib/agenda/grouping";
 import { PERIODO_LABEL, PERIODO_ORDER, matchPeriodo, type Periodo } from "@/lib/agenda/periodo";
-import type { AgendaNote, AgendaDoneItem } from "@/server/agenda";
+import type { AgendaNote, AgendaDoneItem, AgendaActivityRow } from "@/server/agenda";
 import { QuickCapture } from "./quick-capture";
+import { AgendaTable } from "./agenda-table";
 
 interface AgendaViewProps {
   buckets: AgendaBuckets;
@@ -30,6 +31,9 @@ interface AgendaViewProps {
   notes: AgendaNote[];
   doneTasks: AgendaDoneItem[];
   doneTotal: number;
+  /** Reuniones y llamadas pendientes (HUB #842), cada una en su tabla. */
+  meetings: AgendaActivityRow[];
+  calls: AgendaActivityRow[];
   firstName: string;
 }
 
@@ -105,6 +109,8 @@ export function AgendaView({
   notes,
   doneTasks,
   doneTotal,
+  meetings,
+  calls,
   firstName,
 }: AgendaViewProps) {
   const router = useRouter();
@@ -181,6 +187,16 @@ export function AgendaView({
     return out;
   }, [buckets, periodo, fechaKey, now]);
 
+  // Reuniones y llamadas respetan el mismo filtro de periodo que las tareas.
+  const filteredMeetings = React.useMemo(
+    () => meetings.filter((m) => matchPeriodo(m.dueDate, periodo, now, fechaKey || undefined)),
+    [meetings, periodo, fechaKey, now],
+  );
+  const filteredCalls = React.useMemo(
+    () => calls.filter((c) => matchPeriodo(c.dueDate, periodo, now, fechaKey || undefined)),
+    [calls, periodo, fechaKey, now],
+  );
+
   const nonEmpty = BUCKET_ORDER.filter((b) => filtered[b].length > 0);
   const filteredCount = BUCKET_ORDER.reduce((sum, b) => sum + filtered[b].length, 0);
 
@@ -226,6 +242,8 @@ export function AgendaView({
 
           <nav className="flex flex-col gap-0.5 pt-3">
             <IndexLink href="#agenda-tareas" icon={CheckSquare} label="Tareas" count={filteredCount} />
+            <IndexLink href="#agenda-reuniones" icon={CalendarClock} label="Reuniones" count={filteredMeetings.length} />
+            <IndexLink href="#agenda-llamadas" icon={Phone} label="Llamadas" count={filteredCalls.length} />
             <IndexLink href="#agenda-notas" icon={StickyNote} label="Notas" count={notes.length} />
             <IndexLink href="#tareas-hechas" icon={Check} label="Tareas hechas" count={doneTotal} />
           </nav>
@@ -291,6 +309,30 @@ export function AgendaView({
             ))
           )}
         </div>
+
+        {filteredMeetings.length > 0 && (
+          <AgendaTable
+            tabla="reuniones"
+            id="agenda-reuniones"
+            titulo="Reuniones"
+            icon={CalendarClock}
+            rows={filteredMeetings}
+            onDone={complete}
+            busyIds={busyIds}
+          />
+        )}
+
+        {filteredCalls.length > 0 && (
+          <AgendaTable
+            tabla="llamadas"
+            id="agenda-llamadas"
+            titulo="Llamadas"
+            icon={Phone}
+            rows={filteredCalls}
+            onDone={complete}
+            busyIds={busyIds}
+          />
+        )}
 
         {notes.length > 0 && (
           <section id="agenda-notas" className="crm-card !p-0 scroll-mt-4 overflow-hidden">
