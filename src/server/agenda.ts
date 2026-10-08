@@ -6,7 +6,7 @@
 // ============================================================
 
 import prisma from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ActivityType } from "@prisma/client";
 import { getServerSession } from "@/lib/auth/session";
 import { groupAgenda, type AgendaBuckets, type AgendaItem } from "@/lib/agenda/grouping";
 
@@ -81,6 +81,103 @@ export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
     total,
     truncated: items.length < total,
   };
+}
+
+// ------------------------------------------------------------
+// Reuniones y Llamadas pendientes (HUB #842): tablas con columnas configurables.
+// ------------------------------------------------------------
+
+const MEETING_TYPES: ActivityType[] = ["MEETING_VIRTUAL", "MEETING_PRESENTIAL", "MEETING_SHOWROOM"];
+const CALL_TYPES: ActivityType[] = ["CALL_OUTBOUND", "CALL_INBOUND"];
+
+/** Tope por tabla. Un asesor con más pendientes de reuniones/llamadas que esto es excepcional. */
+const TABLE_TAKE = 100;
+
+/** Fila común de las tablas de reuniones y llamadas. Fechas en ISO 8601. */
+export interface AgendaActivityRow {
+  id: string;
+  subject: string;
+  activityType: string;
+  status: string;
+  dueDate: string | null;
+  durationMinutes: number | null;
+  description: string | null;
+  outcome: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  /** "Relacionado con": desarrollo y etapa del negocio, si la actividad cuelga de uno. */
+  dealId: string | null;
+  dealLabel: string | null;
+  /** Dueño y creador de la actividad (en este modelo son la misma persona). */
+  userName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+async function getMyPendingActivities(types: ActivityType[]): Promise<AgendaActivityRow[]> {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const rows = await prisma.activity.findMany({
+    where: {
+      userId: session.user.id,
+      deletedAt: null,
+      activityType: { in: types },
+      status: { in: ["PENDIENTE", "VENCIDA"] },
+    },
+    select: {
+      id: true,
+      subject: true,
+      activityType: true,
+      status: true,
+      dueDate: true,
+      duration_minutes: true,
+      description: true,
+      outcome: true,
+      createdAt: true,
+      updatedAt: true,
+      contactId: true,
+      contact: { select: { firstName: true, lastName: true, phone: true } },
+      dealId: true,
+      deal: { select: { stage: true, development: { select: { name: true } } } },
+      user: { select: { name: true } },
+    },
+    // Los NULL van al final en Postgres con asc: lo con fecha primero, lo próximo arriba.
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    take: TABLE_TAKE,
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    activityType: r.activityType,
+    status: r.status,
+    dueDate: r.dueDate ? r.dueDate.toISOString() : null,
+    durationMinutes: r.duration_minutes,
+    description: r.description,
+    outcome: r.outcome,
+    contactId: r.contactId,
+    contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
+    contactPhone: r.contact?.phone ?? null,
+    dealId: r.dealId,
+    dealLabel: r.deal
+      ? [r.deal.development?.name, r.deal.stage].filter(Boolean).join(" · ")
+      : null,
+    userName: r.user?.name ?? null,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+}
+
+/** Reuniones (virtual, presencial, showroom) pendientes del asesor. Siempre con el userId de la sesión. */
+export function getMyPendingMeetings(): Promise<AgendaActivityRow[]> {
+  return getMyPendingActivities(MEETING_TYPES);
+}
+
+/** Llamadas (salientes y entrantes) pendientes del asesor. Siempre con el userId de la sesión. */
+export function getMyPendingCalls(): Promise<AgendaActivityRow[]> {
+  return getMyPendingActivities(CALL_TYPES);
 }
 
 /** Tope de tareas hechas visibles en el panel derecho. */

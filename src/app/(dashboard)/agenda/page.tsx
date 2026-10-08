@@ -1,7 +1,13 @@
 // Agenda personal del asesor (spec §6, Fase 2) — componente de servidor.
 import { getServerSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
-import { getMyAgenda, getMyRecentNotes, getMyDoneTasks } from "@/server/agenda";
+import {
+  getMyAgenda,
+  getMyRecentNotes,
+  getMyDoneTasks,
+  getMyPendingMeetings,
+  getMyPendingCalls,
+} from "@/server/agenda";
 import { AgendaView } from "@/components/agenda/agenda-view";
 
 export const dynamic = "force-dynamic";
@@ -10,10 +16,12 @@ export default async function AgendaPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  const [agenda, notes, done] = await Promise.all([
+  const [agenda, notes, done, meetings, calls] = await Promise.all([
     getMyAgenda(),
     getMyRecentNotes(),
     getMyDoneTasks(),
+    getMyPendingMeetings(),
+    getMyPendingCalls(),
   ]);
   const firstName = (session.user.name ?? "").split(" ")[0] || "asesor";
 
@@ -25,6 +33,8 @@ export default async function AgendaPage() {
       notes={notes}
       doneTasks={done.items}
       doneTotal={done.total}
+      meetings={meetings}
+      calls={calls}
       firstName={firstName}
     />
   );
