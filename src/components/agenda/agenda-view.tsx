@@ -310,29 +310,30 @@ export function AgendaView({
           )}
         </div>
 
-        {filteredMeetings.length > 0 && (
-          <AgendaTable
-            tabla="reuniones"
-            id="agenda-reuniones"
-            titulo="Reuniones"
-            icon={CalendarClock}
-            rows={filteredMeetings}
-            onDone={complete}
-            busyIds={busyIds}
-          />
-        )}
+        {/* Siempre visibles, aunque vacías: el atajo del índice debe llevar a algún lado
+            y "Columnas" se puede configurar antes de que haya filas. */}
+        <AgendaTable
+          tabla="reuniones"
+          id="agenda-reuniones"
+          titulo="Reuniones"
+          icon={CalendarClock}
+          rows={filteredMeetings}
+          vacio="No tienes reuniones pendientes."
+          onDone={complete}
+          busyIds={busyIds}
+        />
 
-        {filteredCalls.length > 0 && (
-          <AgendaTable
-            tabla="llamadas"
-            id="agenda-llamadas"
-            titulo="Llamadas"
-            icon={Phone}
-            rows={filteredCalls}
-            onDone={complete}
-            busyIds={busyIds}
-          />
-        )}
+        <AgendaTable
+          tabla="llamadas"
+          id="agenda-llamadas"
+          titulo="Llamadas"
+          icon={Phone}
+          rows={filteredCalls}
+          vacio="No tienes llamadas pendientes."
+          onDone={complete}
+          busyIds={busyIds}
+        />
+
 
         {notes.length > 0 && (
           <section id="agenda-notas" className="crm-card !p-0 scroll-mt-4 overflow-hidden">

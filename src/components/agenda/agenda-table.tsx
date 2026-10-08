@@ -22,6 +22,8 @@ interface AgendaTableProps {
   titulo: string;
   icon: React.ComponentType<{ className?: string }>;
   rows: AgendaActivityRow[];
+  /** Texto cuando no hay filas: la tabla (encabezados y "Columnas") se muestra igual. */
+  vacio: string;
   onDone: (id: string) => void;
   busyIds: Set<string>;
 }
@@ -236,7 +238,7 @@ function GestionarColumnas({
   );
 }
 
-export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, onDone, busyIds }: AgendaTableProps) {
+export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone, busyIds }: AgendaTableProps) {
   const defs = COLUMNAS[tabla];
   // Arranca con los valores por defecto (igual en servidor y cliente) y aplica la preferencia
   // guardada tras montar, para no provocar un mismatch de hidratación.
@@ -292,6 +294,16 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, onDone, busyI
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+            {rows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={columnas.length + 1}
+                  className="px-4 py-6 text-center text-[13px] text-[color:var(--text-tertiary)]"
+                >
+                  {vacio}
+                </td>
+              </tr>
+            )}
             {rows.map((row) => {
               const busy = busyIds.has(row.id);
               return (
