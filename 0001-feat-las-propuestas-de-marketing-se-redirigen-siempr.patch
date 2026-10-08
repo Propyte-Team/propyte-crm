@@ -1,0 +1,431 @@
+From f0e7a30e4b6777c6fbd0c5869290c2c10fbd92fd Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 8 Oct 2026 12:47:26 -0500
+Subject: [PATCH] feat: las propuestas de marketing se redirigen siempre a Luis
+ Flores
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Caso real (3-oct-2026, WhatsApp): alguien escribió para ofrecer servicios de
+marketing. No es comprador, así que el bot no tenía guion: le pidió una
+confirmación al cliente Y escaló en el mismo turno. La conversación quedó en HUMAN
+sin responsable (el contacto no tenía asesor), no salió la notificación "el bot te
+pasó una conversación" (escalateToHuman solo avisa si hay asesor) y la respuesta del
+cliente quedó sin contestar. Decisión de Luis (2026-10-08): marketing siempre a
+Luis Flores.
+
+- Prompt: nueva regla — quien viene a ofrecer marketing/publicidad/servicios/
+  alianzas, o pide hablar con marketing, recibe UN mensaje breve sin preguntas ni
+  promesas de tiempo, y el modelo cierra con el token [ESCALAR_MARKETING].
+- bot-respond: detecta el token nuevo, lo quita del mensaje (como [ESCALAR], nunca
+  llega al cliente) y escala con routeToUserId = responsable de marketing.
+  escalateToHuman acepta ese ruteo opcional: controla el hilo y recibe la
+  notificación esa persona, aunque el contacto ya tenga asesor. No reasigna el
+  contacto (eso sigue siendo decisión humana desde el inbox). [ESCALAR] normal no
+  cambia.
+- marketing-routing.ts: el responsable sale de system_config
+  `marketing_escalation_user_id` y, si no existe, del administrador propietario
+  (`admin_owner_user_id`, hoy Luis Flores); solo cuenta si está activo y no
+  eliminado. Sin ninguno válido, escala como antes (nunca se pierde el mensaje).
+  No hay ningún id fijo en el código.
+
+Pruebas: bot-respond.marketing.test.ts (resolvedor + token quitado + ruteo a Luis aunque
+haya asesor + [ESCALAR] normal intacto + sin responsable) y una en claude.test.ts.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FxhtFBCQE7TkZB799a6uH3
+---
+ src/lib/bot/bot-respond.marketing.test.ts | 206 ++++++++++++++++++++++
+ src/lib/bot/bot-respond.ts                |  26 ++-
+ src/lib/bot/claude.test.ts                |   8 +
+ src/lib/bot/claude.ts                     |   7 +
+ src/lib/bot/marketing-routing.ts          |  54 ++++++
+ 5 files changed, 297 insertions(+), 4 deletions(-)
+ create mode 100644 src/lib/bot/bot-respond.marketing.test.ts
+ create mode 100644 src/lib/bot/marketing-routing.ts
+
+diff --git a/src/lib/bot/bot-respond.marketing.test.ts b/src/lib/bot/bot-respond.marketing.test.ts
+new file mode 100644
+index 00000000..dcb3b671
+--- /dev/null
++++ b/src/lib/bot/bot-respond.marketing.test.ts
+@@ -0,0 +1,206 @@
++import { describe, it, expect, vi, beforeEach } from "vitest";
++
++// Propuestas de marketing → siempre a la persona responsable (hoy Luis Flores).
++// Scaffolding de mocks tomado de bot-respond.agents.test.ts; aquí NO se mockea
++// marketing-routing: se ejercita el resolvedor real contra un db falso.
++
++const sendChannelMessage = vi.fn();
++vi.mock("@/lib/messaging/dispatcher", () => ({
++  sendChannelMessage: (...a: unknown[]) => sendChannelMessage(...a),
++}));
++
++const contactFindUnique = vi.fn();
++const convFindFirst = vi.fn();
++const convFindUnique = vi.fn();
++const convUpdate = vi.fn();
++const msgFindMany = vi.fn();
++const userFindFirst = vi.fn();
++const configFindUnique = vi.fn();
++const notificationCreate = vi.fn();
++vi.mock("@/lib/db", () => ({
++  default: {
++    contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
++    conversation: {
++      findFirst: (...a: unknown[]) => convFindFirst(...a),
++      findUnique: (...a: unknown[]) => convFindUnique(...a),
++      update: (...a: unknown[]) => convUpdate(...a),
++    },
++    message: {
++      findMany: (...a: unknown[]) => msgFindMany(...a),
++      findFirst: vi.fn(async () => null), // guard anti-burst: sin mensajes nuevos
++    },
++    user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
++    systemConfig: { findUnique: (...a: unknown[]) => configFindUnique(...a) },
++    notification: { create: (...a: unknown[]) => notificationCreate(...a) },
++    botAgentProfile: { count: vi.fn(async () => 0) },
++    botPlaybook: { findFirst: vi.fn(async () => null) },
++  },
++}));
++
++const askClaude = vi.fn();
++vi.mock("./claude", () => ({
++  askClaude: (...a: unknown[]) => askClaude(...a),
++  buildSystemPrompt: () => "SYSTEM",
++  ESCALATE_TOKEN: "[ESCALAR]",
++}));
++
++vi.mock("./config", () => ({
++  getBotConfig: async () => ({
++    botEnabled: true,
++    tonePreset: "PROFESIONAL_CALIDO",
++    autonomyLevel: "L2",
++    model: "claude-sonnet-5",
++    openerStyle: "WARM_NAME",
++    maxLines: 4,
++    dataGateStrict: true,
++    escalationTriggers: [],
++    enabledChannels: ["WHATSAPP"],
++    activePlaybookId: null,
++    classifyContacts: false,
++  }),
++}));
++vi.mock("./brand-linter", () => ({ lintBrandVoice: () => ({ ok: true, violations: [] }) }));
++vi.mock("./hub-catalog", () => ({
++  findMatchingDevelopments: async () => ({ data: [], error: null }),
++  catalogBrief: () => "",
++}));
++vi.mock("./classify", () => ({ maybeClassifyContact: vi.fn(async () => null) }));
++vi.mock("./playbook/run", () => ({ runPlaybookStep: vi.fn() }));
++
++import { botRespond } from "./bot-respond";
++import { ESCALATE_MARKETING_TOKEN, getMarketingOwnerId } from "./marketing-routing";
++
++const LUIS = "23361b42-f80c-42ce-ba8f-3a232b9f088c";
++
++const CONTACT = {
++  id: "c1", firstName: "Tisiano", lastName: "", phone: "+529841364211",
++  doNotContact: false, whatsappOptOut: false, assignedToId: null,
++  budgetMin: null, budgetMax: null, preferredZone: null, preferredLanguage: "ES",
++  contactType: "COMPRADOR", custom: null,
++};
++const CONV = { id: "conv1", status: "BOT", botEnabled: true, connectorId: null };
++
++/** system_config falso: { clave: valor } */
++function setConfig(rows: Record<string, unknown>) {
++  configFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) =>
++    where.key in rows ? { key: where.key, value: rows[where.key] } : null,
++  );
++}
++/** users activos falsos: findFirst({ where: { id } }) → existe solo si el id está en la lista */
++function setActiveUsers(ids: string[]) {
++  userFindFirst.mockImplementation(async ({ where }: { where: { id?: string; role?: string } }) => {
++    if (where.id) return ids.includes(where.id) ? { id: where.id } : null;
++    return { id: "admin-fallback" }; // el findFirst sin id es el de ownerId (primer ADMIN)
++  });
++}
++
++beforeEach(() => {
++  vi.resetAllMocks();
++  contactFindUnique.mockResolvedValue(CONTACT);
++  convFindFirst.mockResolvedValue(CONV);
++  convFindUnique.mockResolvedValue({ id: "conv1", contact: CONTACT });
++  convUpdate.mockResolvedValue({});
++  msgFindMany.mockResolvedValue([
++    { direction: "INBOUND", body: "Quiero darles a conocer nuestra marca Lisual. Trabajamos con servicios de marketing", createdAt: new Date() },
++  ]);
++  sendChannelMessage.mockResolvedValue({ id: "m1" });
++  notificationCreate.mockResolvedValue({});
++  setConfig({ admin_owner_user_id: LUIS });
++  setActiveUsers([LUIS]);
++});
++
++describe("getMarketingOwnerId", () => {
++  it("sin clave dedicada → el administrador propietario (Luis Flores)", async () => {
++    expect(await getMarketingOwnerId()).toBe(LUIS);
++  });
++
++  it("la clave dedicada gana sobre el propietario", async () => {
++    setConfig({ marketing_escalation_user_id: "otra-persona", admin_owner_user_id: LUIS });
++    setActiveUsers(["otra-persona", LUIS]);
++    expect(await getMarketingOwnerId()).toBe("otra-persona");
++  });
++
++  it("clave dedicada apuntando a un usuario inactivo → cae al propietario", async () => {
++    setConfig({ marketing_escalation_user_id: "desactivada", admin_owner_user_id: LUIS });
++    setActiveUsers([LUIS]); // "desactivada" no está activa
++    expect(await getMarketingOwnerId()).toBe(LUIS);
++  });
++
++  it("nada configurado o nadie activo → null (el escalamiento sigue como antes)", async () => {
++    setConfig({});
++    expect(await getMarketingOwnerId()).toBeNull();
++    setConfig({ admin_owner_user_id: LUIS });
++    setActiveUsers([]);
++    expect(await getMarketingOwnerId()).toBeNull();
++  });
++});
++
++describe("botRespond — [ESCALAR_MARKETING]", () => {
++  it("quita el token del mensaje, escala y manda el hilo a Luis Flores con notificación", async () => {
++    askClaude
++      .mockResolvedValueOnce(`Gracias por escribir, comparto tu mensaje con la persona responsable. ${ESCALATE_MARKETING_TOKEN}`)
++      .mockResolvedValueOnce("Resumen para el asesor"); // askClaude del resumen en escalateToHuman
++
++    await botRespond("c1");
++
++    // el cliente NUNCA ve el token
++    const sent = sendChannelMessage.mock.calls[0][2] as string;
++    expect(sent).not.toContain("[ESCALAR");
++    expect(sent).toContain("comparto tu mensaje");
++
++    // el hilo pasa a HUMAN controlado por Luis (aunque el contacto no tenga asesor)
++    const escalada = convUpdate.mock.calls.find((c) => c[0].data.status === "HUMAN");
++    expect(escalada?.[0].data.controlledById).toBe(LUIS);
++
++    // y a Luis le llega el aviso (antes: ninguno, porque no había responsable)
++    expect(notificationCreate).toHaveBeenCalledTimes(1);
++    expect(notificationCreate.mock.calls[0][0].data).toMatchObject({
++      userId: LUIS,
++      type: "bot_escalation",
++      link: "/inbox?c=conv1",
++    });
++  });
++
++  it("aunque el contacto ya tenga asesor, marketing va SIEMPRE a Luis", async () => {
++    const conAsesor = { ...CONTACT, assignedToId: "asesor-9" };
++    contactFindUnique.mockResolvedValue(conAsesor);
++    convFindUnique.mockResolvedValue({ id: "conv1", contact: conAsesor });
++    askClaude.mockResolvedValueOnce(`Con gusto. ${ESCALATE_MARKETING_TOKEN}`).mockResolvedValueOnce("Resumen");
++
++    await botRespond("c1");
++
++    const escalada = convUpdate.mock.calls.find((c) => c[0].data.status === "HUMAN");
++    expect(escalada?.[0].data.controlledById).toBe(LUIS);
++    expect(notificationCreate.mock.calls[0][0].data.userId).toBe(LUIS);
++  });
++
++  it("[ESCALAR] normal NO se redirige a Luis: sigue yendo al asesor del contacto", async () => {
++    const conAsesor = { ...CONTACT, assignedToId: "asesor-9" };
++    contactFindUnique.mockResolvedValue(conAsesor);
++    convFindUnique.mockResolvedValue({ id: "conv1", contact: conAsesor });
++    askClaude.mockResolvedValueOnce("Te conecto con tu asesor. [ESCALAR]").mockResolvedValueOnce("Resumen");
++
++    await botRespond("c1");
++
++    const escalada = convUpdate.mock.calls.find((c) => c[0].data.status === "HUMAN");
++    expect(escalada?.[0].data.controlledById).toBe("asesor-9");
++    expect(notificationCreate.mock.calls[0][0].data.userId).toBe("asesor-9");
++  });
++
++  it("sin responsable válido, escala igual (sin romper) con el comportamiento anterior", async () => {
++    setConfig({});
++    askClaude.mockResolvedValueOnce(`Listo. ${ESCALATE_MARKETING_TOKEN}`).mockResolvedValueOnce("Resumen");
++
++    await expect(botRespond("c1")).resolves.toBe(true);
++
++    const escalada = convUpdate.mock.calls.find((c) => c[0].data.status === "HUMAN");
++    expect(escalada?.[0].data.controlledById).toBeNull();
++    expect(notificationCreate).not.toHaveBeenCalled(); // no hay a quién avisar: igual que antes
++  });
++});
++
++describe("prompt y tokens", () => {
++  it("[ESCALAR] no es subcadena de [ESCALAR_MARKETING] (un includes nunca dispara por el otro)", () => {
++    expect(ESCALATE_MARKETING_TOKEN.includes("[ESCALAR]")).toBe(false);
++  });
++});
+diff --git a/src/lib/bot/bot-respond.ts b/src/lib/bot/bot-respond.ts
+index 2be08c30..b891584d 100644
+--- a/src/lib/bot/bot-respond.ts
++++ b/src/lib/bot/bot-respond.ts
+@@ -3,6 +3,7 @@
+ // envía o ESCALA a humano (intención fuerte / sin confianza).
+ import prisma from "@/lib/db";
+ import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage } from "./claude";
++import { ESCALATE_MARKETING_TOKEN, getMarketingOwnerId } from "./marketing-routing";
+ import { getBotConfig, type BotConfigResolved } from "./config";
+ import { lintBrandVoice } from "./brand-linter";
+ import { findMatchingDevelopments } from "./hub-catalog";
+@@ -28,7 +29,11 @@ export function buildOpener(
+   return `Este es el primer mensaje. Saluda a ${contact.firstName} por su nombre de forma cálida y natural, menciona brevemente su interés (${interes}) si lo conoces, y haz UNA pregunta para empezar a calificar.${goalLine} No suenes a script.`;
+ }
+ 
+-export async function escalateToHuman(conversationId: string, reason: string): Promise<void> {
++export async function escalateToHuman(
++  conversationId: string,
++  reason: string,
++  opts: { routeToUserId?: string | null } = {},
++): Promise<void> {
+   const conv = await prisma.conversation.findUnique({
+     where: { id: conversationId },
+     include: { contact: true },
+@@ -52,7 +57,11 @@ export async function escalateToHuman(conversationId: string, reason: string): P
+       maxTokens: 200,
+     }).catch(() => null)) ?? `Escalado: ${reason}`;
+ 
+-  const assigneeId = conv.contact.assignedToId;
++  // `routeToUserId` gana sobre el asesor del contacto: es el caso de las propuestas de
++  // marketing (siempre a Luis Flores, ver marketing-routing.ts), que no son un lead de
++  // ningún asesor. No se reasigna el contacto —solo quién controla el hilo y a quién se
++  // le avisa—: tocar la asignación del contacto es decisión humana desde el inbox.
++  const assigneeId = opts.routeToUserId ?? conv.contact.assignedToId;
+   await prisma.conversation.update({
+     where: { id: conversationId },
+     data: {
+@@ -223,8 +232,10 @@ export async function botRespond(
+   });
+   if (newer) return false;
+ 
++  const shouldEscalateMarketing = reply.includes(ESCALATE_MARKETING_TOKEN);
+   const shouldEscalate = reply.includes(ESCALATE_TOKEN);
+-  const clean = reply.replaceAll(ESCALATE_TOKEN, "").trim();
++  // Los dos tokens se quitan SIEMPRE: ninguno debe llegarle al cliente.
++  const clean = reply.replaceAll(ESCALATE_MARKETING_TOKEN, "").replaceAll(ESCALATE_TOKEN, "").trim();
+ 
+   // Brand linter: si bloquea, NO se envía y se escala (mejor humano que hype)
+   const lint = lintBrandVoice(clean);
+@@ -247,6 +258,13 @@ export async function botRespond(
+     });
+   }
+ 
+-  if (shouldEscalate) await escalateToHuman(conv.id, "Intención fuerte detectada por el bot");
++  if (shouldEscalateMarketing) {
++    // Sin responsable válido (null) escala igual que cualquier otro caso — nunca se pierde.
++    await escalateToHuman(conv.id, "Propuesta comercial / de marketing: no busca propiedad", {
++      routeToUserId: await getMarketingOwnerId(),
++    });
++  } else if (shouldEscalate) {
++    await escalateToHuman(conv.id, "Intención fuerte detectada por el bot");
++  }
+   return true;
+ }
+diff --git a/src/lib/bot/claude.test.ts b/src/lib/bot/claude.test.ts
+index 0cf874e6..1885fed2 100644
+--- a/src/lib/bot/claude.test.ts
++++ b/src/lib/bot/claude.test.ts
+@@ -62,6 +62,14 @@ describe("buildSystemPrompt (4 capas)", () => {
+     expect(s).toMatch(/confirma que sí quiere ese contacto[\s\S]*\[ESCALAR\]/);
+   });
+ 
++  // 2026-10-08: alguien escribió para ofrecer servicios de marketing; el bot le pidió una
++  // confirmación Y escaló en el mismo turno — la respuesta del cliente quedó sin contestar.
++  it("quien viene a ofrecer marketing/servicios: cierra sin preguntas y con el token de marketing", () => {
++    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
++    expect(s).toContain("[ESCALAR_MARKETING]");
++    expect(s).toMatch(/propuesta comercial[\s\S]*NO le hagas preguntas[\s\S]*\[ESCALAR_MARKETING\]/);
++  });
++
+   // BUG 2026-07-24 (Emily): cliente escribió en inglés y el bot contestó en español —
+   // "Idioma: ES" (preferredLanguage default del intake) sonaba a directiva y le ganaba
+   // a "responde en el idioma del cliente". El idioma del ÚLTIMO mensaje debe mandar.
+diff --git a/src/lib/bot/claude.ts b/src/lib/bot/claude.ts
+index 5c42992b..2b58671d 100644
+--- a/src/lib/bot/claude.ts
++++ b/src/lib/bot/claude.ts
+@@ -3,6 +3,7 @@
+ import type { BotConfigResolved } from "./config";
+ import { getTonePreset } from "./tone-presets";
+ import { catalogBrief } from "./hub-catalog";
++import { ESCALATE_MARKETING_TOKEN } from "./marketing-routing";
+ import { resolveBotModel } from "./model";
+ 
+ const API_URL = "https://api.anthropic.com/v1/messages";
+@@ -185,6 +186,12 @@ export function buildBrandRules(config: BotConfigResolved): string {
+     // notificación al asesor, sin cambio de estado, sin resumen nuevo. El cliente se
+     // quedaba esperando un contacto que nadie iba a hacer.
+     `Si le ofreces al cliente conectarlo con su asesor (por presupuesto fuera de catálogo, disponibilidad, o cualquier otro motivo) y el cliente confirma que sí quiere ese contacto, ese "sí" ES intención fuerte: termina tu respuesta con el token ${ESCALATE_TOKEN} en ese mismo turno. Nunca digas "le comparto tu interés" o "tu asesor te contacta" sin incluir el token — sin él, nadie se entera y el cliente se queda esperando un contacto que no llega.`,
++    // 2026-10-08: quien viene a OFRECER marketing/servicios no es comprador — no hay
++    // nada que calificar. Antes el modelo le pedía una confirmación y escalaba en el mismo
++    // turno: el cliente contestaba y nadie le respondía (la conversación ya estaba en
++    // HUMAN, sin responsable). Ahora cierra sin preguntas y con un token propio que
++    // redirige el hilo a la persona de marketing.
++    `Si la persona NO busca propiedad sino que viene a ofrecer o presentar servicios, publicidad, marketing, una propuesta comercial o una alianza, o pide hablar con el equipo de marketing: responde UN mensaje breve y cálido diciendo que compartes su mensaje con la persona responsable para que le dé seguimiento por este mismo chat. NO le hagas preguntas, NO le pidas confirmación, NO prometas tiempos y NO la califiques como compradora, y termina con el token ${ESCALATE_MARKETING_TOKEN} (en lugar de ${ESCALATE_TOKEN}).`,
+     // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
+     // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
+     "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
+diff --git a/src/lib/bot/marketing-routing.ts b/src/lib/bot/marketing-routing.ts
+new file mode 100644
+index 00000000..e7764262
+--- /dev/null
++++ b/src/lib/bot/marketing-routing.ts
+@@ -0,0 +1,54 @@
++// Ruteo de propuestas de marketing / comerciales hacia la persona responsable.
++//
++// Caso real (3-oct-2026): alguien escribió por WhatsApp para ofrecer servicios de
++// marketing ("quiero darles a conocer nuestra marca…"). No es comprador, así que el bot
++// no tenía guion: pidió una confirmación al cliente Y escaló en el mismo turno. La
++// conversación quedó en HUMAN sin responsable (el contacto no tenía asesor), no salió
++// ninguna notificación de "el bot te pasó una conversación" y la respuesta del cliente
++// se quedó sin contestar. Decisión de Luis (2026-10-08): las propuestas de marketing se
++// redirigen SIEMPRE a Luis Flores.
++//
++// Vive en su propio módulo (y no en claude.ts) para que el token y el resolvedor se
++// puedan importar desde bot-respond.ts sin depender del cliente de Claude.
++import prisma from "@/lib/db";
++
++/** Token que el modelo agrega al final de su mensaje cuando la persona NO es comprador y
++ * viene a ofrecer marketing/publicidad/servicios. Distinto de [ESCALAR] a propósito:
++ * "[ESCALAR]" NO es subcadena de "[ESCALAR_MARKETING]" (el corchete cierra después de la R),
++ * así que un `includes` de uno nunca dispara por el otro. */
++export const ESCALATE_MARKETING_TOKEN = "[ESCALAR_MARKETING]";
++
++/** Clave de system_config con el id del usuario que recibe estas conversaciones. */
++export const MARKETING_OWNER_KEY = "marketing_escalation_user_id";
++/** Respaldo: el administrador propietario (hoy, Luis Flores) — ver server/admin.ts. */
++const ADMIN_OWNER_KEY = "admin_owner_user_id";
++
++async function readUserIdConfig(key: string): Promise<string | null> {
++  const row = await prisma.systemConfig.findUnique({ where: { key } }).catch(() => null);
++  const value = row?.value;
++  return typeof value === "string" && value.length > 0 ? value : null;
++}
++
++/**
++ * Id del usuario al que se redirigen las propuestas de marketing, o null si no hay
++ * ninguno válido (en cuyo caso el escalamiento se comporta como antes).
++ *
++ * Primero la clave dedicada `marketing_escalation_user_id` (para poder cambiar de
++ * responsable sin tocar código); si no existe, el administrador propietario. Solo cuenta
++ * si el usuario existe, está activo y no está eliminado: mandarle la conversación a una
++ * cuenta desactivada sería repetir el problema original (nadie se entera).
++ */
++export async function getMarketingOwnerId(): Promise<string | null> {
++  const candidates = [
++    await readUserIdConfig(MARKETING_OWNER_KEY),
++    await readUserIdConfig(ADMIN_OWNER_KEY),
++  ].filter((id): id is string => !!id);
++
++  for (const id of candidates) {
++    const user = await prisma.user
++      .findFirst({ where: { id, isActive: true, deletedAt: null }, select: { id: true } })
++      .catch(() => null);
++    if (user) return user.id;
++  }
++  return null;
++}
+-- 
+2.43.0
+

@@ -1,0 +1,41 @@
+From e49080172b753ec6bf47e06f97483d45ee62c8f7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 8 Oct 2026 13:10:31 -0500
+Subject: [PATCH] =?UTF-8?q?fix(#843):=20la=20regla=20de=20marketing=20no?=
+ =?UTF-8?q?=20debe=20usar=20la=20palabra=20"seguimiento"=20(romp=C3=ADa=20?=
+ =?UTF-8?q?una=20prueba=20del=20CI)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+ai-actions.test.ts ("identidad del agente antecede al objetivo del borrador") busca la
+PRIMERA aparición de "seguimiento" en el prompt del sistema y exige que quede después de
+la identidad del agente. La regla nueva de marketing —que va en las reglas de marca, antes
+de la identidad— decía "para que le dé seguimiento", así que esa primera aparición pasó
+a estar antes y la prueba fallaba (CI rojo; "re-run" no sirve porque es determinista).
+
+Se reemplaza por "para que se comunique con ella por este mismo chat". Mismo sentido, sin
+tocar la prueba (que es frágil pero ajena a este cambio).
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FxhtFBCQE7TkZB799a6uH3
+---
+ src/lib/bot/claude.ts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/lib/bot/claude.ts b/src/lib/bot/claude.ts
+index 2b58671d..b6203bfa 100644
+--- a/src/lib/bot/claude.ts
++++ b/src/lib/bot/claude.ts
+@@ -191,7 +191,7 @@ export function buildBrandRules(config: BotConfigResolved): string {
+     // turno: el cliente contestaba y nadie le respondía (la conversación ya estaba en
+     // HUMAN, sin responsable). Ahora cierra sin preguntas y con un token propio que
+     // redirige el hilo a la persona de marketing.
+-    `Si la persona NO busca propiedad sino que viene a ofrecer o presentar servicios, publicidad, marketing, una propuesta comercial o una alianza, o pide hablar con el equipo de marketing: responde UN mensaje breve y cálido diciendo que compartes su mensaje con la persona responsable para que le dé seguimiento por este mismo chat. NO le hagas preguntas, NO le pidas confirmación, NO prometas tiempos y NO la califiques como compradora, y termina con el token ${ESCALATE_MARKETING_TOKEN} (en lugar de ${ESCALATE_TOKEN}).`,
++    `Si la persona NO busca propiedad sino que viene a ofrecer o presentar servicios, publicidad, marketing, una propuesta comercial o una alianza, o pide hablar con el equipo de marketing: responde UN mensaje breve y cálido diciendo que compartes su mensaje con la persona responsable para que se comunique con ella por este mismo chat. NO le hagas preguntas, NO le pidas confirmación, NO prometas tiempos y NO la califiques como compradora, y termina con el token ${ESCALATE_MARKETING_TOKEN} (en lugar de ${ESCALATE_TOKEN}).`,
+     // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
+     // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
+     "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
+-- 
+2.43.0
+

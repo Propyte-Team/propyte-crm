@@ -3,6 +3,7 @@
 // envía o ESCALA a humano (intención fuerte / sin confianza).
 import prisma from "@/lib/db";
 import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage } from "./claude";
+import { ESCALATE_MARKETING_TOKEN, getMarketingOwnerId } from "./marketing-routing";
 import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
 import { findMatchingDevelopments } from "./hub-catalog";
@@ -28,7 +29,11 @@ export function buildOpener(
   return `Este es el primer mensaje. Saluda a ${contact.firstName} por su nombre de forma cálida y natural, menciona brevemente su interés (${interes}) si lo conoces, y haz UNA pregunta para empezar a calificar.${goalLine} No suenes a script.`;
 }
 
-export async function escalateToHuman(conversationId: string, reason: string): Promise<void> {
+export async function escalateToHuman(
+  conversationId: string,
+  reason: string,
+  opts: { routeToUserId?: string | null } = {},
+): Promise<void> {
   const conv = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { contact: true },
@@ -52,7 +57,11 @@ export async function escalateToHuman(conversationId: string, reason: string): P
       maxTokens: 200,
     }).catch(() => null)) ?? `Escalado: ${reason}`;
 
-  const assigneeId = conv.contact.assignedToId;
+  // `routeToUserId` gana sobre el asesor del contacto: es el caso de las propuestas de
+  // marketing (siempre a Luis Flores, ver marketing-routing.ts), que no son un lead de
+  // ningún asesor. No se reasigna el contacto —solo quién controla el hilo y a quién se
+  // le avisa—: tocar la asignación del contacto es decisión humana desde el inbox.
+  const assigneeId = opts.routeToUserId ?? conv.contact.assignedToId;
   await prisma.conversation.update({
     where: { id: conversationId },
     data: {
@@ -223,8 +232,10 @@ export async function botRespond(
   });
   if (newer) return false;
 
+  const shouldEscalateMarketing = reply.includes(ESCALATE_MARKETING_TOKEN);
   const shouldEscalate = reply.includes(ESCALATE_TOKEN);
-  const clean = reply.replaceAll(ESCALATE_TOKEN, "").trim();
+  // Los dos tokens se quitan SIEMPRE: ninguno debe llegarle al cliente.
+  const clean = reply.replaceAll(ESCALATE_MARKETING_TOKEN, "").replaceAll(ESCALATE_TOKEN, "").trim();
 
   // Brand linter: si bloquea, NO se envía y se escala (mejor humano que hype)
   const lint = lintBrandVoice(clean);
@@ -247,6 +258,13 @@ export async function botRespond(
     });
   }
 
-  if (shouldEscalate) await escalateToHuman(conv.id, "Intención fuerte detectada por el bot");
+  if (shouldEscalateMarketing) {
+    // Sin responsable válido (null) escala igual que cualquier otro caso — nunca se pierde.
+    await escalateToHuman(conv.id, "Propuesta comercial / de marketing: no busca propiedad", {
+      routeToUserId: await getMarketingOwnerId(),
+    });
+  } else if (shouldEscalate) {
+    await escalateToHuman(conv.id, "Intención fuerte detectada por el bot");
+  }
   return true;
 }

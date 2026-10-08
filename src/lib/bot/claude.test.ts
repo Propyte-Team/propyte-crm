@@ -62,6 +62,14 @@ describe("buildSystemPrompt (4 capas)", () => {
     expect(s).toMatch(/confirma que sí quiere ese contacto[\s\S]*\[ESCALAR\]/);
   });
 
+  // 2026-10-08: alguien escribió para ofrecer servicios de marketing; el bot le pidió una
+  // confirmación Y escaló en el mismo turno — la respuesta del cliente quedó sin contestar.
+  it("quien viene a ofrecer marketing/servicios: cierra sin preguntas y con el token de marketing", () => {
+    const s = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, contact, catalog: [] });
+    expect(s).toContain("[ESCALAR_MARKETING]");
+    expect(s).toMatch(/propuesta comercial[\s\S]*NO le hagas preguntas[\s\S]*\[ESCALAR_MARKETING\]/);
+  });
+
   // BUG 2026-07-24 (Emily): cliente escribió en inglés y el bot contestó en español —
   // "Idioma: ES" (preferredLanguage default del intake) sonaba a directiva y le ganaba
   // a "responde en el idioma del cliente". El idioma del ÚLTIMO mensaje debe mandar.
