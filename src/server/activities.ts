@@ -220,6 +220,7 @@ export async function createActivity(data: CreateActivityInput) {
       outcome: data.outcome ?? null,
       duration_minutes: data.duration_minutes ?? null,
       completedAt: finalStatus === "COMPLETADA" ? new Date() : null,
+      completedById: finalStatus === "COMPLETADA" ? session.user.id : null,
     },
     include: {
       contact: { select: { id: true, firstName: true, lastName: true } },
@@ -276,6 +277,16 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
     // de terminada — y cualquier reporte que cuente "completadas por fecha" la seguía
     // contando.
     updateData.completedAt = data.status === "COMPLETADA" ? new Date() : null
+    // HUB #841: quién la completó (puede ser un admin, no solo el dueño). Al reabrir se
+    // limpia junto con completedAt, y también el archivado: una tarea reabierta vuelve a
+    // pendientes, no se queda oculta.
+    if (data.status === "COMPLETADA") {
+      updateData.completedById = session.user.id
+    } else {
+      updateData.completedById = null
+      updateData.archivedAt = null
+      updateData.archivedById = null
+    }
   }
 
   const activity = await prisma.activity.update({

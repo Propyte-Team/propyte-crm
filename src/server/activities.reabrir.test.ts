@@ -61,6 +61,22 @@ describe("updateActivity — completedAt (#715 A-02)", () => {
     await updateActivity("act-1", { subject: "Otro título" });
 
     expect(datosEscritos()).not.toHaveProperty("completedAt");
+    expect(datosEscritos()).not.toHaveProperty("completedById");
+  });
+
+  // HUB #841: quién completó y archivado.
+  it("al completar, registra quién la completó", async () => {
+    await updateActivity("act-1", { status: "COMPLETADA" });
+
+    expect(datosEscritos().completedById).toBe("user-1");
+  });
+
+  it("al reabrir, borra quién la completó y la desarchiva", async () => {
+    await updateActivity("act-1", { status: "PENDIENTE" });
+
+    expect(datosEscritos().completedById).toBeNull();
+    expect(datosEscritos().archivedAt).toBeNull();
+    expect(datosEscritos().archivedById).toBeNull();
   });
 
   it("acepta borrar la duración con null", async () => {
