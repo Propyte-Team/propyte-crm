@@ -191,7 +191,7 @@ export function buildBrandRules(config: BotConfigResolved): string {
     // turno: el cliente contestaba y nadie le respondía (la conversación ya estaba en
     // HUMAN, sin responsable). Ahora cierra sin preguntas y con un token propio que
     // redirige el hilo a la persona de marketing.
-    `Si la persona NO busca propiedad sino que viene a ofrecer o presentar servicios, publicidad, marketing, una propuesta comercial o una alianza, o pide hablar con el equipo de marketing: responde UN mensaje breve y cálido diciendo que compartes su mensaje con la persona responsable para que le dé seguimiento por este mismo chat. NO le hagas preguntas, NO le pidas confirmación, NO prometas tiempos y NO la califiques como compradora, y termina con el token ${ESCALATE_MARKETING_TOKEN} (en lugar de ${ESCALATE_TOKEN}).`,
+    `Si la persona NO busca propiedad sino que viene a ofrecer o presentar servicios, publicidad, marketing, una propuesta comercial o una alianza, o pide hablar con el equipo de marketing: responde UN mensaje breve y cálido diciendo que compartes su mensaje con la persona responsable para que se comunique con ella por este mismo chat. NO le hagas preguntas, NO le pidas confirmación, NO prometas tiempos y NO la califiques como compradora, y termina con el token ${ESCALATE_MARKETING_TOKEN} (en lugar de ${ESCALATE_TOKEN}).`,
     // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
     // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
     "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
