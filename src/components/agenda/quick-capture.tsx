@@ -1,10 +1,12 @@
-// Captura rápida de la agenda personal (spec §6): un input, un toggle TASK/NOTE
-// y fecha opcional. Sin contacto — eso es lo que hace personal a la actividad.
+// Captura rápida de la agenda personal (spec §6): un input, un toggle TASK/NOTE,
+// fecha opcional y, desde HUB #841, un contacto opcional. Sin contacto la actividad es
+// personal; con contacto queda ligada a su ficha.
 "use client";
 
 import React from "react";
 import { useRouter } from "next/navigation";
 import { CheckSquare, StickyNote, Loader2, Plus } from "lucide-react";
+import { ContactPicker, type PickedContact } from "./contact-picker";
 
 type CaptureType = "TASK" | "NOTE";
 
@@ -13,6 +15,7 @@ export function QuickCapture() {
   const [type, setType] = React.useState<CaptureType>("TASK");
   const [subject, setSubject] = React.useState("");
   const [dueDate, setDueDate] = React.useState("");
+  const [contact, setContact] = React.useState<PickedContact | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -35,6 +38,8 @@ export function QuickCapture() {
           // Solo se manda dueDate si el usuario puso fecha: el schema es .strict()
           // y rechaza una cadena vacía, así que la clave se omite por completo.
           ...(type === "TASK" && dueDate ? { dueDate } : {}),
+          // Igual que dueDate: la clave se omite si no hay contacto (schema .strict()).
+          ...(contact ? { contactId: contact.id } : {}),
         }),
       });
 
@@ -45,6 +50,7 @@ export function QuickCapture() {
 
       setSubject("");
       setDueDate("");
+      setContact(null);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar");
@@ -126,6 +132,10 @@ export function QuickCapture() {
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Guardar
         </button>
+      </div>
+
+      <div className="pt-2">
+        <ContactPicker value={contact} onChange={setContact} disabled={saving} />
       </div>
 
       {error && (

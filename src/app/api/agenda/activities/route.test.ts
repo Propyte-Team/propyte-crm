@@ -30,21 +30,44 @@ describe("POST /api/agenda/activities", () => {
     const arg = createActivity.mock.calls[0][0];
     expect(arg.activityType).toBe("TASK");
     expect(arg.subject).toBe("Preparar propuesta");
-    // La captura es personal por construcción: contactId no existe en el input.
+    // Sin contacto la captura sigue siendo personal.
     expect(arg.contactId).toBeUndefined();
   });
 
-  it("rechaza un contactId aunque venga en el body", async () => {
-    const res = await POST(
-      req({
-        activityType: "TASK",
-        subject: "Colar una actividad ajena",
-        contactId: "11111111-1111-1111-1111-111111111111",
-      }),
-    );
+  it("acepta un contactId opcional y lo pasa a createActivity (HUB #841)", async () => {
+    const contactId = "11111111-1111-1111-1111-111111111111";
+    const res = await POST(req({ activityType: "TASK", subject: "Llamar al cliente", contactId }));
+
+    expect(res.status).toBe(201);
+    expect(createActivity.mock.calls[0][0].contactId).toBe(contactId);
+  });
+
+  it("rechaza un contactId que no es uuid", async () => {
+    const res = await POST(req({ activityType: "TASK", subject: "Contacto roto", contactId: "no-es-uuid" }));
 
     expect(res.status).toBe(400);
     expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("sigue rechazando dealId y userId en el body (strict)", async () => {
+    const dealRes = await POST(
+      req({ activityType: "TASK", subject: "Colar un deal", dealId: "11111111-1111-1111-1111-111111111111" }),
+    );
+    const userRes = await POST(
+      req({ activityType: "TASK", subject: "Colar un usuario", userId: "11111111-1111-1111-1111-111111111111" }),
+    );
+
+    expect(dealRes.status).toBe(400);
+    expect(userRes.status).toBe(400);
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("responde 404 si el contacto no existe", async () => {
+    createActivity.mockRejectedValue(new Error("Contacto no encontrado"));
+    const res = await POST(
+      req({ activityType: "TASK", subject: "Contacto borrado", contactId: "11111111-1111-1111-1111-111111111111" }),
+    );
+    expect(res.status).toBe(404);
   });
 
   it("rechaza un tipo que no sea TASK o NOTE", async () => {

@@ -83,6 +83,92 @@ export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
   };
 }
 
+/** Tope de tareas hechas visibles en el panel derecho. */
+const DONE_TAKE = 50;
+
+export interface AgendaDoneItem {
+  id: string;
+  subject: string;
+  completedAt: string | null; // ISO 8601
+  contactId: string | null;
+  contactName: string | null;
+}
+
+export interface MyDoneTasks {
+  items: AgendaDoneItem[];
+  /** Completadas sin archivar que existen en base (puede exceder lo mostrado). */
+  total: number;
+}
+
+/**
+ * Tareas completadas del asesor que aún no archivó (panel "Tareas hechas").
+ * Solo TASK: las NOTE nacen COMPLETADA pero viven en "Notas recientes".
+ * Siempre con el userId de la sesión, igual que getMyAgenda.
+ */
+export async function getMyDoneTasks(): Promise<MyDoneTasks> {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const where: Prisma.ActivityWhereInput = {
+    userId: session.user.id,
+    deletedAt: null,
+    activityType: "TASK",
+    status: "COMPLETADA",
+    archivedAt: null,
+  };
+
+  const [rows, total] = await Promise.all([
+    prisma.activity.findMany({
+      where,
+      select: {
+        id: true,
+        subject: true,
+        completedAt: true,
+        contactId: true,
+        contact: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { completedAt: "desc" },
+      take: DONE_TAKE,
+    }),
+    prisma.activity.count({ where }),
+  ]);
+
+  return {
+    items: rows.map((r) => ({
+      id: r.id,
+      subject: r.subject,
+      completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+      contactId: r.contactId,
+      contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
+    })),
+    total,
+  };
+}
+
+/**
+ * "Eliminar todo" del panel Tareas hechas: ARCHIVA (no borra) las tareas
+ * completadas del asesor. Dejan de verse en su agenda, pero siguen en base con
+ * completedById/completedAt/archivedById/archivedAt para los reportes de admin.
+ * Solo toca TASK COMPLETADA del propio usuario: nunca pendientes, notas ni ajenas.
+ */
+export async function archiveMyDoneTasks(): Promise<{ archived: number }> {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const res = await prisma.activity.updateMany({
+    where: {
+      userId: session.user.id,
+      deletedAt: null,
+      activityType: "TASK",
+      status: "COMPLETADA",
+      archivedAt: null,
+    },
+    data: { archivedAt: new Date(), archivedById: session.user.id },
+  });
+
+  return { archived: res.count };
+}
+
 /** Tope de notas recientes en la vista. */
 const NOTES_TAKE = 20;
 

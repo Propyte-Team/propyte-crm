@@ -988,6 +988,12 @@ model Activity {
   description      String?        @db.Text
   dueDate          DateTime?
   completedAt      DateTime?
+  // Agenda/Tareas (HUB #841): quién completó y archivado. FKs lógicas a users (constraints en
+  // la migración SQL, sin Prisma relations para no expandir User). "Eliminar todo" en la Agenda
+  // archiva (archivedAt) en vez de borrar: el asesor deja de verlas, los reportes de admin no.
+  completedById    String?
+  archivedAt       DateTime?
+  archivedById     String?
   status           ActivityStatus @default(PENDIENTE)
   outcome          String?
   duration_minutes Int?
@@ -1006,6 +1012,7 @@ model Activity {
   deletedAt DateTime?
 
   @@index([gmailThreadId])
+  @@index([userId, status, archivedAt])
   @@map("activities")
   @@schema("propyte_crm")
 }
