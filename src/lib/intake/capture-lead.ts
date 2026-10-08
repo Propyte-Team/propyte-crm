@@ -6,6 +6,7 @@ import prisma from "@/lib/db";
 import { incomingLeadSchema, type IncomingLead } from "@/lib/validations/rebuild-f1";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { resolveTargetPlaza } from "@/lib/intake/campaign-plaza";
+import { withIntakeLock, intakeLockKey } from "@/lib/intake/intake-lock";
 
 export interface CaptureResult {
   contactId: string | null;
@@ -98,11 +99,65 @@ export async function captureLead(
   if (instagramId) dedupOr.push({ instagramId });
   if (messengerPsid) dedupOr.push({ messengerPsid });
 
-  const existing = dedupOr.length
-    ? await prisma.contact.findFirst({
-        where: { OR: dedupOr as never, deletedAt: null, mergedIntoId: null },
-      })
-    : null;
+  // #844: búsqueda + alta bajo un mismo candado por identificador. Sin esto, dos mensajes
+  // casi simultáneos de una persona nueva corrían la búsqueda antes de que la otra
+  // petición creara el contacto, y los dos creaban el suyo (ver intake-lock.ts). Todo lo
+  // que lleva `db.` va por la conexión de la transacción que tiene el candado.
+  const outcome = await withIntakeLock(
+    intakeLockKey({ phone, messengerPsid, instagramId, email: lead.email }),
+    async (db) => {
+      const found = dedupOr.length
+        ? await db.contact.findFirst({
+            where: { OR: dedupOr as never, deletedAt: null, mergedIntoId: null },
+          })
+        : null;
+      if (found) return { existing: found, created: null };
+
+      // Plaza objetivo del lead (reparto por plaza): de la campaña/anuncio o del conector.
+      let connectorName: string | null = null;
+      if (opts.connectorId) {
+        connectorName =
+          (await db.leadConnector.findUnique({ where: { id: opts.connectorId }, select: { name: true } }))?.name ?? null;
+      }
+      const targetPlaza = resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
+
+      // --- Contacto nuevo ---
+      const created = await db.contact.create({
+        data: {
+          firstName: lead.firstName,
+          lastName: lead.lastName,
+          phone: phone ?? "", // schema actual exige phone; email-only guarda vacío normalizable después
+          email: lead.email ?? null,
+          leadSource: lead.source,
+          leadSourceDetail: lead.sourceDetail ?? null,
+          preferredLanguage: lead.language ?? "ES",
+          contactType: lead.contactType ?? "COMPRADOR",
+          contactStatus: "NUEVO",
+          lifecycleStage: "LEAD",
+          targetPlaza,
+          lastActivityAt: new Date(),
+          tags: [],
+          instagramId: instagramId ?? null,
+          messengerPsid: messengerPsid ?? null,
+          ...(lead.temperature ? { temperature: lead.temperature } : {}),
+          // Perfil de Inversión derivado del formulario (normalizado a enums del CRM)
+          investmentProfile: lead.investmentProfile ?? null,
+          propertyType: lead.propertyType ?? null,
+          purchaseTimeline: lead.purchaseTimeline ?? null,
+          budgetMin: lead.budgetMin ?? null,
+          budgetMax: lead.budgetMax ?? null,
+          paymentMethod: lead.paymentMethod ?? null,
+          purchaseModality: lead.purchaseModality ?? null,
+          rentalStrategy: lead.rentalStrategy ?? null,
+          preferredZone: lead.preferredZone ?? null,
+          // Todos los campos crudos del formulario (no se pierde nada de info)
+          ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
+        },
+      });
+      return { existing: null, created };
+    },
+  );
+  const existing = outcome.existing;
 
   if (existing) {
     // Lead repetido: NO crear; registrar el toque y refrescar actividad.
@@ -166,47 +221,8 @@ export async function captureLead(
     return { contactId: existing.id, isNew: false, assignedToId: existing.assignedToId };
   }
 
-  // Plaza objetivo del lead (reparto por plaza): de la campaña/anuncio o del conector.
-  let connectorName: string | null = null;
-  if (opts.connectorId) {
-    connectorName =
-      (await prisma.leadConnector.findUnique({ where: { id: opts.connectorId }, select: { name: true } }))?.name ?? null;
-  }
-  const targetPlaza = resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
-
-  // --- Contacto nuevo ---
-  const contact = await prisma.contact.create({
-    data: {
-      firstName: lead.firstName,
-      lastName: lead.lastName,
-      phone: phone ?? "", // schema actual exige phone; email-only guarda vacío normalizable después
-      email: lead.email ?? null,
-      leadSource: lead.source,
-      leadSourceDetail: lead.sourceDetail ?? null,
-      preferredLanguage: lead.language ?? "ES",
-      contactType: lead.contactType ?? "COMPRADOR",
-      contactStatus: "NUEVO",
-      lifecycleStage: "LEAD",
-      targetPlaza,
-      lastActivityAt: new Date(),
-      tags: [],
-      instagramId: instagramId ?? null,
-      messengerPsid: messengerPsid ?? null,
-      ...(lead.temperature ? { temperature: lead.temperature } : {}),
-      // Perfil de Inversión derivado del formulario (normalizado a enums del CRM)
-      investmentProfile: lead.investmentProfile ?? null,
-      propertyType: lead.propertyType ?? null,
-      purchaseTimeline: lead.purchaseTimeline ?? null,
-      budgetMin: lead.budgetMin ?? null,
-      budgetMax: lead.budgetMax ?? null,
-      paymentMethod: lead.paymentMethod ?? null,
-      purchaseModality: lead.purchaseModality ?? null,
-      rentalStrategy: lead.rentalStrategy ?? null,
-      preferredZone: lead.preferredZone ?? null,
-      // Todos los campos crudos del formulario (no se pierde nada de info)
-      ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
-    },
-  });
+  const contact = outcome.created;
+  if (!contact) throw new Error("captureLead: ni contacto existente ni alta (invariante)");
 
   // Atribución publicitaria si viene en el payload (Anexo §B.4)
   if (hasAttributionData(lead)) {
