@@ -35,6 +35,15 @@ vi.mock("@/lib/capi/events", () => ({
   recordConversionEvent: (...a: unknown[]) => recordConversionEvent(...a),
 }));
 
+// #844: captureLead serializa búsqueda + alta con un advisory lock de Postgres
+// (intake-lock.ts). Aquí no hay Postgres: el candado pasa de largo y entrega el mismo
+// db simulado como "transacción". La carrera real se prueba en capture-lead.carrera.test.ts.
+vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/intake/intake-lock")>();
+  const { default: db } = await import("@/lib/db");
+  return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
+});
+
 import { captureLead } from "./capture-lead";
 
 /** Tipos de evento emitidos, en orden. */
