@@ -141,6 +141,11 @@ export function validateBrandForm(form: BrandFormState, mode: BrandFormMode): st
   if (mode === "create" && !isValidSlug(form.slug)) {
     return "El identificador solo admite minúsculas, números y guiones (2 a 40 caracteres)";
   }
+  // `enabledChannels: []` no es "heredar": bot-respond lo lee como "no contestar en ningún canal" y
+  // silenciaría al agente de la marca sin aviso. Heredar es `null` ("Usar los globales").
+  if (!form.useGlobalChannels && form.channels.length === 0) {
+    return "Elige al menos un canal o marca «Usar los globales».";
+  }
   if (form.persona.length > BRAND_LIMITS.persona) {
     return `La presentación no puede pasar de ${BRAND_LIMITS.persona} caracteres`;
   }

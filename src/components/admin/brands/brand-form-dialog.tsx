@@ -63,6 +63,8 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [devNames, setDevNames] = useState<Record<string, string>>({});
+  const [searchTick, setSearchTick] = useState(0);
+  const searchNow = useRef(false);
 
   // true cuando ya se aceptó encender el agente sin conocimiento (o ya estaba así guardado):
   // evita preguntar dos veces lo mismo.
@@ -79,10 +81,13 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
     emptyKnowledgeAck.current = !!brand && brand.botEnabled && !(brand.knowledge ?? "").trim();
   }, [open, brand]);
 
-  // Búsqueda con debounce de 300 ms. Con el cuadro vacío trae los primeros publicados.
+  // Búsqueda con debounce de 300 ms. Con el cuadro vacío trae los primeros publicados. Enter en el
+  // cuadro la lanza YA (searchNow + searchTick), sin esperar el debounce.
   useEffect(() => {
     if (!open || mode === "edit-default") return;
     let cancelled = false;
+    const delay = searchNow.current ? 0 : 300;
+    searchNow.current = false;
     const timer = setTimeout(async () => {
       setSearching(true);
       setSearchError("");
@@ -107,12 +112,12 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
       } finally {
         if (!cancelled) setSearching(false);
       }
-    }, 300);
+    }, delay);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, mode, query]);
+  }, [open, mode, query, searchTick]);
 
   function set<K extends keyof BrandFormState>(key: K, value: BrandFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -209,7 +214,16 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="space-y-4">
+        {/* Enter dentro de CUALQUIER <input> (nombre, slug, buscador, casillas) no envía el formulario:
+            guardar manda también "Agente encendido" y debe ser un clic deliberado en "Guardar". El
+            <textarea> conserva su salto de línea y los botones su Enter/Espacio normales. */}
+        <form
+          onSubmit={submit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault();
+          }}
+          className="space-y-4"
+        >
           <div className="space-y-1.5">
             <Label htmlFor="brand-name">Nombre</Label>
             <Input
@@ -298,6 +312,14 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   id="brand-dev-search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter aquí busca; nunca guarda el formulario (ver onKeyDown del <form>).
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchNow.current = true;
+                      setSearchTick((t) => t + 1);
+                    }
+                  }}
                   placeholder="Buscar desarrollo publicado…"
                 />
                 {devLimitReached && (

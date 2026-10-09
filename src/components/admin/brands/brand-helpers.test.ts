@@ -115,6 +115,18 @@ describe("validateBrandForm", () => {
   it("la predeterminada solo valida el nombre", () => {
     expect(validateBrandForm({ ...ok, slug: "", persona: "x".repeat(5000) }, "edit-default")).toBeNull();
   });
+  it("sin 'Usar los globales' y sin ningún canal marcado → error (no se guarda [])", () => {
+    const msg = "Elige al menos un canal o marca «Usar los globales».";
+    expect(validateBrandForm({ ...ok, useGlobalChannels: false, channels: [] }, "create")).toBe(msg);
+    expect(validateBrandForm({ ...brandToForm(brand), useGlobalChannels: false, channels: [] }, "edit")).toBe(msg);
+  });
+  it("con 'Usar los globales' o con al menos un canal → pasa", () => {
+    expect(validateBrandForm({ ...ok, useGlobalChannels: true, channels: [] }, "create")).toBeNull();
+    expect(validateBrandForm({ ...ok, useGlobalChannels: false, channels: ["WHATSAPP"] }, "create")).toBeNull();
+  });
+  it("la predeterminada no valida canales (solo manda el nombre)", () => {
+    expect(validateBrandForm({ ...ok, useGlobalChannels: false, channels: [] }, "edit-default")).toBeNull();
+  });
   it("límites de texto y de desarrollos", () => {
     expect(validateBrandForm({ ...ok, persona: "x".repeat(2001) }, "create")).toMatch(/presentación/);
     expect(validateBrandForm({ ...ok, knowledge: "x".repeat(20001) }, "create")).toMatch(/conocimiento/);
@@ -143,7 +155,7 @@ describe("buildBrandPayload", () => {
     expect(payload.enabledChannels).toEqual(["WHATSAPP", "INSTAGRAM"]);
     expect(payload.defaultPlaza).toBe("TULUM");
   });
-  it("canales propios vacíos se mandan como [] (ninguno), no como null", () => {
+  it("el armado no valida: canales propios vacíos saldrían como [] (validateBrandForm los frena antes de enviar)", () => {
     const payload = buildBrandPayload({ ...brandToForm(brand), useGlobalChannels: false, channels: [] }, "edit");
     expect(payload.enabledChannels).toEqual([]);
   });
