@@ -5,7 +5,11 @@ vi.mock("@/lib/hub/catalog", () => ({ searchCatalog: (...a: unknown[]) => search
 
 import { findMatchingDevelopments, catalogBrief } from "./hub-catalog";
 
-beforeEach(() => searchCatalog.mockReset());
+// Con llaves: `() => spy.mockReset()` devuelve el propio mock y vitest lo invoca como hook de
+// limpieza tras cada prueba (sin argumentos), lo que rompe un mockImplementation que lee `f.limit`.
+beforeEach(() => {
+  searchCatalog.mockReset();
+});
 
 describe("findMatchingDevelopments", () => {
   it("agrupa unidades por desarrollo y conserva el rango de precio", async () => {
@@ -76,6 +80,49 @@ describe("findMatchingDevelopments", () => {
     searchCatalog.mockResolvedValue({ data: [], error: null });
     await findMatchingDevelopments({});
     expect(searchCatalog).toHaveBeenCalledWith(expect.objectContaining({ developmentIds: null }));
+  });
+
+  // Marca del agente (2026-10-09): el catálogo de una marca no se recorta a las 25 unidades más
+  // baratas. Con Yaxnáh (~51 unidades) las 22 Kannah (3 rec, las más caras) quedaban fuera y el
+  // resumen decía "$1,433,000 a $1,800,000 · 2 rec": el agente negaba que hubiera casas de 3 rec.
+  // El mock imita a searchCatalog: ordena por precio ascendente y corta en `limit`.
+  describe("catálogo completo de una marca", () => {
+    const unidadesYaxnah = Array.from({ length: 30 }, (_, i) => ({
+      developmentId: "yaxnah",
+      developmentName: "Yaxnáh Caucel",
+      zone: "Caucel",
+      city: "Mérida",
+      currency: "MXN",
+      // 8 casas de 2 rec (1.4M-1.75M) y 22 de 3 rec (1.9M-2.09M, las más caras)
+      priceMxn: i === 29 ? 2_090_000 : i < 8 ? 1_400_000 + i * 50_000 : 1_900_000 + (i - 8) * 9_048,
+      bedrooms: i < 8 ? 2 : 3,
+      finEnganchePct: null,
+      finMesesOpciones: null,
+    }));
+
+    function searchCatalogQueRecorta() {
+      searchCatalog.mockImplementation(async (f: { limit?: number }) => ({
+        data: [...unidadesYaxnah].sort((a, b) => a.priceMxn - b.priceMxn).slice(0, f.limit ?? 5),
+        error: null,
+      }));
+    }
+
+    it("con developmentIds pide limit 500 y el resumen cubre todo el rango de precio y recámaras", async () => {
+      searchCatalogQueRecorta();
+      const res = await findMatchingDevelopments({ developmentIds: ["yaxnah"] });
+      expect(searchCatalog).toHaveBeenCalledWith(expect.objectContaining({ limit: 500 }));
+      expect(res.error).toBeNull();
+      expect(res.data).toHaveLength(1);
+      expect(res.data[0].unidades_publicadas).toBe(30);
+      expect(res.data[0].precio_max).toBe(2_090_000);
+      expect(res.data[0].recamaras_max).toBe(3);
+    });
+
+    it("sin developmentIds se sigue pidiendo limit 25", async () => {
+      searchCatalogQueRecorta();
+      await findMatchingDevelopments({});
+      expect(searchCatalog).toHaveBeenCalledWith(expect.objectContaining({ limit: 25 }));
+    });
   });
 });
 

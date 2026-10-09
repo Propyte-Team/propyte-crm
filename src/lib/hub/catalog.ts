@@ -283,11 +283,17 @@ export async function getDevelopmentByIdUngated(
  * Búsqueda para el agente IA: unidades publicadas que encajan con el perfil,
  * con el contexto de su desarrollo y sus esquemas de pago.
  * Límite duro de 25 — es contexto de prompt, no un listado.
+ *
+ * Excepción (2026-10-09): con `developmentIds` no vacío (catálogo de una marca) el tope sube a
+ * 500. Se ordena por precio ascendente, así que recortar a 25 dejaba fuera las unidades más
+ * caras de la marca: con Yaxnáh (~51 unidades) las 22 Kannah desaparecían del resumen y el
+ * agente negaba que hubiera casas de 3 recámaras. Una marca acota el universo a sus propios
+ * desarrollos, por eso 500 sigue siendo un tamaño de contexto razonable.
  */
 export async function searchCatalog(
   filters: CatalogSearchFilters
 ): Promise<CatalogResult<PublishedUnit[]>> {
-  const limit = clampLimit(filters.limit, 5, 25);
+  const limit = clampLimit(filters.limit, 5, filters.developmentIds?.length ? 500 : 25);
   try {
     const rows = await prisma.$queryRawUnsafe<PublishedUnit[]>(
       `SELECT ${UNIT_COLS}

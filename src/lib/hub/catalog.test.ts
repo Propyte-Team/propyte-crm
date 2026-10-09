@@ -219,6 +219,35 @@ describe("searchCatalog (agente IA)", () => {
     expect(lastSql()).toContain("LIMIT 25");
   });
 
+  // Marca del agente (2026-10-09): el catálogo de una marca (developmentIds) no se recorta a las
+  // 25 unidades más baratas: con Yaxnáh (~51 unidades) las 22 Kannah, las más caras, quedaban
+  // fuera y el resumen decía "$1,433,000 a $1,800,000 · 2 rec". Sin developmentIds el tope de 25
+  // (contexto de prompt, no un listado) sigue igual.
+  it("con developmentIds el tope sube a 500", async () => {
+    await searchCatalog({ developmentIds: ["d1"], limit: 500 });
+    expect(lastSql()).toContain("LIMIT 500");
+  });
+
+  it("con developmentIds, pedir más de 500 también topa en 500", async () => {
+    await searchCatalog({ developmentIds: ["d1"], limit: 9999 });
+    expect(lastSql()).toContain("LIMIT 500");
+  });
+
+  it("con developmentIds respeta un limit menor al tope", async () => {
+    await searchCatalog({ developmentIds: ["d1"], limit: 60 });
+    expect(lastSql()).toContain("LIMIT 60");
+  });
+
+  it("con developmentIds vacío el tope sigue en 25 (no es una marca)", async () => {
+    await searchCatalog({ developmentIds: [], limit: 500 });
+    expect(lastSql()).toContain("LIMIT 25");
+  });
+
+  it("con developmentIds null el tope sigue en 25", async () => {
+    await searchCatalog({ developmentIds: null, limit: 500 });
+    expect(lastSql()).toContain("LIMIT 25");
+  });
+
   it("ante fallo devuelve error, no lista vacía silenciosa", async () => {
     queryRaw.mockRejectedValueOnce(new Error("timeout"));
     const res = await searchCatalog({});
