@@ -129,3 +129,84 @@ describe("runPlaybookStep — hook de detección de duplicados (Caso 1)", () => 
     expect(result.objective).toBe("siguiente objetivo");
   });
 });
+
+// Marcas del agente (2026-10-09, revisión final): el hilo tiene UN solo ConversationPlaybookState.
+// Si es de otro playbook (p. ej. el global corrió antes de asignarle una marca a la cuenta), sus
+// tareas cumplidas no son avance del playbook de la marca. Con `ignoreForeignState` se reinicia
+// para este playbook; sin la bandera (camino sin marca) todo queda exactamente igual.
+describe("runPlaybookStep — estado de otro playbook (ignoreForeignState)", () => {
+  function dbWithState(state: { playbookId: string; completedTaskKeys: string[] }) {
+    const db = makeDb(state.completedTaskKeys);
+    db.conversationPlaybookState.upsert = vi.fn(async () => ({ id: "state1", ...state }));
+    return db;
+  }
+
+  it("con la bandera y estado de OTRO playbook → se reinicia para este y sus tareas no cuentan", async () => {
+    const db = dbWithState({ playbookId: "pb-global", completedTaskKeys: ["capture_phone"] });
+    extractFields.mockResolvedValue({});
+    nextTask.mockReturnValue(phoneTask);
+
+    const result = await runPlaybookStep(db as never, {
+      playbook: { id: "pb-yax", tasks: [phoneTask] },
+      conversationId: "conv1",
+      contact: { id: "contact1" },
+      messages: [],
+      model: "m",
+      ignoreForeignState: true,
+    });
+
+    expect(db.conversationPlaybookState.update).toHaveBeenCalledWith({
+      where: { conversationId: "conv1" },
+      data: expect.objectContaining({
+        playbookId: "pb-yax",
+        status: "IN_PROGRESS",
+        currentTaskKey: null,
+        completedTaskKeys: [],
+        completedAt: null,
+      }),
+    });
+    // la tarea "capture_phone" del otro playbook NO cuenta: sigue pendiente y se extrae
+    expect(extractFields).toHaveBeenCalledWith(
+      expect.objectContaining({ tasks: [expect.objectContaining({ key: "capture_phone" })] }),
+    );
+    expect(nextTask).toHaveBeenCalledWith(expect.anything(), [], expect.anything());
+    expect(result.objective).toBe("siguiente objetivo");
+  });
+
+  it("con la bandera y estado del MISMO playbook → se conserva el avance (no se reinicia)", async () => {
+    const db = dbWithState({ playbookId: "pb-yax", completedTaskKeys: ["capture_phone"] });
+
+    await runPlaybookStep(db as never, {
+      playbook: { id: "pb-yax", tasks: [phoneTask] },
+      conversationId: "conv1",
+      contact: { id: "contact1" },
+      messages: [],
+      model: "m",
+      ignoreForeignState: true,
+    });
+
+    const resets = db.conversationPlaybookState.update.mock.calls.filter(
+      (c: unknown[]) => (c[0] as { data: { playbookId?: string } }).data.playbookId !== undefined,
+    );
+    expect(resets).toHaveLength(0);
+    expect(nextTask).toHaveBeenCalledWith(expect.anything(), ["capture_phone"], expect.anything());
+  });
+
+  it("SIN la bandera, el estado de otro playbook se usa tal cual (comportamiento de siempre)", async () => {
+    const db = dbWithState({ playbookId: "pb-global", completedTaskKeys: ["capture_phone"] });
+
+    await runPlaybookStep(db as never, {
+      playbook: { id: "pb-yax", tasks: [phoneTask] },
+      conversationId: "conv1",
+      contact: { id: "contact1" },
+      messages: [],
+      model: "m",
+    });
+
+    const resets = db.conversationPlaybookState.update.mock.calls.filter(
+      (c: unknown[]) => (c[0] as { data: { playbookId?: string } }).data.playbookId !== undefined,
+    );
+    expect(resets).toHaveLength(0);
+    expect(nextTask).toHaveBeenCalledWith(expect.anything(), ["capture_phone"], expect.anything());
+  });
+});

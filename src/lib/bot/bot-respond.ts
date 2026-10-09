@@ -304,6 +304,10 @@ export async function botRespond(
           contact,
           messages: history,
           model: config.model,
+          // Con marca, el estado de OTRO playbook en este hilo (p. ej. el global, que corrió antes
+          // de asignarle la marca a la cuenta) no cuenta como avance de este: se reinicia para el
+          // playbook de la marca (mismo criterio que AI_DRAFT). Sin marca: argumentos de siempre.
+          ...(brand ? { ignoreForeignState: true } : {}),
         });
         if (pr.objective) playbookObjective = pr.objective;
       }

@@ -286,6 +286,28 @@ describe("botRespond — cuenta con marca", () => {
     );
   });
 
+  it("10a. playbook de la marca: se le pide a runPlaybookStep ignorar el estado de OTRO playbook", async () => {
+    withBrand({ ...YAX, playbookId: "pb-yax" });
+    botPlaybookFindFirstMock.mockResolvedValue({ id: "pb-yax", tasks: [{ id: "t1", order: 1 }] });
+    runPlaybookStepMock.mockResolvedValue({ objective: "OBJ" });
+
+    await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(runPlaybookStepMock.mock.calls[0][1]).toMatchObject({ ignoreForeignState: true });
+  });
+
+  it("10a-bis. sin marca, runPlaybookStep recibe los argumentos de siempre (sin la bandera)", async () => {
+    botConfig.activePlaybookId = "pb-global";
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true, connectorId: null });
+    botPlaybookFindFirstMock.mockResolvedValue({ id: "pb-global", tasks: [{ id: "t1", order: 1 }] });
+    runPlaybookStepMock.mockResolvedValue({ objective: "OBJ" });
+
+    await botRespond("c1");
+
+    expect(runPlaybookStepMock).toHaveBeenCalledTimes(1);
+    expect(runPlaybookStepMock.mock.calls[0][1]).not.toHaveProperty("ignoreForeignState");
+  });
+
   it("10b. marca sin playbook propio NO hereda el playbook global", async () => {
     botConfig.activePlaybookId = "pb-global";
     withBrand({ ...YAX, playbookId: null });
