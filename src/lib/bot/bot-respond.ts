@@ -97,20 +97,35 @@ export async function escalateToHuman(
 }
 
 /**
- * ¿El contacto está atribuido a alguna marca NO predeterminada (no borrada)? Tabla o columna
- * inexistente (P2021/P2022: migración sin aplicar) = sin filas. Cualquier otro error de lectura
- * falla cerrado (true): mismo criterio que la marca "no disponible" de resolveBrandForConnector.
+ * ¿El contacto pertenece SOLO a otra marca (no predeterminada, no borrada)? Es decir: tiene fila
+ * en contact_brands de una marca no predeterminada y NO tiene la fila de la predeterminada.
+ *
+ * Revisión final I2 (2026-10-09), spec marcas-agente §2.3: un contacto que ya existía y escribe a
+ * otra marca pertenece a AMBAS —attachBrand escribe la fila de la predeterminada justo para eso—,
+ * así que sigue siendo de Propyte y el AI_REPLY desde el número global es legítimo. Antes bastaba
+ * una fila de otra marca para bloquear, y desde que existe la atribución todo contacto existente
+ * de Propyte que escribía a una marca quedaba con las dos filas y sus workflows se saltaban en
+ * silencio. La consulta de la predeterminada solo corre cuando hay fila de otra marca (el caso
+ * común, sin filas, sigue costando una sola lectura).
+ *
+ * Tabla o columna inexistente (P2021/P2022: migración sin aplicar) = sin filas. Cualquier otro
+ * error de lectura (en cualquiera de las dos consultas) falla cerrado (true): mismo criterio que
+ * la marca "no disponible" de resolveBrandForConnector.
  */
-async function contactBelongsToOtherBrand(contactId: string): Promise<boolean> {
+async function contactBelongsOnlyToOtherBrand(contactId: string): Promise<boolean> {
   try {
-    const row = await prisma.contactBrand.findFirst({
+    const otra = await prisma.contactBrand.findFirst({
       where: { contactId, brand: { isDefault: false, deletedAt: null } },
       select: { brandId: true },
     });
-    if (row) {
-      console.warn("[bot-respond] contacto de otra marca sin cuenta: no se abre conversación desde el número global", contactId);
-    }
-    return !!row;
+    if (!otra) return false;
+    const predeterminada = await prisma.contactBrand.findFirst({
+      where: { contactId, brand: { isDefault: true } },
+      select: { brandId: true },
+    });
+    if (predeterminada) return false; // compartido: también es de Propyte
+    console.warn("[bot-respond] contacto de otra marca sin cuenta: no se abre conversación desde el número global", contactId);
+    return true;
   } catch (err) {
     const code = (err as { code?: string } | null)?.code;
     if (code === "P2021" || code === "P2022") return false;
@@ -152,10 +167,11 @@ export async function botRespond(
   if (!shouldBotRespondForChannel(config, channel, brand ? brandEnabledChannels(brand) : null)) return false;
 
   // Abrir conversación SIN cuenta (AI_REPLY de un workflow, 2026-10-09, revisión final I3) = escribir
-  // desde el número global con la voz de Propyte. Si el contacto está atribuido a otra marca (fila en
-  // contact_brands de una marca no predeterminada viva), no se abre nada: sería un mensaje de Propyte
-  // a un prospecto de esa marca. Sin filas de otra marca (todos los contactos de hoy) → igual que siempre.
-  if (opts.createConversation && !connectorId && (await contactBelongsToOtherBrand(contactId))) return false;
+  // desde el número global con la voz de Propyte. Si el contacto pertenece SOLO a otra marca (fila en
+  // contact_brands de una marca no predeterminada viva y sin la fila de la predeterminada; I2 de la
+  // revisión final), no se abre nada: sería un mensaje de Propyte a un prospecto de esa marca. Un
+  // contacto compartido (ambas filas) o sin filas de otra marca (todos los contactos de hoy) → igual que siempre.
+  if (opts.createConversation && !connectorId && (await contactBelongsOnlyToOtherBrand(contactId))) return false;
 
   // La conversación debe ser la de ESA cuenta. `findConversationForChannel` devuelve el hilo
   // más reciente del contacto en el canal entre TODAS las cuentas: un contacto con hilos en

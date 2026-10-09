@@ -529,9 +529,20 @@ describe("botRespond — createConversation sin cuenta", () => {
     convFindFirst.mockResolvedValue(null); // el contacto no tiene ningún hilo de WhatsApp
   });
 
-  it("17. contacto de una marca no predeterminada sin hilo → no crea conversación ni envía, y avisa", async () => {
+  /**
+   * contact_brands falso que responde según el filtro de marca de la consulta:
+   * `isDefault: false` = ¿tiene fila de otra marca?, `isDefault: true` = ¿tiene fila de la predeterminada?
+   */
+  function setContactBrands({ otra, predeterminada }: { otra: boolean; predeterminada: boolean }) {
+    contactBrandFindFirst.mockImplementation(async ({ where }: { where: { brand: { isDefault: boolean } } }) => {
+      if (where.brand.isDefault) return predeterminada ? { brandId: "b-prop" } : null;
+      return otra ? { brandId: "b-yax" } : null;
+    });
+  }
+
+  it("17. contacto SOLO de una marca no predeterminada, sin hilo → no crea conversación ni envía, y avisa", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    contactBrandFindFirst.mockResolvedValue({ brandId: "b-yax" });
+    setContactBrands({ otra: true, predeterminada: false });
 
     const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
 
@@ -540,10 +551,34 @@ describe("botRespond — createConversation sin cuenta", () => {
       where: { contactId: "c1", brand: { isDefault: false, deletedAt: null } },
       select: { brandId: true },
     });
+    // Revisión final I2 (2026-10-09): además se comprueba que NO tenga la fila de la predeterminada.
+    expect(contactBrandFindFirst).toHaveBeenCalledWith({
+      where: { contactId: "c1", brand: { isDefault: true } },
+      select: { brandId: true },
+    });
     expect(convCreate).not.toHaveBeenCalled();
     expect(askClaude).not.toHaveBeenCalled();
     expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[bot-respond]"), "c1");
+    warn.mockRestore();
+  });
+
+  // Revisión final I2 (2026-10-09), spec §2.3: un contacto que ya existía y escribe a otra marca
+  // pertenece a AMBAS — attachBrand escribe la fila de la predeterminada justo para eso. Esos
+  // contactos SON de Propyte: el AI_REPLY desde el número global es legítimo y no se bloquea.
+  it("17g. contacto de otra marca Y de la predeterminada (compartido) → crea la conversación y contesta como hoy", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    setContactBrands({ otra: true, predeterminada: true });
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(true);
+    expect(convCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ connectorId: null, status: "BOT" }) }),
+    );
+    expect(sendChannelMessage).toHaveBeenCalledTimes(1);
+    // No es un caso de "contacto de otra marca sin cuenta": no hay aviso.
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -556,6 +591,8 @@ describe("botRespond — createConversation sin cuenta", () => {
     );
     expect(buildSystemPromptMock.mock.calls[0][0]).not.toHaveProperty("brand");
     expect(sendChannelMessage).toHaveBeenCalledTimes(1);
+    // Sin fila de otra marca no hace falta preguntar por la predeterminada: una sola consulta, como hoy.
+    expect(contactBrandFindFirst).toHaveBeenCalledTimes(1);
   });
 
   it("17c. tabla contact_brands inexistente (P2021) = sin filas → crea como hoy", async () => {
@@ -567,9 +604,33 @@ describe("botRespond — createConversation sin cuenta", () => {
     expect(convCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("17c2. columna inexistente (P2022) = sin filas → crea como hoy", async () => {
+    contactBrandFindFirst.mockRejectedValue({ code: "P2022" });
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(true);
+    expect(convCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("17d. otro error leyendo contact_brands → falla cerrado (no crea ni envía) y lo registra", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     contactBrandFindFirst.mockRejectedValue(new Error("boom"));
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(false);
+    expect(convCreate).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[bot-respond]"), "c1", expect.any(Error));
+    error.mockRestore();
+  });
+
+  it("17d2. falla la lectura de la fila de la predeterminada (con fila de otra marca) → falla cerrado y lo registra", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    contactBrandFindFirst
+      .mockResolvedValueOnce({ brandId: "b-yax" }) // fila de otra marca
+      .mockRejectedValueOnce(new Error("boom")); // ¿también de la predeterminada? no se pudo leer
 
     const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
 
