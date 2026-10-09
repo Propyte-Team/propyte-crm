@@ -2,8 +2,9 @@
 // Guardarraíles: autonomía por step, brand linter pre-envío, respeto a HUMAN/opt-out.
 import prisma from "@/lib/db";
 import type { Contact } from "@prisma/client";
-import { askClaude, buildSystemPrompt, type BotMessage } from "./claude";
+import { askClaude, buildSystemPrompt, type BotMessage, type BrandPromptInput } from "./claude";
 import { getBotConfig, type BotConfigResolved } from "./config";
+import { resolveBrandForContact } from "@/lib/brands/resolve";
 import { lintBrandVoice } from "./brand-linter";
 import { findMatchingDevelopments } from "./hub-catalog";
 import { nextTask, buildObjective, COMPLETION_OBJECTIVE, type PlaybookTaskLite } from "./playbook/engine";
@@ -16,9 +17,13 @@ import {
 } from "./agent-profiles";
 import type { ActionResult } from "@/lib/workflows/actions";
 
-async function conversationContext(contactId: string): Promise<BotMessage[]> {
+// Historial para el borrador. Con `conversationId` (solo cuando la conversación más reciente
+// es de una marca no predeterminada, 2026-10-09) el contexto es ÚNICAMENTE el de ese hilo:
+// lo hablado con el mismo cliente desde otra marca no debe colarse en el borrador. Sin él,
+// igual que siempre (todo el contacto).
+async function conversationContext(contactId: string, conversationId?: string | null): Promise<BotMessage[]> {
   const msgs = await prisma.message.findMany({
-    where: { contactId, internalNote: false },
+    where: conversationId ? { conversationId, internalNote: false } : { contactId, internalNote: false },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
@@ -139,7 +144,27 @@ export async function runAiAction(
   // AI_DRAFT (L0/L1): genera borrador y lo deja como nota+notificación al asesor.
   // Mismo ensamblado en 4 capas que el bot en vivo (marca+tono+objetivo+catálogo, getBotConfig())
   // para que el tono elegible y (en modo lectura) el playbook le lleguen al borrador.
-  const history = await conversationContext(contact.id);
+  //
+  // Marca de la conversación más reciente del contacto (2026-10-09, spec marcas-agente §3.5):
+  // AI_DRAFT no tiene conversación propia, así que se toma la marca del hilo más reciente.
+  // Solo una marca NO predeterminada cambia algo; sin marca o con la predeterminada todo
+  // queda igual que antes. "unavailable" (la cuenta tiene marca pero no se puede usar) NO
+  // genera borrador: un borrador con la voz de otra marca es justo el error que esta capa
+  // evita. `resolveBrandForContact` puede LANZAR (su lectura de la conversación no está
+  // protegida): se falla cerrado igual que con "unavailable".
+  let resolved: Awaited<ReturnType<typeof resolveBrandForContact>>;
+  try {
+    resolved = await resolveBrandForContact(contact.id);
+  } catch (err) {
+    console.error("[ai-actions] no se pudo resolver la marca del contacto:", contact.id, err);
+    return { skipped: true, note: "Marca de la cuenta no disponible" };
+  }
+  const { resolution: brandRes, conversationId: brandConvId } = resolved;
+  if (brandRes.kind === "unavailable") return { skipped: true, note: "Marca de la cuenta no disponible" };
+  const brand = brandRes.kind === "brand" ? brandRes.brand : null;
+
+  // Con marca: solo el hilo de ESA conversación (lo hablado desde otra marca no entra).
+  const history = await conversationContext(contact.id, brand ? brandConvId : null);
   const goal = String(config.kind ?? config.goal ?? "seguimiento");
 
   const botConfig = await getBotConfig();
@@ -149,33 +174,65 @@ export async function runAiAction(
   // no debe tener side effects sobre el contacto ni gastar una llamada de clasificación:
   // se selecciona por el contactType YA existente. Best-effort: cualquier fallo (incluida
   // la ausencia del modelo botAgentProfile) degrada al comportamiento global de siempre.
+  // Con marca NO hay agentes por segmento: la marca es la identidad (agentProfile queda null).
   let agentProfile: AgentProfileWithPlaybook | null = null;
-  try {
-    const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
-    if (hasAgents) {
-      agentProfile = await selectAgentProfile(prisma, contact.contactType);
+  if (!brand) {
+    try {
+      const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
+      if (hasAgents) {
+        agentProfile = await selectAgentProfile(prisma, contact.contactType);
+      }
+    } catch {
+      // defensivo: sin agente → comportamiento global
     }
-  } catch {
-    // defensivo: sin agente → comportamiento global
   }
-  const effectiveConfig = applyAgentTone(botConfig, agentProfile);
+  // El tono propio de la marca reemplaza al global; sin marca (o sin tono) todo igual.
+  const baseConfig = brand?.tonePreset ? { ...botConfig, tonePreset: brand.tonePreset } : botConfig;
+  const effectiveConfig = applyAgentTone(baseConfig, agentProfile);
 
-  const baseObjective = await resolveDraftObjective(contact, goal, effectiveConfig, agentPlaybookOf(agentProfile));
+  // Playbook de la marca (misma consulta e include que usa resolveDraftObjective para el
+  // global). Si no existe, está inactivo/borrado o falla la lectura → null, y NO se cae al
+  // global (sus preguntas de calificación son de Propyte): por eso, con marca, el config que
+  // ve resolveDraftObjective lleva activePlaybookId en null.
+  let brandPlaybook: AgentProfileWithPlaybook["playbook"] | null = null;
+  if (brand?.playbookId) {
+    try {
+      brandPlaybook = await prisma.botPlaybook.findFirst({
+        where: { id: brand.playbookId, isActive: true, deletedAt: null },
+        include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
+      });
+    } catch {
+      brandPlaybook = null; // defensivo: sin playbook de la marca → objetivo fallback
+    }
+  }
+  const baseObjective = brand
+    ? await resolveDraftObjective(contact, goal, { ...effectiveConfig, activePlaybookId: null }, brandPlaybook)
+    : await resolveDraftObjective(contact, goal, effectiveConfig, agentPlaybookOf(agentProfile));
   const objective = composeObjective(agentProfile?.identity, baseObjective);
   // Fallo de catálogo ≠ catálogo vacío: propagamos el mismo criterio que bot-respond.ts
   // (omitir el brief del prompt, no fingir que no hay inventario).
-  const { data: catalog, error: catalogError } = await findMatchingDevelopments({
-    budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
-    budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
-    zone: contact.preferredZone,
-  });
+  // Con marca: el catálogo es SOLO el de los desarrollos de la marca (sin filtrar por
+  // presupuesto/zona del contacto: ese perfil puede venir de otra marca).
+  const { data: catalog, error: catalogError } = brand
+    ? await findMatchingDevelopments({ developmentIds: brand.developmentIds, limit: 10 })
+    : await findMatchingDevelopments({
+        budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
+        budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
+        zone: contact.preferredZone,
+      });
   if (catalogError) console.error("[ai-actions] catálogo del Hub no disponible:", catalogError);
 
+  // Spread condicional: sin marca los argumentos son idénticos a los de siempre
+  // (`brand` ausente, no `brand: undefined`) y el prompt no cambia ni un byte.
+  const brandPrompt: BrandPromptInput | undefined = brand
+    ? { name: brand.name, persona: brand.persona, knowledge: brand.knowledge }
+    : undefined;
   const system = buildSystemPrompt({
     config: effectiveConfig,
     contact: { firstName: contact.firstName, preferredLanguage: contact.preferredLanguage },
     catalog,
     objective,
+    ...(brandPrompt ? { brand: brandPrompt } : {}),
   });
 
   const draft = await askClaude({
