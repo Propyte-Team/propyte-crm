@@ -129,6 +129,35 @@ describe("webhook de Lead Ads — asignación estricta de página a cuenta", () 
     expect(warn).not.toHaveBeenCalled();
   });
 
+  // Revisión final: `undefined === undefined`. Un cambio sin `page_id` empataba con cualquier
+  // cuenta cuyas credenciales no traen `pageId` (o vacías) y el lead se le asignaba a ella.
+  it("🚨 con DOS cuentas, un lead SIN page_id no empata con la cuenta de credenciales vacías", async () => {
+    const SIN_CREDENCIALES = { ...cuenta("conn-B", "PAGE-B", "secret-B"), credentials: null };
+    connectorFindMany.mockResolvedValue([CUENTA_A, SIN_CREDENCIALES]);
+    const body = JSON.stringify({ entry: [{ changes: [{ value: { leadgen_id: "lg-1", form_id: "form-1" } }] }] });
+
+    const res = await postFirmado(body, "secret-A");
+
+    expect(res.status).toBe(200);
+    expect(reservarLeadEntrante).not.toHaveBeenCalled();
+    expect(processIncomingLead).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls[0])).toContain("lg-1");
+  });
+
+  it("con UNA sola cuenta, un lead sin page_id se procesa con esa cuenta (respaldo de siempre)", async () => {
+    connectorFindMany.mockResolvedValue([CUENTA_A]);
+    const body = JSON.stringify({ entry: [{ changes: [{ value: { leadgen_id: "lg-1", form_id: "form-1" } }] }] });
+
+    const res = await postFirmado(body, "secret-A");
+
+    expect(res.status).toBe(200);
+    expect(reservarLeadEntrante).toHaveBeenCalledTimes(1);
+    expect(reservarLeadEntrante.mock.calls[0][0]).toBe("conn-A");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it("con dos cuentas, un lead sin cuenta no impide procesar otro de la misma tanda que sí la tiene", async () => {
     connectorFindMany.mockResolvedValue([CUENTA_A, CUENTA_B]);
     const body = JSON.stringify({
