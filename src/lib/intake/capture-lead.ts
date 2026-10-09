@@ -1,12 +1,14 @@
 // captureLead — punto único de intake multicanal (Anexo §C.1 / Anexo B §H).
 // Webhook web, conectores Meta/TikTok, WhatsApp desconocido y bots llegan aquí.
 // Dedup por E.164/email → ruteo → SLA → eventos. Devuelve {contactId, isNew}.
-import type { Prisma } from "@prisma/client";
+import type { Plaza, Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { incomingLeadSchema, type IncomingLead } from "@/lib/validations/rebuild-f1";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { resolveTargetPlaza } from "@/lib/intake/campaign-plaza";
 import { withIntakeLock, intakeLockKey } from "@/lib/intake/intake-lock";
+import { attachBrand } from "@/lib/brands/attach";
+import { getDefaultBrandId } from "@/lib/brands/resolve";
 
 export interface CaptureResult {
   contactId: string | null;
@@ -111,15 +113,32 @@ export async function captureLead(
             where: { OR: dedupOr as never, deletedAt: null, mergedIntoId: null },
           })
         : null;
-      if (found) return { existing: found, created: null };
-
-      // Plaza objetivo del lead (reparto por plaza): de la campaña/anuncio o del conector.
+      // La cuenta se lee ANTES del `found` porque hace falta en las dos ramas: la plaza
+      // solo para el alta, pero el `brandId` también para el contacto que ya existía
+      // (la atribución contacto↔marca se registra al salir del candado).
       let connectorName: string | null = null;
+      let brandPlaza: Plaza | null = null;
+      let connectorBrandId: string | null = null;
       if (opts.connectorId) {
-        connectorName =
-          (await db.leadConnector.findUnique({ where: { id: opts.connectorId }, select: { name: true } }))?.name ?? null;
+        const conn = await db.leadConnector.findUnique({
+          where: { id: opts.connectorId },
+          select: {
+            name: true,
+            brandId: true,
+            brand: { select: { isDefault: true, defaultPlaza: true, deletedAt: true } },
+          },
+        });
+        connectorName = conn?.name ?? null;
+        connectorBrandId = conn?.brandId ?? null;
+        // Marca de la cuenta (2026-10-09): su plaza predeterminada gana sobre las palabras clave.
+        if (conn?.brand && !conn.brand.isDefault && !conn.brand.deletedAt) brandPlaza = conn.brand.defaultPlaza ?? null;
       }
-      const targetPlaza = resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
+      if (found) return { existing: found, created: null, connectorBrandId };
+
+      // Plaza objetivo del lead (reparto por plaza): la de la marca de la cuenta o, si no
+      // la fija, la que salga de la campaña/anuncio o del conector.
+      const targetPlaza =
+        brandPlaza ?? resolveTargetPlaza([lead.campaignName, lead.adName, lead.adsetName, connectorName, lead.sourceDetail]);
 
       // --- Contacto nuevo ---
       const created = await db.contact.create({
@@ -154,10 +173,22 @@ export async function captureLead(
           ...(lead.custom ? { custom: lead.custom as Prisma.InputJsonValue } : {}),
         },
       });
-      return { existing: null, created };
+      return { existing: null, created, connectorBrandId };
     },
   );
   const existing = outcome.existing;
+
+  // Atribución contacto ↔ marca (2026-10-09). Fuera de la transacción del candado: un
+  // error dentro de una transacción de Postgres la aborta; attachBrand nunca lanza.
+  // Aplica igual al contacto nuevo que al que ya existía (este último NO cambia de plaza
+  // ni de asesor: attachBrand solo toca contact_brands). Cuenta sin marca → predeterminada.
+  const contactIdFinal = existing?.id ?? outcome.created?.id ?? null;
+  if (opts.connectorId && contactIdFinal) {
+    const brandId = outcome.connectorBrandId ?? (await getDefaultBrandId());
+    if (brandId) {
+      await attachBrand({ contactId: contactIdFinal, brandId, connectorId: opts.connectorId, contactIsNew: !existing });
+    }
+  }
 
   if (existing) {
     // Lead repetido: NO crear; registrar el toque y refrescar actividad.
