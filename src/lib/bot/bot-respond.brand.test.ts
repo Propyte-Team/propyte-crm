@@ -289,9 +289,94 @@ describe("botRespond — cuenta con marca", () => {
   });
 });
 
+describe("botRespond — la conversación y la marca salen de la misma cuenta", () => {
+  const CONV_PROP = { id: "conv-p", status: "BOT", botEnabled: true, connectorId: "c-prop" };
+  /** Búsqueda de conversación falsa: con `connectorId` en el where → solo el hilo de esa cuenta
+   *  (si existe en `porCuenta`); sin él (findConversationForChannel) → el hilo más reciente. */
+  function setThreads(porCuenta: Record<string, unknown>, masReciente: unknown) {
+    convFindFirst.mockImplementation(async ({ where }: { where: { connectorId?: string } }) =>
+      where.connectorId !== undefined ? (porCuenta[where.connectorId] ?? null) : masReciente,
+    );
+  }
+  /** c-yax → marca Yaxnáh; cualquier otra cuenta → predeterminada. */
+  function brandOnlyForYax() {
+    resolveBrandMock.mockImplementation(async (id: string | null) =>
+      id === "c-yax" ? { kind: "brand", brand: YAX } : { kind: "default" },
+    );
+  }
+
+  it("12. connectorId de la marca pero el hilo más reciente es de otra cuenta → no contesta (cierra en falso)", async () => {
+    brandOnlyForYax();
+    // por cuenta c-yax: no hay hilo; el hilo más reciente del contacto (cualquier cuenta) es el de Propyte.
+    setThreads({}, CONV_PROP);
+
+    const result = await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(result).toBe(false);
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(convUpdate).not.toHaveBeenCalled();
+  });
+
+  it("12b. y al revés: cuenta predeterminada pero el hilo encontrado es de una marca → no contesta", async () => {
+    brandOnlyForYax();
+    setThreads({}, CONV_YAX);
+
+    const result = await botRespond("c1", { connectorId: "c-prop" });
+
+    expect(result).toBe(false);
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(convUpdate).not.toHaveBeenCalled();
+  });
+
+  it("12c. hilos de otra cuenta que tampoco se pueden resolver (marca no disponible) → no contesta", async () => {
+    resolveBrandMock.mockImplementation(async (id: string | null) =>
+      id === "c-roto" ? { kind: "unavailable", brandId: "b-x" } : { kind: "default" },
+    );
+    setThreads({}, { ...CONV_PROP, connectorId: "c-roto" });
+
+    const result = await botRespond("c1", { connectorId: "c-prop" });
+
+    expect(result).toBe(false);
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+  });
+
+  it("13. con connectorId se busca primero el hilo de ESA cuenta y contesta como la marca", async () => {
+    brandOnlyForYax();
+    // el hilo más reciente del contacto es el de Propyte, pero existe uno de c-yax: gana ese
+    setThreads({ "c-yax": CONV_YAX }, CONV_PROP);
+
+    const result = await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(result).toBe(true);
+    // la primera búsqueda de conversación es por (contacto, canal, cuenta)
+    expect(convFindFirst.mock.calls[0][0]).toEqual({
+      where: { contactId: "c1", channel: "WHATSAPP", connectorId: "c-yax" },
+    });
+    expect(buildSystemPromptMock.mock.calls[0][0].brand).toEqual({
+      name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K",
+    });
+    // y sale por la cuenta de la marca
+    expect(sendChannelMessage.mock.calls[0][4]).toEqual({ bot: true, connectorId: "c-yax" });
+  });
+
+  it("13b. sin hilo de esa cuenta pero el más reciente también es de predeterminadas → sigue como siempre", async () => {
+    // cuenta predeterminada c-a sin hilo propio; el hilo más reciente es de otra predeterminada c-prop
+    setThreads({}, CONV_PROP);
+
+    const result = await botRespond("c1", { connectorId: "c-a" });
+
+    expect(result).toBe(true);
+    expect(buildSystemPromptMock.mock.calls[0][0]).not.toHaveProperty("brand");
+  });
+});
+
 describe("botRespond — cuenta sin marca (camino de siempre)", () => {
   it("11. todo igual que antes: agentes, historial del contacto y prompt sin `brand`", async () => {
     resolveBrandMock.mockResolvedValue({ kind: "default" });
+    convFindFirst.mockResolvedValue({ ...CONV_YAX, connectorId: "c-plain" });
 
     await botRespond("c1", { connectorId: "c-plain" });
 
@@ -302,5 +387,47 @@ describe("botRespond — cuenta sin marca (camino de siempre)", () => {
     const args = buildSystemPromptMock.mock.calls[0][0];
     expect(args.brand).toBeUndefined();
     expect(args).not.toHaveProperty("brand"); // ausente, no `brand: undefined`
+  });
+
+  it("14. sin connectorId la búsqueda de conversación es exactamente la de siempre y no se consulta nada nuevo", async () => {
+    convFindFirst.mockResolvedValue({ id: "conv1", status: "BOT", botEnabled: true, connectorId: null });
+
+    const result = await botRespond("c1");
+
+    expect(result).toBe(true);
+    // dos veces findConversationForChannel (cuenta del hilo + hilo), idénticas a hoy
+    expect(convFindFirst).toHaveBeenCalledTimes(2);
+    for (const call of convFindFirst.mock.calls) {
+      expect(call[0]).toEqual({ where: { contactId: "c1", channel: "WHATSAPP" }, orderBy: { lastMessageAt: "desc" } });
+    }
+    // hilo y cuenta coinciden → no hay segunda resolución de marca
+    expect(resolveBrandMock).toHaveBeenCalledTimes(1);
+    expect(resolveBrandMock).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("botRespond — apertura (primer mensaje)", () => {
+  const CON_ZONA = { ...CONTACT, preferredZone: "Tulum" };
+
+  it("15. con marca el opener NO inyecta la zona del contacto", async () => {
+    contactFindUnique.mockResolvedValue(CON_ZONA);
+    convFindUnique.mockResolvedValue({ id: "conv-y", contact: CON_ZONA });
+    withBrand();
+
+    await botRespond("c1", { connectorId: "c-yax" });
+
+    const objective = buildSystemPromptMock.mock.calls[0][0].objective as string;
+    expect(objective).toContain("Este es el primer mensaje"); // sí hay opener
+    expect(objective).not.toContain("Tulum");
+  });
+
+  it("15b. sin marca el opener sigue mencionando la zona del contacto (sin cambio)", async () => {
+    contactFindUnique.mockResolvedValue(CON_ZONA);
+    resolveBrandMock.mockResolvedValue({ kind: "default" });
+
+    await botRespond("c1");
+
+    const objective = buildSystemPromptMock.mock.calls[0][0].objective as string;
+    expect(objective).toContain("Tulum");
   });
 });

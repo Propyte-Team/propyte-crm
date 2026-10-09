@@ -120,10 +120,26 @@ export async function botRespond(
   const brand = isBrandScoped(brandRes) ? brandRes.brand : null;
   if (!shouldBotRespondForChannel(config, channel, brand ? brandEnabledChannels(brand) : null)) return false;
 
+  // La conversación debe ser la de ESA cuenta. `findConversationForChannel` devuelve el hilo
+  // más reciente del contacto en el canal entre TODAS las cuentas: un contacto con hilos en
+  // el número de Propyte y en el de Yaxnáh podría recibir la voz de una marca por el número
+  // de la otra (el envío sale por `conv.connectorId`). Con `opts.connectorId` explícito se
+  // busca primero el hilo de esa cuenta; sin él, igual que siempre (2026-10-09).
   const conv = opts.createConversation
     ? await ensureConversation({ contactId, channel, connectorId })
-    : await findConversationForChannel(contactId, channel);
+    : opts.connectorId
+      ? ((await prisma.conversation.findFirst({ where: { contactId, channel, connectorId: opts.connectorId } })) ??
+        (await findConversationForChannel(contactId, channel)))
+      : await findConversationForChannel(contactId, channel);
   if (!conv || conv.status !== "BOT" || !conv.botEnabled) return false;
+
+  // Cinturón: si aun así el hilo es de otra cuenta que la resuelta, y alguna de las dos tiene
+  // marca (o no se puede resolver), NO se contesta — nunca como una marca por la cuenta de
+  // otra. Si ambas son predeterminadas, sigue como siempre.
+  if ((conv.connectorId ?? null) !== (connectorId ?? null)) {
+    const convBrandRes = await resolveBrandForConnector(conv.connectorId);
+    if (brandRes.kind !== "default" || convBrandRes.kind !== "default") return false;
+  }
 
   // Agente de la marca apagado: no contesta, pero tampoco deja al cliente sin atender —
   // la conversación pasa a un humano (una sola vez: queda en HUMAN y deja de entrar aquí).
@@ -203,7 +219,13 @@ export async function botRespond(
 
   const firstTouch = history.length === 1 && history[0].role === "user";
   const fallbackObjective = firstTouch
-    ? buildOpener(effectiveConfig, { firstName: contact.firstName, preferredZone: contact.preferredZone }, opts.goal)
+    ? buildOpener(
+        effectiveConfig,
+        // Con marca NO se inyecta la zona del contacto (puede venir de otra marca y
+        // contradiría "no menciones otras ciudades" del prompt de la marca).
+        { firstName: contact.firstName, preferredZone: brand ? null : contact.preferredZone },
+        opts.goal,
+      )
     : opts.goal
       ? `Objetivo de este mensaje: ${opts.goal}. Continúa la conversación con naturalidad.`
       : undefined;
