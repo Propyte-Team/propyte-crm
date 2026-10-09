@@ -133,6 +133,13 @@ describe("getMarketingOwnerId", () => {
     setActiveUsers([]);
     expect(await getMarketingOwnerId()).toBeNull();
   });
+
+  it("preferredUserId activo gana; inactivo cae a la cadena de siempre", async () => {
+    setActiveUsers(["u-pref", LUIS]);
+    expect(await getMarketingOwnerId("u-pref")).toBe("u-pref");
+    setActiveUsers([LUIS]);
+    expect(await getMarketingOwnerId("u-pref")).toBe(LUIS);
+  });
 });
 
 describe("botRespond — [ESCALAR_MARKETING]", () => {

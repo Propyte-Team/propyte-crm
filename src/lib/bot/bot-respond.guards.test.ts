@@ -10,6 +10,12 @@ describe("shouldBotRespondForChannel", () => {
     expect(shouldBotRespondForChannel(DEFAULT_BOT_CONFIG, "WHATSAPP")).toBe(true);
     expect(shouldBotRespondForChannel(DEFAULT_BOT_CONFIG, "INSTAGRAM")).toBe(false);
   });
+  it("el override de canales reemplaza a los globales, pero el master switch manda", () => {
+    expect(shouldBotRespondForChannel(DEFAULT_BOT_CONFIG, "INSTAGRAM", ["INSTAGRAM"])).toBe(true);
+    expect(shouldBotRespondForChannel(DEFAULT_BOT_CONFIG, "WHATSAPP", ["INSTAGRAM"])).toBe(false);
+    expect(shouldBotRespondForChannel({ ...DEFAULT_BOT_CONFIG, botEnabled: false }, "INSTAGRAM", ["INSTAGRAM"])).toBe(false);
+    expect(shouldBotRespondForChannel(DEFAULT_BOT_CONFIG, "WHATSAPP", null)).toBe(true);
+  });
 });
 
 describe("buildOpener", () => {
