@@ -31,7 +31,7 @@
 
 En `/admin` → crear usuario. Columnas obligatorias (`NOT NULL`): `email`, `name`, `role`, `plaza`, `passwordHash` (`id`/`updatedAt` los pone Prisma; `careerLevel` default `JR`). `Plaza` ∈ `{PDC, TULUM, MERIDA}`.
 
-**⚠️ Regla anti-secuestro (ver `safety-contract.md` §6):** los **asesores** QA deben crearse en **plaza `MERIDA`** (sin inbound real; PDC/TULUM sí reciben leads y el round-robin se los asignaría). Ventana corta + teardown que reasigna leads reales extraviados. Los roles no-asesor (gerente/director/marketing) pueden ir en cualquier plaza (no entran al pool de intake de la misma forma).
+**⚠️ Regla anti-secuestro (ver `safety-contract.md` §6):** los **asesores** QA deben crearse en **plaza `MERIDA`**, pero MERIDA ya tiene tráfico real (marca Yaxnáh, desde 2026-10-09): no es una plaza sin inbound. Las cuentas QA son seguras **solo** porque las cuentas `.local` están excluidas del ruteo, así que el email `.local` es obligatorio. Ventana corta + teardown que reasigna leads reales extraviados. Los roles no-asesor (gerente/director/marketing) pueden ir en cualquier plaza (no entran al pool de intake de la misma forma).
 
 - `qa-asesor@propyte.local` → `ASESOR_SR`, plaza **`MERIDA`**
 - `qa-gerente@propyte.local` → `GERENTE`, plaza `TULUM`
