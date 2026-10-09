@@ -96,6 +96,29 @@ export async function escalateToHuman(
   }
 }
 
+/**
+ * ¿El contacto está atribuido a alguna marca NO predeterminada (no borrada)? Tabla o columna
+ * inexistente (P2021/P2022: migración sin aplicar) = sin filas. Cualquier otro error de lectura
+ * falla cerrado (true): mismo criterio que la marca "no disponible" de resolveBrandForConnector.
+ */
+async function contactBelongsToOtherBrand(contactId: string): Promise<boolean> {
+  try {
+    const row = await prisma.contactBrand.findFirst({
+      where: { contactId, brand: { isDefault: false, deletedAt: null } },
+      select: { brandId: true },
+    });
+    if (row) {
+      console.warn("[bot-respond] contacto de otra marca sin cuenta: no se abre conversación desde el número global", contactId);
+    }
+    return !!row;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === "P2021" || code === "P2022") return false;
+    console.error("[bot-respond] no se pudieron leer las marcas del contacto; no se abre conversación", contactId, err);
+    return true;
+  }
+}
+
 export async function botRespond(
   contactId: string,
   opts: { goal?: string; createConversation?: boolean; channel?: MessagingChannel; connectorId?: string | null } = {}
@@ -127,6 +150,12 @@ export async function botRespond(
   if (brandRes.kind === "unavailable") return false;
   const brand = isBrandScoped(brandRes) ? brandRes.brand : null;
   if (!shouldBotRespondForChannel(config, channel, brand ? brandEnabledChannels(brand) : null)) return false;
+
+  // Abrir conversación SIN cuenta (AI_REPLY de un workflow, 2026-10-09, revisión final I3) = escribir
+  // desde el número global con la voz de Propyte. Si el contacto está atribuido a otra marca (fila en
+  // contact_brands de una marca no predeterminada viva), no se abre nada: sería un mensaje de Propyte
+  // a un prospecto de esa marca. Sin filas de otra marca (todos los contactos de hoy) → igual que siempre.
+  if (opts.createConversation && !connectorId && (await contactBelongsToOtherBrand(contactId))) return false;
 
   // La conversación debe ser la de ESA cuenta. `findConversationForChannel` devuelve el hilo
   // más reciente del contacto en el canal entre TODAS las cuentas: un contacto con hilos en

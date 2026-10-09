@@ -22,6 +22,8 @@ const configFindUnique = vi.fn();
 const notificationCreate = vi.fn();
 const botAgentCountMock = vi.fn();
 const botPlaybookFindFirstMock = vi.fn();
+const convCreate = vi.fn();
+const contactBrandFindFirst = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
@@ -29,7 +31,9 @@ vi.mock("@/lib/db", () => ({
       findFirst: (...a: unknown[]) => convFindFirst(...a),
       findUnique: (...a: unknown[]) => convFindUnique(...a),
       update: (...a: unknown[]) => convUpdate(...a),
+      create: (...a: unknown[]) => convCreate(...a),
     },
+    contactBrand: { findFirst: (...a: unknown[]) => contactBrandFindFirst(...a) },
     message: {
       findMany: (...a: unknown[]) => msgFindMany(...a),
       findFirst: vi.fn(async () => null), // guard anti-burst: sin mensajes nuevos
@@ -144,6 +148,10 @@ beforeEach(() => {
   setConfig({ admin_owner_user_id: LUIS });
   setActiveUsers([LUIS]);
   resolveBrandMock.mockResolvedValue({ kind: "default" });
+  convCreate.mockImplementation(async ({ data }: { data: { connectorId: string | null } }) => ({
+    id: "conv-nueva", status: "BOT", botEnabled: true, connectorId: data.connectorId,
+  }));
+  contactBrandFindFirst.mockResolvedValue(null);
 });
 
 describe("botRespond — cuenta con marca", () => {
@@ -488,5 +496,82 @@ describe("botRespond — apertura (primer mensaje)", () => {
 
     const objective = buildSystemPromptMock.mock.calls[0][0].objective as string;
     expect(objective).toContain("Tulum");
+  });
+});
+
+// Hallazgo I3 de la revisión final: AI_REPLY (workflow) llama con createConversation y sin cuenta.
+// Un contacto atribuido a una marca no predeterminada que no tiene hilo recibiría un WhatsApp con
+// la voz de Propyte desde el número global. Con filas de otra marca y sin cuenta → no se crea nada.
+describe("botRespond — createConversation sin cuenta", () => {
+  beforeEach(() => {
+    convFindFirst.mockResolvedValue(null); // el contacto no tiene ningún hilo de WhatsApp
+  });
+
+  it("17. contacto de una marca no predeterminada sin hilo → no crea conversación ni envía, y avisa", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    contactBrandFindFirst.mockResolvedValue({ brandId: "b-yax" });
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(false);
+    expect(contactBrandFindFirst).toHaveBeenCalledWith({
+      where: { contactId: "c1", brand: { isDefault: false, deletedAt: null } },
+      select: { brandId: true },
+    });
+    expect(convCreate).not.toHaveBeenCalled();
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[bot-respond]"), "c1");
+    warn.mockRestore();
+  });
+
+  it("17b. sin filas de marca → crea la conversación sin cuenta y contesta como hoy (sin cambio)", async () => {
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(true);
+    expect(convCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ connectorId: null, status: "BOT" }) }),
+    );
+    expect(buildSystemPromptMock.mock.calls[0][0]).not.toHaveProperty("brand");
+    expect(sendChannelMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("17c. tabla contact_brands inexistente (P2021) = sin filas → crea como hoy", async () => {
+    contactBrandFindFirst.mockRejectedValue({ code: "P2021" });
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(true);
+    expect(convCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("17d. otro error leyendo contact_brands → falla cerrado (no crea ni envía) y lo registra", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    contactBrandFindFirst.mockRejectedValue(new Error("boom"));
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(false);
+    expect(convCreate).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[bot-respond]"), "c1", expect.any(Error));
+    error.mockRestore();
+  });
+
+  it("17e. con cuenta resuelta (no null) no se consulta contact_brands (la cuenta ya decide la marca)", async () => {
+    convFindFirst.mockResolvedValue({ id: "conv-p", status: "BOT", botEnabled: true, connectorId: "c-prop" });
+
+    const result = await botRespond("c1", { goal: "seguimiento", createConversation: true });
+
+    expect(result).toBe(true);
+    expect(contactBrandFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("17f. sin createConversation no se consulta contact_brands (webhooks: sin cambio)", async () => {
+    convFindFirst.mockResolvedValue({ id: "conv-g", status: "BOT", botEnabled: true, connectorId: null });
+
+    await botRespond("c1", { connectorId: null });
+
+    expect(contactBrandFindFirst).not.toHaveBeenCalled();
   });
 });
