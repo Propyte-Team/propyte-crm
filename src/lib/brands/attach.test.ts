@@ -56,8 +56,11 @@ describe("attachBrand", () => {
     expect(cbUpsert).toHaveBeenCalledTimes(1);
   });
   it("un fallo de DB no lanza (la atribución nunca rompe la entrada del lead)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     cbUpsert.mockRejectedValue(new Error("x"));
     await expect(attachBrand({ contactId: "k1", brandId: "b-yax", contactIsNew: true })).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "k1", "b-yax", expect.any(Error));
+    error.mockRestore();
   });
 });
 

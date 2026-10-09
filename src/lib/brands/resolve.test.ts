@@ -41,22 +41,31 @@ describe("resolveBrandForConnector", () => {
     expect(await resolveBrandForConnector("c1")).toEqual({ kind: "default" });
   });
   it("cuenta con brandId de marca borrada → unavailable (NO contestar como Propyte)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     connectorFindUnique.mockResolvedValue({ brandId: "b-borrada" });
     brandFindFirst.mockResolvedValue(null); // el where filtra deletedAt: null
     expect(await resolveBrandForConnector("c1")).toEqual({ kind: "unavailable", brandId: "b-borrada" });
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "c1", "b-borrada");
+    error.mockRestore();
   });
   it("error leyendo la marca → unavailable", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     connectorFindUnique.mockResolvedValue({ brandId: "b-yax" });
     brandFindFirst.mockRejectedValue(new Error("db caída"));
     expect(await resolveBrandForConnector("c1")).toEqual({ kind: "unavailable", brandId: "b-yax" });
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "b-yax", expect.any(Error));
+    error.mockRestore();
   });
   it("migración sin aplicar (P2021/P2022) al leer la cuenta → default", async () => {
     connectorFindUnique.mockRejectedValue(Object.assign(new Error("col"), { code: "P2022" }));
     expect(await resolveBrandForConnector("c1")).toEqual({ kind: "default" });
   });
   it("otro error leyendo la cuenta → unavailable con brandId desconocido", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     connectorFindUnique.mockRejectedValue(new Error("timeout"));
     expect(await resolveBrandForConnector("c1")).toEqual({ kind: "unavailable", brandId: "?" });
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "c1", expect.any(Error));
+    error.mockRestore();
   });
 });
 
