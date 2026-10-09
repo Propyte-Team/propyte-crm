@@ -3,6 +3,7 @@
 import prisma from "@/lib/db";
 import type { LeadConnector } from "@prisma/client";
 import { readCredentials } from "@/lib/intake/connectors";
+import { resolveBrandForConnector } from "@/lib/brands/resolve";
 
 export interface WhatsAppCredentials {
   phoneNumberId: string;
@@ -55,6 +56,12 @@ export async function activeWhatsAppConnectors(): Promise<LeadConnector[]> {
  * desde el número equivocado es peor que no responderle, porque el error es
  * invisible — llega un mensaje de otra empresa y nadie se entera. Una
  * excepción sí se ve.
+ *
+ * **También lanza** si el connector está BORRADO y es de una marca no
+ * predeterminada (o su marca no se puede leer) — marcas del agente, 2026-10-09,
+ * revisión final I2. Con `null` el hilo de esa marca saldría por el número
+ * global, o sea con el WhatsApp de Propyte. Un connector borrado sin marca o de
+ * la predeterminada sigue devolviendo `null`, como siempre.
  */
 export async function resolveWhatsAppSender(
   connectorId?: string | null,
@@ -63,7 +70,10 @@ export async function resolveWhatsAppSender(
   const connector = await prisma.leadConnector.findFirst({
     where: { id: connectorId, provider: "WHATSAPP", deletedAt: null },
   });
-  if (!connector) return null;
+  if (!connector) {
+    await throwIfDeletedBrandConnector(connectorId);
+    return null;
+  }
   const credentials = getWhatsAppCredentials(connector);
   if (!credentials) {
     throw new Error(
@@ -72,4 +82,24 @@ export async function resolveWhatsAppSender(
     );
   }
   return credentials;
+}
+
+/**
+ * Connector de WhatsApp borrado (soft delete) de una marca NO predeterminada → lanza. La marca la
+ * decide el resolvedor de siempre (`resolveBrandForConnector` lee la cuenta aunque esté borrada):
+ * sin marca o con la predeterminada → no hace nada; con otra marca o "no disponible" (marca
+ * borrada, inexistente o ilegible) → lanza. Solo corre cuando el connector no se encontró activo.
+ */
+async function throwIfDeletedBrandConnector(connectorId: string): Promise<void> {
+  const deleted = await prisma.leadConnector.findFirst({
+    where: { id: connectorId, provider: "WHATSAPP", deletedAt: { not: null } },
+    select: { id: true, name: true },
+  });
+  if (!deleted) return;
+  const brand = await resolveBrandForConnector(connectorId);
+  if (brand.kind === "default") return;
+  throw new Error(
+    `El connector de WhatsApp "${deleted.name}" (${deleted.id}) está eliminado y es de una marca no predeterminada. ` +
+      `No se envía el mensaje desde el número global para no responder como otra marca.`,
+  );
 }
