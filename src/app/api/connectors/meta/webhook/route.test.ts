@@ -142,6 +142,33 @@ describe("webhook de Lead Ads — asignación estricta de página a cuenta", () 
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // Un lote con un huérfano y un lead que falla vuelve a entregarse completo (503). El huérfano ya
+  // quedó en ERROR la primera vez: re-marcarlo sumaría otro errorCount por la misma causa.
+  it("un huérfano que ya estaba en ERROR (reentrega) no se re-marca ni suma otro errorCount", async () => {
+    connectorFindMany.mockResolvedValue([CUENTA_A, CUENTA_B]);
+    reservarLeadEntrante.mockResolvedValue({ logId: "log-1", yaProcesado: false, estadoPrevio: "ERROR" });
+
+    const res = await postFirmado(leadgen("PAGE-X"), "secret-A");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, processed: 1 });
+    expect(reservarLeadEntrante).toHaveBeenCalledTimes(1);
+    expect(marcarLeadFallido).not.toHaveBeenCalled();
+    expect(processIncomingLead).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("una reserva que quedó a medias (RECEIVED) sí se marca en ERROR al reentregarse", async () => {
+    connectorFindMany.mockResolvedValue([CUENTA_A, CUENTA_B]);
+    reservarLeadEntrante.mockResolvedValue({ logId: "log-1", yaProcesado: false, estadoPrevio: "RECEIVED" });
+
+    const res = await postFirmado(leadgen("PAGE-X"), "secret-A");
+
+    expect(res.status).toBe(200);
+    expect(marcarLeadFallido).toHaveBeenCalledTimes(1);
+    expect(marcarLeadFallido).toHaveBeenCalledWith("log-1", "conn-A", detallePaginaSinCuenta("PAGE-X", "lg-1"));
+  });
+
   // Si ni siquiera se pudo dejar el rastro, se cuenta como fallo para que Meta reintente (503),
   // igual que cuando la reserva falla en el camino normal.
   it("si la reserva del lead de una página sin cuenta falla, responde 503 para que Meta reintente", async () => {

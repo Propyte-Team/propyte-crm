@@ -78,6 +78,7 @@ describe("reservarLeadEntrante (#713)", () => {
     expect(await reservarLeadEntrante("conn-1", "lead-1", {})).toEqual({
       logId: "log-1",
       yaProcesado: true,
+      estadoPrevio: "PROCESSED",
     });
   });
 
@@ -87,9 +88,12 @@ describe("reservarLeadEntrante (#713)", () => {
     logCreate.mockRejectedValue(duplicado);
     logFindUnique.mockResolvedValue({ id: "log-1", status: "ERROR" });
 
+    // `estadoPrevio` deja que el llamador sepa que la fila ya estaba en ERROR (seguimiento T5:
+    // el webhook no vuelve a marcar —ni a sumar errorCount— un lead huérfano que Meta reentrega).
     expect(await reservarLeadEntrante("conn-1", "lead-1", {})).toEqual({
       logId: "log-1",
       yaProcesado: false,
+      estadoPrevio: "ERROR",
     });
   });
 
@@ -181,12 +185,83 @@ describe("reprocesarLeadsFallidos (#713)", () => {
     expect(captureLead).not.toHaveBeenCalled();
   });
 
-  it("solo mira los que quedaron en ERROR sin contacto", async () => {
+  it("solo mira los que quedaron en ERROR sin contacto, en orden estable y por páginas", async () => {
     await reprocesarLeadsFallidos(10);
 
+    // Orden por (receivedAt, id): el desempate por id hace estable el cursor entre páginas.
+    // `take` es el tamaño de página (100), no el límite de reintentos.
+    expect(logFindMany).toHaveBeenCalledTimes(1);
     expect(logFindMany.mock.calls[0][0]).toMatchObject({
       where: { status: "ERROR", contactId: null },
-      take: 10,
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+      take: 100,
+    });
+    expect(logFindMany.mock.calls[0][0].cursor).toBeUndefined();
+  });
+
+  // Seguimiento T5 (2026-10-09): los leads de una página sin cuenta quedan en ERROR para siempre
+  // (sin `_mapped`, el replay los salta). Con `take: limite` y el salto DESPUÉS de leer, bastaban
+  // `limite` huérfanos para llenar todas las corridas y que el replay no recuperara nunca nada.
+  describe("huérfanos en ERROR que el replay no puede rehacer", () => {
+    const huerfano = (i: number) => ({
+      id: `huerfano-${String(i).padStart(3, "0")}`,
+      connectorId: "conn-1",
+      externalLeadId: `lead-h${i}`,
+      rawPayload: { webhook: { leadgen_id: `lead-h${i}` }, motivo: "pagina_sin_cuenta" },
+    });
+    const recuperable = (i: number) => ({
+      id: `recuperable-${i}`,
+      connectorId: "conn-1",
+      externalLeadId: `lead-ok${i}`,
+      rawPayload: { external: { email: `r${i}@b.c` }, [CAMPOS_MAPEADOS]: { email: `r${i}@b.c` } },
+    });
+
+    /** findMany que pagina como Prisma: cursor (inclusive) + skip + take sobre una lista fija. */
+    function tablaPaginada(filas: Array<{ id: string }>) {
+      logFindMany.mockImplementation(async (args: { take: number; skip?: number; cursor?: { id: string } }) => {
+        const inicio = args.cursor ? filas.findIndex((f) => f.id === args.cursor!.id) + (args.skip ?? 0) : 0;
+        return filas.slice(inicio, inicio + args.take);
+      });
+    }
+
+    beforeEach(() => {
+      logCreate.mockRejectedValue(duplicado);
+      logFindUnique.mockResolvedValue({ id: "log-1", status: "ERROR" });
+    });
+
+    it("🚨 130 huérfanos antes de uno recuperable: el recuperable SÍ se reprocesa (pagina con cursor)", async () => {
+      const huerfanos = Array.from({ length: 130 }, (_, i) => huerfano(i));
+      tablaPaginada([...huerfanos, recuperable(1)]);
+
+      const r = await reprocesarLeadsFallidos(25);
+
+      expect(r).toEqual({ intentados: 1, recuperados: 1 });
+      expect(captureLead).toHaveBeenCalledTimes(1);
+      // Los huérfanos no se cuentan como intentos ni se reintentan.
+      expect(logUpdate).toHaveBeenCalledTimes(1);
+      // La segunda página continúa DESPUÉS de la última fila de la primera.
+      expect(logFindMany).toHaveBeenCalledTimes(2);
+      expect(logFindMany.mock.calls[1][0]).toMatchObject({ cursor: { id: "huerfano-099" }, skip: 1 });
+    });
+
+    it("deja de pedir páginas al juntar `limite` reintentos (aunque la página venga llena)", async () => {
+      tablaPaginada(Array.from({ length: 150 }, (_, i) => recuperable(i)));
+
+      const r = await reprocesarLeadsFallidos(3);
+
+      expect(r.intentados).toBe(3);
+      expect(captureLead).toHaveBeenCalledTimes(3);
+      expect(logFindMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("termina cuando se acaban las filas aunque nada sea recuperable", async () => {
+      tablaPaginada(Array.from({ length: 230 }, (_, i) => huerfano(i)));
+
+      const r = await reprocesarLeadsFallidos(25);
+
+      expect(r).toEqual({ intentados: 0, recuperados: 0 });
+      expect(captureLead).not.toHaveBeenCalled();
+      expect(logFindMany).toHaveBeenCalledTimes(3); // 100 + 100 + 30 (< página: fin)
     });
   });
 

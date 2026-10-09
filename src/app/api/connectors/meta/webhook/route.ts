@@ -126,8 +126,10 @@ export async function POST(req: NextRequest) {
             webhook: change.value as Record<string, unknown>,
             motivo: "pagina_sin_cuenta",
           });
-          // Ya terminado (PROCESSED/DUPLICATE): no hay nada que marcar.
-          if (!reserva.yaProcesado) {
+          // Ya terminado (PROCESSED/DUPLICATE): no hay nada que marcar. Ya en ERROR (Meta reentrega
+          // el lote completo si otro lead de la tanda dio 503): tampoco, porque ya tiene su
+          // detalle y volver a marcarlo sumaría otro errorCount por la misma causa.
+          if (!reserva.yaProcesado && reserva.estadoPrevio !== "ERROR") {
             // marcarLeadFallido deja el log en ERROR con el detalle y escribe lastError/errorCount
             // del conector (llama a markConnectorLead por dentro; llamarlo aparte contaría doble).
             await marcarLeadFallido(reserva.logId, matched.connector.id, detalle);
