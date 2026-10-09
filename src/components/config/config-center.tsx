@@ -1,10 +1,14 @@
 // Centro de Configuración — grid índice (estilo Zoho) + editores embebidos.
 // Secciones con editor propio aquí: Automatización · Equipos & Territorios ·
-// Campos · Agentes automáticos (AgentDef, tareas de IA en segundo plano). El resto
+// Campos · Visibilidad de campos. El resto
 // enlaza a su pantalla existente (incluye /admin como vista de detalle por tab:
 // usuarios, comisiones, acuerdo de actividad, integraciones, bot, playbook,
 // Agentes conversacionales = BotAgentProfile, persona del bot por segmento,
 // Marcas del agente = Brand: persona, conocimiento, catálogo y canales por marca).
+// 2026-10-09: se quitó "Agentes automáticos" (Agent Studio, AgentDef): sin uso
+// (2 agentes inactivos, 0 corridas). Solo se retiró la UI; el backend (src/lib/agents,
+// APIs y modelos AgentDef/AgentRun) sigue porque el servidor MCP usa tools.ts.
+// Un enlace viejo con ?section=agents cae al índice.
 "use client";
 
 import { useState } from "react";
@@ -18,10 +22,9 @@ import {
 import { AutomationSection } from "./automation-section";
 import { TeamsSection } from "./teams-section";
 import { FieldsSection } from "./fields-section";
-import { AgentsSection } from "./agents-section";
 import { CoreFieldsSection } from "./core-fields-section";
 
-type SectionKey = "index" | "automation" | "teams" | "fields" | "agents" | "corefields";
+type SectionKey = "index" | "automation" | "teams" | "fields" | "corefields";
 
 interface CardDef {
   key?: SectionKey;
@@ -45,7 +48,7 @@ export function visibleCards(cards: CardDef[], userRole: string): CardDef[] {
   });
 }
 
-const SECTION_KEYS: SectionKey[] = ["index", "automation", "teams", "fields", "agents", "corefields"];
+const SECTION_KEYS: SectionKey[] = ["index", "automation", "teams", "fields", "corefields"];
 
 /**
  * Determina la sección inicial a partir del query param `section` (deep-link desde
@@ -57,7 +60,8 @@ export function resolveInitialSection(sectionParam: string | null | undefined): 
   return (SECTION_KEYS as string[]).includes(sectionParam ?? "") ? (sectionParam as SectionKey) : "index";
 }
 
-const GROUPS: Array<{ title: string; cards: CardDef[] }> = [
+// Exportada para poder verificar en pruebas qué tarjetas muestra el índice.
+export const CONFIG_GROUPS: Array<{ title: string; cards: CardDef[] }> = [
   {
     title: "Organización",
     cards: [
@@ -71,7 +75,6 @@ const GROUPS: Array<{ title: string; cards: CardDef[] }> = [
     title: "Automatización",
     cards: [
       { key: "automation", icon: Workflow, title: "Flujos de trabajo y SLA", items: ["Reglas de flujo (8 canónicas)", "Cadencias / planes de acción", "Políticas SLA", "Cola de acciones"] },
-      { key: "agents", icon: Bot, title: "Agentes automáticos", items: ["Tareas de IA en segundo plano", "SDR Speed-to-lead", "Autonomía L0-L3 con herramientas", "Corridas auditadas"] },
       { href: "/journey", icon: GitBranch, title: "Journey", admin: true, roles: ["ADMIN", "DIRECTOR"], items: ["Mapa del customer journey", "Etapas y layout"] },
     ],
   },
@@ -133,7 +136,6 @@ export function ConfigCenter({ userRole }: { userRole: string }) {
         {section === "teams" && <TeamsSection userRole={userRole} />}
         {section === "fields" && <FieldsSection userRole={userRole} />}
         {section === "corefields" && <CoreFieldsSection userRole={userRole} />}
-        {section === "agents" && <AgentsSection userRole={userRole} />}
       </div>
     );
   }
@@ -146,7 +148,7 @@ export function ConfigCenter({ userRole }: { userRole: string }) {
       </div>
 
       <div className="space-y-8">
-        {GROUPS.map((group) => {
+        {CONFIG_GROUPS.map((group) => {
           const cards = visibleCards(group.cards, userRole);
           if (cards.length === 0) return null;
           return (

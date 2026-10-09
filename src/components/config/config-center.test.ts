@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { visibleCards, resolveInitialSection } from "./config-center";
+import { visibleCards, resolveInitialSection, CONFIG_GROUPS } from "./config-center";
 
 describe("visibleCards", () => {
   const cards = [
@@ -41,6 +41,34 @@ describe("resolveInitialSection", () => {
   });
   it("acepta cualquier SectionKey válida", () => {
     expect(resolveInitialSection("teams")).toBe("teams");
-    expect(resolveInitialSection("agents")).toBe("agents");
+    expect(resolveInitialSection("fields")).toBe("fields");
+  });
+  // 2026-10-09: "Agentes automáticos" se quitó del panel. Un enlace viejo con
+  // ?section=agents debe caer al índice, no romper la página.
+  it("?section=agents (enlace viejo de Agentes automáticos) → index", () => {
+    expect(resolveInitialSection("agents")).toBe("index");
+  });
+});
+
+// 2026-10-09: se quitó la tarjeta "Agentes automáticos" (Agent Studio): sin uso
+// (2 agentes inactivos, 0 corridas). "Agentes conversacionales" (BotAgentProfile)
+// es la opción que sí se usa y debe seguir presente.
+describe("CONFIG_GROUPS", () => {
+  const allCards = CONFIG_GROUPS.flatMap((g) => g.cards);
+
+  it("ninguna tarjeta se titula 'Agentes automáticos'", () => {
+    expect(allCards.map((c) => c.title)).not.toContain("Agentes automáticos");
+  });
+
+  it("ninguna tarjeta abre la sección embebida 'agents'", () => {
+    expect(allCards.map((c) => c.key)).not.toContain("agents");
+  });
+
+  it("'Agentes conversacionales' sigue presente", () => {
+    expect(allCards.map((c) => c.title)).toContain("Agentes conversacionales");
+  });
+
+  it("'Marcas del agente' sigue presente", () => {
+    expect(allCards.map((c) => c.title)).toContain("Marcas del agente");
   });
 });
