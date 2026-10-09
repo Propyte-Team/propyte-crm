@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const cbFindUnique = vi.fn();
 const cbCount = vi.fn();
 const cbUpsert = vi.fn();
 const cbCreate = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     contactBrand: {
+      findUnique: (...a: unknown[]) => cbFindUnique(...a),
       count: (...a: unknown[]) => cbCount(...a),
       upsert: (...a: unknown[]) => cbUpsert(...a),
       create: (...a: unknown[]) => cbCreate(...a),
@@ -20,6 +22,7 @@ import { attachBrand } from "./attach";
 beforeEach(() => {
   vi.resetAllMocks();
   getDefaultBrandId.mockResolvedValue("b-def");
+  cbFindUnique.mockResolvedValue(null); // por defecto: la fila contacto ↔ marca aún no existe
   cbUpsert.mockResolvedValue({});
   cbCreate.mockResolvedValue({});
 });
@@ -59,6 +62,39 @@ describe("attachBrand", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     cbUpsert.mockRejectedValue(new Error("x"));
     await expect(attachBrand({ contactId: "k1", brandId: "b-yax", contactIsNew: true })).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "k1", "b-yax", expect.any(Error));
+    error.mockRestore();
+  });
+});
+
+// Seguimiento (2026-10-09): handleInboundMessage ahora llama a attachBrand en CADA mensaje de un
+// contacto existente. Cuando la fila contacto ↔ marca ya está, la llamada debe costar UNA consulta
+// por la clave única: sin count, sin upsert y sin tocar la marca predeterminada.
+describe("attachBrand — la fila ya existe", () => {
+  it("contacto existente con la fila de esa marca → solo un findUnique, sin count ni upsert", async () => {
+    cbFindUnique.mockResolvedValue({ id: "cb1" });
+
+    await attachBrand({ contactId: "k1", brandId: "b-yax", connectorId: "c1", contactIsNew: false });
+
+    expect(cbFindUnique).toHaveBeenCalledTimes(1);
+    expect(cbFindUnique).toHaveBeenCalledWith({
+      where: { contactId_brandId: { contactId: "k1", brandId: "b-yax" } },
+      select: { id: true },
+    });
+    expect(cbCount).not.toHaveBeenCalled();
+    expect(cbUpsert).not.toHaveBeenCalled();
+    expect(getDefaultBrandId).not.toHaveBeenCalled();
+  });
+
+  it("si la lectura de la fila falla → no lanza y registra el error", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    cbFindUnique.mockRejectedValue(new Error("db caída"));
+
+    await expect(
+      attachBrand({ contactId: "k1", brandId: "b-yax", contactIsNew: false }),
+    ).resolves.toBeUndefined();
+
+    expect(cbUpsert).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "k1", "b-yax", expect.any(Error));
     error.mockRestore();
   });

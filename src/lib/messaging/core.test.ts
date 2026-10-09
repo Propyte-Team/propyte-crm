@@ -19,6 +19,7 @@ const commentRuleLogFindFirst = vi.fn();
 const commentRuleLogUpdateMany = vi.fn();
 const slaTimerFindFirst = vi.fn();
 const leadConnectorUpdate = vi.fn();
+const leadConnectorFindUnique = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   default: {
@@ -45,9 +46,18 @@ vi.mock("@/lib/db", () => ({
       updateMany: (...a: unknown[]) => commentRuleLogUpdateMany(...a),
     },
     slaTimer: { findFirst: (...a: unknown[]) => slaTimerFindFirst(...a) },
-    leadConnector: { update: (...a: unknown[]) => leadConnectorUpdate(...a) },
+    leadConnector: {
+      update: (...a: unknown[]) => leadConnectorUpdate(...a),
+      findUnique: (...a: unknown[]) => leadConnectorFindUnique(...a),
+    },
   },
 }));
+// Atribución contacto ↔ marca (2026-10-09): se mockean los dos módulos de marcas para no
+// acoplar este archivo a sus consultas (attachBrand y getDefaultBrandId tienen sus propias pruebas).
+const attachBrand = vi.fn();
+vi.mock("@/lib/brands/attach", () => ({ attachBrand: (...a: unknown[]) => attachBrand(...a) }));
+const getDefaultBrandId = vi.fn();
+vi.mock("@/lib/brands/resolve", () => ({ getDefaultBrandId: (...a: unknown[]) => getDefaultBrandId(...a) }));
 vi.mock("@/lib/intake/capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead(...a) }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 vi.mock("@/lib/workflows/sla", () => ({ meetSlaTimers: (...a: unknown[]) => meetSlaTimers(...a) }));
@@ -95,7 +105,7 @@ beforeEach(() => {
     notifCreate, captureLead, botRespond, meetSlaTimers, emitEvent,
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
     commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
-    slaTimerFindFirst, leadConnectorUpdate,
+    slaTimerFindFirst, leadConnectorUpdate, leadConnectorFindUnique, attachBrand, getDefaultBrandId,
   ].forEach((m) => m.mockReset());
   autoRouteLead.mockResolvedValue("u-nuevo");
   slaTimerFindFirst.mockResolvedValue(null); // por defecto: nunca se enrutó
@@ -1066,6 +1076,115 @@ describe("señal de vida del conector en el intake de DM", () => {
     const r = await handleInboundMessage(conBoton);
     expect(r).toEqual({ id: "m1" });
     err.mockRestore();
+  });
+});
+
+// Seguimiento de marcas (2026-10-09, spec marcas-agente §4.1): la fila de contact_brands solo se
+// registraba dentro de captureLead, o sea al ALTA de un contacto. Un contacto que ya existía y
+// escribía por WhatsApp / IG / Messenger a una cuenta con marca nunca quedaba atribuido a esa
+// marca. handleInboundMessage ahora la registra también para el contacto existente. Todo es
+// best-effort: la atribución jamás debe romper la entrada del mensaje.
+describe("handleInboundMessage — marca de la cuenta para un contacto que ya existía", () => {
+  const conBoton = { ...base, connectorId: "conn_ig" };
+  const conocido = { id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" };
+
+  beforeEach(() => {
+    contactFindFirst.mockResolvedValue(conocido);
+    leadConnectorFindUnique.mockResolvedValue({ brandId: "b-yax" });
+    getDefaultBrandId.mockResolvedValue("b-def");
+    attachBrand.mockResolvedValue(undefined);
+  });
+
+  it("cuenta con marca → attachBrand con el brandId de la cuenta y contactIsNew:false", async () => {
+    await handleInboundMessage(conBoton);
+    expect(leadConnectorFindUnique).toHaveBeenCalledWith({ where: { id: "conn_ig" }, select: { brandId: true } });
+    expect(attachBrand).toHaveBeenCalledTimes(1);
+    expect(attachBrand).toHaveBeenCalledWith({
+      contactId: "c1",
+      brandId: "b-yax",
+      connectorId: "conn_ig",
+      contactIsNew: false,
+    });
+    expect(getDefaultBrandId).not.toHaveBeenCalled();
+  });
+
+  it("cuenta SIN marca → se atribuye a la predeterminada", async () => {
+    leadConnectorFindUnique.mockResolvedValue({ brandId: null });
+    await handleInboundMessage(conBoton);
+    expect(attachBrand).toHaveBeenCalledWith({
+      contactId: "c1",
+      brandId: "b-def",
+      connectorId: "conn_ig",
+      contactIsNew: false,
+    });
+  });
+
+  it("cuenta inexistente (findUnique → null) → también la predeterminada", async () => {
+    leadConnectorFindUnique.mockResolvedValue(null);
+    await handleInboundMessage(conBoton);
+    expect(attachBrand).toHaveBeenCalledWith(expect.objectContaining({ brandId: "b-def", contactIsNew: false }));
+  });
+
+  it("cuenta sin marca y sin predeterminada → no atribuye (no hay a qué marca)", async () => {
+    leadConnectorFindUnique.mockResolvedValue({ brandId: null });
+    getDefaultBrandId.mockResolvedValue(null);
+    await handleInboundMessage(conBoton);
+    expect(attachBrand).not.toHaveBeenCalled();
+  });
+
+  it("sin connectorId → no lee la cuenta ni atribuye", async () => {
+    await handleInboundMessage(base);
+    expect(leadConnectorFindUnique).not.toHaveBeenCalled();
+    expect(attachBrand).not.toHaveBeenCalled();
+  });
+
+  // Un eco es un saliente del equipo, no una entrada del cliente a la cuenta: no atribuye.
+  it("un eco → no atribuye", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    await handleInboundMessage(echo);
+    expect(leadConnectorFindUnique).not.toHaveBeenCalled();
+    expect(attachBrand).not.toHaveBeenCalled();
+  });
+
+  // captureLead ya atribuye al contacto (nuevo o deduplicado) cuando recibe el connectorId:
+  // hacerlo otra vez aquí sería una segunda atribución del mismo mensaje.
+  it("contacto NUEVO vía captureLead → no se atribuye una segunda vez", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    await handleInboundMessage(conBoton);
+    expect(captureLead).toHaveBeenCalledWith(expect.any(Object), { connectorId: "conn_ig" });
+    expect(leadConnectorFindUnique).not.toHaveBeenCalled();
+    expect(attachBrand).not.toHaveBeenCalled();
+  });
+
+  it("si falla la lectura de la cuenta → el mensaje se ingiere igual y se registra el error", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    leadConnectorFindUnique.mockRejectedValue(new Error("db caída"));
+    const r = await handleInboundMessage(conBoton);
+    expect(r).toEqual({ id: "m1" });
+    expect(attachBrand).not.toHaveBeenCalled();
+    expect(msgCreate).toHaveBeenCalled();
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("[messaging]"), expect.any(Error));
+    err.mockRestore();
+  });
+
+  it("si attachBrand lanza → el mensaje se ingiere igual y se registra el error", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    attachBrand.mockRejectedValue(new Error("x"));
+    const r = await handleInboundMessage(conBoton);
+    expect(r).toEqual({ id: "m1" });
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("[messaging]"), expect.any(Error));
+    err.mockRestore();
+  });
+
+  // Reentrega del webhook: el mensaje ya estaba persistido y el camino corto no debe tocar nada más.
+  it("reentrega (P2002) → no vuelve a atribuir", async () => {
+    msgCreate.mockRejectedValueOnce({ code: "P2002" });
+    msgFindUnique.mockResolvedValue({ id: "m-existing" });
+    const r = await handleInboundMessage(conBoton);
+    expect(r).toEqual({ id: "m-existing" });
+    expect(attachBrand).not.toHaveBeenCalled();
   });
 });
 

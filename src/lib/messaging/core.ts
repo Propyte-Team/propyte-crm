@@ -258,6 +258,10 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     profile = await fetchProfileForMessage(msg);
   }
 
+  // Seguimiento de marcas (2026-10-09): si el contacto se da de alta (o se deduplica) vía
+  // captureLead, captureLead ya registró su marca; aquí solo se atribuye al que YA existía.
+  let altaViaCaptureLead = false;
+
   if (!contact) {
     // #827: WhatsApp sin teléfono real (`wa_id` ausente) y sin match previo por BSUID
     // es un remitente que hoy no se puede dar de alta — Contact.phone es NOT NULL y
@@ -288,6 +292,7 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
       message: msg.text,
       ...idField,
     }, { connectorId: msg.connectorId ?? undefined });
+    altaViaCaptureLead = true;
     if (!result.contactId) {
       if (msg.connectorId) {
         const { markConnectorLead } = await import("@/lib/intake/connectors");
@@ -398,6 +403,30 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   if (msg.connectorId) {
     const { markConnectorLead } = await import("@/lib/intake/connectors");
     await markConnectorLead(msg.connectorId);
+  }
+
+  // Marca del contacto que YA existía (2026-10-09, spec marcas-agente §4.1): la fila de
+  // contact_brands solo se registraba dentro de captureLead, es decir, al alta. Un contacto
+  // existente que escribe por WhatsApp / IG / Messenger a una cuenta con marca nunca quedaba
+  // atribuido a esa marca. Se registra aquí, con el mensaje ya persistido (la reentrega del
+  // webhook sale antes por el P2002 y no llega). Cuenta sin marca → la predeterminada, igual
+  // que captureLead. attachBrand es barato cuando la fila ya existe (una sola consulta).
+  // Best-effort: jamás debe romper la ingesta, igual que la señal de vida de arriba.
+  if (msg.connectorId && !altaViaCaptureLead) {
+    try {
+      const cuenta = await prisma.leadConnector.findUnique({
+        where: { id: msg.connectorId },
+        select: { brandId: true },
+      });
+      const { getDefaultBrandId } = await import("@/lib/brands/resolve");
+      const brandId = cuenta?.brandId ?? (await getDefaultBrandId());
+      if (brandId) {
+        const { attachBrand } = await import("@/lib/brands/attach");
+        await attachBrand({ contactId: contact.id, brandId, connectorId: msg.connectorId, contactIsNew: false });
+      }
+    } catch (err) {
+      console.error("[messaging] no se pudo registrar la marca del contacto existente:", err);
+    }
   }
 
   // ── Side-effects post-persistencia — NUNCA deben matar la ingesta ni enmudecer
