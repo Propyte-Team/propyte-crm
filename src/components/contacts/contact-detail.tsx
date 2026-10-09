@@ -27,7 +27,8 @@ import { LifecycleStepper } from "@/components/contacts/lifecycle-stepper";
 import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { ContactTimeline } from "@/components/contacts/contact-timeline";
-import { CallIndicator } from "@/components/contacts/call-indicator";
+import { CallButton } from "@/components/voice/call-button";
+import { useVoice } from "@/components/voice/voice-device-provider";
 import { QuoteList } from "@/components/quotes/quote-list";
 import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
 import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
@@ -124,7 +125,10 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [dealOpen, setDealOpen] = useState(false);
-  const [activeCall, setActiveCall] = useState(false);
+  // Llamadas: salen por el navegador (WebRTC, VoiceDeviceProvider). Antes había un
+  // CallIndicator que pegaba a /api/twilio/call (Twilio llamaba al contacto y volvía a
+  // marcar el mismo número → "ocupado") y simulaba "activa" a los 3 s. Ver #847.
+  const voice = useVoice();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(
     contact.deals?.length > 0 ? contact.deals[0].id : null
   );
@@ -338,9 +342,26 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
           >
             <MessageCircle className="h-4 w-4" /> WhatsApp
           </button>
-          <button className="btn-secondary text-[13px]" onClick={() => setActiveCall(true)} disabled={activeCall}>
-            <Phone className="h-4 w-4" /> Llamar
-          </button>
+          {voice?.ready && currentUserId && contact.phone ? (
+            <CallButton
+              phone={contact.phone}
+              contactId={contact.id}
+              userId={currentUserId}
+              doNotContact={contact.doNotContact ?? false}
+            />
+          ) : (
+            <button
+              className="btn-secondary text-[13px]"
+              disabled
+              title={
+                !contact.phone
+                  ? "Sin teléfono"
+                  : "Telefonía no disponible: revisa el micrófono del navegador o la configuración de Twilio"
+              }
+            >
+              <Phone className="h-4 w-4" /> Llamar
+            </button>
+          )}
           <button
             className="btn-secondary text-[13px]"
             onClick={() => setDealOpen(true)}
@@ -566,16 +587,6 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
       <Section title="Cronología">
         <ContactTimeline contactId={contact.id} />
       </Section>
-
-      {/* Llamada VoIP activa */}
-      {activeCall && (
-        <CallIndicator
-          contactId={contact.id}
-          contactName={`${contact.firstName} ${contact.lastName}`}
-          contactPhone={contact.phone}
-          onClose={() => setActiveCall(false)}
-        />
-      )}
 
       {/* Modal de crear deal */}
       <Dialog open={dealOpen} onOpenChange={setDealOpen}>
