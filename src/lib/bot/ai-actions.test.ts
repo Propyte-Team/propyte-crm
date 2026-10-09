@@ -83,6 +83,10 @@ vi.mock("@/lib/brands/resolve", () => ({
   resolveBrandForContact: (...a: unknown[]) => resolveForContactMock(...a),
 }));
 
+// AI_REPLY delega en botRespond (import dinámico).
+const botRespondMock = vi.fn();
+vi.mock("./bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespondMock(...a) }));
+
 // ---
 
 import { runAiAction } from "./ai-actions";
@@ -145,6 +149,24 @@ beforeEach(() => {
   selectAgentProfile.mockResolvedValue(null);
   // Sin marca por defecto: el comportamiento de siempre.
   resolveForContactMock.mockResolvedValue({ resolution: { kind: "default" }, conversationId: null });
+});
+
+// Marcas del agente (2026-10-09, revisión final C2): un workflow NO sabe por qué cuenta escribió
+// el contacto, así que AI_REPLY deja `connectorId` AUSENTE (undefined = botRespond la infiere del
+// hilo más reciente). `null` significaría "el número global" y no se infiere nada.
+describe("runAiAction(AI_REPLY) — delega en botRespond sin cuenta explícita", () => {
+  it("llama a botRespond con createConversation y SIN la clave connectorId", async () => {
+    findConversationForChannel.mockResolvedValue(null);
+    botRespondMock.mockResolvedValue(true);
+
+    const result = await runAiAction("AI_REPLY", CONTACT, { goal: "seguimiento" });
+
+    expect(result).toEqual({});
+    expect(botRespondMock).toHaveBeenCalledTimes(1);
+    expect(botRespondMock.mock.calls[0][0]).toBe("c1");
+    expect(botRespondMock.mock.calls[0][1]).toEqual({ goal: "seguimiento", createConversation: true });
+    expect(botRespondMock.mock.calls[0][1]).not.toHaveProperty("connectorId");
+  });
 });
 
 describe("runAiAction(AI_DRAFT) — ensamblado en 4 capas", () => {

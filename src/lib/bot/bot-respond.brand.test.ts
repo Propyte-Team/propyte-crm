@@ -292,10 +292,11 @@ describe("botRespond — cuenta con marca", () => {
 describe("botRespond — la conversación y la marca salen de la misma cuenta", () => {
   const CONV_PROP = { id: "conv-p", status: "BOT", botEnabled: true, connectorId: "c-prop" };
   /** Búsqueda de conversación falsa: con `connectorId` en el where → solo el hilo de esa cuenta
-   *  (si existe en `porCuenta`); sin él (findConversationForChannel) → el hilo más reciente. */
+   *  (si existe en `porCuenta`; el hilo sin cuenta va con la clave "null"); sin él
+   *  (findConversationForChannel) → el hilo más reciente. */
   function setThreads(porCuenta: Record<string, unknown>, masReciente: unknown) {
-    convFindFirst.mockImplementation(async ({ where }: { where: { connectorId?: string } }) =>
-      where.connectorId !== undefined ? (porCuenta[where.connectorId] ?? null) : masReciente,
+    convFindFirst.mockImplementation(async ({ where }: { where: { connectorId?: string | null } }) =>
+      where.connectorId !== undefined ? (porCuenta[String(where.connectorId)] ?? null) : masReciente,
     );
   }
   /** c-yax → marca Yaxnáh; cualquier otra cuenta → predeterminada. */
@@ -370,6 +371,64 @@ describe("botRespond — la conversación y la marca salen de la misma cuenta", 
 
     expect(result).toBe(true);
     expect(buildSystemPromptMock.mock.calls[0][0]).not.toHaveProperty("brand");
+  });
+
+  // Hallazgo C2(b) de la revisión final: `connectorId: null` explícito es "el cliente escribió al
+  // número global" (lo sabe el webhook); `undefined` es "no sé, infiérelo del hilo más reciente".
+  it("16. connectorId null EXPLÍCITO (número global) NO infiere la cuenta del hilo de una marca", async () => {
+    brandOnlyForYax();
+    // el hilo más reciente del contacto es el de Yaxnáh
+    setThreads({}, CONV_YAX);
+
+    const result = await botRespond("c1", { connectorId: null });
+
+    expect(result).toBe(false);
+    // la marca que se resolvió primero es la del número global (null), no la del hilo de Yaxnáh
+    expect(resolveBrandMock.mock.calls[0][0]).toBeNull();
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+  });
+
+  it("16b. connectorId null explícito con hilo sin cuenta → contesta como siempre (sin marca)", async () => {
+    brandOnlyForYax();
+    setThreads({}, { id: "conv-g", status: "BOT", botEnabled: true, connectorId: null });
+
+    const result = await botRespond("c1", { connectorId: null });
+
+    expect(result).toBe(true);
+    expect(buildSystemPromptMock.mock.calls[0][0]).not.toHaveProperty("brand");
+    expect(sendChannelMessage.mock.calls[0][4]).toEqual({ bot: true, connectorId: null });
+  });
+
+  it("16d. connectorId null explícito: se busca primero el hilo SIN cuenta aunque el más reciente sea de una marca", async () => {
+    brandOnlyForYax();
+    const CONV_GLOBAL = { id: "conv-g", status: "BOT", botEnabled: true, connectorId: null };
+    // el hilo más reciente es el de Yaxnáh, pero el mensaje llegó al número global y su hilo existe
+    setThreads({ null: CONV_GLOBAL }, CONV_YAX);
+
+    const result = await botRespond("c1", { connectorId: null });
+
+    expect(result).toBe(true);
+    // la primera búsqueda de conversación es por (contacto, canal, sin cuenta), como la ingesta
+    expect(convFindFirst.mock.calls[0][0]).toEqual({
+      where: { contactId: "c1", channel: "WHATSAPP", connectorId: null },
+    });
+    expect(buildSystemPromptMock.mock.calls[0][0]).not.toHaveProperty("brand");
+    expect(sendChannelMessage.mock.calls[0][4]).toEqual({ bot: true, connectorId: null });
+  });
+
+  it("16c. connectorId AUSENTE (undefined) sigue infiriendo la cuenta del hilo más reciente (sin cambio)", async () => {
+    brandOnlyForYax();
+    setThreads({}, CONV_YAX);
+
+    const result = await botRespond("c1");
+
+    expect(result).toBe(true);
+    expect(resolveBrandMock.mock.calls[0][0]).toBe("c-yax");
+    expect(buildSystemPromptMock.mock.calls[0][0].brand).toEqual({
+      name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K",
+    });
+    expect(sendChannelMessage.mock.calls[0][4]).toEqual({ bot: true, connectorId: "c-yax" });
   });
 });
 

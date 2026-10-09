@@ -109,7 +109,15 @@ export async function botRespond(
   if (!contact || contact.doNotContact || (channel === "WHATSAPP" && contact.whatsappOptOut)) return false;
 
   const { ensureConversation, findConversationForChannel } = await import("@/lib/messaging/conversations");
-  const connectorId = opts.connectorId ?? (await findConversationForChannel(contactId, channel))?.connectorId ?? null;
+  // `null` EXPLÍCITO ≠ `undefined` (2026-10-09, revisión final C2): `null` = el llamador SABE que
+  // el mensaje llegó al número global (los webhooks pasan la cuenta resuelta o null) y no se
+  // infiere nada — inferir podía tomar la cuenta del hilo de otra marca y contestar como ella a
+  // un mensaje que el cliente mandó al número de Propyte. `undefined` = el llamador no lo sabe
+  // (workflow, ingesta sin cuenta) → la cuenta del hilo más reciente, igual que siempre.
+  const connectorId =
+    opts.connectorId !== undefined
+      ? opts.connectorId
+      : ((await findConversationForChannel(contactId, channel))?.connectorId ?? null);
 
   // Marca de la cuenta (2026-10-09, spec marcas-agente §3.2). Solo una marca NO
   // predeterminada cambia algo; "unavailable" = la cuenta tiene marca pero no se puede
@@ -124,10 +132,13 @@ export async function botRespond(
   // más reciente del contacto en el canal entre TODAS las cuentas: un contacto con hilos en
   // el número de Propyte y en el de Yaxnáh podría recibir la voz de una marca por el número
   // de la otra (el envío sale por `conv.connectorId`). Con `opts.connectorId` explícito se
-  // busca primero el hilo de esa cuenta; sin él, igual que siempre (2026-10-09).
+  // busca primero el hilo de esa cuenta — también con `null` (número global): el hilo sin
+  // cuenta, el mismo que eligió la ingesta en `ensureConversation` —; sin él (`undefined`),
+  // igual que siempre. Si el hilo resultante es de otra cuenta y alguna de las dos tiene marca,
+  // el cinturón de abajo no deja contestar (2026-10-09).
   const conv = opts.createConversation
     ? await ensureConversation({ contactId, channel, connectorId })
-    : opts.connectorId
+    : opts.connectorId !== undefined
       ? ((await prisma.conversation.findFirst({ where: { contactId, channel, connectorId: opts.connectorId } })) ??
         (await findConversationForChannel(contactId, channel)))
       : await findConversationForChannel(contactId, channel);
