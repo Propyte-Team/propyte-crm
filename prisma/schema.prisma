@@ -717,6 +717,7 @@ model User {
   googleOAuthToken        GoogleOAuthToken?
   shortlistsCreated       Shortlist[]       @relation("ShortlistsCreated")
   botConfigUpdates        BotConfig[]       @relation("BotConfigUpdatedBy")
+  brandsMarketing         Brand[]           @relation("BrandMarketingOwner")
 
   // Metas/Scorecard (§5.14)
   goals        Goal[] @relation("UserGoals")
@@ -817,6 +818,7 @@ model Contact {
   slaTimers        SlaTimer[]
   connectorLeads   ConnectorLeadLog[]
   shortlists       Shortlist[]
+  brands           ContactBrand[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1544,6 +1546,9 @@ model LeadConnector {
   lastSyncAt  DateTime?
   errorCount  Int                @default(0)
   lastError   String?            @db.Text
+  // Marca de la cuenta (2026-10-09). null = marca predeterminada.
+  brandId     String?
+  brand       Brand?             @relation(fields: [brandId], references: [id])
 
   leadLogs      ConnectorLeadLog[]
   conversations Conversation[]
@@ -1553,7 +1558,55 @@ model LeadConnector {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([brandId])
   @@map("lead_connectors")
+  @@schema("propyte_crm")
+}
+
+// Marca comercial (entrega 1 de 3 — spec 2026-10-09-marcas-agente-design.md).
+// Exactamente UNA fila con isDefault=true ("Propyte"): las cuentas sin brandId son de
+// ella y siguen el camino de siempre del agente. Una marca no predeterminada nace con
+// el agente apagado (botEnabled=false) a propósito.
+model Brand {
+  id                   String          @id @default(uuid())
+  name                 String          @unique
+  slug                 String          @unique
+  isDefault            Boolean         @default(false)
+  persona              String?         @db.Text
+  knowledge            String?         @db.Text
+  developmentIds       String[]        @default([])
+  defaultPlaza         Plaza?
+  enabledChannels      Json?
+  tonePreset           BotTonePreset?
+  playbookId           String?
+  playbook             BotPlaybook?    @relation("BrandPlaybook", fields: [playbookId], references: [id], onDelete: SetNull)
+  marketingOwnerUserId String?
+  marketingOwner       User?           @relation("BrandMarketingOwner", fields: [marketingOwnerUserId], references: [id], onDelete: SetNull)
+  botEnabled           Boolean         @default(false)
+  connectors           LeadConnector[]
+  contacts             ContactBrand[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  deletedAt            DateTime?
+
+  @@map("brands")
+  @@schema("propyte_crm")
+}
+
+// Marcas por las que llegó un contacto. Un contacto SIN filas pertenece a la marca
+// predeterminada (no se rellenan los contactos existentes). Ver src/lib/brands/attach.ts.
+model ContactBrand {
+  id               String   @id @default(uuid())
+  contactId        String
+  contact          Contact  @relation(fields: [contactId], references: [id])
+  brandId          String
+  brand            Brand    @relation(fields: [brandId], references: [id])
+  firstConnectorId String?
+  createdAt        DateTime @default(now())
+
+  @@unique([contactId, brandId])
+  @@index([brandId])
+  @@map("contact_brands")
   @@schema("propyte_crm")
 }
 
@@ -1642,6 +1695,7 @@ model BotPlaybook {
   tasks           BotTask[]
   activeInConfigs BotConfig[]       @relation("ActivePlaybook")
   agentProfiles   BotAgentProfile[]
+  brands          Brand[]           @relation("BrandPlaybook")
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
