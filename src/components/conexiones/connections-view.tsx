@@ -4,12 +4,16 @@ import { useState, useCallback } from "react";
 import { PROVIDERS, type ProviderGroup } from "@/lib/connectors/registry";
 import { ConnectWizard } from "./connect-wizard";
 import { MappingEditor } from "./mapping-editor";
+import { BrandSelect, useBrandOptions } from "./brand-select";
 import { formatDate } from "@/lib/format-date";
 
 interface Conn {
   id: string; name: string; provider: string; status: string;
   lastLeadAt: string | null; errorCount: number; lastError: string | null;
   fieldMap?: unknown;
+  // 2026-10-09: marca del agente de la cuenta (null = Predeterminada).
+  brandId: string | null;
+  brand: { id: string; name: string } | null;
   _count: { leadLogs: number };
 }
 
@@ -23,6 +27,9 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
   const [mappingFor, setMappingFor] = useState<Conn | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Cuenta cuyo selector de marca está abierto, y las marcas asignables.
+  const [brandFor, setBrandFor] = useState<string | null>(null);
+  const brands = useBrandOptions(true);
 
   const reload = useCallback(async () => {
     try {
@@ -41,6 +48,20 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
       body: JSON.stringify({ status: c.status === "ACTIVE" ? "PAUSED" : "ACTIVE" }),
     });
     if (!res.ok) { setError(`No se pudo cambiar el estado de "${c.name}".`); return; }
+    reload();
+  }, [reload]);
+
+  const changeBrand = useCallback(async (c: Conn, brandId: string | null) => {
+    const res = await fetch(`/api/admin/connectors/${c.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(typeof data.error === "string" ? data.error : `No se pudo cambiar la marca de "${c.name}".`);
+      return;
+    }
+    setBrandFor(null);
     reload();
   }, [reload]);
 
@@ -97,36 +118,57 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                 ) : (
                   <>
                     {accounts.map((c) => (
-                      <div
-                        key={c.id}
-                        className="mt-1.5 flex items-center justify-between rounded-md border p-2 text-[12px]"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[c.status] ?? "bg-neutral-300"}`}
-                          />
-                          <span className="truncate">{c.name}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-3">
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {c._count.leadLogs} ·{" "}
-                            {c.lastLeadAt ? formatDate(c.lastLeadAt) : "—"}
+                      <div key={c.id} className="mt-1.5 rounded-md border p-2 text-[12px]">
+                        <div className="flex items-center justify-between">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[c.status] ?? "bg-neutral-300"}`}
+                            />
+                            <span className="truncate">{c.name}</span>
+                            {c.brand && (
+                              <span className="shrink-0 rounded-full border px-1.5 text-[10px] text-muted-foreground">
+                                {c.brand.name}
+                              </span>
+                            )}
                           </span>
-                          <button className="text-[11px] underline" onClick={() => toggle(c)}>
-                            {c.status === "ACTIVE" ? "Pausar" : "Activar"}
-                          </button>
-                          {MAPPING_PROVIDERS.has(c.provider) && (
-                            <button className="text-[11px] underline" onClick={() => setMappingFor(c)}>
-                              Editar mapeo
+                          <span className="flex shrink-0 items-center gap-3">
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              {c._count.leadLogs} ·{" "}
+                              {c.lastLeadAt ? formatDate(c.lastLeadAt) : "—"}
+                            </span>
+                            <button className="text-[11px] underline" onClick={() => toggle(c)}>
+                              {c.status === "ACTIVE" ? "Pausar" : "Activar"}
                             </button>
-                          )}
-                          <button
-                            className="text-[11px] text-destructive underline"
-                            onClick={() => remove(c)}
-                          >
-                            Eliminar
-                          </button>
-                        </span>
+                            <button
+                              className="text-[11px] underline"
+                              onClick={() => setBrandFor(brandFor === c.id ? null : c.id)}
+                            >
+                              Marca
+                            </button>
+                            {MAPPING_PROVIDERS.has(c.provider) && (
+                              <button className="text-[11px] underline" onClick={() => setMappingFor(c)}>
+                                Editar mapeo
+                              </button>
+                            )}
+                            <button
+                              className="text-[11px] text-destructive underline"
+                              onClick={() => remove(c)}
+                            >
+                              Eliminar
+                            </button>
+                          </span>
+                        </div>
+                        {brandFor === c.id && (
+                          <div className="mt-2">
+                            <BrandSelect
+                              id={`brand-${c.id}`}
+                              value={c.brandId}
+                              current={c.brand}
+                              brands={brands}
+                              onChange={(brandId) => changeBrand(c, brandId)}
+                            />
+                          </div>
+                        )}
                       </div>
                     ))}
                     {accounts.filter((c) => c.lastError).map((c) => (
