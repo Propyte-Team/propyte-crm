@@ -60,3 +60,34 @@ describe("attachBrand", () => {
     await expect(attachBrand({ contactId: "k1", brandId: "b-yax", contactIsNew: true })).resolves.toBeUndefined();
   });
 });
+
+// Hallazgo I1 de la revisión final: sin el id de la predeterminada (no se pudo leer, o no existe),
+// a un contacto que YA existía no se le puede registrar primero la predeterminada. Escribir solo la
+// fila de la otra marca lo sacaría de Propyte para siempre (un contacto con filas pertenece SOLO a
+// sus filas). Se registra el error y no se escribe nada: sin filas sigue siendo de la predeterminada
+// y la siguiente entrada del lead lo vuelve a intentar.
+describe("attachBrand — sin la marca predeterminada", () => {
+  it("contacto existente y getDefaultBrandId → null: no escribe NADA y registra el error", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    getDefaultBrandId.mockResolvedValue(null);
+    cbCount.mockResolvedValue(0);
+
+    await attachBrand({ contactId: "k1", brandId: "b-yax", connectorId: "c1", contactIsNew: false });
+
+    expect(cbUpsert).not.toHaveBeenCalled();
+    expect(cbCreate).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), "k1", "b-yax");
+    error.mockRestore();
+  });
+
+  it("contacto NUEVO y getDefaultBrandId → null: igual registra su marca (no hay pertenencia previa que perder)", async () => {
+    getDefaultBrandId.mockResolvedValue(null);
+
+    await attachBrand({ contactId: "k1", brandId: "b-yax", connectorId: "c1", contactIsNew: true });
+
+    expect(cbUpsert).toHaveBeenCalledTimes(1);
+    expect(cbUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { contactId_brandId: { contactId: "k1", brandId: "b-yax" } },
+    }));
+  });
+});

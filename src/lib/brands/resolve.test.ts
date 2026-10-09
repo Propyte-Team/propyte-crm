@@ -86,8 +86,12 @@ describe("getDefaultBrandId", () => {
     expect(await getDefaultBrandId()).toBe("b-def");
     expect(brandFindFirst).toHaveBeenCalledTimes(1);
   });
-  it("error → null", async () => {
-    brandFindFirst.mockRejectedValue(new Error("x"));
+  it("error → null, y se registra (revisión final I1: antes se tragaba en silencio)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const boom = new Error("x");
+    brandFindFirst.mockRejectedValue(boom);
     expect(await getDefaultBrandId()).toBeNull();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[brands]"), boom);
+    error.mockRestore();
   });
 });

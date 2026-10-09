@@ -71,7 +71,10 @@ export async function getDefaultBrandId(): Promise<string | null> {
     const row = await prisma.brand.findFirst({ where: { isDefault: true, deletedAt: null }, select: { id: true } });
     _default = { id: row?.id ?? null, at: Date.now() };
     return _default.id;
-  } catch {
+  } catch (err) {
+    // Spec §7: se sigue sin marca, pero el error se registra (antes se tragaba en silencio).
+    // No se guarda en caché: la siguiente llamada lo vuelve a intentar.
+    console.error("[brands] no se pudo leer la marca predeterminada", err);
     return null;
   }
 }

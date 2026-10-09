@@ -20,7 +20,19 @@ export async function attachBrand(args: {
   try {
     if (!contactIsNew) {
       const defaultId = await getDefaultBrandId();
-      if (defaultId && defaultId !== brandId) {
+      // Sin el id de la predeterminada (no se pudo leer o no existe) NO se escribe nada
+      // (2026-10-09, revisión final I1): registrar solo la fila de la otra marca sacaría para
+      // siempre de Propyte a un contacto que ya era suyo. Sin filas sigue siendo de la
+      // predeterminada, y su siguiente entrada por esa cuenta lo vuelve a intentar.
+      if (!defaultId) {
+        console.error(
+          "[brands] sin la marca predeterminada no se registra la marca de un contacto existente; se reintenta en su siguiente entrada",
+          contactId,
+          brandId,
+        );
+        return;
+      }
+      if (defaultId !== brandId) {
         const existing = await prisma.contactBrand.count({ where: { contactId } });
         if (existing === 0) {
           await prisma.contactBrand.upsert({
