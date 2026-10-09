@@ -82,6 +82,7 @@ describe("meta-dm webhook", () => {
   });
 
   it("procesa igual (connectorId null) si no hay conector para la cuenta", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     resolveByIg.mockResolvedValue(null);
     const body = JSON.stringify({ object: "instagram", entry: [{ id: "999", messaging: [
       { sender: { id: "IGSID" }, message: { mid: "m2", text: "hi" } },
@@ -89,6 +90,8 @@ describe("meta-dm webhook", () => {
     await POST(postFirmado(body));
     expect(handleInboundMessage).toHaveBeenCalledTimes(1);
     expect(handleInboundMessage.mock.calls[0][0].connectorId ?? null).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
+    warn.mockRestore();
   });
 
   it("echo de page (message_echoes) fluye al core con isEcho, echoAppId y connectorId", async () => {
@@ -127,10 +130,12 @@ describe("meta-dm webhook", () => {
     expect(botRespond).toHaveBeenCalledWith("c9", { channel: "MESSENGER", connectorId: "conn_ms" });
   });
 
-  // Marcas del agente (2026-10-09, revisión final C2): `connectorId: null` EXPLÍCITO le dice a
-  // botRespond "no hay cuenta para esta página" y no infiere la cuenta del hilo más reciente del
-  // contacto (que podría ser el de otra marca). `undefined` significaría "infiérela".
-  it("página sin conector activo → bot con connectorId null EXPLÍCITO (no undefined)", async () => {
+  // Marcas del agente (2026-10-09, seguimiento T4): un DM a una cuenta (accountId) sin conector
+  // activo se ingiere igual —no se pierde el mensaje—, pero NO dispara al bot. Antes entraba a
+  // `botTargets` con connectorId null y botRespond lo trataba como la marca predeterminada, así que
+  // con la cuenta de una marca en pausa contestaba Propyte. WhatsApp ya tenía ese candado
+  // (`unknownNumber`); este es el mismo para Instagram y Messenger.
+  it("página sin conector activo → el mensaje se ingiere pero el bot NO responde", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     resolveByPage.mockResolvedValue(null);
     handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
@@ -139,11 +144,57 @@ describe("meta-dm webhook", () => {
     ] }] });
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
+    expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    expect(botRespond).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
+    warn.mockRestore();
+  });
+
+  it("Instagram: igBusinessId sin conector activo → ingiere pero el bot NO responde", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveByIg.mockResolvedValue(null);
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
+    const body = JSON.stringify({ object: "instagram", entry: [{ id: "17841-SIN-CUENTA", messaging: [
+      { sender: { id: "IGSID-1" }, message: { mid: "mi-x", text: "hola" } },
+    ] }] });
+    const res = await POST(postFirmado(body));
+    expect(res.status).toBe(200);
+    expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    expect(botRespond).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
+    warn.mockRestore();
+  });
+
+  it("cuenta que SÍ resuelve → el bot responde con ese connectorId", async () => {
+    resolveByIg.mockResolvedValue({ id: "conn_ig" });
+    handleInboundMessage.mockImplementation(async (msg: { connectorId?: string | null }) => ({
+      id: "m1",
+      contactId: "c9",
+      connectorId: msg.connectorId,
+    }));
+    const body = JSON.stringify({ object: "instagram", entry: [{ id: "17841", messaging: [
+      { sender: { id: "IGSID-1" }, message: { mid: "mi-ok", text: "hola" } },
+    ] }] });
+    const res = await POST(postFirmado(body));
+    expect(res.status).toBe(200);
+    expect(botRespond).toHaveBeenCalledTimes(1);
+    expect(botRespond).toHaveBeenCalledWith("c9", { channel: "INSTAGRAM", connectorId: "conn_ig" });
+  });
+
+  // Sin accountId (entry.id ausente) no hay a qué cuenta atribuirlo: se comporta como siempre,
+  // con connectorId null EXPLÍCITO (no undefined) para que botRespond no infiera la cuenta del
+  // hilo más reciente del contacto, que podría ser de otra marca.
+  it("sin accountId → igual que antes: bot con connectorId null EXPLÍCITO (no undefined)", async () => {
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
+    const body = JSON.stringify({ object: "page", entry: [{ messaging: [
+      { sender: { id: "PSID-1" }, message: { mid: "mm-sin-id", text: "hola" } },
+    ] }] });
+    const res = await POST(postFirmado(body));
+    expect(res.status).toBe(200);
+    expect(resolveByPage).not.toHaveBeenCalled();
     expect(botRespond).toHaveBeenCalledTimes(1);
     expect(botRespond.mock.calls[0][1]).toEqual({ channel: "MESSENGER", connectorId: null });
     expect(botRespond.mock.calls[0][1].connectorId).toBeNull();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
-    warn.mockRestore();
   });
 
   it("echo NO dispara al bot", async () => {
