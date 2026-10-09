@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createHmac } from "crypto";
 
 // Auditoría 2026-09-10: este webhook aceptaba CUALQUIER cuerpo sin firma cuando
@@ -8,6 +8,7 @@ import { createHmac } from "crypto";
 
 const handleInboundWhatsApp = vi.fn();
 const resolveConnectorByPhoneNumberId = vi.fn();
+const getWhatsAppCredentials = vi.fn();
 const resolveWaMediaToStorage = vi.fn();
 const botRespond = vi.fn();
 const messageUpdateMany = vi.fn();
@@ -28,6 +29,7 @@ vi.mock("@/lib/twilio/whatsapp", () => ({
 }));
 vi.mock("@/lib/whatsapp/accounts", () => ({
   resolveConnectorByPhoneNumberId: (...a: unknown[]) => resolveConnectorByPhoneNumberId(...a),
+  getWhatsAppCredentials: (...a: unknown[]) => getWhatsAppCredentials(...a),
 }));
 vi.mock("@/lib/whatsapp/media", () => ({
   resolveWaMediaToStorage: (...a: unknown[]) => resolveWaMediaToStorage(...a),
@@ -44,6 +46,8 @@ beforeEach(() => {
   handleInboundWhatsApp.mockResolvedValue({ contactId: "c1" });
   resolveConnectorByPhoneNumberId.mockReset();
   resolveConnectorByPhoneNumberId.mockResolvedValue(null);
+  getWhatsAppCredentials.mockReset();
+  getWhatsAppCredentials.mockReturnValue(null);
   resolveWaMediaToStorage.mockReset();
   botRespond.mockReset();
   messageUpdateMany.mockReset();
@@ -56,6 +60,11 @@ beforeEach(() => {
   process.env.META_WA_APP_SECRET = APP_SECRET;
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 // El GET de este route lee `req.nextUrl` (el de meta-dm usa `new URL(req.url)`), y un
@@ -485,5 +494,142 @@ describe("webhook de WhatsApp Cloud — #829 BSUID del destinatario en los acuse
     await POST(postFirmado(cuerpoConStatus({ id: "wamid.1", status: "deleted", recipient_user_id: "MX.1" })));
     expect(messageUpdateMany).not.toHaveBeenCalled();
     expect(contactUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Marcas (2026-10-09, spec marcas-agente §4.3) — número que llegó a la app pero no está
+// dado de alta, y media descargada con el token de la cuenta que recibió el mensaje.
+//
+// El agente responde por el número de la cuenta; sin cuenta, `botRespond` cae al número
+// GLOBAL del env, o sea el WhatsApp de otra marca. Por eso un `phone_number_id` que no es
+// ni de una cuenta ni el global se INGIERE (no se pierde el mensaje) pero NO se contesta.
+// ---------------------------------------------------------------------------
+describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta", () => {
+  function cuerpoDe(phoneNumberId: string, mensaje: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: phoneNumberId },
+                contacts: [{ profile: { name: "Ana" }, wa_id: "5219981234567" }],
+                messages: [
+                  { id: "wamid.1", from: "5219981234567", type: "text", text: { body: "hola" }, ...mensaje },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("META_WA_PHONE_NUMBER_ID", "pn-global");
+  });
+
+  it("🚨 phone_number_id desconocido (ni cuenta ni el global): ingiere, NO llama al agente y avisa con el id", async () => {
+    const res = await POST(postFirmado(cuerpoDe("pn-desconocido")));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, processed: 1 });
+    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+    expect(botRespond).not.toHaveBeenCalled();
+    const avisos = (console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(JSON.stringify(avisos)).toContain("pn-desconocido");
+  });
+
+  it("phone_number_id igual a META_WA_PHONE_NUMBER_ID y sin cuenta: el agente SÍ responde, como hoy", async () => {
+    const res = await POST(postFirmado(cuerpoDe("pn-global")));
+
+    expect(res.status).toBe(200);
+    expect(botRespond).toHaveBeenCalledTimes(1);
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: null });
+    expect(JSON.stringify((console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "sin cuenta registrada",
+    );
+  });
+
+  it("el número global se compara recortado (como el resto del env)", async () => {
+    vi.stubEnv("META_WA_PHONE_NUMBER_ID", "  pn-global \n");
+
+    await POST(postFirmado(cuerpoDe("pn-global")));
+
+    expect(botRespond).toHaveBeenCalledTimes(1);
+  });
+
+  it("phone_number_id con cuenta registrada: el agente responde con el connectorId de la cuenta", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue({ id: "conn-1" });
+    getWhatsAppCredentials.mockReturnValue({ phoneNumberId: "pn-marca", accessToken: "tok-test" });
+
+    await POST(postFirmado(cuerpoDe("pn-marca")));
+
+    expect(resolveConnectorByPhoneNumberId).toHaveBeenCalledWith("pn-marca");
+    expect(botRespond).toHaveBeenCalledTimes(1);
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: "conn-1" });
+    const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.ConnectorId).toBe("conn-1");
+  });
+
+  it("🚨 si resolveConnectorByPhoneNumberId LANZA, se trata como desconocido: ingiere pero sin agente", async () => {
+    resolveConnectorByPhoneNumberId.mockRejectedValue(new Error("db caída"));
+
+    const res = await POST(postFirmado(cuerpoDe("pn-1")));
+
+    expect(res.status).toBe(200);
+    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+    expect(botRespond).not.toHaveBeenCalled();
+    // El fallo de la resolución sigue registrándose (no se traga en silencio).
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it("si resolveConnectorByPhoneNumberId lanza pero el número ES el global, el agente responde como hoy", async () => {
+    resolveConnectorByPhoneNumberId.mockRejectedValue(new Error("db caída"));
+
+    await POST(postFirmado(cuerpoDe("pn-global")));
+
+    expect(botRespond).toHaveBeenCalledTimes(1);
+  });
+
+  it("media con cuenta resuelta: resolveWaMediaToStorage recibe el accessToken de LA cuenta", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue({ id: "conn-1" });
+    getWhatsAppCredentials.mockReturnValue({ phoneNumberId: "pn-marca", accessToken: "tok-test" });
+    resolveWaMediaToStorage.mockResolvedValue({ path: "2026-10/x.jpg", mimeType: "image/jpeg" });
+
+    await POST(
+      postFirmado(cuerpoDe("pn-marca", { type: "image", text: undefined, image: { id: "media-1", mime_type: "image/jpeg" } })),
+    );
+
+    expect(resolveWaMediaToStorage).toHaveBeenCalledTimes(1);
+    expect(resolveWaMediaToStorage).toHaveBeenCalledWith("media-1", "tok-test");
+    const [payload] = handleInboundWhatsApp.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.MediaUrl0).toBe("2026-10/x.jpg");
+  });
+
+  it("media sin cuenta (número global): el token va en null y media.ts cae al global de siempre", async () => {
+    resolveWaMediaToStorage.mockResolvedValue(null);
+
+    await POST(
+      postFirmado(cuerpoDe("pn-global", { type: "image", text: undefined, image: { id: "media-1" } })),
+    );
+
+    expect(resolveWaMediaToStorage).toHaveBeenCalledWith("media-1", null);
+    expect(getWhatsAppCredentials).not.toHaveBeenCalled();
+  });
+
+  it("cuenta sin credenciales completas: token null (cae al global), sin romper la ingesta", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue({ id: "conn-1" });
+    getWhatsAppCredentials.mockReturnValue(null);
+    resolveWaMediaToStorage.mockResolvedValue(null);
+
+    const res = await POST(
+      postFirmado(cuerpoDe("pn-marca", { type: "image", text: undefined, image: { id: "media-1" } })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(resolveWaMediaToStorage).toHaveBeenCalledWith("media-1", null);
+    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
   });
 });
