@@ -57,19 +57,35 @@ export function brandWriteData(input: BrandPatchInput): BrandWritable {
 /**
  * Verifica que el playbook y el responsable de marketing existan y estén vivos. Devuelve el mensaje
  * del 400 o null si todo está bien. Un null explícito (quitar la referencia) no consulta nada.
+ *
+ * `current` (solo en el PATCH) trae los valores que la marca ya tiene guardados. Un valor enviado
+ * IGUAL al actual no se valida: el formulario de edición reenvía siempre ambos campos, y si el
+ * responsable se dio de baja o el playbook se borró, validarlos de nuevo bloquearía cualquier guardado
+ * (incluso apagar el agente). Solo se exige que esté vivo lo que el cliente CAMBIA (2026-10-09). Un
+ * valor viejo no daña: bot-respond ya ignora un playbook inactivo y cae al global si el responsable
+ * está inactivo. El POST no pasa `current`, así que sigue validando todo.
  */
-export async function brandRefsError(input: {
-  playbookId?: string | null;
-  marketingOwnerUserId?: string | null;
-}): Promise<string | null> {
-  if (typeof input.playbookId === "string") {
+export async function brandRefsError(
+  input: {
+    playbookId?: string | null;
+    marketingOwnerUserId?: string | null;
+  },
+  current?: {
+    playbookId?: string | null;
+    marketingOwnerUserId?: string | null;
+  }
+): Promise<string | null> {
+  if (typeof input.playbookId === "string" && input.playbookId !== current?.playbookId) {
     const playbook = await prisma.botPlaybook.findFirst({
       where: { id: input.playbookId, deletedAt: null },
       select: { id: true },
     });
     if (!playbook) return "Playbook no encontrado";
   }
-  if (typeof input.marketingOwnerUserId === "string") {
+  if (
+    typeof input.marketingOwnerUserId === "string" &&
+    input.marketingOwnerUserId !== current?.marketingOwnerUserId
+  ) {
     const owner = await prisma.user.findFirst({
       where: { id: input.marketingOwnerUserId, isActive: true, deletedAt: null },
       select: { id: true },

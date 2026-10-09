@@ -29,6 +29,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { PATCH, DELETE } from "./route";
+import { brandRefsError } from "@/lib/brands/admin";
 
 const UUID_PB = "3f2b8c1e-5d4a-4b6f-9c7e-1a2b3c4d5e6f";
 const props = (id = "b1") => ({ params: Promise.resolve({ id }) });
@@ -149,6 +150,116 @@ describe("PATCH /api/admin/brands/[id]", () => {
     brandUpdate.mockRejectedValue({ code: "P2002" });
     const res = await PATCH(patchReq({ name: "Propyte" }), props());
     expect(res.status).toBe(409);
+  });
+
+  // El formulario reenvía siempre playbookId y marketingOwnerUserId. Si el responsable se dio de baja
+  // o el playbook se borró, esas referencias viejas no deben impedir guardar otros cambios (p. ej.
+  // apagar el agente): solo se validan los valores que el cliente CAMBIA.
+  describe("referencias viejas (playbook borrado / responsable inactivo)", () => {
+    const UUID_OWNER = "9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d";
+    const UUID_OTHER = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+    const STALE_BRAND = { ...OTHER_BRAND, playbookId: UUID_PB, marketingOwnerUserId: UUID_OWNER };
+
+    beforeEach(() => {
+      // El playbook ya está borrado y el usuario ya está inactivo: toda consulta de validación falla.
+      brandFindFirst.mockResolvedValue(STALE_BRAND);
+      playbookFindFirst.mockResolvedValue(null);
+      userFindFirst.mockResolvedValue(null);
+    });
+
+    it("lee playbookId y marketingOwnerUserId actuales junto con id e isDefault", async () => {
+      await PATCH(patchReq({ botEnabled: false }), props());
+      expect(brandFindFirst.mock.calls[0][0].select).toEqual({
+        id: true,
+        isDefault: true,
+        playbookId: true,
+        marketingOwnerUserId: true,
+      });
+    });
+
+    it("apagar el agente reenviando las mismas referencias viejas → 200 y se guarda, sin consultarlas", async () => {
+      const res = await PATCH(
+        patchReq({ botEnabled: false, marketingOwnerUserId: UUID_OWNER, playbookId: UUID_PB }),
+        props()
+      );
+      expect(res.status).toBe(200);
+      expect(playbookFindFirst).not.toHaveBeenCalled();
+      expect(userFindFirst).not.toHaveBeenCalled();
+      expect(brandUpdate).toHaveBeenCalledTimes(1);
+      expect(brandUpdate.mock.calls[0][0].data).toEqual({
+        botEnabled: false,
+        marketingOwnerUserId: UUID_OWNER,
+        playbookId: UUID_PB,
+      });
+    });
+
+    it("un marketingOwnerUserId DISTINTO e inactivo sigue en 400", async () => {
+      const res = await PATCH(
+        patchReq({ botEnabled: false, marketingOwnerUserId: UUID_OTHER, playbookId: UUID_PB }),
+        props()
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("Responsable de marketing no encontrado o inactivo");
+      expect(userFindFirst).toHaveBeenCalledTimes(1);
+      expect(userFindFirst.mock.calls[0][0].where).toMatchObject({ id: UUID_OTHER });
+      // El playbook viejo que no cambió sigue sin consultarse.
+      expect(playbookFindFirst).not.toHaveBeenCalled();
+      expect(brandUpdate).not.toHaveBeenCalled();
+    });
+
+    it("un playbookId DISTINTO y borrado sigue en 400", async () => {
+      const res = await PATCH(
+        patchReq({ playbookId: UUID_OTHER, marketingOwnerUserId: UUID_OWNER }),
+        props()
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("Playbook no encontrado");
+      expect(playbookFindFirst).toHaveBeenCalledTimes(1);
+      expect(playbookFindFirst.mock.calls[0][0].where).toMatchObject({ id: UUID_OTHER });
+      expect(userFindFirst).not.toHaveBeenCalled();
+      expect(brandUpdate).not.toHaveBeenCalled();
+    });
+
+    it("quitar las referencias (null) no consulta nada y se guarda", async () => {
+      const res = await PATCH(patchReq({ playbookId: null, marketingOwnerUserId: null }), props());
+      expect(res.status).toBe(200);
+      expect(playbookFindFirst).not.toHaveBeenCalled();
+      expect(userFindFirst).not.toHaveBeenCalled();
+      expect(brandUpdate.mock.calls[0][0].data).toEqual({ playbookId: null, marketingOwnerUserId: null });
+    });
+
+    it("una marca SIN referencias actuales: enviar un id sí se valida", async () => {
+      brandFindFirst.mockResolvedValue({ ...OTHER_BRAND, playbookId: null, marketingOwnerUserId: null });
+      const res = await PATCH(patchReq({ marketingOwnerUserId: UUID_OWNER }), props());
+      expect(res.status).toBe(400);
+      expect(userFindFirst).toHaveBeenCalledTimes(1);
+      expect(brandUpdate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("brandRefsError", () => {
+  const UUID_OWNER = "9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d";
+
+  it("con current igual al enviado no consulta la base", async () => {
+    playbookFindFirst.mockResolvedValue(null);
+    userFindFirst.mockResolvedValue(null);
+    const err = await brandRefsError(
+      { playbookId: UUID_PB, marketingOwnerUserId: UUID_OWNER },
+      { playbookId: UUID_PB, marketingOwnerUserId: UUID_OWNER }
+    );
+    expect(err).toBeNull();
+    expect(playbookFindFirst).not.toHaveBeenCalled();
+    expect(userFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("sin current (alta) valida todo lo que venga como id", async () => {
+    playbookFindFirst.mockResolvedValue(null);
+    expect(await brandRefsError({ playbookId: UUID_PB })).toBe("Playbook no encontrado");
+    userFindFirst.mockResolvedValue(null);
+    expect(await brandRefsError({ marketingOwnerUserId: UUID_OWNER })).toBe(
+      "Responsable de marketing no encontrado o inactivo"
+    );
   });
 });
 

@@ -105,6 +105,13 @@ export async function POST(req: NextRequest) {
   const botTargets = new Map<string, { contactId: string; channel: typeof messages[number]["channel"]; connectorId: string | null }>();
   for (const msg of messages) {
     try {
+      // Marcas del agente (2026-10-09, seguimiento T4): si el mensaje traía accountId pero ninguna
+      // cuenta activa lo reclamó, el DM se ingiere igual (no se pierde) y NO dispara al bot.
+      // Antes entraba a botTargets con connectorId null y botRespond lo trataba como la marca
+      // predeterminada: con la cuenta de una marca en pausa, contestaba Propyte. WhatsApp ya tenía
+      // este candado (`unknownNumber`). Sin accountId no hay cuenta a la cual atribuirlo y todo
+      // sigue como antes.
+      let cuentaSinConector = false;
       if (msg.accountId) {
         const connector = msg.channel === "INSTAGRAM"
           ? await resolveConnectorByIgBusinessId(msg.accountId)
@@ -112,10 +119,13 @@ export async function POST(req: NextRequest) {
         // El perfil del remitente se resuelve en el core (profile.ts) solo para
         // inbound reales; los echoes (isEcho) nunca lo disparan — el emisor es la Página.
         if (connector) msg.connectorId = connector.id;
-        else console.warn(`[meta-dm] sin conector activo para ${msg.channel} accountId=${msg.accountId}`);
+        else {
+          cuentaSinConector = true;
+          console.warn(`[meta-dm] sin conector activo para ${msg.channel} accountId=${msg.accountId}`);
+        }
       }
       const saved = await handleInboundMessage(msg, { triggerBot: false });
-      if (!msg.isEcho && saved?.contactId) {
+      if (!msg.isEcho && saved?.contactId && !cuentaSinConector) {
         botTargets.set(`${saved.contactId}:${msg.channel}`, {
           contactId: saved.contactId,
           channel: msg.channel,

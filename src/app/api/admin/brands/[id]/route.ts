@@ -27,7 +27,8 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
 
   const current = await prisma.brand.findFirst({
     where: { id: params.id, deletedAt: null },
-    select: { id: true, isDefault: true },
+    // playbookId y marketingOwnerUserId: para no revalidar lo que el formulario reenvía sin cambios.
+    select: { id: true, isDefault: true, playbookId: true, marketingOwnerUserId: true },
   });
   if (!current) return NextResponse.json({ error: "Marca no encontrada" }, { status: 404 });
 
@@ -43,7 +44,13 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     );
   }
 
-  const refsError = await brandRefsError(parsed.data);
+  // El formulario reenvía siempre playbookId y marketingOwnerUserId: si siguen siendo los que la
+  // marca ya tenía, una referencia vieja (playbook borrado, responsable dado de baja) no bloquea el
+  // guardado. Solo se valida lo que cambia (2026-10-09).
+  const refsError = await brandRefsError(parsed.data, {
+    playbookId: current.playbookId,
+    marketingOwnerUserId: current.marketingOwnerUserId,
+  });
   if (refsError) return NextResponse.json({ error: refsError }, { status: 400 });
 
   const data = brandWriteData(parsed.data);

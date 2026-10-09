@@ -1,7 +1,7 @@
 // Servicio de conectores de leads (Anexo B §H) — idempotencia por connector_lead_logs,
 // mapeo fieldMap → IncomingLead, credenciales cifradas (lib/crypto).
 import prisma from "@/lib/db";
-import type { LeadConnector, Prisma } from "@prisma/client";
+import type { ConnectorLeadStatus, LeadConnector, Prisma } from "@prisma/client";
 import { decryptPII, encryptPII } from "@/lib/crypto";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { deriveInvestmentProfile } from "./profile-mapping";
@@ -212,7 +212,7 @@ export async function reservarLeadEntrante(
   connectorId: string,
   externalLeadId: string,
   rawPayload: Record<string, unknown>
-): Promise<{ logId: string; yaProcesado: boolean }> {
+): Promise<{ logId: string; yaProcesado: boolean; estadoPrevio?: ConnectorLeadStatus }> {
   try {
     const log = await prisma.connectorLeadLog.create({
       data: {
@@ -234,7 +234,10 @@ export async function reservarLeadEntrante(
 
   // PROCESSED y DUPLICATE ya llegaron a un contacto: no hay nada que rehacer.
   const terminado = existente.status === "PROCESSED" || existente.status === "DUPLICATE";
-  return { logId: existente.id, yaProcesado: terminado };
+  // `estadoPrevio` solo viaja cuando la fila ya existía (reentrega o reintento): permite al
+  // llamador distinguir "ya estaba en ERROR" de "recién reservada" (seguimiento T5, 2026-10-09:
+  // el webhook no re-marca un lead huérfano que Meta reentrega para no inflar errorCount).
+  return { logId: existente.id, yaProcesado: terminado, estadoPrevio: existente.status };
 }
 
 /** Marca la reserva como fallida cuando el fallo ocurre fuera de processIncomingLead. */
@@ -327,6 +330,17 @@ export async function processIncomingLead(
   }
 }
 
+/** Filas por página al buscar leads fallidos que reprocesar (ver reprocesarLeadsFallidos). */
+const PAGINA_REPLAY = 100;
+
+/**
+ * Tope de páginas por corrida de reprocesarLeadsFallidos (revisión final I1, 2026-10-09): como
+ * mucho `MAX_PAGINAS_REPLAY * PAGINA_REPLAY` = 1,000 filas / 10 consultas indexadas por tick.
+ * El cron corre cada minuto y las filas huérfanas en ERROR nunca salen de ahí (el backlog solo
+ * crece): sin tope, cada tick leía TODO el backlog.
+ */
+const MAX_PAGINAS_REPLAY = 10;
+
 /**
  * Reprocesa los leads que quedaron en ERROR sin llegar a contacto (#713).
  *
@@ -339,38 +353,98 @@ export async function processIncomingLead(
  * caducado— no se puede rehacer sin volver a pedírselo al proveedor, y esa recuperación
  * es la que cubre el 5xx del webhook: el proveedor reintenta por su cuenta. Esas filas se
  * quedan visibles en ERROR, que es exactamente lo que se quería: dejan de ser invisibles.
+ *
+ * Seguimiento T5 (2026-10-09): esas filas que se saltan NO salen nunca de ERROR (p. ej. los
+ * leads de una página sin cuenta, que el webhook deja con `{ webhook, motivo }` y sin
+ * `_mapped`). Antes la consulta traía `limite` filas y el salto ocurría DESPUÉS de leerlas, así
+ * que con `limite` huérfanos viejos al frente cada corrida leía solo huérfanos, los saltaba a
+ * todos y el replay quedaba apagado en silencio para todas las marcas. Ahora se pagina (mismo
+ * orden) hasta juntar `limite` filas reprocesables o agotar las de ERROR. No se filtra por
+ * `rawPayload` en SQL: la semántica de "la llave no existe" en JSON no se puede verificar sin
+ * base real y un filtro equivocado apagaría el replay igual de callado.
+ *
+ * `limite` cuenta los INTENTOS (filas reprocesables), no las leídas: las que se saltan no gastan
+ * presupuesto de reintentos.
+ *
+ * Revisión final I1 (2026-10-09), tres ajustes porque el cron lo corre CADA MINUTO y el backlog de
+ * huérfanos solo crece:
+ *  - Tope de `MAX_PAGINAS_REPLAY` páginas por corrida. Si se alcanza sin juntar `limite`
+ *    reintentos se avisa una vez con `console.warn` (solo conteos, sin datos del lead): es la señal
+ *    de que el backlog de ERROR ya es más grande de lo que una corrida revisa y hay que limpiarlo.
+ *  - `select` con solo las columnas que el bucle usa (la fila trae `rawPayload`, el JSON crudo).
+ *  - Paginación por keyset sobre (receivedAt, id) en vez de `cursor` + `skip: 1` de Prisma: el
+ *    cursor apuntaba a una fila concreta, y si esa fila acababa de recuperarse (ya fuera de ERROR)
+ *    el salto de una fila descartaba otra. El keyset compara contra valores, no contra una fila que
+ *    pueda haber cambiado de estado.
  */
 export async function reprocesarLeadsFallidos(limite = 25): Promise<{
   intentados: number;
   recuperados: number;
 }> {
-  const fallidos = await prisma.connectorLeadLog.findMany({
-    where: { status: "ERROR", contactId: null },
-    orderBy: { receivedAt: "asc" },
-    take: limite,
-  });
-
   let recuperados = 0;
   let intentados = 0;
+  let leidas = 0;
+  let agotadas = false; // true al llegar a una página corta: no queda nada por revisar
+  let ultima: { id: string; receivedAt: Date } | undefined;
 
-  for (const fila of fallidos) {
-    const crudo = (fila.rawPayload ?? {}) as Record<string, unknown>;
-    const mapeados = crudo[CAMPOS_MAPEADOS] as Record<string, unknown> | undefined;
-    if (!mapeados || typeof mapeados !== "object") continue; // necesita al proveedor
+  paginas: for (let pagina = 0; pagina < MAX_PAGINAS_REPLAY && intentados < limite; pagina++) {
+    const fallidos = await prisma.connectorLeadLog.findMany({
+      where: {
+        status: "ERROR",
+        contactId: null,
+        // Keyset: solo las filas POSTERIORES a la última leída en (receivedAt, id), combinado (AND)
+        // con el filtro de arriba. receivedAt puede repetirse; el id desempata.
+        ...(ultima
+          ? {
+              OR: [
+                { receivedAt: { gt: ultima.receivedAt } },
+                { receivedAt: ultima.receivedAt, id: { gt: ultima.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+      take: PAGINA_REPLAY,
+      select: { id: true, receivedAt: true, connectorId: true, externalLeadId: true, rawPayload: true },
+    });
+    leidas += fallidos.length;
 
-    intentados++;
-    const { [CAMPOS_MAPEADOS]: _omitido, ...sinMapeados } = crudo;
-    try {
-      const r = await processIncomingLead(
-        fila.connectorId,
-        fila.externalLeadId,
-        sinMapeados,
-        mapeados
-      );
-      if (r.status === "PROCESSED" || r.status === "DUPLICATE") recuperados++;
-    } catch (err) {
-      console.error(`[connectors] replay del lead ${fila.externalLeadId} falló:`, err);
+    for (const fila of fallidos) {
+      if (intentados >= limite) break paginas;
+
+      const crudo = (fila.rawPayload ?? {}) as Record<string, unknown>;
+      const mapeados = crudo[CAMPOS_MAPEADOS] as Record<string, unknown> | undefined;
+      if (!mapeados || typeof mapeados !== "object") continue; // necesita al proveedor
+
+      intentados++;
+      const { [CAMPOS_MAPEADOS]: _omitido, ...sinMapeados } = crudo;
+      try {
+        const r = await processIncomingLead(
+          fila.connectorId,
+          fila.externalLeadId,
+          sinMapeados,
+          mapeados
+        );
+        if (r.status === "PROCESSED" || r.status === "DUPLICATE") recuperados++;
+      } catch (err) {
+        console.error(`[connectors] replay del lead ${fila.externalLeadId} falló:`, err);
+      }
     }
+
+    if (fallidos.length < PAGINA_REPLAY) {
+      agotadas = true; // última página: ya no hay más filas en ERROR
+      break;
+    }
+    ultima = fallidos[fallidos.length - 1];
+  }
+
+  // Salió por el tope de páginas (no por `limite` ni por falta de filas): puede haber filas
+  // reprocesables más allá de lo revisado. Sin datos del lead: solo conteos.
+  if (!agotadas && intentados < limite) {
+    console.warn(
+      `[connectors] replay: tope de ${MAX_PAGINAS_REPLAY} páginas alcanzado (${leidas} filas en ERROR revisadas, ` +
+        `${intentados} de ${limite} reintentos); puede haber leads recuperables más adelante en la cola`
+    );
   }
 
   return { intentados, recuperados };

@@ -113,6 +113,36 @@ export async function POST(req: NextRequest) {
       const target = byPage ?? (connectors.length === 1 ? matched.connector : null);
       if (!target) {
         console.warn("[meta-leadgen] page_id sin cuenta registrada; lead no asignado", { pageId, leadgenId });
+        // Seguimiento T5 (2026-10-09): antes aquí solo quedaba el console.warn y el lead —ya
+        // pagado— desaparecía sin ninguna fila en ConnectorLeadLog, contra el criterio de #713
+        // (un lead pagado siempre deja rastro visible). Ahora se reserva bajo la cuenta cuya firma
+        // validó (la única que sabemos legítima) y se deja en ERROR con el motivo: visible en
+        // Conexiones y en el panel de leads fallidos. NO se pide a Graph (no hay token de esa
+        // página) ni se asigna a ninguna marca; como la fila no guarda campos mapeados, el replay
+        // automático la salta: nada la recupera sola. Se queda en ERROR como registro visible, y
+        // una reentrega de Meta después de registrar o activar la página crea la fila correcta.
+        // Revisión final (2026-10-09): el detalle dice «cuenta activa» porque activeMetaConnectors
+        // solo conserva las ACTIVE: una cuenta PAUSADA de esa página también cae en esta rama.
+        const detalle = `Página ${pageId ?? "(sin page_id)"} sin cuenta activa registrada en Conexiones; lead ${leadgenId} no asignado a ninguna marca`;
+        try {
+          const reserva = await reservarLeadEntrante(matched.connector.id, leadgenId, {
+            webhook: change.value as Record<string, unknown>,
+            motivo: "pagina_sin_cuenta",
+          });
+          // Ya terminado (PROCESSED/DUPLICATE): no hay nada que marcar. Ya en ERROR (Meta reentrega
+          // el lote completo si otro lead de la tanda dio 503): tampoco, porque ya tiene su
+          // detalle y volver a marcarlo sumaría otro errorCount por la misma causa.
+          if (!reserva.yaProcesado && reserva.estadoPrevio !== "ERROR") {
+            // marcarLeadFallido deja el log en ERROR con el detalle y escribe lastError/errorCount
+            // del conector (llama a markConnectorLead por dentro; llamarlo aparte contaría doble).
+            await marcarLeadFallido(reserva.logId, matched.connector.id, detalle);
+          }
+        } catch (err) {
+          // Igual que la reserva normal: sin rastro no hay 200 que valga, Meta debe reintentar.
+          console.error(`[meta-webhook] no se pudo dejar rastro del lead ${leadgenId} (página sin cuenta):`, err);
+          fallos++;
+          continue;
+        }
         results.push({ status: "pagina_sin_cuenta" });
         continue;
       }

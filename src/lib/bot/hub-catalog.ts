@@ -65,6 +65,10 @@ export async function findMatchingDevelopments(opts: {
   if (opts.developmentIds && opts.developmentIds.length === 0) return { data: [], error: null };
   const maxDevs = Math.min(opts.limit ?? 3, 10);
   // Se piden más unidades que desarrollos porque varias unidades caen en el mismo dev.
+  // Con marca (developmentIds) se pide el catálogo completo, no las 25 más baratas (2026-10-09):
+  // searchCatalog ordena por precio ascendente y recortar dejaba fuera las unidades más caras
+  // (las 22 Kannah de Yaxnáh), así que el resumen mentía sobre el rango de precio y de recámaras.
+  // Sin marca se conserva el límite de 25 de siempre.
   const { data: units, error } = await searchCatalog({
     budgetMin: opts.budgetMin ?? null,
     budgetMax: opts.budgetMax ?? null,
@@ -72,7 +76,7 @@ export async function findMatchingDevelopments(opts: {
     city: opts.city ?? null,
     bedrooms: opts.bedrooms ?? null,
     developmentIds: opts.developmentIds ?? null,
-    limit: 25,
+    limit: opts.developmentIds?.length ? 500 : 25,
   });
   if (error) return { data: [], error };
 

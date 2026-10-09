@@ -18,6 +18,17 @@ export async function attachBrand(args: {
 }): Promise<void> {
   const { contactId, brandId, connectorId, contactIsNew } = args;
   try {
+    // Seguimiento (2026-10-09): handleInboundMessage llama a attachBrand en CADA mensaje de un
+    // contacto existente. Si la fila contacto ↔ marca ya está no hay nada que registrar: se
+    // termina con UNA consulta por la clave única, sin leer la predeterminada, sin contar filas
+    // ni hacer upserts por mensaje entrante. Va dentro del try: un fallo de lectura aquí tampoco
+    // debe romper la entrada del mensaje.
+    const already = await prisma.contactBrand.findUnique({
+      where: { contactId_brandId: { contactId, brandId } },
+      select: { id: true },
+    });
+    if (already) return;
+
     if (!contactIsNew) {
       const defaultId = await getDefaultBrandId();
       // Sin el id de la predeterminada (no se pudo leer o no existe) NO se escribe nada

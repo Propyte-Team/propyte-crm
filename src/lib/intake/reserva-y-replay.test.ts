@@ -36,6 +36,7 @@ vi.mock("./capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead
 
 import {
   reservarLeadEntrante,
+  marcarLeadFallido,
   processIncomingLead,
   reprocesarLeadsFallidos,
   CAMPOS_MAPEADOS,
@@ -77,6 +78,7 @@ describe("reservarLeadEntrante (#713)", () => {
     expect(await reservarLeadEntrante("conn-1", "lead-1", {})).toEqual({
       logId: "log-1",
       yaProcesado: true,
+      estadoPrevio: "PROCESSED",
     });
   });
 
@@ -86,9 +88,12 @@ describe("reservarLeadEntrante (#713)", () => {
     logCreate.mockRejectedValue(duplicado);
     logFindUnique.mockResolvedValue({ id: "log-1", status: "ERROR" });
 
+    // `estadoPrevio` deja que el llamador sepa que la fila ya estaba en ERROR (seguimiento T5:
+    // el webhook no vuelve a marcar —ni a sumar errorCount— un lead huérfano que Meta reentrega).
     expect(await reservarLeadEntrante("conn-1", "lead-1", {})).toEqual({
       logId: "log-1",
       yaProcesado: false,
+      estadoPrevio: "ERROR",
     });
   });
 
@@ -110,6 +115,26 @@ describe("reservarLeadEntrante (#713)", () => {
     logCreate.mockRejectedValue(new Error("la base no responde"));
 
     await expect(reservarLeadEntrante("conn-1", "lead-1", {})).rejects.toThrow("la base no responde");
+  });
+});
+
+// Seguimiento T5 (2026-10-09): el webhook de Lead Ads usa este helper para dejar en ERROR un lead
+// de una página sin cuenta. Su prueba mockea el helper, así que aquí se fija lo que el webhook da
+// por hecho: UNA sola escritura al log (ERROR + detalle) y UNA al conector (lastError + errorCount).
+describe("marcarLeadFallido (#713)", () => {
+  it("deja el log en ERROR con el detalle y escribe lastError del conector una sola vez", async () => {
+    await marcarLeadFallido("log-9", "conn-1", "Página P-1 sin cuenta registrada en Conexiones");
+
+    expect(logUpdate).toHaveBeenCalledTimes(1);
+    expect(logUpdate.mock.calls[0][0]).toMatchObject({
+      where: { id: "log-9" },
+      data: { status: "ERROR", errorDetail: "Página P-1 sin cuenta registrada en Conexiones" },
+    });
+    expect(connectorUpdate).toHaveBeenCalledTimes(1);
+    expect(connectorUpdate.mock.calls[0][0]).toEqual({
+      where: { id: "conn-1" },
+      data: { errorCount: { increment: 1 }, lastError: "Página P-1 sin cuenta registrada en Conexiones" },
+    });
   });
 });
 
@@ -160,12 +185,200 @@ describe("reprocesarLeadsFallidos (#713)", () => {
     expect(captureLead).not.toHaveBeenCalled();
   });
 
-  it("solo mira los que quedaron en ERROR sin contacto", async () => {
+  it("solo mira los que quedaron en ERROR sin contacto, en orden estable y por páginas", async () => {
     await reprocesarLeadsFallidos(10);
 
+    // Orden por (receivedAt, id): el desempate por id hace estable el keyset entre páginas.
+    // `take` es el tamaño de página (100), no el límite de reintentos.
+    expect(logFindMany).toHaveBeenCalledTimes(1);
     expect(logFindMany.mock.calls[0][0]).toMatchObject({
       where: { status: "ERROR", contactId: null },
-      take: 10,
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+      take: 100,
+    });
+    // Primera página: sin keyset (todavía no hay "última fila") y sin cursor de Prisma.
+    expect(logFindMany.mock.calls[0][0].where.OR).toBeUndefined();
+    expect(logFindMany.mock.calls[0][0].cursor).toBeUndefined();
+    expect(logFindMany.mock.calls[0][0].skip).toBeUndefined();
+  });
+
+  // Revisión final I1 (2026-10-09): el cron corre cada minuto y la consulta traía TODAS las
+  // columnas (incluido rawPayload, el JSON crudo del proveedor) de cada fila en ERROR. Con el
+  // backlog creciendo, eso era un costo por tick sin techo. Solo se piden las columnas que el
+  // bucle usa (+ id y receivedAt para el keyset).
+  it("pide solo las columnas que usa el bucle, no la fila entera", async () => {
+    await reprocesarLeadsFallidos(10);
+
+    expect(logFindMany.mock.calls[0][0].select).toEqual({
+      id: true,
+      receivedAt: true,
+      connectorId: true,
+      externalLeadId: true,
+      rawPayload: true,
+    });
+  });
+
+  // Seguimiento T5 (2026-10-09): los leads de una página sin cuenta quedan en ERROR para siempre
+  // (sin `_mapped`, el replay los salta). Con `take: limite` y el salto DESPUÉS de leer, bastaban
+  // `limite` huérfanos para llenar todas las corridas y que el replay no recuperara nunca nada.
+  // Revisión final I1 (2026-10-09): la paginación pasó de cursor de Prisma a keyset y tiene tope.
+  describe("huérfanos en ERROR que el replay no puede rehacer", () => {
+    // Pares de filas comparten receivedAt para ejercitar el desempate por id del keyset.
+    const fecha = (i: number) => new Date(Date.UTC(2026, 0, 1) + Math.floor(i / 2) * 60_000);
+    const huerfano = (i: number) => ({
+      id: `huerfano-${String(i).padStart(4, "0")}`,
+      receivedAt: fecha(i),
+      connectorId: "conn-1",
+      externalLeadId: `lead-h${i}`,
+      rawPayload: { webhook: { leadgen_id: `lead-h${i}` }, motivo: "pagina_sin_cuenta" },
+    });
+    const recuperable = (i: number, receivedAt: Date = fecha(100_000 + i)) => ({
+      id: `recuperable-${String(i).padStart(4, "0")}`,
+      receivedAt,
+      connectorId: "conn-1",
+      externalLeadId: `lead-ok${i}`,
+      rawPayload: { external: { email: `r${i}@b.c` }, [CAMPOS_MAPEADOS]: { email: `r${i}@b.c` } },
+    });
+
+    type Fila = { id: string; receivedAt: Date };
+    /**
+     * findMany que pagina como la base: aplica el keyset `where.OR` —[{ receivedAt > x },
+     * { receivedAt = x, id > y }]— sobre una lista ya ordenada y corta en `take`. Falla si le
+     * llega `cursor`/`skip` (Prisma): el replay ya no debe usarlos.
+     */
+    function tablaPaginada(filas: Fila[]) {
+      logFindMany.mockImplementation(
+        async (args: { take: number; skip?: number; cursor?: unknown; where: { OR?: unknown[] } }) => {
+          expect(args.cursor).toBeUndefined();
+          expect(args.skip).toBeUndefined();
+          if (!args.where.OR) return filas.slice(0, args.take);
+          const [mayorFecha, mismaFecha] = args.where.OR as [
+            { receivedAt: { gt: Date } },
+            { receivedAt: Date; id: { gt: string } },
+          ];
+          const t = mayorFecha.receivedAt.gt.getTime();
+          const idMin = mismaFecha.id.gt;
+          return filas
+            .filter((f) => f.receivedAt.getTime() > t || (f.receivedAt.getTime() === t && f.id > idMin))
+            .slice(0, args.take);
+        },
+      );
+    }
+
+    beforeEach(() => {
+      logCreate.mockRejectedValue(duplicado);
+      logFindUnique.mockResolvedValue({ id: "log-1", status: "ERROR" });
+    });
+
+    it("🚨 130 huérfanos antes de uno recuperable: el recuperable SÍ se reprocesa (keyset sobre la última fila)", async () => {
+      const huerfanos = Array.from({ length: 130 }, (_, i) => huerfano(i));
+      tablaPaginada([...huerfanos, recuperable(1)]);
+
+      const r = await reprocesarLeadsFallidos(25);
+
+      expect(r).toEqual({ intentados: 1, recuperados: 1 });
+      expect(captureLead).toHaveBeenCalledTimes(1);
+      // Los huérfanos no se cuentan como intentos ni se reintentan.
+      expect(logUpdate).toHaveBeenCalledTimes(1);
+      expect(logFindMany).toHaveBeenCalledTimes(2);
+      // La segunda página continúa DESPUÉS de la última fila de la primera: keyset (receivedAt, id)
+      // combinado (AND) con el filtro de siempre, sin cursor ni skip.
+      const ultima = huerfanos[99];
+      const segunda = logFindMany.mock.calls[1][0];
+      expect(segunda.where).toEqual({
+        status: "ERROR",
+        contactId: null,
+        OR: [
+          { receivedAt: { gt: ultima.receivedAt } },
+          { receivedAt: ultima.receivedAt, id: { gt: ultima.id } },
+        ],
+      });
+      expect(segunda.cursor).toBeUndefined();
+      expect(segunda.skip).toBeUndefined();
+      expect(segunda.orderBy).toEqual([{ receivedAt: "asc" }, { id: "asc" }]);
+    });
+
+    it("el keyset avanza con la última fila de CADA página (no se queda en la primera)", async () => {
+      const huerfanos = Array.from({ length: 230 }, (_, i) => huerfano(i));
+      tablaPaginada(huerfanos);
+
+      await reprocesarLeadsFallidos(25);
+
+      expect(logFindMany).toHaveBeenCalledTimes(3);
+      expect(logFindMany.mock.calls[2][0].where.OR).toEqual([
+        { receivedAt: { gt: huerfanos[199].receivedAt } },
+        { receivedAt: huerfanos[199].receivedAt, id: { gt: huerfanos[199].id } },
+      ]);
+    });
+
+    it("🚨 1,050 huérfanos antes de uno recuperable: tope de 10 páginas por corrida, avisa y no lo alcanza", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      tablaPaginada([...Array.from({ length: 1050 }, (_, i) => huerfano(i)), recuperable(1)]);
+
+      const r = await reprocesarLeadsFallidos(25);
+
+      // El backlog creciente ya no se lee entero en cada tick del cron: 10 consultas como máximo.
+      expect(logFindMany).toHaveBeenCalledTimes(10);
+      expect(r).toEqual({ intentados: 0, recuperados: 0 });
+      expect(captureLead).not.toHaveBeenCalled();
+      // Un solo aviso, solo con conteos (sin datos de leads).
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [mensaje, ...resto] = warn.mock.calls[0];
+      expect(resto).toEqual([]);
+      expect(String(mensaje)).toContain("[connectors]");
+      expect(String(mensaje)).toContain("1000");
+      expect(String(mensaje)).not.toMatch(/lead-h|@b\.c|conn-1/);
+      warn.mockRestore();
+    });
+
+    it("con el tope alcanzado y reintentos hechos (intentados < limite), también avisa", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Un recuperable al frente y 1,100 huérfanos detrás: se reprocesa 1, pero el tope corta antes del final.
+      tablaPaginada([recuperable(1, fecha(-10)), ...Array.from({ length: 1100 }, (_, i) => huerfano(i))]);
+
+      const r = await reprocesarLeadsFallidos(25);
+
+      expect(logFindMany).toHaveBeenCalledTimes(10);
+      expect(r).toEqual({ intentados: 1, recuperados: 1 });
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it("deja de pedir páginas al juntar `limite` reintentos (aunque la página venga llena) y no avisa", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      tablaPaginada(Array.from({ length: 150 }, (_, i) => recuperable(i)));
+
+      const r = await reprocesarLeadsFallidos(3);
+
+      expect(r.intentados).toBe(3);
+      expect(captureLead).toHaveBeenCalledTimes(3);
+      expect(logFindMany).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("termina cuando se acaban las filas aunque nada sea recuperable, sin avisar", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      tablaPaginada(Array.from({ length: 230 }, (_, i) => huerfano(i)));
+
+      const r = await reprocesarLeadsFallidos(25);
+
+      expect(r).toEqual({ intentados: 0, recuperados: 0 });
+      expect(captureLead).not.toHaveBeenCalled();
+      expect(logFindMany).toHaveBeenCalledTimes(3); // 100 + 100 + 30 (< página: fin)
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("una página corta justo en la décima no cuenta como tope alcanzado (no avisa)", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      tablaPaginada(Array.from({ length: 950 }, (_, i) => huerfano(i)));
+
+      await reprocesarLeadsFallidos(25);
+
+      expect(logFindMany).toHaveBeenCalledTimes(10); // 9 llenas + 1 de 50 (< página: fin)
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 
