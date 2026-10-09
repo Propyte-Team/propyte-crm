@@ -36,6 +36,7 @@ vi.mock("./capture-lead", () => ({ captureLead: (...a: unknown[]) => captureLead
 
 import {
   reservarLeadEntrante,
+  marcarLeadFallido,
   processIncomingLead,
   reprocesarLeadsFallidos,
   CAMPOS_MAPEADOS,
@@ -110,6 +111,26 @@ describe("reservarLeadEntrante (#713)", () => {
     logCreate.mockRejectedValue(new Error("la base no responde"));
 
     await expect(reservarLeadEntrante("conn-1", "lead-1", {})).rejects.toThrow("la base no responde");
+  });
+});
+
+// Seguimiento T5 (2026-10-09): el webhook de Lead Ads usa este helper para dejar en ERROR un lead
+// de una página sin cuenta. Su prueba mockea el helper, así que aquí se fija lo que el webhook da
+// por hecho: UNA sola escritura al log (ERROR + detalle) y UNA al conector (lastError + errorCount).
+describe("marcarLeadFallido (#713)", () => {
+  it("deja el log en ERROR con el detalle y escribe lastError del conector una sola vez", async () => {
+    await marcarLeadFallido("log-9", "conn-1", "Página P-1 sin cuenta registrada en Conexiones");
+
+    expect(logUpdate).toHaveBeenCalledTimes(1);
+    expect(logUpdate.mock.calls[0][0]).toMatchObject({
+      where: { id: "log-9" },
+      data: { status: "ERROR", errorDetail: "Página P-1 sin cuenta registrada en Conexiones" },
+    });
+    expect(connectorUpdate).toHaveBeenCalledTimes(1);
+    expect(connectorUpdate.mock.calls[0][0]).toEqual({
+      where: { id: "conn-1" },
+      data: { errorCount: { increment: 1 }, lastError: "Página P-1 sin cuenta registrada en Conexiones" },
+    });
   });
 });
 
