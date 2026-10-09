@@ -54,8 +54,15 @@ export async function findMatchingDevelopments(opts: {
   zone?: string | null;
   city?: string | null;
   bedrooms?: number | null;
+  /**
+   * Marca del agente (2026-10-09): solo desarrollos del Hub de esta lista. null/undefined =
+   * todos. Un arreglo VACÍO significa "la marca no tiene desarrollos": se devuelve vacío sin
+   * consultar (pasarlo al SQL como "sin filtro" filtraría el catálogo de otras marcas).
+   */
+  developmentIds?: string[] | null;
   limit?: number;
 }): Promise<CatalogResult<HubDevelopmentSummary[]>> {
+  if (opts.developmentIds && opts.developmentIds.length === 0) return { data: [], error: null };
   const maxDevs = Math.min(opts.limit ?? 3, 10);
   // Se piden más unidades que desarrollos porque varias unidades caen en el mismo dev.
   const { data: units, error } = await searchCatalog({
@@ -64,6 +71,7 @@ export async function findMatchingDevelopments(opts: {
     zone: opts.zone ?? null,
     city: opts.city ?? null,
     bedrooms: opts.bedrooms ?? null,
+    developmentIds: opts.developmentIds ?? null,
     limit: 25,
   });
   if (error) return { data: [], error };
@@ -95,7 +103,12 @@ export async function findMatchingDevelopments(opts: {
   return { data: summaries.slice(0, maxDevs), error: null };
 }
 
-export function catalogBrief(devs: HubDevelopmentSummary[]): string {
+// Encabezado por defecto del brief: es el texto histórico del bot sin marca y no debe cambiar
+// (el prompt sin marca / con marca predeterminada queda idéntico byte a byte). Una marca puede
+// pasar su propio encabezado (2026-10-09).
+const DEFAULT_CATALOG_HEADER = "Catálogo publicado en propyte.com (fuente oficial, puedes citar estos datos):";
+
+export function catalogBrief(devs: HubDevelopmentSummary[], header: string = DEFAULT_CATALOG_HEADER): string {
   if (devs.length === 0) return "";
   const money = (n: number) => `$${Math.round(n).toLocaleString("es-MX")}`;
   const lines = devs.map((d) => {
@@ -121,5 +134,5 @@ export function catalogBrief(devs: HubDevelopmentSummary[]): string {
     partes.push(`· ${d.unidades_publicadas} unid. publicadas`);
     return partes.join(" ");
   });
-  return `Catálogo publicado en propyte.com (fuente oficial, puedes citar estos datos):\n${lines.join("\n")}`;
+  return `${header}\n${lines.join("\n")}`;
 }
