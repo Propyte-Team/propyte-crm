@@ -2,7 +2,7 @@
 // Contexto → RAG catálogo Hub (data-gate) → Claude (voz Sage) → brand linter →
 // envía o ESCALA a humano (intención fuerte / sin confianza).
 import prisma from "@/lib/db";
-import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage } from "./claude";
+import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage, type BrandPromptInput } from "./claude";
 import { ESCALATE_MARKETING_TOKEN, getMarketingOwnerId } from "./marketing-routing";
 import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
@@ -11,9 +11,20 @@ import { runPlaybookStep } from "./playbook/run";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profiles";
+import { resolveBrandForConnector, isBrandScoped } from "@/lib/brands/resolve";
+import { brandEnabledChannels } from "@/lib/brands/settings";
 
-export function shouldBotRespondForChannel(config: BotConfigResolved, channel: string): boolean {
-  return config.botEnabled && config.enabledChannels.includes(channel);
+/**
+ * `enabledChannelsOverride` (2026-10-09, marcas del agente): los canales propios de la marca
+ * reemplazan a `config.enabledChannels`; null/undefined = los globales. El interruptor
+ * maestro `botEnabled` sigue mandando siempre.
+ */
+export function shouldBotRespondForChannel(
+  config: BotConfigResolved,
+  channel: string,
+  enabledChannelsOverride?: string[] | null,
+): boolean {
+  return config.botEnabled && (enabledChannelsOverride ?? config.enabledChannels).includes(channel);
 }
 
 export function buildOpener(
@@ -85,27 +96,103 @@ export async function escalateToHuman(
   }
 }
 
+/**
+ * ¿El contacto está atribuido a alguna marca NO predeterminada (no borrada)? Tabla o columna
+ * inexistente (P2021/P2022: migración sin aplicar) = sin filas. Cualquier otro error de lectura
+ * falla cerrado (true): mismo criterio que la marca "no disponible" de resolveBrandForConnector.
+ */
+async function contactBelongsToOtherBrand(contactId: string): Promise<boolean> {
+  try {
+    const row = await prisma.contactBrand.findFirst({
+      where: { contactId, brand: { isDefault: false, deletedAt: null } },
+      select: { brandId: true },
+    });
+    if (row) {
+      console.warn("[bot-respond] contacto de otra marca sin cuenta: no se abre conversación desde el número global", contactId);
+    }
+    return !!row;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === "P2021" || code === "P2022") return false;
+    console.error("[bot-respond] no se pudieron leer las marcas del contacto; no se abre conversación", contactId, err);
+    return true;
+  }
+}
+
 export async function botRespond(
   contactId: string,
   opts: { goal?: string; createConversation?: boolean; channel?: MessagingChannel; connectorId?: string | null } = {}
 ): Promise<boolean> {
   const channel: MessagingChannel = opts.channel ?? "WHATSAPP";
   const config = await getBotConfig();
-  if (!shouldBotRespondForChannel(config, channel)) return false;
+  // Atajo barato y sin cambio de conducta: con el master switch apagado nadie contesta.
+  if (!config.botEnabled) return false;
 
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact || contact.doNotContact || (channel === "WHATSAPP" && contact.whatsappOptOut)) return false;
 
   const { ensureConversation, findConversationForChannel } = await import("@/lib/messaging/conversations");
-  const connectorId = opts.connectorId ?? (await findConversationForChannel(contactId, channel))?.connectorId ?? null;
+  // `null` EXPLÍCITO ≠ `undefined` (2026-10-09, revisión final C2): `null` = el llamador SABE que
+  // el mensaje llegó al número global (los webhooks pasan la cuenta resuelta o null) y no se
+  // infiere nada — inferir podía tomar la cuenta del hilo de otra marca y contestar como ella a
+  // un mensaje que el cliente mandó al número de Propyte. `undefined` = el llamador no lo sabe
+  // (workflow, ingesta sin cuenta) → la cuenta del hilo más reciente, igual que siempre.
+  const connectorId =
+    opts.connectorId !== undefined
+      ? opts.connectorId
+      : ((await findConversationForChannel(contactId, channel))?.connectorId ?? null);
+
+  // Marca de la cuenta (2026-10-09, spec marcas-agente §3.2). Solo una marca NO
+  // predeterminada cambia algo; "unavailable" = la cuenta tiene marca pero no se puede
+  // usar → NO contestar (mejor callado que responder como otra marca). El chequeo de
+  // canal va DESPUÉS de resolver la marca porque los canales pueden ser propios de la marca.
+  const brandRes = await resolveBrandForConnector(connectorId);
+  if (brandRes.kind === "unavailable") return false;
+  const brand = isBrandScoped(brandRes) ? brandRes.brand : null;
+  if (!shouldBotRespondForChannel(config, channel, brand ? brandEnabledChannels(brand) : null)) return false;
+
+  // Abrir conversación SIN cuenta (AI_REPLY de un workflow, 2026-10-09, revisión final I3) = escribir
+  // desde el número global con la voz de Propyte. Si el contacto está atribuido a otra marca (fila en
+  // contact_brands de una marca no predeterminada viva), no se abre nada: sería un mensaje de Propyte
+  // a un prospecto de esa marca. Sin filas de otra marca (todos los contactos de hoy) → igual que siempre.
+  if (opts.createConversation && !connectorId && (await contactBelongsToOtherBrand(contactId))) return false;
+
+  // La conversación debe ser la de ESA cuenta. `findConversationForChannel` devuelve el hilo
+  // más reciente del contacto en el canal entre TODAS las cuentas: un contacto con hilos en
+  // el número de Propyte y en el de Yaxnáh podría recibir la voz de una marca por el número
+  // de la otra (el envío sale por `conv.connectorId`). Con `opts.connectorId` explícito se
+  // busca primero el hilo de esa cuenta — también con `null` (número global): el hilo sin
+  // cuenta, el mismo que eligió la ingesta en `ensureConversation` —; sin él (`undefined`),
+  // igual que siempre. Si el hilo resultante es de otra cuenta y alguna de las dos tiene marca,
+  // el cinturón de abajo no deja contestar (2026-10-09).
   const conv = opts.createConversation
     ? await ensureConversation({ contactId, channel, connectorId })
-    : await findConversationForChannel(contactId, channel);
+    : opts.connectorId !== undefined
+      ? ((await prisma.conversation.findFirst({ where: { contactId, channel, connectorId: opts.connectorId } })) ??
+        (await findConversationForChannel(contactId, channel)))
+      : await findConversationForChannel(contactId, channel);
   if (!conv || conv.status !== "BOT" || !conv.botEnabled) return false;
+
+  // Cinturón: si aun así el hilo es de otra cuenta que la resuelta, y alguna de las dos tiene
+  // marca (o no se puede resolver), NO se contesta — nunca como una marca por la cuenta de
+  // otra. Si ambas son predeterminadas, sigue como siempre.
+  if ((conv.connectorId ?? null) !== (connectorId ?? null)) {
+    const convBrandRes = await resolveBrandForConnector(conv.connectorId);
+    if (brandRes.kind !== "default" || convBrandRes.kind !== "default") return false;
+  }
+
+  // Agente de la marca apagado: no contesta, pero tampoco deja al cliente sin atender —
+  // la conversación pasa a un humano (una sola vez: queda en HUMAN y deja de entrar aquí).
+  if (brand && !brand.botEnabled) {
+    await escalateToHuman(conv.id, `Agente de la marca «${brand.name}» apagado`);
+    return false;
+  }
 
   // Contexto: hilo + perfil + catálogo del Hub (data-gate: SOLO estas cifras son citables)
   const msgs = await prisma.message.findMany({
-    where: { contactId, internalNote: false },
+    // Con marca: solo ESTA conversación — lo hablado con el mismo cliente desde otra
+    // marca no entra al contexto. Sin marca: igual que siempre (todo el contacto).
+    where: brand ? { conversationId: conv.id, internalNote: false } : { contactId, internalNote: false },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
@@ -133,35 +220,52 @@ export async function botRespond(
   // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
   // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
   // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
-  const { data: catalog, error: catalogError } = await findMatchingDevelopments({
-    budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
-    budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
-    zone: contact.preferredZone,
-  });
+  //
+  // Con marca (2026-10-09): el catálogo es SOLO el de los desarrollos de la marca (sin
+  // filtrar por presupuesto/zona del contacto: ese perfil puede venir de otra marca).
+  const { data: catalog, error: catalogError } = brand
+    ? await findMatchingDevelopments({ developmentIds: brand.developmentIds, limit: 10 })
+    : await findMatchingDevelopments({
+        budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
+        budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
+        zone: contact.preferredZone,
+      });
   if (catalogError) console.error("[bot-respond] catálogo del Hub no disponible:", catalogError);
 
   // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente
   // (identidad + playbook + tono propios). Solo gasta clasificación si hay agentes activos.
   // Best-effort: cualquier fallo deja el flujo global de siempre intacto.
+  // Con marca NO hay agentes por segmento ni clasificador: la marca es la identidad
+  // (agentProfile queda en null).
   let agentProfile: import("./agent-profiles").AgentProfileWithPlaybook | null = null;
-  try {
-    const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
-    if (hasAgents) {
-      const { maybeClassifyContact } = await import("./classify");
-      const { selectAgentProfile } = await import("./agent-profiles");
-      const effectiveType = config.classifyContacts
-        ? await maybeClassifyContact(prisma, contact, history, config.model)
-        : contact.contactType;
-      agentProfile = await selectAgentProfile(prisma, effectiveType);
+  if (!brand) {
+    try {
+      const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
+      if (hasAgents) {
+        const { maybeClassifyContact } = await import("./classify");
+        const { selectAgentProfile } = await import("./agent-profiles");
+        const effectiveType = config.classifyContacts
+          ? await maybeClassifyContact(prisma, contact, history, config.model)
+          : contact.contactType;
+        agentProfile = await selectAgentProfile(prisma, effectiveType);
+      }
+    } catch {
+      // defensivo: sin agente → comportamiento global
     }
-  } catch {
-    // defensivo: sin agente → comportamiento global
   }
-  const effectiveConfig = applyAgentTone(config, agentProfile);
+  // El tono propio de la marca reemplaza al global; sin marca (o sin tono) todo igual.
+  const baseConfig = brand?.tonePreset ? { ...config, tonePreset: brand.tonePreset } : config;
+  const effectiveConfig = applyAgentTone(baseConfig, agentProfile);
 
   const firstTouch = history.length === 1 && history[0].role === "user";
   const fallbackObjective = firstTouch
-    ? buildOpener(effectiveConfig, { firstName: contact.firstName, preferredZone: contact.preferredZone }, opts.goal)
+    ? buildOpener(
+        effectiveConfig,
+        // Con marca NO se inyecta la zona del contacto (puede venir de otra marca y
+        // contradiría "no menciones otras ciudades" del prompt de la marca).
+        { firstName: contact.firstName, preferredZone: brand ? null : contact.preferredZone },
+        opts.goal,
+      )
     : opts.goal
       ? `Objetivo de este mensaje: ${opts.goal}. Continúa la conversación con naturalidad.`
       : undefined;
@@ -179,14 +283,18 @@ export async function botRespond(
   // compuesto. El fallback al global solo debe aplicar cuando NO hay ningún agente de
   // segmento resuelto para el contacto (LEAD/PROSPECTO sin clasificar) — si sí hay
   // agente pero decidió no traer playbook, eso es intencional y se respeta.
+  //
+  // Con marca (2026-10-09): manda el playbook de la marca (brand.playbookId); una marca sin
+  // playbook propio NO hereda el global (sus preguntas de calificación son de Propyte).
   const agentPlaybook = agentPlaybookOf(agentProfile);
-  const useGlobalPlaybook = !agentProfile && !!config.activePlaybookId;
+  const brandPlaybookId = brand?.playbookId ?? null;
+  const useGlobalPlaybook = !brand && !agentProfile && !!config.activePlaybookId;
   let playbookObjective: string | undefined;
-  if (agentPlaybook || useGlobalPlaybook) {
+  if (agentPlaybook || useGlobalPlaybook || brandPlaybookId) {
     try {
       const pb = agentPlaybook
         ?? (await prisma.botPlaybook.findFirst({
-          where: { id: config.activePlaybookId!, isActive: true, deletedAt: null },
+          where: { id: (brandPlaybookId ?? config.activePlaybookId)!, isActive: true, deletedAt: null },
           include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
         }));
       if (pb && pb.tasks.length > 0) {
@@ -196,6 +304,10 @@ export async function botRespond(
           contact,
           messages: history,
           model: config.model,
+          // Con marca, el estado de OTRO playbook en este hilo (p. ej. el global, que corrió antes
+          // de asignarle la marca a la cuenta) no cuenta como avance de este: se reinicia para el
+          // playbook de la marca (mismo criterio que AI_DRAFT). Sin marca: argumentos de siempre.
+          ...(brand ? { ignoreForeignState: true } : {}),
         });
         if (pr.objective) playbookObjective = pr.objective;
       }
@@ -208,11 +320,17 @@ export async function botRespond(
   const baseObjective = playbookObjective ?? fallbackObjective;
   const objective = composeObjective(agentProfile?.identity, baseObjective);
 
+  // Spread condicional: sin marca los argumentos son idénticos a los de siempre
+  // (`brand` ausente, no `brand: undefined`) y el prompt no cambia ni un byte.
+  const brandPrompt: BrandPromptInput | undefined = brand
+    ? { name: brand.name, persona: brand.persona, knowledge: brand.knowledge }
+    : undefined;
   const system = buildSystemPrompt({
     config: effectiveConfig,
     contact: { firstName: contact.firstName, preferredLanguage: contact.preferredLanguage },
     catalog,
     objective,
+    ...(brandPrompt ? { brand: brandPrompt } : {}),
   });
 
   const reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model });
@@ -260,8 +378,9 @@ export async function botRespond(
 
   if (shouldEscalateMarketing) {
     // Sin responsable válido (null) escala igual que cualquier otro caso — nunca se pierde.
+    // Con marca, primero su responsable de marketing (si está activo); si no, la cadena de siempre.
     await escalateToHuman(conv.id, "Propuesta comercial / de marketing: no busca propiedad", {
-      routeToUserId: await getMarketingOwnerId(),
+      routeToUserId: await getMarketingOwnerId(brand?.marketingOwnerUserId ?? null),
     });
   } else if (shouldEscalate) {
     await escalateToHuman(conv.id, "Intención fuerte detectada por el bot");

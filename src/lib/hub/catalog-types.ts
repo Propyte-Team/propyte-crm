@@ -135,5 +135,7 @@ export interface CatalogSearchFilters {
   zone?: string | null;
   city?: string | null;
   bedrooms?: number | null;
+  /** Solo unidades de estos desarrollos del Hub (marca del agente, 2026-10-09). null/undefined = todos. */
+  developmentIds?: string[] | null;
   limit?: number;
 }

@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma } from "@prisma/client";
 import { inboxScopeWhere } from "@/lib/inbox/scope";
+import { connectorBrandLabel } from "@/lib/inbox/connector-label";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,8 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, status: true, botEnabled: true, unreadCount: true,
       lastMessageAt: true, aiSummary: true, channel: true,
-      connector: { select: { name: true, config: true } },
+      // brand (2026-10-09): la marca asignada a la cuenta etiqueta el hilo; sin ella, config.brand.
+      connector: { select: { name: true, config: true, brand: { select: { name: true } } } },
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, temperature: true,
@@ -73,7 +75,7 @@ export async function GET(req: NextRequest) {
   const data = conversations.map(({ connector, contact, ...c }) => ({
     ...c,
     connector: connector
-      ? { name: connector.name, brand: ((connector.config as Record<string, unknown> | null)?.brand as string | undefined) ?? null }
+      ? { name: connector.name, brand: connectorBrandLabel(connector) }
       : null,
     contact: {
       ...contact,

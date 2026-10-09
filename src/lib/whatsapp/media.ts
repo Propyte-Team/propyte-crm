@@ -8,10 +8,12 @@ const META_TIMEOUT_MS = 4000;
 
 /** Resuelve un media ID de WA Cloud → archivo persistido en el bucket chat-media. */
 export async function resolveWaMediaToStorage(
-  mediaId: string
+  mediaId: string,
+  accessToken?: string | null,
 ): Promise<{ path: string; mimeType: string | null } | null> {
   try {
-    const token = process.env.META_WA_ACCESS_TOKEN?.trim();
+    // Token de la cuenta que recibió el mensaje (2026-10-09); sin cuenta, el global de siempre.
+    const token = accessToken?.trim() || process.env.META_WA_ACCESS_TOKEN?.trim();
     if (!token || !mediaId) return null;
 
     const ctrl = new AbortController();

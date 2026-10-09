@@ -168,13 +168,32 @@ async function pedirAClaude(body: unknown, apiKey: string): Promise<Response> {
 
 export const ESCALATE_TOKEN = "[ESCALAR]";
 
-export function buildBrandRules(config: BotConfigResolved): string {
+/** Datos de marca que entran al prompt (2026-10-09, spec marcas-agente §3.3). */
+export interface BrandPromptInput {
+  name: string;
+  persona: string | null;
+  knowledge: string | null;
+}
+
+// Sin marca, la presentación es la de siempre (byte a byte): el prompt de Propyte no cambia.
+const LEGACY_IDENTITY = "Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.";
+
+function identityLines(brand?: BrandPromptInput): string[] {
+  if (!brand) return [LEGACY_IDENTITY];
+  const persona = brand.persona?.trim() || `Eres el asistente comercial de ${brand.name}.`;
+  return [
+    persona,
+    `Representas únicamente a ${brand.name}. No menciones ni ofrezcas otras marcas, desarrollos o ciudades; si preguntan por algo fuera de ${brand.name}, ofrece que un asesor lo contacte.`,
+  ];
+}
+
+export function buildBrandRules(config: BotConfigResolved, brand?: BrandPromptInput): string {
   const gate = config.dataGateStrict
     ? "NO inventes cifras. Precios, ROI o % de avance SOLO si te los dan en el contexto, citando la fuente. Si no tienes el dato: ofrécele confirmarlo con su asesor; jamás aproximes."
     : "Prioriza cifras del contexto. Si no las tienes, dilo con naturalidad y ofrece confirmarlo con su asesor.";
   const triggers = config.escalationTriggers.join(", ");
   return [
-    "Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.",
+    ...identityLines(brand),
     "NUNCA usas hype, urgencia artificial ni prometes retornos.",
     gate,
     `Tu objetivo: perfilar (presupuesto, zona, recámaras, plazo), responder FAQ del catálogo que te den en contexto, y agendar una llamada/visita con el asesor.`,
@@ -212,8 +231,9 @@ export function buildSystemPrompt(args: {
   contact?: { firstName: string; preferredLanguage: string };
   catalog?: Parameters<typeof catalogBrief>[0];
   objective?: string;
+  brand?: BrandPromptInput;
 }): string {
-  const { config, contact, catalog } = args;
+  const { config, contact, catalog, brand } = args;
   const preset = getTonePreset(config.tonePreset);
 
   const examples = preset.fewShot
@@ -222,15 +242,21 @@ export function buildSystemPrompt(args: {
 
   const catalogBlock =
     catalog && catalog.length > 0
-      ? catalogBrief(catalog)
+      ? (brand
+          ? catalogBrief(catalog, `Catálogo oficial de ${brand.name} (fuente oficial, puedes citar estos datos):`)
+          : catalogBrief(catalog))
       : "(No tienes catálogo en contexto: NO cites precios.)";
 
   const parts = [
-    buildBrandRules(config),
+    buildBrandRules(config, brand),
     `\nTono y estilo:\n${preset.voiceGuidance}`,
-    `\nEjemplos de tu estilo (imítalos en registro, no los copies literal):\n${examples}`,
-    `\nObjetivo ahora: ${args.objective ?? DEFAULT_OBJECTIVE}`,
   ];
+  // Los ejemplos de los presets son de Tulum: con marca se omiten (se conserva la guía de estilo).
+  if (!brand) parts.push(`\nEjemplos de tu estilo (imítalos en registro, no los copies literal):\n${examples}`);
+  if (brand?.knowledge?.trim()) {
+    parts.push(`\nInformación oficial de ${brand.name} (puedes citarla; lo que no esté aquí ni en el catálogo, no lo inventes):\n${brand.knowledge.trim()}`);
+  }
+  parts.push(`\nObjetivo ahora: ${args.objective ?? DEFAULT_OBJECTIVE}`);
   if (contact) {
     // "registrado" + "solo referencia": el preferredLanguage suele ser el default ES del
     // intake, no una elección del cliente — no debe leerse como directiva de idioma.

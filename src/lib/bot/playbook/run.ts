@@ -28,13 +28,20 @@ export async function runPlaybookStep(
     contact: any;
     messages: BotMessage[];
     model: string;
+    /**
+     * Marcas del agente (2026-10-09): el hilo guarda UN solo estado. Si es de OTRO playbook (p. ej.
+     * el global corrió antes de asignarle una marca a la cuenta), sus tareas cumplidas no son avance
+     * de este: con `true` se reinicia para este playbook (como si no hubiera estado, mismo criterio
+     * que AI_DRAFT). Sin la bandera (camino sin marca), exactamente como antes.
+     */
+    ignoreForeignState?: boolean;
   },
 ): Promise<{ objective?: string; status: PlaybookRunStatus }> {
   try {
-    const { playbook, conversationId, contact, messages, model } = args;
+    const { playbook, conversationId, contact, messages, model, ignoreForeignState } = args;
     const tasks = playbook.tasks;
 
-    const state = await db.conversationPlaybookState.upsert({
+    let state = await db.conversationPlaybookState.upsert({
       where: { conversationId },
       create: {
         id: crypto.randomUUID(),
@@ -45,6 +52,19 @@ export async function runPlaybookStep(
       },
       update: {},
     });
+    if (ignoreForeignState && state.playbookId !== playbook.id) {
+      state = await db.conversationPlaybookState.update({
+        where: { conversationId },
+        data: {
+          playbookId: playbook.id,
+          status: "IN_PROGRESS",
+          currentTaskKey: null,
+          completedTaskKeys: [],
+          startedAt: new Date(),
+          completedAt: null,
+        },
+      });
+    }
 
     let completedKeys = ((state.completedTaskKeys as string[]) ?? []) as string[];
 

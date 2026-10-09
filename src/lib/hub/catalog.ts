@@ -298,13 +298,15 @@ export async function searchCatalog(
           AND ($3::text IS NULL OR u.zone ILIKE '%' || $3 || '%')
           AND ($4::text IS NULL OR u.city ILIKE $4)
           AND ($5::int IS NULL OR u.bedrooms >= $5)
+          AND ($6::text[] IS NULL OR u.development_id::text = ANY($6::text[]))
         ORDER BY u.price_mxn ASC NULLS LAST
         LIMIT ${limit}`,
       filters.budgetMin ?? null,
       filters.budgetMax ?? null,
       filters.zone ?? null,
       filters.city ?? null,
-      filters.bedrooms ?? null
+      filters.bedrooms ?? null,
+      filters.developmentIds ?? null
     );
     return { data: rows, error: null };
   } catch (err) {

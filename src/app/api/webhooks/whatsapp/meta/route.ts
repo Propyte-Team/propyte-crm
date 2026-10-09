@@ -9,7 +9,7 @@ import prisma from "@/lib/db";
 import { handleInboundWhatsApp } from "@/lib/twilio/whatsapp";
 import { resolveWaMediaToStorage } from "@/lib/whatsapp/media";
 import { mediaTypeFromWaType } from "@/lib/messaging/media";
-import { resolveConnectorByPhoneNumberId } from "@/lib/whatsapp/accounts";
+import { resolveConnectorByPhoneNumberId, getWhatsAppCredentials } from "@/lib/whatsapp/accounts";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 
 export const dynamic = "force-dynamic";
@@ -246,12 +246,22 @@ export async function POST(req: NextRequest) {
       // Inbox muestra "WhatsApp · Marca" igual que IG/Messenger. Best-effort: sin
       // conector configurado todo fluye como antes (connectorId null).
       let connectorId: string | null = null;
-      if (value.metadata?.phone_number_id) {
+      let connectorToken: string | null = null;
+      let unknownNumber = false;
+      const phoneNumberId = value.metadata?.phone_number_id ?? null;
+      if (phoneNumberId) {
         try {
-          connectorId = (await resolveConnectorByPhoneNumberId(value.metadata.phone_number_id))?.id ?? null;
+          const conn = await resolveConnectorByPhoneNumberId(phoneNumberId);
+          connectorId = conn?.id ?? null;
+          connectorToken = conn ? getWhatsAppCredentials(conn)?.accessToken ?? null : null;
         } catch (err) {
           console.error("[whatsapp-meta] resolución de conector falló:", err);
         }
+        // Número que llegó a la app pero no está dado de alta (2026-10-09, spec §4.3): se
+        // ingiere para no perderlo, pero el agente NO contesta — respondería desde el número
+        // global, o sea desde el WhatsApp de otra marca.
+        unknownNumber = !connectorId && phoneNumberId !== process.env.META_WA_PHONE_NUMBER_ID?.trim();
+        if (unknownNumber) console.warn("[whatsapp-meta] phone_number_id sin cuenta registrada; sin respuesta automática", { phoneNumberId });
       }
 
       // Estatus de entrega de mensajes salientes → actualizar Message.status
@@ -286,7 +296,7 @@ export async function POST(req: NextRequest) {
           const mediaRef = mediaRefOf(msg);
           let stored: { path: string; mimeType: string | null } | null = null;
           if (mediaType && mediaRef?.id) {
-            stored = await resolveWaMediaToStorage(mediaRef.id);
+            stored = await resolveWaMediaToStorage(mediaRef.id, connectorToken);
           }
           // #827: `wa_id` es el teléfono REAL de este remitente — solo se usa ese, nunca
           // `msg.from` a ciegas, porque fuera de la ventana de 30 días `msg.from` ES el
@@ -313,7 +323,9 @@ export async function POST(req: NextRequest) {
               : {}),
           }, { triggerBot: false });
           if (saved?.contactId) {
-            botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
+            if (!unknownNumber) {
+              botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
+            }
             await guardarBsuid(saved.contactId, bsuid);
           }
           processed++;

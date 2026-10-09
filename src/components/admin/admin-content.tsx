@@ -47,6 +47,7 @@ import { IntegrationsTab } from "./integrations-tab";
 import { BotConfigTab } from "./bot-config-tab";
 import { PlaybookTab, type PlaybookData } from "./playbook-tab";
 import { BotAgentsTab, type AgentProfileRow } from "./bot-agents-tab";
+import { BrandsTab } from "./brands/brands-tab";
 import { CommentRulesTab } from "./comments/comment-rules-tab";
 import type { BotTonePreset } from "@prisma/client";
 
@@ -141,6 +142,7 @@ const ADMIN_TAB_TITLES: Record<string, string> = {
   bot: "Bot",
   playbook: "Playbook de calificación",
   botAgents: "Agentes conversacionales",
+  botBrands: "Marcas del agente",
   comments: "Reglas de comentarios",
 };
 const DEFAULT_ADMIN_TAB = "users";
@@ -952,6 +954,16 @@ export function AdminContent({
           <BotAgentsTab
             initialProfiles={agentProfiles}
             playbooks={playbooks.map((pb) => ({ id: pb.id, name: pb.name }))}
+          />
+      )}
+
+      {/* Seccion: Marcas del agente (2026-10-09). Hace su propio fetch; los playbooks y los
+          usuarios activos (responsable de marketing) vienen de lo que /admin ya cargó. */}
+      {activeTab === "botBrands" && (
+          <BrandsTab
+            canWrite={["ADMIN", "DIRECTOR", "GERENTE"].includes(currentUserRole)}
+            playbooks={playbooks.map((pb) => ({ id: pb.id, name: pb.name }))}
+            users={users.filter((u) => u.isActive).map((u) => ({ id: u.id, name: u.name }))}
           />
       )}
 

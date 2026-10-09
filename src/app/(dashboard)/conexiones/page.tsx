@@ -16,6 +16,7 @@ export default async function ConexionesPage() {
     select: {
       id: true, name: true, provider: true, status: true,
       lastLeadAt: true, errorCount: true, lastError: true, fieldMap: true,
+      brandId: true, brand: { select: { id: true, name: true } },
       _count: { select: { leadLogs: true } },
     },
   });

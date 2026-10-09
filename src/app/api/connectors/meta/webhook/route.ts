@@ -102,10 +102,20 @@ export async function POST(req: NextRequest) {
       const pageId = change.value?.page_id;
       if (!leadgenId) continue;
 
-      // Conector específico de esa página (si hay varios)
-      const target =
-        connectors.find((c) => readCredentials<MetaCredentials>(c)?.pageId === pageId) ??
-        matched.connector;
+      // Cuenta de ESA página. Con 2+ cuentas META (2+ marcas) un page_id sin cuenta NO se
+      // asigna a otra: antes caía en la cuenta cuya firma validó y podía contarse como de
+      // otra marca (2026-10-09, spec marcas-agente §4.2). Con una sola cuenta se conserva el
+      // respaldo (instalación de una sola página). Sin `page_id` no se busca por página: si no,
+      // `undefined === undefined` empataba con una cuenta de credenciales vacías (revisión final).
+      const byPage = pageId
+        ? connectors.find((c) => readCredentials<MetaCredentials>(c)?.pageId === pageId)
+        : undefined;
+      const target = byPage ?? (connectors.length === 1 ? matched.connector : null);
+      if (!target) {
+        console.warn("[meta-leadgen] page_id sin cuenta registrada; lead no asignado", { pageId, leadgenId });
+        results.push({ status: "pagina_sin_cuenta" });
+        continue;
+      }
       const creds = readCredentials<MetaCredentials>(target)!;
 
       const config = (target.config ?? {}) as { formIds?: string[] };

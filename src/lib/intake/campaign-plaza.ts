@@ -27,7 +27,9 @@ import type { Plaza } from "@prisma/client";
 
 const TULUM_SIGNALS = ["nativa", "tulum"];
 
-// Reservado para la marca Yaxnah (Mérida). Aún sin campañas; se activa al entrar.
+// Respaldo para leads SIN cuenta (Lead Ads sin conector de marca, WhatsApp directo). Desde
+// 2026-10-09 la plaza de un lead que entra por una cuenta con marca la da
+// `brand.defaultPlaza` (capture-lead.ts).
 const MERIDA_SIGNALS = ["yaxnah", "merida", "mérida", "caucel"];
 
 /**

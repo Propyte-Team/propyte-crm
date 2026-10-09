@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { canViewInboxContact } from "@/lib/inbox/scope";
+import { connectorBrandLabel } from "@/lib/inbox/connector-label";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const conversation = await prisma.conversation.findUnique({
     where: { id: params.id },
     include: {
-      connector: { select: { name: true, config: true } },
+      // brand (2026-10-09): la marca asignada a la cuenta etiqueta el hilo; sin ella, config.brand.
+      connector: { select: { name: true, config: true, brand: { select: { name: true } } } },
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, email: true,
@@ -74,7 +76,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     ...rest,
     messages,
     connector: connector
-      ? { name: connector.name, brand: ((connector.config as Record<string, unknown> | null)?.brand as string | undefined) ?? null }
+      ? { name: connector.name, brand: connectorBrandLabel(connector) }
       : null,
     contact: {
       ...contact,

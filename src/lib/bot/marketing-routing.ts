@@ -37,9 +37,14 @@ async function readUserIdConfig(key: string): Promise<string | null> {
  * responsable sin tocar código); si no existe, el administrador propietario. Solo cuenta
  * si el usuario existe, está activo y no está eliminado: mandarle la conversación a una
  * cuenta desactivada sería repetir el problema original (nadie se entera).
+ *
+ * `preferredUserId` (2026-10-09, marcas del agente): el responsable de marketing de la marca
+ * de la conversación. Si está activo gana sobre la cadena de siempre; si no (null, inactivo
+ * o eliminado) se cae a ella como si no se hubiera pasado.
  */
-export async function getMarketingOwnerId(): Promise<string | null> {
+export async function getMarketingOwnerId(preferredUserId?: string | null): Promise<string | null> {
   const candidates = [
+    preferredUserId ?? null,
     await readUserIdConfig(MARKETING_OWNER_KEY),
     await readUserIdConfig(ADMIN_OWNER_KEY),
   ].filter((id): id is string => !!id);

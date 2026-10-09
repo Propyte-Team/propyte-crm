@@ -127,6 +127,25 @@ describe("meta-dm webhook", () => {
     expect(botRespond).toHaveBeenCalledWith("c9", { channel: "MESSENGER", connectorId: "conn_ms" });
   });
 
+  // Marcas del agente (2026-10-09, revisión final C2): `connectorId: null` EXPLÍCITO le dice a
+  // botRespond "no hay cuenta para esta página" y no infiere la cuenta del hilo más reciente del
+  // contacto (que podría ser el de otra marca). `undefined` significaría "infiérela".
+  it("página sin conector activo → bot con connectorId null EXPLÍCITO (no undefined)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveByPage.mockResolvedValue(null);
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "PAGE-X", messaging: [
+      { sender: { id: "PSID-1" }, recipient: { id: "PAGE-X" }, message: { mid: "mm-x", text: "hola" } },
+    ] }] });
+    const res = await POST(postFirmado(body));
+    expect(res.status).toBe(200);
+    expect(botRespond).toHaveBeenCalledTimes(1);
+    expect(botRespond.mock.calls[0][1]).toEqual({ channel: "MESSENGER", connectorId: null });
+    expect(botRespond.mock.calls[0][1].connectorId).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
+    warn.mockRestore();
+  });
+
   it("echo NO dispara al bot", async () => {
     resolveByPage.mockResolvedValue({ id: "conn_ms" });
     handleInboundMessage.mockResolvedValue({ id: "m-echo", contactId: "c9" });

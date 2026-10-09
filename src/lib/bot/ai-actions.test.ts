@@ -61,11 +61,31 @@ vi.mock("@/lib/messaging/conversations", () => ({
 // buildSystemPrompt/thinkingFieldFor/etc. quedan REALES (son puros) — solo se mockea
 // askClaude para no llamar a la API de Anthropic. Así podemos inspeccionar el "system"
 // ensamblado de verdad (marca+tono+objetivo+catálogo) que le llega al modelo.
+// buildSystemPrompt se envuelve con un espía que SIGUE llamando al real (el espía se reinicia
+// con resetAllMocks, el real no), para poder afirmar los argumentos exactos (p. ej. `brand`).
 const askClaude = vi.fn();
+const buildSystemPromptSpy = vi.fn();
 vi.mock("./claude", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./claude")>();
-  return { ...actual, askClaude: (...a: unknown[]) => askClaude(...a) };
+  return {
+    ...actual,
+    askClaude: (...a: unknown[]) => askClaude(...a),
+    buildSystemPrompt: (...a: Parameters<typeof actual.buildSystemPrompt>) => {
+      buildSystemPromptSpy(...a);
+      return actual.buildSystemPrompt(...a);
+    },
+  };
 });
+
+// Marca de la conversación más reciente del contacto (2026-10-09, spec marcas-agente §3.5).
+const resolveForContactMock = vi.fn();
+vi.mock("@/lib/brands/resolve", () => ({
+  resolveBrandForContact: (...a: unknown[]) => resolveForContactMock(...a),
+}));
+
+// AI_REPLY delega en botRespond (import dinámico).
+const botRespondMock = vi.fn();
+vi.mock("./bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespondMock(...a) }));
 
 // ---
 
@@ -127,6 +147,26 @@ beforeEach(() => {
   askClaude.mockResolvedValue("Hola Ana, este es tu borrador.");
   agentCount.mockResolvedValue(0);
   selectAgentProfile.mockResolvedValue(null);
+  // Sin marca por defecto: el comportamiento de siempre.
+  resolveForContactMock.mockResolvedValue({ resolution: { kind: "default" }, conversationId: null });
+});
+
+// Marcas del agente (2026-10-09, revisión final C2): un workflow NO sabe por qué cuenta escribió
+// el contacto, así que AI_REPLY deja `connectorId` AUSENTE (undefined = botRespond la infiere del
+// hilo más reciente). `null` significaría "el número global" y no se infiere nada.
+describe("runAiAction(AI_REPLY) — delega en botRespond sin cuenta explícita", () => {
+  it("llama a botRespond con createConversation y SIN la clave connectorId", async () => {
+    findConversationForChannel.mockResolvedValue(null);
+    botRespondMock.mockResolvedValue(true);
+
+    const result = await runAiAction("AI_REPLY", CONTACT, { goal: "seguimiento" });
+
+    expect(result).toEqual({});
+    expect(botRespondMock).toHaveBeenCalledTimes(1);
+    expect(botRespondMock.mock.calls[0][0]).toBe("c1");
+    expect(botRespondMock.mock.calls[0][1]).toEqual({ goal: "seguimiento", createConversation: true });
+    expect(botRespondMock.mock.calls[0][1]).not.toHaveProperty("connectorId");
+  });
 });
 
 describe("runAiAction(AI_DRAFT) — ensamblado en 4 capas", () => {
@@ -318,5 +358,300 @@ describe("runAiAction(AI_DRAFT) — agente por segmento (Frente 4, sin clasifica
     expect(result).toEqual({});
     const system = askClaude.mock.calls[0][0].system as string;
     expect(system).not.toContain("IDENTIDAD");
+  });
+});
+
+// Marca de la conversación más reciente del contacto (2026-10-09, spec marcas-agente §3.5).
+// Con marca: historial solo de ESA conversación, sin agentes por segmento, catálogo y
+// prompt de la marca, y el playbook de la marca (sin heredar el global). Sin marca o con la
+// predeterminada, todo igual que antes (cubierto también por los describe de arriba).
+describe("runAiAction(AI_DRAFT) — marca de la conversación más reciente", () => {
+  const YAX = {
+    id: "b-yax",
+    name: "Yaxnáh Caucel",
+    isDefault: false,
+    persona: "Eres el asistente de Yaxnáh.",
+    knowledge: "Info oficial de Yaxnáh.",
+    developmentIds: ["dev-yax"],
+    tonePreset: "CALIDO_CERCANO_MX",
+    playbookId: null as string | null,
+    botEnabled: true,
+    deletedAt: null,
+  };
+  const withBrand = (brand: Record<string, unknown> = YAX) =>
+    resolveForContactMock.mockResolvedValue({ resolution: { kind: "brand", brand }, conversationId: "conv-y" });
+
+  it("con marca: el historial es solo de la conversación, no de todo el contacto", async () => {
+    withBrand();
+    await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(resolveForContactMock).toHaveBeenCalledWith("c1");
+    expect(messageFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { conversationId: "conv-y", internalNote: false } }),
+    );
+  });
+
+  it("con marca: NO selecciona agente por segmento, aunque haya agentes activos", async () => {
+    withBrand();
+    agentCount.mockResolvedValue(1);
+    selectAgentProfile.mockResolvedValue({
+      id: "ap1", name: "Brokers", identity: "IDENTIDAD-BROKERS", tonePreset: null, playbook: null,
+    });
+
+    await runAiAction("AI_DRAFT", { ...CONTACT, contactType: "BROKER_EXTERNO" } as unknown as Contact, {
+      kind: "seguimiento",
+    });
+
+    expect(agentCount).not.toHaveBeenCalled();
+    expect(selectAgentProfile).not.toHaveBeenCalled();
+    expect(askClaude.mock.calls[0][0].system).not.toContain("IDENTIDAD-BROKERS");
+  });
+
+  it("con marca: el catálogo sale de developmentIds de la marca, sin presupuesto ni zona del contacto", async () => {
+    withBrand();
+    const contact = { ...CONTACT, budgetMin: 100, budgetMax: 200, preferredZone: "Tulum" } as unknown as Contact;
+
+    await runAiAction("AI_DRAFT", contact, { kind: "seguimiento" });
+
+    expect(findMatchingDevelopments).toHaveBeenCalledTimes(1);
+    expect(findMatchingDevelopments).toHaveBeenCalledWith({ developmentIds: YAX.developmentIds, limit: 10 });
+  });
+
+  it("con marca: buildSystemPrompt recibe brand { name, persona, knowledge } y el tono propio de la marca", async () => {
+    withBrand();
+    await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    const args = buildSystemPromptSpy.mock.calls[0][0];
+    expect(args.brand).toEqual({ name: YAX.name, persona: YAX.persona, knowledge: YAX.knowledge });
+    expect(args.config.tonePreset).toBe("CALIDO_CERCANO_MX"); // brand.tonePreset gana al global
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).toContain("Yaxnáh Caucel");
+    expect(system).toContain("Hablas como un buen asesor mexicano"); // voiceGuidance de CALIDO_CERCANO_MX
+  });
+
+  it("con marca sin tonePreset propio: usa el tono global", async () => {
+    withBrand({ ...YAX, tonePreset: null });
+    await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(buildSystemPromptSpy.mock.calls[0][0].config.tonePreset).toBe("PROFESIONAL_CALIDO");
+  });
+
+  it("con marca: el borrador se genera y se entrega igual (Activity + Notification)", async () => {
+    withBrand();
+    const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(result).toEqual({});
+    expect(activityCreate).toHaveBeenCalledTimes(1);
+    expect(notificationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("marca no disponible (unavailable) → skipped y NO llama a Claude", async () => {
+    resolveForContactMock.mockResolvedValue({ resolution: { kind: "unavailable", brandId: "x" }, conversationId: "c" });
+
+    const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(result).toEqual({ skipped: true, note: "Marca de la cuenta no disponible" });
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
+    expect(notificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("resolveBrandForContact lanza → falla cerrado: skipped, console.error y NO llama a Claude", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    resolveForContactMock.mockRejectedValue(new Error("db caída"));
+
+    const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(result).toEqual({ skipped: true, note: "Marca de la cuenta no disponible" });
+    expect(errSpy).toHaveBeenCalled();
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
+    expect(notificationCreate).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("marca resuelta pero SIN conversationId → falla cerrado: skipped y NO llama a Claude", async () => {
+    // Defensivo: la marca sale de una conversación, así que no debería pasar; si pasara no hay
+    // hilo de la marca y NO se debe caer al historial de todo el contacto.
+    resolveForContactMock.mockResolvedValue({ resolution: { kind: "brand", brand: YAX }, conversationId: null });
+
+    const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(result).toEqual({ skipped: true, note: "Marca de la cuenta no disponible" });
+    expect(messageFindMany).not.toHaveBeenCalled();
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
+    expect(notificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("con marca: el brief del objetivo NO lleva la zona ni el presupuesto del contacto (pueden ser de otra marca)", async () => {
+    withBrand(); // marca sin playbook (el caso común) → objetivo fallback con el brief del contacto
+    const contact = {
+      ...CONTACT, budgetMin: 1234567, budgetMax: 7654321, preferredZone: "Tulum", purchaseTimeline: "3 meses",
+    } as unknown as Contact;
+
+    await runAiAction("AI_DRAFT", contact, { kind: "seguimiento" });
+
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).not.toContain("Tulum");
+    expect(system).not.toContain("1234567");
+    expect(system).not.toContain("7654321");
+    expect(system).not.toContain("Zona de interés");
+    expect(system).not.toContain("Presupuesto:");
+    // El resto del brief se conserva (incluido el horizonte).
+    expect(system).toContain("Cliente: Ana García");
+    expect(system).toContain("Horizonte: 3 meses");
+  });
+
+  it("sin marca: el brief del objetivo conserva zona y presupuesto, igual que hoy", async () => {
+    const contact = {
+      ...CONTACT, budgetMin: 1234567, budgetMax: 7654321, preferredZone: "Tulum", purchaseTimeline: "3 meses",
+    } as unknown as Contact;
+
+    await runAiAction("AI_DRAFT", contact, { kind: "seguimiento" });
+
+    const system = askClaude.mock.calls[0][0].system as string;
+    expect(system).toContain("Presupuesto: 1234567 - 7654321 MXN");
+    expect(system).toContain("Zona de interés: Tulum");
+    expect(system).toContain("Horizonte: 3 meses");
+  });
+
+  it("marca predeterminada / sin marca: comportamiento de hoy (historial por contacto, sin `brand`)", async () => {
+    resolveForContactMock.mockResolvedValue({ resolution: { kind: "default" }, conversationId: null });
+    const contact = { ...CONTACT, budgetMin: 100, budgetMax: 200, preferredZone: "Tulum" } as unknown as Contact;
+
+    await runAiAction("AI_DRAFT", contact, { kind: "seguimiento" });
+
+    expect(messageFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { contactId: "c1", internalNote: false } }),
+    );
+    expect(findMatchingDevelopments).toHaveBeenCalledWith({ budgetMin: 100, budgetMax: 200, zone: "Tulum" });
+    const args = buildSystemPromptSpy.mock.calls[0][0];
+    expect(args.brand).toBeUndefined();
+    expect("brand" in args).toBe(false); // sin la clave: el prompt no cambia ni un byte
+  });
+
+  it("default con conversationId presente: igual el historial es por contacto (solo una marca lo restringe)", async () => {
+    resolveForContactMock.mockResolvedValue({ resolution: { kind: "default" }, conversationId: "conv-d" });
+
+    await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+    expect(messageFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { contactId: "c1", internalNote: false } }),
+    );
+  });
+
+  describe("playbook de la marca", () => {
+    it("con brand.playbookId: carga ESE playbook (misma consulta que el global) y calcula el objetivo en modo lectura", async () => {
+      withBrand({ ...YAX, playbookId: "pb-yax" });
+      getBotConfig.mockResolvedValue({ ...BASE_CONFIG, activePlaybookId: "pb-global" });
+      botPlaybookFindFirst.mockResolvedValue({ id: "pb-yax", tasks: [TASK_A, TASK_B] });
+      // Otro hilo del contacto (otra cuenta): si se usara, el estado saldría de ahí.
+      findConversationForChannel.mockResolvedValue({ id: "conv-otra-cuenta" });
+      convPlaybookStateFindUnique.mockResolvedValue({
+        conversationId: "conv-y", playbookId: "pb-yax", completedTaskKeys: ["a"],
+      });
+
+      await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+      expect(botPlaybookFindFirst).toHaveBeenCalledTimes(1); // solo el de la marca, nunca el global
+      expect(botPlaybookFindFirst).toHaveBeenCalledWith({
+        where: { id: "pb-yax", isActive: true, deletedAt: null },
+        include: { tasks: { where: { isActive: true }, orderBy: { order: "asc" } } },
+      });
+      // El estado sale del hilo de la marca (conversationId de resolveBrandForContact),
+      // nunca de findConversationForChannel (que mira todas las cuentas del contacto).
+      expect(findConversationForChannel).not.toHaveBeenCalled();
+      expect(convPlaybookStateFindUnique).toHaveBeenCalledWith({ where: { conversationId: "conv-y" } });
+      const system = askClaude.mock.calls[0][0].system as string;
+      expect(system).toContain("confirmar presupuesto"); // TASK_B ("a" ya completada)
+
+      // Solo lectura
+      expect(convPlaybookStateUpdate).not.toHaveBeenCalled();
+      expect(convPlaybookStateUpsert).not.toHaveBeenCalled();
+      expect(contactUpdate).not.toHaveBeenCalled();
+      expect(auditLogCreate).not.toHaveBeenCalled();
+    });
+
+    it("estado del hilo de la marca pero de OTRO playbook: se ignora (sin estado) y cae al fallback", async () => {
+      withBrand({ ...YAX, playbookId: "pb-yax" });
+      botPlaybookFindFirst.mockResolvedValue({ id: "pb-yax", tasks: [TASK_A, TASK_B] });
+      convPlaybookStateFindUnique.mockResolvedValue({
+        conversationId: "conv-y", playbookId: "pb-global", completedTaskKeys: ["a"],
+      });
+
+      const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+      expect(result).toEqual({});
+      expect(convPlaybookStateFindUnique).toHaveBeenCalledWith({ where: { conversationId: "conv-y" } });
+      const system = askClaude.mock.calls[0][0].system as string;
+      expect(system).not.toContain("confirmar presupuesto"); // no avanza con completedTaskKeys de otro playbook
+      expect(system).not.toContain("confirmar zona de interés");
+      expect(system).toContain("seguimiento"); // objetivo fallback (goal original)
+    });
+
+    it("marca SIN playbookId: no hereda el playbook global (aunque haya uno activo)", async () => {
+      withBrand({ ...YAX, playbookId: null });
+      getBotConfig.mockResolvedValue({ ...BASE_CONFIG, activePlaybookId: "pb-global" });
+      findConversationForChannel.mockResolvedValue({ id: "conv1" });
+      convPlaybookStateFindUnique.mockResolvedValue({
+        conversationId: "conv-y", playbookId: "pb-global", completedTaskKeys: [],
+      });
+      botPlaybookFindFirst.mockResolvedValue({ id: "pb-global", tasks: [TASK_A, TASK_B] });
+
+      await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+      expect(botPlaybookFindFirst).not.toHaveBeenCalled();
+      expect(findConversationForChannel).not.toHaveBeenCalled();
+      const system = askClaude.mock.calls[0][0].system as string;
+      expect(system).not.toContain("confirmar zona de interés");
+      expect(system).toContain("seguimiento"); // objetivo fallback (goal original)
+    });
+
+    it("playbook de la marca inactivo/borrado (findFirst → null): null, sin caer al global", async () => {
+      withBrand({ ...YAX, playbookId: "pb-yax" });
+      getBotConfig.mockResolvedValue({ ...BASE_CONFIG, activePlaybookId: "pb-global" });
+      botPlaybookFindFirst.mockResolvedValue(null);
+      findConversationForChannel.mockResolvedValue({ id: "conv1" });
+      convPlaybookStateFindUnique.mockResolvedValue({
+        conversationId: "conv-y", playbookId: "pb-yax", completedTaskKeys: [],
+      });
+
+      const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+      expect(result).toEqual({});
+      expect(botPlaybookFindFirst).toHaveBeenCalledTimes(1); // solo el de la marca
+      expect(botPlaybookFindFirst.mock.calls[0][0].where.id).toBe("pb-yax");
+      expect(findConversationForChannel).not.toHaveBeenCalled();
+      const system = askClaude.mock.calls[0][0].system as string;
+      expect(system).not.toContain("confirmar zona de interés");
+      expect(system).toContain("seguimiento");
+    });
+
+    it("error cargando el playbook de la marca: null, sin caer al global, y el borrador se genera igual", async () => {
+      withBrand({ ...YAX, playbookId: "pb-yax" });
+      getBotConfig.mockResolvedValue({ ...BASE_CONFIG, activePlaybookId: "pb-global" });
+      botPlaybookFindFirst.mockRejectedValue(new Error("boom"));
+
+      const result = await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+      expect(result).toEqual({});
+      expect(botPlaybookFindFirst).toHaveBeenCalledTimes(1);
+      expect(activityCreate).toHaveBeenCalledTimes(1);
+      expect(askClaude.mock.calls[0][0].system).toContain("seguimiento");
+    });
+
+    it("sin marca: el playbook global sigue funcionando como siempre", async () => {
+      getBotConfig.mockResolvedValue({ ...BASE_CONFIG, activePlaybookId: "pb-global" });
+      findConversationForChannel.mockResolvedValue({ id: "conv1" });
+      convPlaybookStateFindUnique.mockResolvedValue({ conversationId: "conv1", completedTaskKeys: ["a"] });
+      botPlaybookFindFirst.mockResolvedValue({ id: "pb-global", tasks: [TASK_A, TASK_B] });
+
+      await runAiAction("AI_DRAFT", CONTACT, { kind: "seguimiento" });
+
+      expect(botPlaybookFindFirst).toHaveBeenCalledTimes(1);
+      expect(botPlaybookFindFirst.mock.calls[0][0].where.id).toBe("pb-global");
+      expect(askClaude.mock.calls[0][0].system).toContain("confirmar presupuesto");
+    });
   });
 });

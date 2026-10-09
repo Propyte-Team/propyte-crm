@@ -225,4 +225,19 @@ describe("searchCatalog (agente IA)", () => {
     expect(res.data).toEqual([]);
     expect(res.error).toBeTruthy();
   });
+
+  // Marca del agente (2026-10-09): developmentIds acota la búsqueda a los desarrollos de
+  // la marca, en SQL y antes del LIMIT (no un .filter() en JS sobre una ventana recortada).
+  it("developmentIds se filtra en SQL como sexto parámetro", async () => {
+    await searchCatalog({ developmentIds: ["d1"] });
+    expect(lastSql()).toContain("u.development_id::text = ANY($6::text[])");
+    const params = queryRaw.mock.calls[queryRaw.mock.calls.length - 1].slice(1);
+    expect(params[5]).toEqual(["d1"]);
+  });
+
+  it("sin developmentIds el sexto parámetro es null (todos los desarrollos)", async () => {
+    await searchCatalog({});
+    const params = queryRaw.mock.calls[queryRaw.mock.calls.length - 1].slice(1);
+    expect(params[5]).toBeNull();
+  });
 });

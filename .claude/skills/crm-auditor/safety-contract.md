@@ -27,10 +27,11 @@ Todo registro QA (Contact, Deal, Quote, Activity, Message) debe ser rastreable a
 4. **Teardown obligatorio.** Al final se borra TODO lo QA. Si algo no se pudo borrar → reportarlo explícito en el `AUDIT.md` (nunca silenciar el fallo de cleanup).
 5. **Windows:** nunca matar `node.exe` de forma masiva (hay ~39 Chrome + procesos de Luis). Si Playwright se cuelga, cerrar sólo su navegador.
 6. **⚠️ Asesores QA y round-robin (CRÍTICO, aprendido 2026-07-10):** crear un usuario asesor **activo** lo mete al pool de round-robin y el intake le **auto-asigna leads REALES** en minutos (incidente real: un lead de WhatsApp en vivo cayó en el `qa-asesor`). Reglas:
-   - Provisionar el asesor QA en una **plaza sin inbound activo** (usar `MERIDA`; el inbound real es PDC/TULUM) para minimizar captura.
+   - **MERIDA ya NO es una plaza sin inbound:** tiene tráfico real (marca Yaxnáh, desde 2026-10-09). Las cuentas QA siguen siendo seguras **solo** porque las cuentas `.local` están excluidas del ruteo (round-robin y asignación del inbox las saltan), no por la plaza. Provisionar el asesor QA con email `.local` (plaza `MERIDA`) y nunca con un email que no termine en `.local`.
    - **Ventana corta**: crear → probar → teardown rápido; no dejar el asesor activo esperando.
    - En el teardown, **antes de borrar/desactivar el usuario**, reasignar (`assignedToId=null`) TODO contacto sin tag `QA_AUDIT` que haya caído en él (son leads reales) y avisar a Luis para que los re-rutee. **Nunca borrar** esos contactos ni sus actividades.
    - Si el usuario QA acumuló actividades reales (p. ej. conversación de WhatsApp), **no se puede borrar** (FK) → dejarlo **inactivo** y reportarlo como residuo.
+7. **⚠️ Marcas del agente (2026-10-09):** nunca enviar mensajes de prueba por cuentas (conectores) asignadas a una marca no predeterminada, ni prender el agente de una marca para pruebas sin un número de prueba.
 
 ## Checklist de teardown (copiar al final de cada AUDIT.md)
 

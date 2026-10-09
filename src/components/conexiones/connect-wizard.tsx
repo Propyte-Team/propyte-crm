@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { providerById, splitConnectorFields } from "@/lib/connectors/registry";
+import { BrandSelect, useBrandOptions } from "./brand-select";
 
 export function ConnectWizard({
   provider, open, onOpenChange, onConnected,
@@ -15,6 +16,9 @@ export function ConnectWizard({
   const def = providerById(provider);
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  // 2026-10-09: marca del agente de la cuenta. null = Predeterminada (igual que antes de las marcas).
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const brands = useBrandOptions(open);
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [testState, setTestState] = useState<"idle" | "testing" | "ok" | "fail">("idle");
   const [msg, setMsg] = useState<string>("");
@@ -40,7 +44,7 @@ export function ConnectWizard({
     const { config, credentials } = splitConnectorFields(provider, creds);
     const create = await fetch("/api/admin/connectors", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() || defLabel, provider, credentials, config }),
+      body: JSON.stringify({ name: name.trim() || defLabel, provider, credentials, config, brandId }),
     });
     const created = await create.json().catch(() => null);
     if (!create.ok || !created?.data?.id) {
@@ -60,7 +64,7 @@ export function ConnectWizard({
     reset(); onConnected(); onOpenChange(false);
   }
 
-  function reset() { setStep(0); setName(""); setCreds({}); setTestState("idle"); setMsg(""); }
+  function reset() { setStep(0); setName(""); setBrandId(null); setCreds({}); setTestState("idle"); setMsg(""); }
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
@@ -86,6 +90,7 @@ export function ConnectWizard({
               <label htmlFor="conn-name" className="text-[10px] uppercase tracking-wide text-muted-foreground">Nombre de la cuenta</label>
               <input id="conn-name" className="form-input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder={def.label} />
             </div>
+            <BrandSelect id="conn-brand" value={brandId} onChange={setBrandId} brands={brands} />
             {def.credFields.map((f) => (
               <div key={f.key} className="space-y-1">
                 <label htmlFor={`cred-${f.key}`} className="text-[10px] uppercase tracking-wide text-muted-foreground">{f.label}</label>
