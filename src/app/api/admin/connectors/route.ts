@@ -1,5 +1,6 @@
 // CRUD de conectores de leads (Anexo B §H.7) — solo Dirección/Admin/Marketing.
 // Las credenciales se cifran al guardar y NUNCA se devuelven (redact).
+// 2026-10-09: cada cuenta puede pertenecer a una marca (brandId). Sin marca = marca predeterminada.
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
@@ -26,6 +27,7 @@ const createSchema = z.object({
   credentials: z.record(z.string()).optional(),
   config: z.record(z.unknown()).optional(),
   fieldMap: z.record(z.string()).optional(),
+  brandId: z.string().uuid().nullable().optional(),
 });
 
 function credentialsSchemaFor(provider: string) {
@@ -54,6 +56,7 @@ export async function GET() {
     select: {
       id: true, name: true, provider: true, status: true, config: true, fieldMap: true,
       lastLeadAt: true, lastSyncAt: true, errorCount: true, lastError: true, createdAt: true,
+      brandId: true, brand: { select: { id: true, name: true } },
       credentials: true,
       _count: { select: { leadLogs: true } },
     },
@@ -74,6 +77,15 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  // Solo marcas vivas: una borrada o inventada dejaría la cuenta apuntando a una marca sin agente.
+  if (typeof parsed.data.brandId === "string") {
+    const brand = await prisma.brand.findFirst({
+      where: { id: parsed.data.brandId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!brand) return NextResponse.json({ error: "Marca no encontrada" }, { status: 400 });
   }
 
   let encrypted: string | null = null;
@@ -111,6 +123,7 @@ export async function POST(req: NextRequest) {
       credentials: encrypted,
       config: (parsed.data.config ?? {}) as never,
       fieldMap: (parsed.data.fieldMap ?? {}) as never,
+      ...(parsed.data.brandId !== undefined ? { brandId: parsed.data.brandId } : {}),
     },
     select: { id: true, name: true, provider: true, status: true },
   });

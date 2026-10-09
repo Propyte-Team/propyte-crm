@@ -1,4 +1,5 @@
 // PATCH/DELETE de un conector (Anexo B §H.7). PATCH acepta status/credenciales/config/fieldMap.
+// 2026-10-09: también brandId (null = cuenta sin marca, es decir, la predeterminada).
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
@@ -14,6 +15,7 @@ const patchSchema = z.object({
   credentials: z.record(z.string()).optional(),
   config: z.record(z.unknown()).optional(),
   fieldMap: fieldMapSchema.optional(),
+  brandId: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -29,11 +31,21 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Solo marcas vivas: una borrada o inventada dejaría la cuenta apuntando a una marca sin agente.
+  if (typeof parsed.data.brandId === "string") {
+    const brand = await prisma.brand.findFirst({
+      where: { id: parsed.data.brandId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!brand) return NextResponse.json({ error: "Marca no encontrada" }, { status: 400 });
+  }
+
   const data: Record<string, unknown> = {};
   if (parsed.data.name) data.name = parsed.data.name;
   if (parsed.data.status) data.status = parsed.data.status;
   if (parsed.data.config) data.config = parsed.data.config;
   if (parsed.data.fieldMap) data.fieldMap = parsed.data.fieldMap;
+  if (parsed.data.brandId !== undefined) data.brandId = parsed.data.brandId;
   if (parsed.data.credentials) {
     data.credentials = writeCredentials(parsed.data.credentials);
     data.errorCount = 0;
