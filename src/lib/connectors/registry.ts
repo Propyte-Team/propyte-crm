@@ -2,7 +2,7 @@
 // Agregar una plataforma = agregar una entrada aquí.
 export type ProviderGroup = "meta" | "tiktok" | "google" | "linkedin" | "pinterest";
 export type PullKind = "webhook" | "cron" | "none"; // none = push-only (v2), deshabilitado para pull
-export type TestKind = "meta" | "tiktok" | "googleAds" | "linkedin" | "none";
+export type TestKind = "meta" | "tiktok" | "googleAds" | "linkedin" | "whatsapp" | "none";
 
 export interface CredField {
   key: string;
@@ -67,19 +67,22 @@ const DM_STEPS: WizardStep[] = [
 
 // WhatsApp Cloud API: el webhook y el envío global ya viven en env (META_WA_*). El
 // conector por número existe para que el Inbox muestre A QUÉ cuenta llegó cada mensaje
-// (config.phoneNumberId ↔ metadata.phone_number_id del webhook). accessToken es opcional
-// (reservado para envío multicuenta, hoy el envío usa el token global del env).
+// (config.phoneNumberId ↔ metadata.phone_number_id del webhook). 2026-10-09: accessToken
+// ya es obligatorio — el de cada número se usa para responder y para descargar fotos y
+// audios de ese número, y el wizard lo valida contra Graph (testKind "whatsapp").
+// El campo de texto `brand` queda como etiqueta visible; la marca del agente se elige
+// con el selector de marcas.
 const WHATSAPP_FIELDS: CredField[] = [
   { key: "phoneNumberId", label: "Phone Number ID (Cloud API)", config: true },
   { key: "displayPhone", label: "Número (para mostrar, ej. +52 998 123 4567)", config: true },
-  { key: "brand", label: "Marca (ej. Propyte / Nativa Tulum)", config: true },
-  { key: "accessToken", label: "Access Token (opcional — el envío usa el global)", secret: true },
+  { key: "brand", label: "Marca visible en el Inbox (opcional)", config: true },
+  { key: "accessToken", label: "Access Token (System User, permanente)", help: "Token con acceso a la WABA de este número. Se usa para responder y para descargar fotos y audios.", secret: true },
 ];
 const WHATSAPP_STEPS: WizardStep[] = [
   { title: "Abre tu app de Meta → WhatsApp → API Setup", body: "Ahí ves los números conectados y su Phone Number ID.", link: "https://developers.facebook.com/apps" },
   { title: "Copia el Phone Number ID del número", body: "Es el ID que llega en metadata.phone_number_id del webhook — así el Inbox sabe a qué cuenta llegó cada mensaje." },
   { title: "Ponle marca y número visible", body: "La marca aparece en el Inbox como 'WhatsApp · Marca'." },
-  { title: "Guarda y activa", body: "El webhook global /api/webhooks/whatsapp/meta ya recibe todos los números de la app." },
+  { title: "Prueba y guarda", body: "Validamos el número y el token contra la API de Meta y guardamos el token cifrado." },
 ];
 
 export const PROVIDERS: ProviderDef[] = [
@@ -90,7 +93,7 @@ export const PROVIDERS: ProviderDef[] = [
   },
   {
     id: "WHATSAPP", label: "WhatsApp · Cloud API", group: "meta", groupLabel: "Meta",
-    pull: "webhook", testKind: "none", credFields: WHATSAPP_FIELDS, wizardSteps: WHATSAPP_STEPS,
+    pull: "webhook", testKind: "whatsapp", credFields: WHATSAPP_FIELDS, wizardSteps: WHATSAPP_STEPS,
     webhookPath: "/api/webhooks/whatsapp/meta",
   },
   {

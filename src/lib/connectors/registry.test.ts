@@ -40,6 +40,16 @@ describe("registry de proveedores", () => {
     expect(configKeys).toContain("phoneNumberId");
     expect(configKeys).toContain("brand");
   });
+
+  // 2026-10-09: sin prueba real el wizard nunca dejaba guardar WhatsApp, y sin token el
+  // conector no puede responder ni bajar media. La prueba es "whatsapp" y el token no es opcional.
+  it("WHATSAPP tiene prueba real y su accessToken ya no es opcional", () => {
+    const wa = providerById("WHATSAPP")!;
+    expect(wa.testKind).toBe("whatsapp");
+    const token = wa.credFields.find((f) => f.key === "accessToken");
+    expect(token?.secret).toBe(true);
+    expect(token?.label).not.toMatch(/opcional/i);
+  });
 });
 
 describe("splitConnectorFields", () => {

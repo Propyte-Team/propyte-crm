@@ -98,6 +98,10 @@ export async function POST(req: NextRequest) {
   if (parsed.data.provider === "WHATSAPP" && !(parsed.data.config as Record<string, unknown> | undefined)?.phoneNumberId) {
     return NextResponse.json({ error: "phoneNumberId requerido para WhatsApp" }, { status: 400 });
   }
+  // 2026-10-09: sin accessToken el número no puede responder ni descargar fotos y audios.
+  if (parsed.data.provider === "WHATSAPP" && !parsed.data.credentials?.accessToken) {
+    return NextResponse.json({ error: "accessToken requerido para WhatsApp (se usa para responder y descargar media)" }, { status: 400 });
+  }
 
   const connector = await prisma.leadConnector.create({
     data: {

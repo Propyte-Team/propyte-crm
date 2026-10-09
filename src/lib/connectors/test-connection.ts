@@ -56,6 +56,18 @@ export async function testConnection(
         if (!res.ok) return { ok: false, detail: data.message ?? `HTTP ${res.status}` };
         return { ok: true, accountName: data.name ?? `Account ${creds.adAccountId}` };
       }
+      case "whatsapp": {
+        // 2026-10-09: valida el número y el token contra Graph. El chequeo de faltantes va
+        // antes del fetch para no gastar una llamada con datos vacíos.
+        if (!creds.phoneNumberId || !creds.accessToken) return { ok: false, detail: "Faltan Phone Number ID o Access Token." };
+        const res = await fetch(
+          `https://graph.facebook.com/v24.0/${encodeURIComponent(creds.phoneNumberId)}?fields=display_phone_number,verified_name`,
+          { headers: { Authorization: `Bearer ${creds.accessToken}` } }
+        );
+        const data = (await res.json()) as { verified_name?: string; display_phone_number?: string; error?: { message?: string } };
+        if (!res.ok || data.error) return { ok: false, detail: data.error?.message ?? `HTTP ${res.status}` };
+        return { ok: true, accountName: [data.verified_name, data.display_phone_number].filter(Boolean).join(" · ") };
+      }
       default:
         return { ok: false, detail: "Tipo de prueba no soportado." };
     }
