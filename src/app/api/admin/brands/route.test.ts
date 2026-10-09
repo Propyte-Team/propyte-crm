@@ -133,6 +133,25 @@ describe("POST /api/admin/brands", () => {
     });
   });
 
+  // Spec §2.1 (revisión final): la marca nace con el agente APAGADO; se enciende al editarla.
+  it("botEnabled:true al crear → 400 y no se crea nada", async () => {
+    const res = await POST(req({ ...VALID, botEnabled: true }));
+    expect(res.status).toBe(400);
+    expect(brandCreate).not.toHaveBeenCalled();
+  });
+
+  it("botEnabled:false explícito al crear → 201 con el agente apagado", async () => {
+    const res = await POST(req({ ...VALID, botEnabled: false }));
+    expect(res.status).toBe(201);
+    expect(brandCreate.mock.calls[0][0].data.botEnabled).toBe(false);
+  });
+
+  it("enabledChannels: [] al crear → 400 (no es «heredar», silenciaría al agente)", async () => {
+    const res = await POST(req({ ...VALID, enabledChannels: [] }));
+    expect(res.status).toBe(400);
+    expect(brandCreate).not.toHaveBeenCalled();
+  });
+
   it("isDefault en el cuerpo se rechaza (400) y no se crea nada", async () => {
     const res = await POST(req({ ...VALID, isDefault: true }));
     expect(res.status).toBe(400);

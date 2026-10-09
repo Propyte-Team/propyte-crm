@@ -125,6 +125,12 @@ describe("PATCH /api/admin/brands/[id]", () => {
     expect(brandUpdate.mock.calls[0][0].data.enabledChannels).toBe(Prisma.DbNull);
   });
 
+  it("enabledChannels: [] → 400 y no actualiza (silenciaría al agente; heredar es null)", async () => {
+    const res = await PATCH(patchReq({ enabledChannels: [] }), props());
+    expect(res.status).toBe(400);
+    expect(brandUpdate).not.toHaveBeenCalled();
+  });
+
   it("playbookId inexistente → 400 y no actualiza", async () => {
     playbookFindFirst.mockResolvedValue(null);
     const res = await PATCH(patchReq({ playbookId: UUID_PB }), props());

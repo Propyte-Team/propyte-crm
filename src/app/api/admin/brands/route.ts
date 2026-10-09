@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
         name: parsed.data.name,
         slug: parsed.data.slug,
         isDefault: false, // jamás del cliente: solo existe la fila sembrada por la migración
+        botEnabled: false, // nace apagada (spec §2.1); el esquema ya rechaza `true`, esto lo fija
       },
     });
   } catch (err) {

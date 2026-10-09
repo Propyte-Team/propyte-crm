@@ -14,8 +14,13 @@ const base = {
   knowledge: z.string().max(20000).nullable().optional(),
   developmentIds: z.array(z.string().uuid()).max(20).optional(),
   defaultPlaza: z.enum(["PDC", "TULUM", "MERIDA"]).nullable().optional(),
-  // null = hereda los canales de la configuración global del bot.
-  enabledChannels: z.array(z.enum(BRAND_CHANNELS)).nullable().optional(),
+  // null = hereda los canales de la configuración global del bot. `[]` NO es heredar: bot-respond lo
+  // leería como "no contestar en ningún canal" y silenciaría al agente sin aviso (revisión final).
+  enabledChannels: z
+    .array(z.enum(BRAND_CHANNELS))
+    .min(1, "Elige al menos un canal, o null para usar los globales")
+    .nullable()
+    .optional(),
   tonePreset: z
     .enum(["PROFESIONAL_CALIDO", "CALIDO_CERCANO_MX", "EJECUTIVO_SOBRIO", "NEUTRO_DIRECTO"])
     .nullable()
@@ -25,10 +30,19 @@ const base = {
   botEnabled: z.boolean().optional(),
 };
 
-// Al crear, el agente de la marca nace apagado. En el PATCH NO se declara el default: un cuerpo
+// Al crear, el agente de la marca nace apagado (spec §2.1: nadie la prende hasta revisarla): solo
+// se acepta `botEnabled` ausente o en false; `true` se rechaza en vez de ignorarse, como `isDefault`
+// (revisión final). Se enciende con el PATCH. En el PATCH NO se declara el default: un cuerpo
 // sin `botEnabled` no debe apagar el agente de una marca que ya estaba encendida.
 export const brandCreateSchema = z
-  .object({ ...base, botEnabled: z.boolean().default(false) })
+  .object({
+    ...base,
+    botEnabled: z
+      .literal(false, {
+        errorMap: () => ({ message: "La marca nace con el agente apagado; enciéndelo al editarla" }),
+      })
+      .default(false),
+  })
   .strict();
 export const brandPatchSchema = z.object(base).partial().strict();
 export type BrandCreateInput = z.infer<typeof brandCreateSchema>;

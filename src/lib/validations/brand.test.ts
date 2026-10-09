@@ -22,7 +22,7 @@ describe("brandCreateSchema", () => {
       tonePreset: "CALIDO_CERCANO_MX",
       playbookId: UUID,
       marketingOwnerUserId: UUID,
-      botEnabled: true,
+      botEnabled: false,
     });
     expect(r.success).toBe(true);
   });
@@ -49,7 +49,6 @@ describe("brandCreateSchema", () => {
   it("enabledChannels es null o un arreglo de canales válidos; SMS es inválido", () => {
     expect([...BRAND_CHANNELS]).toEqual(["WHATSAPP", "INSTAGRAM", "MESSENGER"]);
     expect(brandCreateSchema.safeParse({ ...VALID, enabledChannels: null }).success).toBe(true);
-    expect(brandCreateSchema.safeParse({ ...VALID, enabledChannels: [] }).success).toBe(true);
     expect(brandCreateSchema.safeParse({ ...VALID, enabledChannels: ["MESSENGER"] }).success).toBe(true);
     expect(brandCreateSchema.safeParse({ ...VALID, enabledChannels: ["SMS"] }).success).toBe(false);
     expect(brandCreateSchema.safeParse({ ...VALID, enabledChannels: "WHATSAPP" }).success).toBe(false);
@@ -84,8 +83,18 @@ describe("brandCreateSchema", () => {
     expect(brandCreateSchema.safeParse({ ...VALID, persona: null, knowledge: null }).success).toBe(true);
   });
 
-  it("botEnabled es booleano", () => {
-    expect(brandCreateSchema.safeParse({ ...VALID, botEnabled: true }).success).toBe(true);
+  it("enabledChannels: [] es inválido (revisión final): no es «heredar» (eso es null), silenciaría al agente", () => {
+    const r = brandCreateSchema.safeParse({ ...VALID, enabledChannels: [] });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.flatten().fieldErrors.enabledChannels?.[0]).toMatch(/al menos un canal/);
+  });
+
+  // Spec §2.1: una marca no predeterminada nace con el agente APAGADO; se enciende al editarla.
+  it("al crear, botEnabled solo puede venir ausente o en false (revisión final)", () => {
+    expect(brandCreateSchema.safeParse({ ...VALID, botEnabled: false }).success).toBe(true);
+    const r = brandCreateSchema.safeParse({ ...VALID, botEnabled: true });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.flatten().fieldErrors.botEnabled?.[0]).toMatch(/nace con el agente apagado/);
     expect(brandCreateSchema.safeParse({ ...VALID, botEnabled: "si" }).success).toBe(false);
   });
 
@@ -122,7 +131,14 @@ describe("brandPatchSchema", () => {
   it("valida igual que el de creación", () => {
     expect(brandPatchSchema.safeParse({ slug: "MAL" }).success).toBe(false);
     expect(brandPatchSchema.safeParse({ enabledChannels: ["SMS"] }).success).toBe(false);
+    expect(brandPatchSchema.safeParse({ enabledChannels: [] }).success).toBe(false);
     expect(brandPatchSchema.safeParse({ enabledChannels: null }).success).toBe(true);
+  });
+
+  it("en el PATCH botEnabled sí puede encenderse (true) o apagarse (false)", () => {
+    expect(brandPatchSchema.safeParse({ botEnabled: true }).success).toBe(true);
+    expect(brandPatchSchema.safeParse({ botEnabled: false }).success).toBe(true);
+    expect(brandPatchSchema.safeParse({ botEnabled: "si" }).success).toBe(false);
   });
 
   it("no acepta isDefault (.strict())", () => {
