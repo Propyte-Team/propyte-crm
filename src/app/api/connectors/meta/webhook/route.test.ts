@@ -87,7 +87,7 @@ afterEach(() => {
 
 /** El detalle con el que queda en ERROR un lead de una página sin cuenta. */
 function detallePaginaSinCuenta(pageId: string, leadgenId: string) {
-  return `Página ${pageId} sin cuenta registrada en Conexiones; lead ${leadgenId} no asignado a ninguna marca`;
+  return `Página ${pageId} sin cuenta activa registrada en Conexiones; lead ${leadgenId} no asignado a ninguna marca`;
 }
 
 describe("webhook de Lead Ads — asignación estricta de página a cuenta", () => {
@@ -232,7 +232,7 @@ describe("webhook de Lead Ads — asignación estricta de página a cuenta", () 
     expect(marcarLeadFallido).toHaveBeenCalledTimes(1);
     expect(marcarLeadFallido.mock.calls[0][1]).toBe("conn-A");
     expect(marcarLeadFallido.mock.calls[0][2]).toContain("lg-1");
-    expect(marcarLeadFallido.mock.calls[0][2]).toContain("sin cuenta registrada en Conexiones");
+    expect(marcarLeadFallido.mock.calls[0][2]).toContain("sin cuenta activa registrada en Conexiones");
     expect(processIncomingLead).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);

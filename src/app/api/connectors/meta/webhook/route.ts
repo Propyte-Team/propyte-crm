@@ -119,8 +119,11 @@ export async function POST(req: NextRequest) {
         // validó (la única que sabemos legítima) y se deja en ERROR con el motivo: visible en
         // Conexiones y en el panel de leads fallidos. NO se pide a Graph (no hay token de esa
         // página) ni se asigna a ninguna marca; como la fila no guarda campos mapeados, el replay
-        // automático la salta y se queda en ERROR hasta que alguien dé de alta la página.
-        const detalle = `Página ${pageId ?? "(sin page_id)"} sin cuenta registrada en Conexiones; lead ${leadgenId} no asignado a ninguna marca`;
+        // automático la salta: nada la recupera sola. Se queda en ERROR como registro visible, y
+        // una reentrega de Meta después de registrar o activar la página crea la fila correcta.
+        // Revisión final (2026-10-09): el detalle dice «cuenta activa» porque activeMetaConnectors
+        // solo conserva las ACTIVE: una cuenta PAUSADA de esa página también cae en esta rama.
+        const detalle = `Página ${pageId ?? "(sin page_id)"} sin cuenta activa registrada en Conexiones; lead ${leadgenId} no asignado a ninguna marca`;
         try {
           const reserva = await reservarLeadEntrante(matched.connector.id, leadgenId, {
             webhook: change.value as Record<string, unknown>,
