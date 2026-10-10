@@ -77,26 +77,56 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     return NextResponse.json({ error: pageMismatchMessage(check, pageId) }, { status: 400 });
   }
 
-  // Token nuevo y verificado: los fallos acumulados eran del token anterior.
-  await prisma.leadConnector.update({
-    where: { id: connector.id },
-    data: {
-      credentials: writeCredentials(mergePageToken(existing, token)),
-      errorCount: 0,
-      lastError: null,
-    },
-    select: { id: true },
+  // Un token por Página, no por cuenta (2026-10-10): la cuenta de Messenger y la de Instagram
+  // de una marca usan el token de la MISMA Página (la de IG es la Página vinculada), así que
+  // ya verificado se aplica a todas las cuentas sociales vivas con ese pageId — antes había
+  // que pegar el mismo token dos veces. Cada una conserva sus otras credenciales; si alguna
+  // no se puede descifrar se salta (escribirla desde {} borraría su appSecret) y se reporta.
+  const siblings = (
+    await prisma.leadConnector.findMany({
+      where: { provider: { in: ["INSTAGRAM", "MESSENGER"] }, deletedAt: null, id: { not: connector.id } },
+    })
+  ).filter((c) => String((c.config as { pageId?: string | number } | null)?.pageId ?? "").trim() === pageId);
+
+  const targets: Array<{ id: string; name: string; creds: Record<string, unknown> | null }> = [
+    { id: connector.id, name: connector.name, creds: existing },
+  ];
+  const skipped: string[] = [];
+  for (const s of siblings) {
+    const creds = readCredentials<Record<string, unknown>>(s);
+    if (s.credentials && !creds) skipped.push(s.name);
+    else targets.push({ id: s.id, name: s.name, creds });
+  }
+
+  // Token nuevo y verificado: los fallos acumulados eran del token anterior. En una sola
+  // transacción: o quedan todas las cuentas de la Página con el token nuevo, o ninguna.
+  await prisma.$transaction(
+    targets.map((t) =>
+      prisma.leadConnector.update({
+        where: { id: t.id },
+        data: {
+          credentials: writeCredentials(mergePageToken(t.creds, token)),
+          errorCount: 0,
+          lastError: null,
+        },
+        select: { id: true },
+      })
+    )
+  );
+
+  for (const t of targets) {
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "UPDATE",
+        entity: "LeadConnector",
+        entityId: t.id,
+        changes: { fields: ["credentials.pageAccessToken"], pageId: check.pageId, pageName: check.pageName },
+      },
+    }).catch(() => {});
+  }
+
+  return NextResponse.json({
+    data: { pageId: check.pageId, pageName: check.pageName, updated: targets.map((t) => t.name), skipped },
   });
-
-  await prisma.auditLog.create({
-    data: {
-      userId: session.user.id,
-      action: "UPDATE",
-      entity: "LeadConnector",
-      entityId: connector.id,
-      changes: { fields: ["credentials.pageAccessToken"], pageId: check.pageId, pageName: check.pageName },
-    },
-  }).catch(() => {});
-
-  return NextResponse.json({ data: { pageId: check.pageId, pageName: check.pageName } });
 }
