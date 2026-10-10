@@ -10,7 +10,11 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { checkSocialConnector } from "@/lib/messaging/connector-health";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
-import { probePageSubscription, missingCommentFields } from "@/lib/messaging/webhook-subscription";
+import {
+  probePageSubscription,
+  missingCommentFields,
+  missingPageFields,
+} from "@/lib/messaging/webhook-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +53,12 @@ export async function GET(req: NextRequest) {
       if (!pageId || !token) {
         return {
           ...base,
-          webhook: { subscribedFields: [], missingForComments: [], error: "Sin pageId o sin token" },
+          webhook: {
+            subscribedFields: [],
+            missingForComments: [],
+            missingPageFields: [],
+            error: "Sin pageId o sin token",
+          },
         };
       }
 
@@ -65,6 +74,9 @@ export async function GET(req: NextRequest) {
             c.provider === "MESSENGER" && !probe.error
               ? missingCommentFields(probe.subscribedFields)
               : [],
+          // Lo que el botón "Suscribir página" agregaría. Vacío si Graph falló:
+          // sin saber qué hay, no se ofrece escribir.
+          missingPageFields: probe.error ? [] : missingPageFields(probe.subscribedFields),
           error: probe.error,
         },
       };

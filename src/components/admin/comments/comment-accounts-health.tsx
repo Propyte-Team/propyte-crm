@@ -7,12 +7,15 @@
 //
 // La consulta a Meta va detrás del botón, no en la carga: son N llamadas a
 // Graph y esta pestaña se abre para editar reglas, no para diagnosticar.
+//
+// 2026-10-10: si a la Página le faltan campos, "Suscribir página" los agrega
+// desde aquí (antes había que hacerlo a mano en Meta con un token).
 "use client";
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, AlertTriangle, Stethoscope } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Stethoscope, PlugZap } from "lucide-react";
 
 interface HealthRow {
   id: string;
@@ -24,6 +27,7 @@ interface HealthRow {
   webhook?: {
     subscribedFields: string[];
     missingForComments: string[];
+    missingPageFields: string[];
     error: string | null;
   };
 }
@@ -32,6 +36,22 @@ export function CommentAccountsHealth() {
   const [rows, setRows] = useState<HealthRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [subscribing, setSubscribing] = useState<string | null>(null);
+  const [subscribeMsg, setSubscribeMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
+
+  async function subscribe(id: string) {
+    setSubscribing(id);
+    const res = await fetch(`/api/admin/connectors/${id}/subscribe`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    setSubscribing(null);
+    setSubscribeMsg((m) => ({
+      ...m,
+      [id]: res.ok
+        ? { ok: true, text: `Suscrita a: ${(body.data?.subscribedFields ?? []).join(", ")}` }
+        : { ok: false, text: body.error ?? "No se pudo suscribir" },
+    }));
+    if (res.ok) await run();
+  }
 
   async function run() {
     setLoading(true);
@@ -79,7 +99,9 @@ export function CommentAccountsHealth() {
         )}
         {rows?.map((r) => {
           const sinComentarios = (r.webhook?.missingForComments ?? []).length > 0;
-          const grave = !r.ok || sinComentarios || !!r.webhook?.error;
+          const faltanCampos = r.webhook?.missingPageFields ?? [];
+          const grave = !r.ok || sinComentarios || faltanCampos.length > 0 || !!r.webhook?.error;
+          const msg = subscribeMsg[r.id];
           return (
             <div
               key={r.id}
@@ -99,7 +121,32 @@ export function CommentAccountsHealth() {
                 <span className={`badge ${r.status === "ACTIVE" ? "badge-success" : "badge-neutral"}`}>
                   {r.status}
                 </span>
+                {faltanCampos.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    onClick={() => subscribe(r.id)}
+                    disabled={subscribing !== null}
+                  >
+                    <PlugZap className="mr-1 h-4 w-4" />
+                    {subscribing === r.id ? "Suscribiendo…" : "Suscribir página"}
+                  </Button>
+                )}
               </div>
+
+              {faltanCampos.length > 0 && (
+                <p className="mt-1 text-[12px] text-destructive">
+                  A la Página le falta <code>{faltanCampos.join(", ")}</code>: Meta no nos manda esos
+                  eventos. «Suscribir página» los agrega sin quitar lo que ya tiene.
+                </p>
+              )}
+
+              {msg && (
+                <p className={`mt-1 text-[12px] ${msg.ok ? "text-muted-foreground" : "text-destructive"}`}>
+                  {msg.text}
+                </p>
+              )}
 
               {!r.ok && (
                 <p className="mt-1 text-[12px] text-destructive">
@@ -117,8 +164,7 @@ export function CommentAccountsHealth() {
                 <p className="mt-1 text-[12px] text-destructive">
                   La Página no tiene suscrito{" "}
                   <code>{r.webhook?.missingForComments.join(", ")}</code>: sus comentarios NO
-                  llegan al CRM y ninguna regla puede dispararse. Se activa en el panel de la
-                  app en Meta → Webhooks → objeto <code>page</code>.
+                  llegan al CRM y ninguna regla puede dispararse.
                 </p>
               )}
 
