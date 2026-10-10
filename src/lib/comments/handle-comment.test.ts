@@ -213,6 +213,23 @@ describe("handleComment — envíos", () => {
     );
   });
 
+  // 2026-10-10: replyToComment confirma la respuesta leyendo el comentario
+  // cuando Graph no contesta a tiempo. Ese caso es SENT de verdad, no FAILED.
+  it("respuesta confirmada tras timeout (recovered): queda SENT con su id y se avisa", async () => {
+    replyToComment.mockResolvedValue({ id: "IGREPLY-TARDE", recovered: true });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await handleComment(comment());
+
+    const updates = logUpdate.mock.calls.map((c) => c[0].data);
+    expect(updates).toContainEqual(
+      expect.objectContaining({ publicReplyStatus: "SENT", publicReplyId: "IGREPLY-TARDE" })
+    );
+    expect(updates).not.toContainEqual(expect.objectContaining({ publicReplyStatus: "FAILED" }));
+    expect(warnSpy.mock.calls.some(([m]) => String(m).includes("confirmada tras timeout"))).toBe(true);
+    warnSpy.mockRestore();
+  });
+
   it("si falla la pública, el DM sale igual y el error queda textual", async () => {
     replyToComment.mockRejectedValue(new Error("Comment reply 368: temporarily blocked"));
     const out = await handleComment(comment());

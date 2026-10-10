@@ -8,9 +8,17 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
-import { replyToComment, sendPrivateReply } from "@/lib/comments/graph";
+import { findCommentReply, replyToComment, sendPrivateReply } from "@/lib/comments/graph";
 import { persistOpenerCreatingContact } from "@/lib/comments/link-comment-origin";
 import { canManageCommentRules } from "@/lib/comments/roles";
+
+// Presupuesto (2026-10-10): la respuesta pública ahora lee el comentario ANTES
+// de publicar (5 s máx.) y, si el POST se corta, vuelve a leerlo (1.5 s + 5 s);
+// con el DM el peor caso es 5 + 8 + 6.5 + 8 = 27.5 s. Sin maxDuration la
+// función corría con el límite por defecto del plan, que puede ser menor que
+// eso. Es un clic de admin, no un webhook que Meta reintente: 60 s no cuesta
+// nada y deja margen para las escrituras del log, el opener y el audit.
+export const maxDuration = 60;
 
 /**
  * FAILED es el caso normal. PENDING también es reintentable: si el worker
@@ -19,11 +27,17 @@ import { canManageCommentRules } from "@/lib/comments/roles";
  * Meta lo reprocese, así que sin esto un comentario de un cliente real se
  * quedaba mudo y sin forma de repararlo desde la UI.
  *
- * Riesgo asumido: si el proceso original SÍ llegó a llamar a Graph antes de
- * morir (murió justo después, escribiendo el resultado), este reintento no
- * tiene forma de saberlo y puede duplicar el comentario público o el DM. Es
- * un mal menor frente a dejar al cliente sin respuesta para siempre, pero
- * quien lo aprieta debe saberlo.
+ * Respuesta pública (2026-10-10): antes de publicar se leen las respuestas del
+ * comentario y, si ya hay una con el mismo texto, se marca SENT con ese id sin
+ * volver a publicar. Cubre al proceso que murió después de llamar a Graph y,
+ * sobre todo, al timeout en el que Meta publicó tarde: en producción un
+ * "Info" en Instagram quedó FAILED por timeout y el reintento volvió a
+ * publicar a ciegas.
+ *
+ * Riesgo que sigue asumido: el DM no se puede comprobar así (no hay forma de
+ * leer las private replies de un comentario). Meta acepta una sola private
+ * reply por comentario, así que un segundo intento lo rechaza Meta en vez de
+ * duplicarlo, pero quien aprieta el botón debe saberlo.
  */
 function isRetryableStatus(status: string): boolean {
   return status === "FAILED" || status === "PENDING";
@@ -106,14 +120,30 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
 
   const data: Record<string, unknown> = {};
 
+  let publicAlreadyPublished = false;
   if (claimedPublic && log.publicText) {
     try {
-      const reply = await replyToComment(
-        log.platform,
-        token,
-        log.externalCommentId,
-        log.publicText
-      );
+      // Idempotencia: comprobar antes de publicar. Si la lectura falla (Graph
+      // caído, permiso de lectura faltante) no se bloquea el reintento: se
+      // publica como antes, que es lo que pidió quien apretó el botón.
+      let existing: { id: string } | null = null;
+      try {
+        existing = await findCommentReply(
+          log.platform,
+          token,
+          log.externalCommentId,
+          log.publicText
+        );
+      } catch (err) {
+        console.warn(
+          `[comments] reintento: no se pudo comprobar si la respuesta ya estaba publicada (logId=${log.id}); se publica:`,
+          errorText(err)
+        );
+      }
+      const reply =
+        existing ??
+        (await replyToComment(log.platform, token, log.externalCommentId, log.publicText));
+      publicAlreadyPublished = existing !== null;
       data.publicReplyStatus = "SENT";
       data.publicReplyId = reply.id;
       data.publicReplyError = null;
@@ -208,6 +238,8 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
           publicReply: claimedPublic
             ? {
                 resumedFromPending: log.publicReplyStatus === "PENDING",
+                // true = ya estaba publicada en Meta; no se volvió a publicar.
+                alreadyPublished: publicAlreadyPublished,
                 status: data.publicReplyStatus,
                 error: data.publicReplyError ?? null,
               }

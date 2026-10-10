@@ -191,7 +191,7 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
     // FAILED — el comentario YA está respondido en público; marcarlo FAILED
     // sería mentir. Se deja el log sin actualizar y se avisa fuerte por
     // consola con los IDs necesarios para reconciliar a mano.
-    let reply: { id: string } | undefined;
+    let reply: { id: string; recovered?: true } | undefined;
     try {
       reply = await replyToComment(
         comment.platform,
@@ -199,6 +199,14 @@ export async function handleComment(comment: IncomingComment): Promise<HandleCom
         comment.externalCommentId,
         publicText
       );
+      // 2026-10-10: Graph no contestó a tiempo pero la respuesta sí quedó
+      // publicada (replyToComment lo comprobó leyendo el comentario). Es SENT
+      // de verdad; el aviso queda para medir qué tan seguido tarda Meta.
+      if (reply.recovered) {
+        console.warn(
+          `[comments] respuesta pública confirmada tras timeout (logId=${log.id}, publicReplyId=${reply.id})`
+        );
+      }
     } catch (err) {
       console.error("[comments] respuesta pública falló:", err);
       await prisma.commentRuleLog.update({
