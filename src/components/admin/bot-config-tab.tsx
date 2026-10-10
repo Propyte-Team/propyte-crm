@@ -1,4 +1,4 @@
-// Tab de configuracion del bot: tono, autonomia, arranque, modelo y data-gate
+// Tab de configuracion del bot: estado y canales, tono, autonomia, arranque, modelo y data-gate
 "use client";
 
 import { useState, useTransition } from "react";
@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import { updateBotConfig } from "@/server/bot-config";
+import { BOT_CHANNELS, toggleBotChannel } from "./bot-channels";
 import type { BotTonePreset } from "@prisma/client";
 
 export interface BotConfigData {
@@ -65,7 +66,7 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Estado</CardTitle>
-          <CardDescription>Enciende o apaga el bot globalmente.</CardDescription>
+          <CardDescription>Enciende o apaga el bot globalmente y elige en qué canales contesta.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="flex items-center gap-2">
@@ -76,6 +77,26 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
             />
             <span>Bot activo</span>
           </label>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Canales en que contesta</legend>
+            <div className="flex flex-wrap gap-4">
+              {BOT_CHANNELS.map((ch) => (
+                <label key={ch.value} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={cfg.enabledChannels.includes(ch.value)}
+                    onChange={(e) =>
+                      setCfg({ ...cfg, enabledChannels: toggleBotChannel(cfg.enabledChannels, ch.value, e.target.checked) })
+                    }
+                  />
+                  <span>{ch.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Aplica a todas las cuentas sin marca. Las marcas con canales propios (Marcas del agente) no cambian.
+            </p>
+          </fieldset>
         </CardContent>
       </Card>
 
