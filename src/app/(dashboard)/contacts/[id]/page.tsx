@@ -39,6 +39,7 @@ export default async function ContactDetailPage(props: ContactPageProps) {
       userRole={session.user.role}
       fieldAccess={fieldAccess}
       currentUserId={session.user.id}
+      currentUserName={session.user.name ?? session.user.email ?? null}
     />
   );
 }

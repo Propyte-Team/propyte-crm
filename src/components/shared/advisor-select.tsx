@@ -1,25 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-interface Advisor {
-  id: string;
-  name: string | null;
-  email: string | null;
-}
+import { buildAdvisorOptions, type AdvisorOptionUser } from "./advisor-options";
 
 export function AdvisorSelect({
   value,
   onChange,
   allowUnassigned = false,
   disabled = false,
+  self = null,
 }: {
   value: string | null;
   onChange: (id: string | null) => void | Promise<void>;
   allowUnassigned?: boolean;
   disabled?: boolean;
+  /** Usuario en sesión: siempre seleccionable aunque su rol no sea de asesor (ver advisor-options.ts). */
+  self?: AdvisorOptionUser | null;
 }) {
-  const [advisors, setAdvisors] = useState<Advisor[]>([]);
+  const [advisors, setAdvisors] = useState<AdvisorOptionUser[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -50,9 +48,9 @@ export function AdvisorSelect({
           Seleccionar…
         </option>
       )}
-      {advisors.map((a) => (
-        <option key={a.id} value={a.id}>
-          {a.name ?? a.email ?? a.id}
+      {buildAdvisorOptions(advisors, self).map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
         </option>
       ))}
     </select>

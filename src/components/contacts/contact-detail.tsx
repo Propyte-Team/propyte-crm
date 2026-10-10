@@ -116,9 +116,10 @@ interface ContactDetailProps {
   userRole: string;
   fieldAccess?: Record<string, FieldAccess>;
   currentUserId?: string;
+  currentUserName?: string | null;
 }
 
-export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId }: ContactDetailProps) {
+export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName }: ContactDetailProps) {
   // Acceso por campo core (default EDIT). HIDDEN ya viene removido del server; aquí
   // ocultamos en UI igual por robustez y degradamos READ a solo lectura.
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
@@ -444,6 +445,9 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               <AdvisorSelect
                 value={contact.assignedToId ?? contact.assignedTo?.id ?? null}
                 allowUnassigned
+                // 2026-10-10: quien ve la ficha puede asignársela aunque no tenga rol
+                // de asesor (p. ej. ADMIN de marketing). Ver advisor-options.ts.
+                self={currentUserId ? { id: currentUserId, name: currentUserName ?? null, email: null } : null}
                 onChange={(id) => changeField("assignedToId", id)}
               />
             </div>
