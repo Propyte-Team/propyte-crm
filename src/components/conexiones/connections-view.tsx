@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, type FormEvent } from "react";
 import { PROVIDERS, type ProviderGroup } from "@/lib/connectors/registry";
 import { ConnectWizard } from "./connect-wizard";
 import { MappingEditor } from "./mapping-editor";
@@ -18,6 +18,8 @@ interface Conn {
 }
 
 const MAPPING_PROVIDERS = new Set(["META", "INSTAGRAM"]);
+// 2026-10-10: cuentas cuyo Page Access Token se puede cambiar sin borrar la cuenta.
+const TOKEN_PROVIDERS = new Set(["INSTAGRAM", "MESSENGER"]);
 
 const STATUS_DOT: Record<string, string> = { ACTIVE: "bg-green-600", PAUSED: "bg-neutral-300", ERROR: "bg-red-600" };
 const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "pinterest"];
@@ -30,6 +32,12 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
   // Cuenta cuyo selector de marca está abierto, y las marcas asignables.
   const [brandFor, setBrandFor] = useState<string | null>(null);
   const brands = useBrandOptions(true);
+  // 2026-10-10: cambiar el token de una cuenta de IG/Messenger. El token solo vive en
+  // `tokenDraft` mientras se escribe; al enviarlo se vacía (ver saveToken).
+  const [tokenFor, setTokenFor] = useState<string | null>(null);
+  const [tokenDraft, setTokenDraft] = useState("");
+  const [tokenBusy, setTokenBusy] = useState(false);
+  const [tokenNotice, setTokenNotice] = useState<{ id: string; ok: boolean; text: string } | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -64,6 +72,46 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
     setBrandFor(null);
     reload();
   }, [reload]);
+
+  const toggleToken = useCallback((c: Conn) => {
+    setTokenDraft("");
+    setTokenNotice(null);
+    setTokenFor((open) => (open === c.id ? null : c.id));
+  }, []);
+
+  const saveToken = useCallback(async (c: Conn, e: FormEvent) => {
+    e.preventDefault();
+    const pageAccessToken = tokenDraft.trim();
+    if (!pageAccessToken || tokenBusy) return;
+    // Fuera del estado antes de mandarlo: salga bien o mal, el token no se queda en React.
+    // Si falla hay que pegarlo otra vez, que es el precio de no guardarlo.
+    setTokenDraft("");
+    setTokenBusy(true);
+    try {
+      const res = await fetch(`/api/admin/connectors/${c.id}/token`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageAccessToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTokenNotice({
+          id: c.id, ok: false,
+          text: typeof data.error === "string" ? data.error : `No se pudo actualizar el token de "${c.name}".`,
+        });
+        return;
+      }
+      setTokenFor(null);
+      setTokenNotice({
+        id: c.id, ok: true,
+        text: `Token actualizado · página ${data.data?.pageName || data.data?.pageId || ""}`.trim(),
+      });
+      reload();
+    } catch {
+      setTokenNotice({ id: c.id, ok: false, text: `Error de red al actualizar el token de "${c.name}".` });
+    } finally {
+      setTokenBusy(false);
+    }
+  }, [tokenDraft, tokenBusy, reload]);
 
   const remove = useCallback(async (c: Conn) => {
     if (!confirm(`¿Eliminar conexión "${c.name}"?`)) return;
@@ -150,6 +198,11 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                                 Editar mapeo
                               </button>
                             )}
+                            {TOKEN_PROVIDERS.has(c.provider) && (
+                              <button className="text-[11px] underline" onClick={() => toggleToken(c)}>
+                                Token
+                              </button>
+                            )}
                             <button
                               className="text-[11px] text-destructive underline"
                               onClick={() => remove(c)}
@@ -168,6 +221,54 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                               onChange={(brandId) => changeBrand(c, brandId)}
                             />
                           </div>
+                        )}
+                        {tokenFor === c.id && (
+                          <form className="mt-2 space-y-1" onSubmit={(e) => saveToken(c, e)}>
+                            <label
+                              htmlFor={`token-${c.id}`}
+                              className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                            >
+                              Nuevo Page Access Token
+                            </label>
+                            <input
+                              id={`token-${c.id}`}
+                              type="password"
+                              className="form-input w-full font-mono"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={tokenDraft}
+                              disabled={tokenBusy}
+                              onChange={(e) => setTokenDraft(e.target.value)}
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                              Solo cambia el token: App Secret y Verify Token se conservan. Antes de guardar
+                              se confirma con Meta que el token es de la página de esta cuenta.
+                            </p>
+                            <div className="flex gap-3">
+                              <button
+                                type="submit"
+                                className="text-[11px] underline disabled:no-underline disabled:opacity-50"
+                                disabled={tokenBusy || !tokenDraft.trim()}
+                              >
+                                {tokenBusy ? "Verificando…" : "Guardar"}
+                              </button>
+                              <button
+                                type="button"
+                                className="text-[11px] underline"
+                                onClick={() => toggleToken(c)}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                        {tokenNotice?.id === c.id && (
+                          <p
+                            role="status"
+                            className={`mt-1 text-[11px] ${tokenNotice.ok ? "text-green-700" : "text-destructive"}`}
+                          >
+                            {tokenNotice.text}
+                          </p>
                         )}
                       </div>
                     ))}
