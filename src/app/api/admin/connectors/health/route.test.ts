@@ -50,7 +50,7 @@ beforeEach(() => {
   session.user.role = "ADMIN";
   connectorFindMany.mockResolvedValue([MESSENGER]);
   getToken.mockReturnValue("TOKEN");
-  probe.mockResolvedValue({ subscribedFields: ["messages", "feed"], error: null });
+  probe.mockResolvedValue({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
 });
 
 describe("GET /api/admin/connectors/health", () => {
@@ -63,10 +63,23 @@ describe("GET /api/admin/connectors/health", () => {
   it("con ?probe=1 reporta los campos suscritos de la Página", async () => {
     const res = await GET(req("?probe=1"));
     expect((await res.json()).data[0].webhook).toEqual({
-      subscribedFields: ["messages", "feed"],
+      subscribedFields: ["messages", "message_echoes", "feed"],
       missingForComments: [],
+      missingPageFields: [],
       error: null,
     });
+  });
+
+  it("Página sin campos (Yaxnáh): reporta lo que el botón agregaría", async () => {
+    probe.mockResolvedValue({ subscribedFields: [], error: null });
+    const body = await (await GET(req("?probe=1"))).json();
+    expect(body.data[0].webhook.missingPageFields).toEqual(["messages", "message_echoes", "feed"]);
+  });
+
+  it("si Graph falló no ofrece suscribir", async () => {
+    probe.mockResolvedValue({ subscribedFields: [], error: "Graph 190: Token caducado" });
+    const body = await (await GET(req("?probe=1"))).json();
+    expect(body.data[0].webhook.missingPageFields).toEqual([]);
   });
 
   it("delata la Página sin `feed`: sus comentarios nunca llegan", async () => {

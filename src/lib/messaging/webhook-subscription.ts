@@ -71,3 +71,70 @@ export async function probePageSubscription(
 export function missingCommentFields(subscribedFields: string[]): string[] {
   return COMMENT_FIELDS.filter((f) => !subscribedFields.includes(f));
 }
+
+// Suscribir la Página (2026-10-10).
+//
+// Que la app tenga los campos a nivel aplicación no basta: además hay que
+// "instalar" la app en cada Página con `POST /{page-id}/subscribed_apps`. Sin
+// eso Meta no manda nada de esa Página — es lo que le pasó a Yaxnáh, con la
+// app bien configurada y cero campos en la Página.
+//
+// Lo que necesita el CRM de cada Página: DMs (`messages`), lo que contesta la
+// propia Página desde Meta Business Suite (`message_echoes`) y los comentarios
+// de Facebook (`feed`). En una cuenta de Instagram es la Página vinculada: los
+// DMs de IG también necesitan la app instalada ahí.
+export const REQUIRED_PAGE_FIELDS = ["messages", "message_echoes", "feed"] as const;
+
+/** De los campos que el CRM necesita en la Página, los que faltan. */
+export function missingPageFields(subscribedFields: string[]): string[] {
+  return REQUIRED_PAGE_FIELDS.filter((f) => !subscribedFields.includes(f));
+}
+
+/**
+ * Lo que hay que mandar a Meta: lo que ya tiene más lo que falta. El POST
+ * REEMPLAZA la lista completa de la app en esa Página, así que mandar solo lo
+ * nuevo borraría lo que alguien suscribió a mano.
+ */
+export function fieldsToSubscribe(subscribedFields: string[]): string[] {
+  return [...new Set([...subscribedFields, ...REQUIRED_PAGE_FIELDS])];
+}
+
+export interface SubscribeResult {
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * `POST /{page-id}/subscribed_apps` con el token de la Página, en la cabecera
+ * como en el probe. Nunca lanza: el error de Graph sale como texto para la
+ * pantalla.
+ */
+export async function subscribePage(
+  pageId: string,
+  pageToken: string,
+  fields: string[],
+  fetchImpl: typeof fetch = fetch
+): Promise<SubscribeResult> {
+  try {
+    const res = await fetchImpl(`${GRAPH}/${pageId}/subscribed_apps`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${pageToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ subscribed_fields: fields.join(",") }).toString(),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      success?: boolean;
+      error?: { message?: string; code?: number };
+    };
+    if (!res.ok || body.error || body.success !== true) {
+      const err = body.error ?? {};
+      return { ok: false, error: `Graph ${err.code ?? res.status}: ${err.message ?? "error"}` };
+    }
+    return { ok: true, error: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
