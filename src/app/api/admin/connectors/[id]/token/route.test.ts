@@ -7,15 +7,19 @@ const session = { user: { id: "u1", role: "MARKETING" } };
 vi.mock("@/lib/auth/session", () => ({ getServerSession: () => Promise.resolve(session) }));
 
 const connectorFindFirst = vi.fn();
+const connectorFindMany = vi.fn();
 const connectorUpdate = vi.fn();
 const auditCreate = vi.fn();
+const transaction = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     leadConnector: {
       findFirst: (...a: unknown[]) => connectorFindFirst(...a),
+      findMany: (...a: unknown[]) => connectorFindMany(...a),
       update: (...a: unknown[]) => connectorUpdate(...a),
     },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
+    $transaction: (...a: unknown[]) => transaction(...a),
   },
 }));
 
@@ -51,9 +55,11 @@ const fetchMock = vi.fn();
 const consoleSpies: Array<ReturnType<typeof vi.spyOn>> = [];
 
 beforeEach(() => {
-  for (const m of [connectorFindFirst, connectorUpdate, auditCreate, readCreds, writeCreds, fetchMock]) m.mockReset();
+  for (const m of [connectorFindFirst, connectorFindMany, connectorUpdate, auditCreate, transaction, readCreds, writeCreds, fetchMock]) m.mockReset();
   session.user.role = "MARKETING";
   connectorFindFirst.mockResolvedValue(IG);
+  connectorFindMany.mockResolvedValue([]);
+  transaction.mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
   connectorUpdate.mockResolvedValue({ id: "c1" });
   auditCreate.mockResolvedValue({});
   readCreds.mockReturnValue({ ...OLD_CREDS });
@@ -74,7 +80,12 @@ describe("POST /api/admin/connectors/[id]/token", () => {
   it("token de la página correcta: conserva appSecret/verifyToken y limpia los fallos", async () => {
     const res = await call();
     expect(res.status).toBe(200);
-    expect((await res.json()).data).toEqual({ pageId: "PAGE-1", pageName: "Nativa Tulum" });
+    expect((await res.json()).data).toEqual({
+      pageId: "PAGE-1",
+      pageName: "Nativa Tulum",
+      updated: ["Instagram | Nativa Tulum"],
+      skipped: [],
+    });
 
     expect(writeCreds).toHaveBeenCalledWith({ pageAccessToken: TOKEN, appSecret: "APP-SECRET", verifyToken: "VERIFY" });
     expect(connectorUpdate).toHaveBeenCalledTimes(1);
@@ -101,6 +112,69 @@ describe("POST /api/admin/connectors/[id]/token", () => {
     connectorFindFirst.mockResolvedValue({ ...IG, provider: "MESSENGER", config: { pageId: "PAGE-1" } });
     expect((await call()).status).toBe(200);
     expect(connectorUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  describe("un token por Página: también actualiza la otra cuenta de la misma Página", () => {
+    const MESSENGER = {
+      id: "c2",
+      name: "Messenger | DM Nativa",
+      provider: "MESSENGER",
+      config: { pageId: "PAGE-1" },
+      credentials: "v1:blob-messenger",
+    };
+    const OTRA_PAGINA = { ...MESSENGER, id: "c3", name: "Messenger | DM Yaxnah", config: { pageId: "PAGE-9" } };
+
+    it("aplica el token a las dos cuentas, cada una con sus propias credenciales", async () => {
+      connectorFindMany.mockResolvedValue([MESSENGER, OTRA_PAGINA]);
+      readCreds.mockImplementation((c: { id: string }) =>
+        c.id === "c2" ? { pageAccessToken: "EAAviejoM", appSecret: "SECRET-M", verifyToken: "VERIFY-M" } : { ...OLD_CREDS }
+      );
+      const res = await call();
+      expect(res.status).toBe(200);
+      const { data } = await res.json();
+      expect(data.updated).toEqual(["Instagram | Nativa Tulum", "Messenger | DM Nativa"]);
+      expect(data.skipped).toEqual([]);
+
+      expect(connectorUpdate).toHaveBeenCalledTimes(2);
+      expect(connectorUpdate.mock.calls.map((c) => c[0].where.id)).toEqual(["c1", "c2"]);
+      expect(writeCreds).toHaveBeenCalledWith({ pageAccessToken: TOKEN, appSecret: "SECRET-M", verifyToken: "VERIFY-M" });
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it("busca solo cuentas sociales vivas distintas de la actual", async () => {
+      await call();
+      expect(connectorFindMany.mock.calls[0][0].where).toEqual({
+        provider: { in: ["INSTAGRAM", "MESSENGER"] },
+        deletedAt: null,
+        id: { not: "c1" },
+      });
+    });
+
+    it("compara el pageId aunque venga como número", async () => {
+      connectorFindMany.mockResolvedValue([{ ...MESSENGER, config: { pageId: 12345 } }]);
+      connectorFindFirst.mockResolvedValue({ ...IG, config: { pageId: "12345" } });
+      graphReplies({ id: "12345", name: "Nativa Tulum" });
+      const { data } = await (await call()).json();
+      expect(data.updated).toContain("Messenger | DM Nativa");
+    });
+
+    it("la cuenta hermana con credenciales ilegibles se salta y se reporta", async () => {
+      connectorFindMany.mockResolvedValue([MESSENGER]);
+      readCreds.mockImplementation((c: { id: string }) => (c.id === "c2" ? null : { ...OLD_CREDS }));
+      const { data } = await (await call()).json();
+      expect(data.updated).toEqual(["Instagram | Nativa Tulum"]);
+      expect(data.skipped).toEqual(["Messenger | DM Nativa"]);
+      expect(connectorUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("con token de otra Página no toca ninguna de las dos", async () => {
+      connectorFindMany.mockResolvedValue([MESSENGER]);
+      graphReplies({ id: "PAGE-2", name: "Yaxnáh" });
+      expect((await call()).status).toBe(400);
+      expect(connectorUpdate).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    });
   });
 
   it("token de otra página: 400 con las dos páginas y no escribe nada", async () => {

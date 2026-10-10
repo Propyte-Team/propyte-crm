@@ -101,9 +101,17 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
         return;
       }
       setTokenFor(null);
+      // Un token por Página: el servidor lo aplica también a la otra cuenta (IG/Messenger) de esa
+      // Página y dice en cuáles quedó, para que no se vuelva a pegar en la hermana.
+      const updated: string[] = Array.isArray(data.data?.updated) ? data.data.updated : [];
+      const skipped: string[] = Array.isArray(data.data?.skipped) ? data.data.skipped : [];
+      const page = data.data?.pageName || data.data?.pageId || "";
       setTokenNotice({
-        id: c.id, ok: true,
-        text: `Token actualizado · página ${data.data?.pageName || data.data?.pageId || ""}`.trim(),
+        id: c.id, ok: skipped.length === 0,
+        text:
+          `Token actualizado · página ${page}` +
+          (updated.length > 1 ? ` · en ${updated.join(" y ")}` : "") +
+          (skipped.length ? ` · NO se pudo en ${skipped.join(", ")} (sus credenciales no se pudieron leer)` : ""),
       });
       reload();
     } catch {
