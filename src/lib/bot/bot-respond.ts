@@ -10,6 +10,7 @@ import { findMatchingDevelopments } from "./hub-catalog";
 import { runPlaybookStep } from "./playbook/run";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
+import { recordBotSendFailure } from "@/lib/messaging/send-failure";
 import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profiles";
 import { resolveBrandForConnector, isBrandScoped } from "@/lib/brands/resolve";
 import { brandEnabledChannels } from "@/lib/brands/settings";
@@ -385,7 +386,20 @@ export async function botRespond(
     if (!ownerId) return false;
 
     // sendChannelMessage con opts.bot=true marca sender=BOT, aiGenerated=true, aiAutonomy=L2.
-    await sendChannelMessage(channel, contact.id, clean, ownerId, { bot: true, connectorId: conv.connectorId });
+    try {
+      await sendChannelMessage(channel, contact.id, clean, ownerId, { bot: true, connectorId: conv.connectorId });
+    } catch (err) {
+      // 2026-10-10: si Meta rechaza el envío (p. ej. otra app es la dueña del
+      // hilo), el error moría en el console.error de quien llamó y el bot se
+      // quedaba callado sin rastro. Se deja una nota interna con el motivo y se
+      // relanza igual: el flujo (qué se manda, cuándo, y que no se escale tras
+      // un envío fallido) no cambia. Solo Instagram/Messenger (Send API de
+      // Meta); WhatsApp va por otro transporte y queda como estaba.
+      if (channel !== "WHATSAPP") {
+        await recordBotSendFailure({ contactId: contact.id, conversationId: conv.id, channel, err });
+      }
+      throw err;
+    }
     await prisma.conversation.update({
       where: { id: conv.id },
       data: { lastMessageAt: new Date() },
