@@ -27,9 +27,11 @@ vi.mock("@/lib/messaging/social-accounts", () => ({
 
 const replyToComment = vi.fn();
 const sendPrivateReply = vi.fn();
+const findCommentReply = vi.fn();
 vi.mock("@/lib/comments/graph", () => ({
   replyToComment: (...a: unknown[]) => replyToComment(...a),
   sendPrivateReply: (...a: unknown[]) => sendPrivateReply(...a),
+  findCommentReply: (...a: unknown[]) => findCommentReply(...a),
 }));
 
 const persistOpener = vi.fn();
@@ -74,7 +76,7 @@ function mockClaims(losers: Array<"publicReplyStatus" | "dmStatus"> = []) {
 beforeEach(() => {
   for (const m of [
     logFindUnique, logUpdateMany, logUpdate, connectorFindFirst, auditCreate,
-    getToken, replyToComment, sendPrivateReply, persistOpener,
+    getToken, replyToComment, sendPrivateReply, persistOpener, findCommentReply,
   ]) m.mockReset();
 
   session.user.role = "ADMIN";
@@ -86,6 +88,7 @@ beforeEach(() => {
   auditCreate.mockResolvedValue({});
   replyToComment.mockResolvedValue({ id: "IGREPLY-1" });
   sendPrivateReply.mockResolvedValue({ messageId: "mid-1", recipientId: "PSID-1" });
+  findCommentReply.mockResolvedValue(null); // por defecto: la respuesta no está publicada
   // La ruta encadena .catch() sobre el resultado: el mock tiene que devolver
   // una promesa o el TypeError caería dentro del try del DM y lo marcaría FAILED.
   persistOpener.mockResolvedValue({ contactId: "c-1", isNewContact: true, conversationId: "conv-1" });
@@ -254,6 +257,74 @@ describe("POST /api/admin/comment-rules/logs/[id]/retry", () => {
       publicReplyStatus: "FAILED",
       publicReplyError: "Invalid OAuth access token",
     });
+  });
+});
+
+// 2026-10-10: en producción la respuesta pública a un "Info" de Instagram quedó
+// FAILED por timeout, pero Meta puede publicarla tarde, y el reintento volvía a
+// publicar a ciegas. Ahora se lee el comentario antes de publicar.
+describe("reintento idempotente de la respuesta pública", () => {
+  it("si la respuesta ya está publicada, se marca SENT con ese id y NO se vuelve a publicar", async () => {
+    findCommentReply.mockResolvedValue({ id: "IGREPLY-YA-PUBLICADA" });
+
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(findCommentReply).toHaveBeenCalledWith(
+      "INSTAGRAM",
+      "TOKEN",
+      "IGCOMMENT-1",
+      "Texto público exacto"
+    );
+    expect(replyToComment).not.toHaveBeenCalled();
+    expect(logUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({
+      publicReplyStatus: "SENT",
+      publicReplyId: "IGREPLY-YA-PUBLICADA",
+      publicReplyError: null,
+    });
+    expect(auditCreate.mock.calls[0][0].data.changes.publicReply).toMatchObject({
+      alreadyPublished: true,
+      status: "SENT",
+    });
+  });
+
+  it("si no está publicada, publica como siempre", async () => {
+    await POST(req(), ctx());
+
+    expect(findCommentReply.mock.invocationCallOrder[0]).toBeLessThan(
+      replyToComment.mock.invocationCallOrder[0]
+    );
+    expect(logUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({
+      publicReplyStatus: "SENT",
+      publicReplyId: "IGREPLY-1",
+    });
+    expect(auditCreate.mock.calls[0][0].data.changes.publicReply).toMatchObject({
+      alreadyPublished: false,
+    });
+  });
+
+  it("si la comprobación falla, no bloquea el reintento: publica y avisa", async () => {
+    findCommentReply.mockRejectedValue(new Error("Comment replies 10: permiso"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(replyToComment).toHaveBeenCalled();
+    expect(logUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({ publicReplyStatus: "SENT" });
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("si solo se reintenta el DM, no se lee el comentario", async () => {
+    logFindUnique.mockResolvedValue({ ...LOG_BOTH_FAILED, publicReplyStatus: "SENT" });
+    await POST(req(), ctx());
+    expect(findCommentReply).not.toHaveBeenCalled();
+  });
+
+  it("declara un maxDuration que cubre comprobar + publicar + verificar + DM", async () => {
+    const mod = await import("./route");
+    expect(mod.maxDuration).toBeGreaterThanOrEqual(30);
   });
 });
 

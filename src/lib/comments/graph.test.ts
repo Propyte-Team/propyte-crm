@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { replyToComment, sendPrivateReply } from "./graph";
+import { findCommentReply, replyToComment, sendPrivateReply } from "./graph";
 
 const fetchMock = vi.fn();
 
@@ -51,7 +51,9 @@ describe("replyToComment", () => {
 
   it("respuesta sin id se considera error", async () => {
     fetchMock.mockReturnValue(ok({}));
-    await expect(replyToComment("FACEBOOK", "T", "C1", "hola")).rejects.toThrow(/sin id/);
+    await expect(
+      replyToComment("FACEBOOK", "T", "C1", "hola", { verifyDelayMs: 0 })
+    ).rejects.toThrow(/sin id/);
   });
 });
 
@@ -137,5 +139,142 @@ describe("postJson — robustez (code review)", () => {
     fetchMock.mockReturnValue(ok({ id: "x" }));
     await replyToComment("INSTAGRAM", "T", "C1", "hola");
     expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+// 2026-10-10: en producción la respuesta pública a un "Info" de Instagram se
+// cortó por timeout y un reintento volvió a fallar. Meta puede publicar aunque
+// no conteste a tiempo, así que antes de fallar se lee el comentario.
+function timeoutError() {
+  return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+}
+
+describe("replyToComment — verificación tras timeout", () => {
+  it("Instagram: si la respuesta aparece publicada, es éxito con ese id (recovered)", async () => {
+    fetchMock
+      .mockReturnValueOnce(timeoutError())
+      .mockReturnValueOnce(
+        ok({
+          data: [
+            { id: "OTRA", text: "gracias!" },
+            { id: "IGREPLY-9", text: "te escribo al DM" },
+          ],
+        })
+      );
+
+    const out = await replyToComment("INSTAGRAM", "TOKEN-SECRETO", "IGCOMMENT-1", "te escribo al DM", {
+      verifyDelayMs: 0,
+    });
+
+    expect(out).toEqual({ id: "IGREPLY-9", recovered: true });
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe("https://graph.facebook.com/v24.0/IGCOMMENT-1/replies?fields=id,text");
+    expect(init.method).toBeUndefined(); // GET
+    expect(init.headers).toEqual({ Authorization: "Bearer TOKEN-SECRETO" });
+    expect(String(url)).not.toContain("TOKEN-SECRETO");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("Facebook: lee /comments con el campo message", async () => {
+    fetchMock
+      .mockReturnValueOnce(timeoutError())
+      .mockReturnValueOnce(ok({ data: [{ id: "FBREPLY-9", message: "vamos al privado" }] }));
+
+    const out = await replyToComment("FACEBOOK", "T", "PAGE-1_C1", "vamos al privado", {
+      verifyDelayMs: 0,
+    });
+
+    expect(out).toEqual({ id: "FBREPLY-9", recovered: true });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "https://graph.facebook.com/v24.0/PAGE-1_C1/comments?fields=id,message"
+    );
+  });
+
+  it("el texto se compara sin importar espacios o saltos de línea que Meta recorte", async () => {
+    fetchMock
+      .mockReturnValueOnce(timeoutError())
+      .mockReturnValueOnce(ok({ data: [{ id: "IGREPLY-9", text: "Hola  @ana,\nte escribo " }] }));
+    const out = await replyToComment("INSTAGRAM", "T", "C1", "Hola @ana, te escribo", {
+      verifyDelayMs: 0,
+    });
+    expect(out.id).toBe("IGREPLY-9");
+  });
+
+  it("si no aparece publicada, falla con el error original y lo dice", async () => {
+    fetchMock
+      .mockReturnValueOnce(timeoutError())
+      .mockReturnValueOnce(ok({ data: [{ id: "OTRA", text: "otra cosa" }] }));
+    await expect(
+      replyToComment("INSTAGRAM", "T", "C1", "te escribo al DM", { verifyDelayMs: 0 })
+    ).rejects.toThrow(
+      "The operation was aborted due to timeout — verificado en Meta: la respuesta no aparece publicada"
+    );
+  });
+
+  it("si la verificación también falla, lo dice sin inventar un resultado", async () => {
+    fetchMock
+      .mockReturnValueOnce(timeoutError())
+      .mockReturnValueOnce(fail({ error: { code: 190, message: "Invalid OAuth access token" } }));
+    await expect(
+      replyToComment("INSTAGRAM", "T", "C1", "hola", { verifyDelayMs: 0 })
+    ).rejects.toThrow(
+      "The operation was aborted due to timeout — no se pudo verificar en Meta si se publicó (Comment replies 190: Invalid OAuth access token)"
+    );
+  });
+
+  it("un error de red (sin respuesta) también se verifica", async () => {
+    fetchMock
+      .mockReturnValueOnce(Promise.reject(new TypeError("fetch failed")))
+      .mockReturnValueOnce(ok({ data: [{ id: "IGREPLY-9", text: "hola" }] }));
+    const out = await replyToComment("INSTAGRAM", "T", "C1", "hola", { verifyDelayMs: 0 });
+    expect(out).toEqual({ id: "IGREPLY-9", recovered: true });
+  });
+
+  it("un 200 sin id (cuerpo cortado) también se verifica antes de fallar", async () => {
+    fetchMock
+      .mockReturnValueOnce(ok({}))
+      .mockReturnValueOnce(ok({ data: [{ id: "IGREPLY-9", text: "hola" }] }));
+    const out = await replyToComment("INSTAGRAM", "T", "C1", "hola", { verifyDelayMs: 0 });
+    expect(out).toEqual({ id: "IGREPLY-9", recovered: true });
+  });
+
+  it("un error de Graph con cuerpo es definitivo: no se verifica", async () => {
+    fetchMock.mockReturnValue(fail({ error: { code: 368, message: "temporarily blocked" } }));
+    await expect(
+      replyToComment("INSTAGRAM", "T", "C1", "hola", { verifyDelayMs: 0 })
+    ).rejects.toThrow("Comment reply 368: temporarily blocked");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("el éxito normal no hace la lectura extra", async () => {
+    fetchMock.mockReturnValue(ok({ id: "IGREPLY-1" }));
+    await replyToComment("INSTAGRAM", "T", "C1", "hola");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("findCommentReply", () => {
+  it("devuelve null si ninguna respuesta tiene ese texto", async () => {
+    fetchMock.mockReturnValue(ok({ data: [{ id: "X", text: "otra" }] }));
+    expect(await findCommentReply("INSTAGRAM", "T", "C1", "hola")).toBeNull();
+  });
+
+  it("devuelve null si el comentario no tiene respuestas", async () => {
+    fetchMock.mockReturnValue(ok({ data: [] }));
+    expect(await findCommentReply("FACEBOOK", "T", "C1", "hola")).toBeNull();
+  });
+
+  it("lanza con el mensaje textual de Meta si Graph falla", async () => {
+    fetchMock.mockReturnValue(fail({ error: { code: 100, message: "Unsupported get request" } }));
+    await expect(findCommentReply("INSTAGRAM", "T", "C1", "hola")).rejects.toThrow(
+      "Comment replies 100: Unsupported get request"
+    );
+  });
+
+  it("el token va en la cabecera Authorization, nunca en la URL", async () => {
+    fetchMock.mockReturnValue(ok({ data: [] }));
+    await findCommentReply("INSTAGRAM", "TOKEN-SECRETO", "C1", "hola");
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("TOKEN-SECRETO");
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer TOKEN-SECRETO" });
   });
 });

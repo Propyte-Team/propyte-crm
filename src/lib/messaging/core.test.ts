@@ -96,6 +96,13 @@ vi.mock("@/lib/audit/change-context", () => ({
   },
 }));
 
+// Formulario de anuncio (2026-10-10): el detector de duplicados tiene sus propias
+// pruebas; aquí solo importa que se llame cuando entra un teléfono o correo.
+const detectDuplicatesForContact = vi.fn();
+vi.mock("@/lib/contacts/duplicate-alert", () => ({
+  detectDuplicatesForContact: (...a: unknown[]) => detectDuplicatesForContact(...a),
+}));
+
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
@@ -1294,5 +1301,117 @@ describe("handleInboundMessage — desempate BSUID vs teléfono (WhatsApp)", () 
     await handleInboundMessage(wa);
 
     expect(captureLead).toHaveBeenCalled();
+  });
+});
+
+// 2026-10-10: un cliente real llegó por un anuncio de Messenger con formulario y se
+// quedó como "Messenger (por identificar)" sin teléfono ni correo, aunque el primer
+// DM traía todo el formulario como texto.
+describe("handleInboundMessage — resumen de formulario de anuncio", () => {
+  const RESUMEN = [
+    "¡Hola! Completé el formulario y me gustaría obtener más información sobre el negocio.",
+    "¿Cuál es tu esquema de pago?: Recurso propio",
+    "Last name: Melendez",
+    "Phone number: 55 5453 3990",
+    "First name: Yanush",
+    "Email: someone@example.com",
+  ].join("\n");
+  const msgMs = {
+    channel: "MESSENGER" as const,
+    senderId: "PSID-7",
+    externalMessageId: "mid-form",
+    text: RESUMEN,
+    connectorId: "conn-nativa",
+  };
+  const PLACEHOLDER = {
+    id: "c1",
+    assignedToId: "u1",
+    firstName: "Messenger",
+    lastName: "(por identificar)",
+    phone: "",
+    email: null,
+    custom: {},
+  };
+
+  beforeEach(() => {
+    detectDuplicatesForContact.mockReset();
+    detectDuplicatesForContact.mockResolvedValue(undefined);
+  });
+
+  it("contacto nuevo con placeholder: llena nombre, apellido, teléfono E.164 y correo", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: "u1" });
+    contactFindUnique.mockResolvedValue(PLACEHOLDER);
+    contactTxUpdate.mockResolvedValue({
+      ...PLACEHOLDER,
+      firstName: "Yanush",
+      lastName: "Melendez",
+      phone: "+525554533990",
+      email: "someone@example.com",
+      assignedTo: null,
+    });
+
+    await handleInboundMessage(msgMs);
+
+    expect(withChangeSourceSpy).toHaveBeenCalledWith({ source: "lead_form_summary" });
+    expect(contactTxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "c1" },
+        data: {
+          firstName: "Yanush",
+          lastName: "Melendez",
+          phone: "+525554533990",
+          email: "someone@example.com",
+        },
+      })
+    );
+    expect(detectDuplicatesForContact).toHaveBeenCalledWith("c1");
+    // la actividad ya sale con el nombre del cliente
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subject: expect.stringContaining("Yanush Melendez") }) })
+    );
+  });
+
+  it("contacto existente con datos reales: no se toca nada", async () => {
+    contactFindFirst.mockResolvedValue({
+      ...PLACEHOLDER,
+      firstName: "Juan",
+      lastName: "Pérez",
+      phone: "+529981112233",
+      email: "juan@x.com",
+    });
+
+    await handleInboundMessage(msgMs);
+
+    expect(contactTxUpdate).not.toHaveBeenCalled();
+    expect(detectDuplicatesForContact).not.toHaveBeenCalled();
+  });
+
+  it("solo llena lo que falta: nombre real del perfil se respeta", async () => {
+    contactFindFirst.mockResolvedValue({ ...PLACEHOLDER, firstName: "Yanu" });
+    contactTxUpdate.mockResolvedValue({ ...PLACEHOLDER, firstName: "Yanu", lastName: "Melendez", assignedTo: null });
+
+    await handleInboundMessage(msgMs);
+
+    const call = contactTxUpdate.mock.calls.find((c) => c[0].data.lastName === "Melendez");
+    expect(call?.[0].data).toEqual({ lastName: "Melendez", phone: "+525554533990", email: "someone@example.com" });
+  });
+
+  it("WhatsApp no pasa por aquí (el teléfono ya es la identidad del canal)", async () => {
+    contactFindFirst.mockResolvedValue({ ...PLACEHOLDER, firstName: "WhatsApp" });
+    await handleInboundMessage({ ...msgMs, channel: "WHATSAPP", senderId: "+529981234567" });
+    expect(withChangeSourceSpy).not.toHaveBeenCalledWith({ source: "lead_form_summary" });
+  });
+
+  it("si la escritura falla, la ingesta y el bot siguen", async () => {
+    contactFindFirst.mockResolvedValue(PLACEHOLDER);
+    contactTxUpdate.mockRejectedValue(new Error("db caída"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await handleInboundMessage(msgMs);
+
+    expect(msgCreate).toHaveBeenCalled();
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "MESSENGER" });
+    warnSpy.mockRestore();
   });
 });

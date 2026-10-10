@@ -5,6 +5,7 @@ import type { IncomingMessage, MessagingChannel } from "./types";
 // alta de contacto de las reglas de comentarios sin arrastrar todo este módulo.
 import { PLACEHOLDER_LASTNAME } from "./types";
 import type { SocialProfile } from "./profile";
+import { parseLeadFormSummary, leadFormContactUpdates } from "./lead-form-summary";
 
 type ContactWithAssigned = NonNullable<Awaited<ReturnType<typeof findContactByChannel>>>;
 
@@ -39,6 +40,48 @@ async function applySocialProfile(
     );
   } catch (err) {
     console.warn(`[messaging] applySocialProfile falló (${contact.id}):`, err);
+    return null;
+  }
+}
+
+/**
+ * Resumen de formulario de anuncio en el texto del DM (2026-10-10): llena nombre,
+ * apellido, teléfono y correo SOLO donde la ficha está vacía o con placeholder
+ * (reglas en ./lead-form-summary). Best-effort como applySocialProfile: devuelve
+ * el contacto tal cual si no hay nada que llenar y null si la escritura falla.
+ *
+ * El teléfono o correo nuevos pueden ser de otro contacto que ya existía: no se
+ * fusiona (la fusión es decisión humana en /duplicados), solo se avisa con el
+ * mismo detector que usa el bot al capturar un teléfono.
+ */
+async function applyLeadFormSummary(
+  contact: ContactWithAssigned,
+  text: string
+): Promise<ContactWithAssigned | null> {
+  const fields = parseLeadFormSummary(text);
+  if (!fields) return contact;
+  const data = leadFormContactUpdates(contact, fields);
+  if (Object.keys(data).length === 0) return contact;
+  try {
+    const { withChangeSource } = await import("@/lib/audit/change-context");
+    const updated = await withChangeSource({ source: "lead_form_summary" }, (tx) =>
+      tx.contact.update({
+        where: { id: contact.id },
+        data,
+        include: { assignedTo: { select: { id: true, name: true } } },
+      })
+    );
+    if (data.phone || data.email) {
+      try {
+        const { detectDuplicatesForContact } = await import("@/lib/contacts/duplicate-alert");
+        await detectDuplicatesForContact(contact.id);
+      } catch (err) {
+        console.warn(`[messaging] detección de duplicados tras el formulario falló (${contact.id}):`, err);
+      }
+    }
+    return updated;
+  } catch (err) {
+    console.warn(`[messaging] datos del formulario no aplicados (${contact.id}):`, err);
     return null;
   }
 }
@@ -313,6 +356,14 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
     }
   } else if (profile) {
     contact = (await applySocialProfile(contact, profile)) ?? contact;
+  }
+
+  // Anuncio con formulario (2026-10-10): Meta manda las respuestas del formulario
+  // como texto en el primer DM ("First name: …", "Phone number: …"). Va DESPUÉS
+  // del perfil para respetar el nombre real que haya dado Graph, y ANTES de la
+  // actividad y del bot para que ambos ya usen el nombre del cliente.
+  if (msg.channel !== "WHATSAPP") {
+    contact = (await applyLeadFormSummary(contact, msg.text)) ?? contact;
   }
 
   // Atribución de anuncios vía referral (Caso 2): m.me ref / click-to-DM ads.
