@@ -10,12 +10,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { getSocialPageToken } from "@/lib/messaging/social-accounts";
-import {
-  probePageSubscription,
-  missingPageFields,
-  fieldsToSubscribe,
-  subscribePage,
-} from "@/lib/messaging/webhook-subscription";
+// 2026-10-10: la lectura → suscripción → confirmación vive en ensurePageSubscription porque
+// el alta de Meta DMs hace exactamente lo mismo al crear las cuentas.
+import { ensurePageSubscription } from "@/lib/messaging/ensure-page-subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -42,26 +39,16 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
 
   // Leer antes de escribir: el POST reemplaza la lista, y sin saber qué había
   // borraríamos campos que alguien suscribió a mano.
-  const before = await probePageSubscription(pageId, token);
-  if (before.error) {
-    return NextResponse.json({ error: `No se pudo leer la Página: ${before.error}` }, { status: 502 });
-  }
-  if (missingPageFields(before.subscribedFields).length === 0) {
-    return NextResponse.json({ data: { changed: false, subscribedFields: before.subscribedFields } });
-  }
-
-  const result = await subscribePage(pageId, token, fieldsToSubscribe(before.subscribedFields));
+  const result = await ensurePageSubscription(pageId, token);
   if (!result.ok) {
-    return NextResponse.json({ error: `Meta no aceptó la suscripción: ${result.error}` }, { status: 502 });
+    return result.stage === "read"
+      ? NextResponse.json({ error: `No se pudo leer la Página: ${result.error}` }, { status: 502 })
+      : NextResponse.json({ error: `Meta no aceptó la suscripción: ${result.error}` }, { status: 502 });
   }
-
-  // Confirmar con Meta en vez de suponer: lo que se muestra es lo que quedó.
-  const after = await probePageSubscription(pageId, token);
+  if (!result.changed) {
+    return NextResponse.json({ data: { changed: false, subscribedFields: result.subscribedFields } });
+  }
   return NextResponse.json({
-    data: {
-      changed: true,
-      subscribedFields: after.error ? fieldsToSubscribe(before.subscribedFields) : after.subscribedFields,
-      missing: after.error ? [] : missingPageFields(after.subscribedFields),
-    },
+    data: { changed: true, subscribedFields: result.subscribedFields, missing: result.missing },
   });
 }

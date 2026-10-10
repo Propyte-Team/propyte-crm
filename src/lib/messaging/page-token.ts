@@ -21,10 +21,26 @@ export type PageTokenCheck =
 /**
  * Hay mensajes de Graph que repiten el token recibido (p. ej. "Malformed access token
  * EAAB…"). Ese texto se muestra en pantalla, así que se tapa antes de devolverlo.
+ * Exportada (2026-10-10) para que el alta de Meta DMs tape también los errores de la
+ * suscripción de la Página, que salen del mismo token.
  */
-function scrub(text: string, token: string): string {
+export function scrubToken(text: string, token: string): string {
   const clean = token ? text.split(token).join("[token]") : text;
   return clean.slice(0, 300);
+}
+
+type GraphFailure = { ok: false; kind: "graph" | "network"; error: string };
+
+/** Excepción de fetch → fallo de red legible y sin el token. */
+function networkFailure(err: unknown, token: string): GraphFailure {
+  // AbortSignal.timeout aborta con un DOMException "TimeoutError"; se mira el nombre y no
+  // `instanceof Error` porque no todos los entornos lo hacen heredar de Error.
+  const name = (err as { name?: string } | null)?.name;
+  if (name === "TimeoutError" || name === "AbortError") {
+    return { ok: false, kind: "network", error: "Meta no respondió a tiempo" };
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return { ok: false, kind: "network", error: scrubToken(message, token) };
 }
 
 /**
@@ -52,19 +68,59 @@ export async function verifyPageToken(
       return {
         ok: false,
         kind: "graph",
-        error: scrub(`Graph ${err.code ?? res.status}: ${err.message ?? "respuesta sin id"}`, token),
+        error: scrubToken(`Graph ${err.code ?? res.status}: ${err.message ?? "respuesta sin id"}`, token),
       };
     }
     return { ok: true, pageId: String(body.id), pageName: body.name ?? "" };
   } catch (err) {
-    // AbortSignal.timeout aborta con un DOMException "TimeoutError"; se mira el nombre y no
-    // `instanceof Error` porque no todos los entornos lo hacen heredar de Error.
-    const name = (err as { name?: string } | null)?.name;
-    if (name === "TimeoutError" || name === "AbortError") {
-      return { ok: false, kind: "network", error: "Meta no respondió a tiempo" };
+    return networkFailure(err, token);
+  }
+}
+
+// Instagram vinculado a la Página (2026-10-10).
+//
+// Por qué existe: la cuenta de Messenger y la de Instagram de una marca comparten Página y
+// token; lo único propio de la de IG es su igBusinessId, y copiarlo a mano de Meta es donde
+// se cuelan errores (el de otra marca, uno de prueba). La Página ya sabe qué cuenta de IG
+// tiene vinculada: el asistente la propone y el alta la comprueba antes de guardar.
+export type LinkedInstagramCheck =
+  | { ok: true; instagram: { id: string; username: string } | null }
+  | GraphFailure;
+
+/**
+ * `GET /{pageId}?fields=instagram_business_account{id,username}` con el token en la cabecera.
+ * `instagram: null` = la Página no tiene cuenta de IG Business vinculada (Graph omite el campo).
+ * Nunca lanza, igual que verifyPageToken.
+ */
+export async function fetchLinkedInstagram(
+  pageId: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = TIMEOUT_MS
+): Promise<LinkedInstagramCheck> {
+  try {
+    const fields = encodeURIComponent("instagram_business_account{id,username}");
+    const res = await fetchImpl(`${GRAPH}/${encodeURIComponent(pageId)}?fields=${fields}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      instagram_business_account?: { id?: string | number; username?: string } | null;
+      error?: { message?: string; code?: number };
+    };
+    if (!res.ok || body.error) {
+      const err = body.error ?? {};
+      return {
+        ok: false,
+        kind: "graph",
+        error: scrubToken(`Graph ${err.code ?? res.status}: ${err.message ?? "error"}`, token),
+      };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, kind: "network", error: scrub(message, token) };
+    const ig = body.instagram_business_account;
+    if (!ig || ig.id == null || ig.id === "") return { ok: true, instagram: null };
+    return { ok: true, instagram: { id: String(ig.id), username: ig.username ?? "" } };
+  } catch (err) {
+    return networkFailure(err, token);
   }
 }
 

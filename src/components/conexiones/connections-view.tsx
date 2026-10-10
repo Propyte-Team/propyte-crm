@@ -3,6 +3,7 @@
 import { useState, useCallback, type FormEvent } from "react";
 import { PROVIDERS, type ProviderGroup } from "@/lib/connectors/registry";
 import { ConnectWizard } from "./connect-wizard";
+import { MetaDmsWizard } from "./meta-dms-wizard";
 import { MappingEditor } from "./mapping-editor";
 import { BrandSelect, useBrandOptions } from "./brand-select";
 import { formatDate } from "@/lib/format-date";
@@ -20,6 +21,10 @@ interface Conn {
 const MAPPING_PROVIDERS = new Set(["META", "INSTAGRAM"]);
 // 2026-10-10: cuentas cuyo Page Access Token se puede cambiar sin borrar la cuenta.
 const TOKEN_PROVIDERS = new Set(["INSTAGRAM", "MESSENGER"]);
+// 2026-10-10: Messenger se conecta con el asistente «Meta DMs», que crea también el Instagram
+// de la misma Página. El de Instagram se queda por proveedor para el caso en que la Página ya
+// tiene su Messenger y solo falta el IG.
+const META_DMS_PROVIDER = "MESSENGER";
 
 const STATUS_DOT: Record<string, string> = { ACTIVE: "bg-green-600", PAUSED: "bg-neutral-300", ERROR: "bg-red-600" };
 const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "pinterest"];
@@ -27,6 +32,7 @@ const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "p
 export function ConnectionsView({ initial }: { initial: Conn[] }) {
   const [connectors, setConnectors] = useState<Conn[]>(initial);
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
+  const [metaDmsOpen, setMetaDmsOpen] = useState(false);
   const [mappingFor, setMappingFor] = useState<Conn | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Cuenta cuyo selector de marca está abierto, y las marcas asignables.
@@ -285,12 +291,30 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
                         {c.name}: {c.lastError}
                       </p>
                     ))}
-                    <button
-                      className="mt-1.5 w-full rounded-md border border-dashed p-2 text-left text-[12px] text-muted-foreground hover:text-foreground"
-                      onClick={() => setWizardProvider(p.id)}
-                    >
-                      ＋ Conectar cuenta
-                    </button>
+                    {p.id === META_DMS_PROVIDER ? (
+                      <button
+                        className="mt-1.5 w-full rounded-md border border-dashed p-2 text-left text-[12px] text-muted-foreground hover:text-foreground"
+                        onClick={() => setMetaDmsOpen(true)}
+                      >
+                        ＋ Conectar página de Meta (DMs)
+                        <span className="block text-[10px]">Messenger y, si quieres, el Instagram de la misma Página</span>
+                      </button>
+                    ) : (
+                      <button
+                        className="mt-1.5 w-full rounded-md border border-dashed p-2 text-left text-[12px] text-muted-foreground hover:text-foreground"
+                        onClick={() => setWizardProvider(p.id)}
+                      >
+                        ＋ Conectar cuenta
+                      </button>
+                    )}
+                    {p.id === "INSTAGRAM" && (
+                      <button
+                        className="mt-1 text-[11px] text-muted-foreground underline hover:text-foreground"
+                        onClick={() => setMetaDmsOpen(true)}
+                      >
+                        ¿Messenger e Instagram de la misma Página? Conéctalos juntos
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -309,6 +333,8 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
           onConnected={reload}
         />
       )}
+
+      <MetaDmsWizard open={metaDmsOpen} onOpenChange={setMetaDmsOpen} onConnected={reload} />
 
       {mappingFor && (
         <MappingEditor

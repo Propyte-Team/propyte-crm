@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { verifyPageToken, pageMismatchMessage, mergePageToken } from "./page-token";
+import { verifyPageToken, pageMismatchMessage, mergePageToken, fetchLinkedInstagram, scrubToken } from "./page-token";
 
 function fetchReplies(body: unknown, ok = true, status = 200) {
   return vi.fn().mockResolvedValue({ ok, status, json: () => Promise.resolve(body) }) as unknown as typeof fetch;
@@ -96,5 +96,68 @@ describe("mergePageToken", () => {
 
   it("sin credenciales previas, solo el token", () => {
     expect(mergePageToken(null, "nuevo")).toEqual({ pageAccessToken: "nuevo" });
+  });
+});
+
+// 2026-10-10: el asistente Meta DMs propone el igBusinessId desde la Página y el alta lo comprueba.
+describe("fetchLinkedInstagram", () => {
+  it("devuelve la cuenta de IG vinculada a la Página", async () => {
+    const f = fetchReplies({ id: "PAGE-1", instagram_business_account: { id: "17841400000000001", username: "nativatulum" } });
+    const out = await fetchLinkedInstagram("PAGE-1", "TOKEN", f);
+    expect(out).toEqual({ ok: true, instagram: { id: "17841400000000001", username: "nativatulum" } });
+  });
+
+  it("pregunta por la Página con el token en la cabecera, nunca en la URL", async () => {
+    const f = fetchReplies({ id: "PAGE-1" });
+    await fetchLinkedInstagram("PAGE-1", "SECRETO", f);
+    const [url, init] = callsOf(f)[0];
+    expect(url).toBe(
+      "https://graph.facebook.com/v24.0/PAGE-1?fields=" + encodeURIComponent("instagram_business_account{id,username}")
+    );
+    expect(String(url)).not.toContain("SECRETO");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer SECRETO");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("Página sin IG vinculado: instagram null, no es un error", async () => {
+    expect(await fetchLinkedInstagram("PAGE-1", "TOKEN", fetchReplies({ id: "PAGE-1" }))).toEqual({ ok: true, instagram: null });
+    expect(
+      await fetchLinkedInstagram("PAGE-1", "TOKEN", fetchReplies({ id: "PAGE-1", instagram_business_account: null }))
+    ).toEqual({ ok: true, instagram: null });
+  });
+
+  it("un id numérico sale como texto y sin username no rompe", async () => {
+    // Graph manda los ids como texto; si llegara un número (seguro), se normaliza igual.
+    const out = await fetchLinkedInstagram("PAGE-1", "TOKEN", fetchReplies({ instagram_business_account: { id: 2106777199430207 } }));
+    expect(out).toEqual({ ok: true, instagram: { id: "2106777199430207", username: "" } });
+  });
+
+  it("un error de Graph sale como texto y sin el token", async () => {
+    const f = fetchReplies({ error: { code: 190, message: "Malformed access token EAAsecreto" } }, false, 400);
+    const out = await fetchLinkedInstagram("PAGE-1", "EAAsecreto", f);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.kind).toBe("graph");
+    expect(out.error).not.toContain("EAAsecreto");
+    expect(out.error).toContain("Graph 190");
+  });
+
+  it("una red caída no lanza y no filtra el token", async () => {
+    const f = vi.fn().mockRejectedValue(new Error("socket hang up TOKEN")) as unknown as typeof fetch;
+    const out = await fetchLinkedInstagram("PAGE-1", "TOKEN", f);
+    expect(out).toMatchObject({ ok: false, kind: "network" });
+    if (out.ok) return;
+    expect(out.error).not.toContain("TOKEN");
+  });
+});
+
+describe("scrubToken", () => {
+  it("tapa el token y recorta textos largos", () => {
+    expect(scrubToken("falló con EAAx en medio", "EAAx")).toBe("falló con [token] en medio");
+    expect(scrubToken("a".repeat(500), "EAAx")).toHaveLength(300);
+  });
+
+  it("sin token deja el texto igual", () => {
+    expect(scrubToken("texto", "")).toBe("texto");
   });
 });
