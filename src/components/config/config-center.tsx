@@ -100,6 +100,8 @@ export const CONFIG_GROUPS: Array<{ title: string; cards: CardDef[] }> = [
     title: "Canales & Integraciones",
     cards: [
       { href: "/conexiones", icon: Plug, title: "Centro de conexiones", items: ["Meta Lead Ads / IG / Messenger", "Mapeo de campos por conector", "Estado y últimos leads"] },
+      // 2026-10-12 (entrega 3 de marcas): mismos roles que Conexiones; aquí entran ADMIN/DIRECTOR/GERENTE.
+      { href: "/conexiones/huerfanos", icon: Users, title: "Leads huérfanos", items: ["Contactos sin dueño", "Con dueño técnico (.local)", "Mensajes a cuentas sin registrar"] },
       { href: "/admin?tab=integrations", icon: KeyRound, title: "API keys & Webhooks", admin: true, items: ["API keys", "Webhooks salientes"] },
       { href: "/inbox", icon: MessageSquare, title: "WhatsApp", items: ["Inbox con bot", "Takeover humano", "Cloud API directo"] },
     ],

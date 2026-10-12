@@ -13,6 +13,7 @@ import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/mes
 import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
 import { canMarkSpam } from "@/lib/moderation/roles";
 import { AssignControl } from "./assign-control";
+import { BrandBadges, BrandFilterSelect, useBrandFilterParam } from "@/components/brands/brand-view";
 
 interface ConversationListItem {
   id: string;
@@ -22,7 +23,8 @@ interface ConversationListItem {
   lastMessageAt: string | null;
   aiSummary: string | null;
   channel: string;
-  connector: { name: string; brand: string | null } | null;
+  // brandId (entrega 3): marca de la CUENTA del hilo; null = predeterminada.
+  connector: { name: string; brand: string | null; brandId?: string | null } | null;
   contact: {
     id: string;
     firstName: string;
@@ -122,6 +124,22 @@ function channelAccountLabel(channel: string, connector: { name: string; brand: 
   return connector ? `${base} · ${connector.brand ?? connector.name}` : base;
 }
 
+/**
+ * Badge de marca del HILO (entrega 3, 2026-10-12): la marca de su cuenta, no las del contacto —
+ * un contacto en dos marcas tiene un hilo en cada una. Sin cuenta o cuenta sin marca = la
+ * predeterminada. Si la etiqueta de la cuenta ya dice el nombre de la marca («WhatsApp · Yaxnáh
+ * Caucel»), no se repite.
+ */
+function ThreadBrandBadge({ connector }: { connector: ConversationListItem["connector"] }) {
+  return (
+    <BrandBadges
+      brandIds={connector?.brandId ? [connector.brandId] : []}
+      alreadyShown={connector ? connector.brand ?? connector.name : null}
+      className="!text-[10px]"
+    />
+  );
+}
+
 /** Adjunto dentro de la burbuja del mensaje, según su tipo. */
 function MessageMedia({ url, type, filename }: { url: string; type: string | null; filename: string | null }) {
   if (type === "image" || type === "gif" || type === "sticker") {
@@ -180,6 +198,9 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
+  // Selector «Marca» (entrega 3, 2026-10-12): lo filtra el servidor por la marca de la cuenta del
+  // hilo y vive en la URL (?marca=), junto a ?c=.
+  const [brandFilter, setBrandFilter] = useBrandFilterParam();
   const [search, setSearch] = useState("");
   const [list, setList] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("c"));
@@ -304,10 +325,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
 
   const loadList = useCallback(async () => {
     try {
-      const res = await fetch(`/api/conversations?filter=${filter}&q=${encodeURIComponent(search)}`);
+      const marca = brandFilter ? `&marca=${encodeURIComponent(brandFilter)}` : "";
+      const res = await fetch(`/api/conversations?filter=${filter}&q=${encodeURIComponent(search)}${marca}`);
       if (res.ok) setList((await res.json()).data ?? []);
     } catch { /* polling: silencioso */ }
-  }, [filter, search]);
+  }, [filter, search, brandFilter]);
 
   // #801 — el polling de 5s (más abajo) volvía a pedir el hilo completo y
   // scrollIntoView() mandaba SIEMPRE al fondo, sin condición: cualquiera que subiera a
@@ -588,6 +610,11 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
             <option value="INSTAGRAM">Instagram</option>
             <option value="MESSENGER">Messenger</option>
           </select>
+          <BrandFilterSelect
+            value={brandFilter}
+            onChange={setBrandFilter}
+            className="form-input !py-1 text-[11px]"
+          />
         </div>
         <div className="flex-1 overflow-y-auto">
           {list.length === 0 && (
@@ -636,6 +663,7 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                     <span className="badge badge-neutral !text-[10px] !py-0 whitespace-nowrap">
                       {channelAccountLabel(c.channel, c.connector)}
                     </span>
+                    <ThreadBrandBadge connector={c.connector} />
                     {!c.contact.assignedTo && (
                       <span className="badge badge-neutral !text-[10px] !py-0 shrink-0 whitespace-nowrap">
                         Sin asignar
@@ -673,6 +701,7 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                 <span className="badge badge-neutral whitespace-nowrap shrink-0">
                   {channelAccountLabel(thread.channel, thread.connector)}
                 </span>
+                <ThreadBrandBadge connector={thread.connector} />
                 <span className={cn("badge shrink-0", thread.status === "BOT" ? "badge-neutral" : "badge-teal")}>
                   {thread.status === "BOT" ? "🤖 Bot activo" : isHuman && iControl ? "Controlas tú" : `Controla ${thread.controlledBy?.name ?? "—"}`}
                 </span>

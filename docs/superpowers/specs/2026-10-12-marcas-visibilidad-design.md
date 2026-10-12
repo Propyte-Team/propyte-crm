@@ -207,3 +207,17 @@ Con Vitest y los mocks de `@/lib/db` del repo:
 - **Marcar spam** (`mark_spam`) sigue resolviéndose antes del gate de alcance, por rol, como se decidió en su momento.
 - **Notificaciones y reparto** (avisos a gerentes del Pond, correos) no se filtran por marca.
 - Agent Studio y los handlers de MCP no tienen sesión de usuario y siguen siendo globales.
+
+---
+
+## 10. Entrega 3 (2026-10-12)
+
+La entrega 3 se describe completa en `2026-10-12-marcas-filtros-reportes-design.md`. En resumen, encima de la regla de esta spec, sin cambiarla y sin migración:
+
+- **Selector «Marca»** en Contactos, Bandeja y Negocios (`?marca=`).
+  - Solo acota dentro de lo visible, siempre en AND con la visibilidad y el alcance por rol.
+  - Una marca ajena o inexistente da el mismo 400 en las APIs y se ignora en las páginas.
+  - La Bandeja filtra por la marca de la **cuenta** del hilo.
+- **Badge de marca** en listas, ficha, tablero y hilos. Quien ve una sola marca no ve el de la predeterminada.
+- **Leads huérfanos** en `/conexiones/huerfanos`, con los roles de Conexiones: sin dueño, dueño técnico y mensajes a cuentas sin registrar, todo recortado por marca.
+- **Reportes y dashboard** con el mismo recorte para quien no es ADMIN. Con esto, los reportes y el dashboard salen de los límites del §9; agenda, «Hoy», metas, comisiones, cobranza, carrera y visitas siguen fuera.

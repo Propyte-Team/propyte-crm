@@ -21,12 +21,10 @@
 import prisma from "@/lib/db";
 import type { MessagingChannel } from "./types";
 import { GraphSendError } from "./graph";
+import { BOT_SEND_REJECTED_PREFIX, BOT_SILENCE_PREFIX } from "./bot-note-prefix";
 
-/** Inicio fijo de las notas de rechazo de Meta: sirve para buscarlas. */
-export const BOT_SEND_REJECTED_PREFIX = "Meta rechazó la respuesta del bot";
-
-/** Inicio fijo de las notas de silencio del agente (2026-10-12): sirve para buscarlas. */
-export const BOT_SILENCE_PREFIX = "El agente no contestó";
+// Los prefijos viven en ./bot-note-prefix (sin dependencias) y se siguen exportando desde aquí.
+export { BOT_SEND_REJECTED_PREFIX, BOT_SILENCE_PREFIX };
 
 // "Otra app es la dueña del hilo". El código exacto que manda Instagram no está
 // documentado de forma fiable (y Messenger usa otro), así que se reconoce por el

@@ -47,6 +47,7 @@ import {
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
 import { SavedViewsBar } from "@/components/views/saved-views-bar";
+import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } from "@/components/brands/brand-view";
 import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Tipos ---
@@ -64,6 +65,8 @@ interface ContactData {
   createdAt: string;
   assignedTo: { id: string; name: string; email: string } | null;
   _count: { deals: number; activities: number };
+  // Filas de contact_brands (entrega 3 de marcas): alimentan el badge. [] = predeterminada.
+  brands?: { brandId: string }[];
 }
 
 interface ContactsListProps {
@@ -133,6 +136,13 @@ export function ContactsList({
   const [editContact, setEditContact] = useState<ContactData | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  // Selector «Marca» (entrega 3, 2026-10-12). Vive en la URL (?marca=). fetchContacts es un
+  // useCallback sin dependencias que recibe los demás filtros por argumento; la marca la lee de
+  // este ref para no tener que tocar cada llamada.
+  const brandOptions = useBrandView().options;
+  const [brandFilter, setBrandFilter] = useBrandFilterParam();
+  const brandRef = useRef<string | null>(brandFilter);
+  brandRef.current = brandFilter;
 
   // Función para obtener contactos desde la API
   const fetchContacts = useCallback(
@@ -156,6 +166,7 @@ export function ContactsList({
         if (typeVal !== "ALL") params.set("type", typeVal);
         if (statusVal !== "ALL") params.set("status", statusVal);
         if (lifecycleVal) params.set("lifecycle", lifecycleVal);
+        if (brandRef.current) params.set("marca", brandRef.current);
 
         const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("Error al cargar contactos");
@@ -199,6 +210,14 @@ export function ContactsList({
     fetchContacts(search, newSource, newTemp, newType, newStatus, 1, lifecycleFilter);
   };
 
+  // Cambio de marca: la primera página ya vino filtrada del servidor, así que solo se recarga
+  // cuando el usuario mueve el selector.
+  const handleBrandChange = (brandId: string | null) => {
+    setBrandFilter(brandId);
+    brandRef.current = brandId;
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
+  };
+
   // Limpiar todos los filtros
   const clearFilters = () => {
     setSearch("");
@@ -207,6 +226,8 @@ export function ContactsList({
     setFilterType("ALL");
     setFilterStatus("ALL");
     setLifecycleFilter("");
+    setBrandFilter(null);
+    brandRef.current = null;
     fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1, "");
   };
 
@@ -224,7 +245,11 @@ export function ContactsList({
     const typ = (f.type as string) ?? "ALL";
     const st = (f.status as string) ?? "ALL";
     const lc = (f.lifecycle as string) ?? "";
+    // Una vista guardada con una marca que este usuario no ve se abre en «Todas mis marcas».
+    const mk = typeof f.marca === "string" && brandOptions.some((o) => o.id === f.marca) ? f.marca : null;
     setSearch(s); setFilterSource(src); setFilterTemp(tmp); setFilterType(typ); setFilterStatus(st); setLifecycleFilter(lc);
+    setBrandFilter(mk);
+    brandRef.current = mk;
     fetchContacts(s, src, tmp, typ, st, 1, lc);
   };
 
@@ -268,7 +293,7 @@ export function ContactsList({
 
   // Verificar si hay filtros activos
   const hasActiveFilters =
-    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "";
+    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null;
 
   // Calcular rango visible
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -326,7 +351,7 @@ export function ContactsList({
       {/* Vistas guardadas (Fase 5) */}
       <SavedViewsBar
         module="contacts"
-        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus }}
+        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus, marca: brandFilter }}
         onApply={applyView}
       />
 
@@ -425,6 +450,13 @@ export function ContactsList({
               {LIFECYCLE_ORDER.map((s) => <option key={s} value={s}>{LIFECYCLE_LABELS[s]}</option>)}
             </select>
 
+            {/* Filtro por marca (solo si el usuario ve más de una) */}
+            <BrandFilterSelect
+              value={brandFilter}
+              onChange={handleBrandChange}
+              className="rounded-md border px-2 py-1 text-sm"
+            />
+
             {/* Botón para limpiar filtros */}
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -493,9 +525,14 @@ export function ContactsList({
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/50"
                       onClick={() => router.push(`/contacts/${contact.id}`)}
                     >
-                      {/* Nombre completo */}
+                      {/* Nombre completo + marca(s) */}
                       <td className="py-3 font-medium">
-                        {contact.firstName} {contact.lastName}
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <span>
+                            {contact.firstName} {contact.lastName}
+                          </span>
+                          <BrandBadges brandIds={contact.brands?.map((b) => b.brandId)} />
+                        </span>
                       </td>
                       {/* Estado de contacto — edición rápida inline */}
                       <td className="py-3" onClick={(e) => e.stopPropagation()}>

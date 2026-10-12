@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, type FormEvent } from "react";
+import Link from "next/link";
 import { PROVIDERS, type ProviderGroup } from "@/lib/connectors/registry";
 import { ConnectWizard } from "./connect-wizard";
 import { MetaDmsWizard } from "./meta-dms-wizard";
@@ -29,7 +30,14 @@ const META_DMS_PROVIDER = "MESSENGER";
 const STATUS_DOT: Record<string, string> = { ACTIVE: "bg-green-600", PAUSED: "bg-neutral-300", ERROR: "bg-red-600" };
 const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "pinterest"];
 
-export function ConnectionsView({ initial }: { initial: Conn[] }) {
+export function ConnectionsView({
+  initial,
+  orphanCount = null,
+}: {
+  initial: Conn[];
+  /** Leads huérfanos que ve el usuario (2026-10-12); null = no se pudo contar. */
+  orphanCount?: number | null;
+}) {
   const [connectors, setConnectors] = useState<Conn[]>(initial);
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
   const [metaDmsOpen, setMetaDmsOpen] = useState(false);
@@ -148,6 +156,20 @@ export function ConnectionsView({ initial }: { initial: Conn[] }) {
         <p className="mt-1 text-sm text-muted-foreground">
           Conecta tus cuentas para jalar leads al CRM. Multicuenta por plataforma.
         </p>
+        {/* Entrega 3 de marcas: lo que se puede estar perdiendo (sin dueño, dueño técnico,
+            mensajes a cuentas sin registrar). */}
+        <Link
+          href="/conexiones/huerfanos"
+          className="mt-3 inline-flex items-center gap-2 rounded-md border px-2 py-1 text-[12px] hover:bg-muted/50"
+        >
+          Leads huérfanos
+          {typeof orphanCount === "number" && (
+            <span className="rounded-full bg-foreground px-1.5 font-mono text-[10px] text-background">
+              {orphanCount}
+            </span>
+          )}
+          <span aria-hidden>→</span>
+        </Link>
       </header>
 
       {error && (

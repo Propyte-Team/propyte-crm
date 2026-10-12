@@ -20,6 +20,7 @@ import { resolveConnectorByPhoneNumberId, getWhatsAppCredentials } from "@/lib/w
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 import { runAfterResponse } from "@/lib/runtime/after-response";
 import { recordBotSilence } from "@/lib/messaging/send-failure";
+import { unknownWhatsAppNumberReason } from "@/lib/messaging/unregistered-account";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -200,13 +201,14 @@ function extractBody(msg: MetaMessage): string {
  * es si está vacío, que es justo el caso en el que todo número parece desconocido.
  */
 function unknownNumberReason(phoneNumberId: string, displayNumber: string | null, lookupFailed: boolean): string {
-  const numero = `${displayNumber ?? phoneNumberId} (id ${phoneNumberId})`;
-  const base = lookupFailed
-    ? `este WhatsApp llegó al número ${numero}; no se pudo consultar en Conexiones de qué cuenta es (falló la lectura) y no es el número general del CRM.`
-    : `este WhatsApp llegó al número ${numero}, que no está dado de alta en Conexiones ni es el número general del CRM.`;
-  return process.env.META_WA_PHONE_NUMBER_ID?.trim()
-    ? base
-    : `${base} Ojo: el servidor no tiene configurado el número general (META_WA_PHONE_NUMBER_ID está vacía).`;
+  // El texto vive en lib/messaging/unregistered-account (2026-10-12): el panel de leads huérfanos
+  // lo lee con la misma pieza que lo arma, para que no se desalineen.
+  return unknownWhatsAppNumberReason({
+    phoneNumberId,
+    displayNumber,
+    lookupFailed,
+    generalNumberConfigured: !!process.env.META_WA_PHONE_NUMBER_ID?.trim(),
+  });
 }
 
 const STATUS_MAP: Record<string, "SENT" | "DELIVERED" | "READ" | "FAILED"> = {

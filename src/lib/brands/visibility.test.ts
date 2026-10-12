@@ -5,6 +5,7 @@ import {
   resolveVisibleBrandIds,
   contactBrandVisibilityWhere,
   dealBrandVisibilityWhere,
+  activityBrandVisibilityWhere,
   canSeeContactBrand,
   canSeeDealBrand,
   countVisibleUsersByBrand,
@@ -126,6 +127,26 @@ describe("dealBrandVisibilityWhere", () => {
             ],
           },
         },
+      ],
+    });
+  });
+});
+
+describe("activityBrandVisibilityWhere (entrega 3: tableros y reportes)", () => {
+  it("ALL → undefined (ADMIN no se filtra)", () => {
+    expect(activityBrandVisibilityWhere({ id: "u1" }, "ALL")).toBeUndefined();
+  });
+
+  it("por su contacto; sin contacto, por su negocio; sin ninguno de los dos, se ve", () => {
+    const visible: VisibleBrands = { brandIds: [DEF], includesDefault: true };
+    const contacto = {
+      OR: [{ assignedToId: "u1" }, { brands: { some: { brandId: { in: [DEF] } } } }, { brands: { none: {} } }],
+    };
+    expect(activityBrandVisibilityWhere({ id: "u1" }, visible)).toEqual({
+      OR: [
+        { contact: { is: contacto } },
+        { contactId: null, deal: { is: { OR: [{ assignedToId: "u1" }, { contact: contacto }] } } },
+        { contactId: null, dealId: null },
       ],
     });
   });

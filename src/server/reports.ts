@@ -11,6 +11,29 @@ import { getServerSession } from "@/lib/auth/session";
 import { STAGNATION_LIMITS } from "@/lib/constants";
 import type { Prisma } from "@prisma/client";
 import { realLeadWhere } from "@/lib/leads/real-leads";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import {
+  activityBrandVisibilityWhere,
+  contactBrandVisibilityWhere,
+  dealBrandVisibilityWhere,
+} from "@/lib/brands/visibility";
+
+// Marcas (2026-10-12, entrega 3, decisión 4 del dueño): los reportes NO tienen selector de marca,
+// pero quien no es ADMIN solo ve cifras de las marcas que tiene prendidas, con la misma regla que
+// Contactos, Bandeja y Negocios (visibility.ts: lo asignado a uno siempre cuenta). ADMIN ve todo.
+// Estos reportes no tenían alcance por rol: el recorte por marca es el único que se agrega, y va en
+// `AND` para que ningún filtro suelto (plaza, asesor, fechas) lo pise.
+// Fuera: getAbsorptionReport. Lee los contadores de la tabla de desarrollos (soldUnits, etc.) y no
+// pasa por contactos ni negocios, así que no hay de dónde sacar la marca.
+
+async function brandScope(user: { id: string; role: string }) {
+  const visible = await getVisibleBrands(user);
+  return {
+    deal: dealBrandVisibilityWhere(user, visible),
+    contact: contactBrandVisibilityWhere(user, visible),
+    activity: activityBrandVisibilityWhere(user, visible),
+  };
+}
 
 // --- Interfaces de filtros ---
 export interface ReportFilters {
@@ -59,6 +82,8 @@ export async function getPipelineReport(
   if (filters.advisorId) {
     where.assignedToId = filters.advisorId;
   }
+  const porMarca = (await brandScope(session.user)).deal;
+  if (porMarca) where.AND = [porMarca];
 
   // Agrupar por etapa
   const aggregations = await prisma.deal.groupBy({
@@ -148,6 +173,9 @@ export interface AbsorptionReportRow {
 /**
  * Reporte de absorción por desarrollo: unidades totales, vendidas,
  * reservadas, disponibles y tasa de absorción mensual.
+ *
+ * Sin recorte por marca (2026-10-12): son los contadores de inventario de cada desarrollo, sin
+ * contactos ni negocios de por medio (ver el comentario de brandScope arriba).
  */
 export async function getAbsorptionReport(
   filters: ReportFilters = {}
@@ -244,6 +272,8 @@ export async function getCommissionsReport(
   if (filters.status) {
     where.commissionStatus = filters.status as any;
   }
+  const porMarca = (await brandScope(session.user)).deal;
+  if (porMarca) where.AND = [porMarca];
 
   const deals = await prisma.deal.findMany({
     where,
@@ -337,6 +367,9 @@ export async function getActivitiesReport(
       in: [filters.teamLeaderId, ...teamMembers.map((m) => m.id)],
     };
   }
+  // La actividad no tiene marca: cuenta si se ve su contacto (o su negocio, si no tiene contacto).
+  const porMarca = (await brandScope(session.user)).activity;
+  if (porMarca) where.AND = [porMarca];
 
   const activities = await prisma.activity.findMany({
     where,
@@ -441,6 +474,10 @@ export async function getLeadSourcesReport(
     if (filters.dateFrom) (contactWhere.createdAt as any).gte = new Date(filters.dateFrom);
     if (filters.dateTo) (contactWhere.createdAt as any).lte = new Date(filters.dateTo);
   }
+  // Contactos y negocios con la misma regla de marca: si no, la conversión mezclaría contactos de
+  // las marcas propias con negocios de todas.
+  const marcas = await brandScope(session.user);
+  if (marcas.contact) contactWhere.AND = [marcas.contact];
 
   // Agrupar contactos por fuente
   const contactsBySource = await prisma.contact.groupBy({
@@ -463,6 +500,7 @@ export async function getLeadSourcesReport(
       if (filters.dateFrom) (dealWhere.createdAt as any).gte = new Date(filters.dateFrom);
       if (filters.dateTo) (dealWhere.createdAt as any).lte = new Date(filters.dateTo);
     }
+    if (marcas.deal) dealWhere.AND = [marcas.deal];
 
     const [totalDeals, wonDeals, avgValue] = await Promise.all([
       prisma.deal.count({ where: dealWhere }),
@@ -519,6 +557,8 @@ export async function getForecastReport(
     where.assignedTo = { plaza: filters.plaza as any };
   }
   if (filters.advisorId) where.assignedToId = filters.advisorId;
+  const porMarca = (await brandScope(session.user)).deal;
+  if (porMarca) where.AND = [porMarca];
 
   const deals = await prisma.deal.findMany({
     where,
@@ -594,6 +634,8 @@ export async function getLostDealsReport(
     where.assignedTo = { plaza: filters.plaza as any };
   }
   if (filters.advisorId) where.assignedToId = filters.advisorId;
+  const porMarca = (await brandScope(session.user)).deal;
+  if (porMarca) where.AND = [porMarca];
 
   const deals = await prisma.deal.findMany({
     where,

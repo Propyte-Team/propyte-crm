@@ -35,6 +35,8 @@ const MODULE_LABELS: Record<string, string> = {
   "/settings": "Mi Perfil",
   "/walk-ins": "Walk-ins",
   "/duplicados": "Duplicados",
+  // Antes que "/conexiones": gana la primera ruta que empareja.
+  "/conexiones/huerfanos": "Leads huérfanos",
   "/conexiones": "Conexiones",
   "/admin": "Configuración",
   "/configuracion": "Configuración",

@@ -1,4 +1,5 @@
-// Lista de conversaciones del inbox (Anexo B §I.6) — filtros: mine|bot|unassigned|unread.
+// Lista de conversaciones del inbox (Anexo B §I.6) — filtros: mine|bot|unassigned|unread,
+// y `?marca=` (selector «Marca», entrega 3 de marcas, 2026-10-12).
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
@@ -6,6 +7,8 @@ import type { Prisma } from "@prisma/client";
 import { inboxScopeWhere } from "@/lib/inbox/scope";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { connectorBrandLabel } from "@/lib/inbox/connector-label";
+import { loadBrandFilter } from "@/lib/brands/view-context";
+import { BRAND_FILTER_PARAM, conversationBrandFilterWhere } from "@/lib/brands/filter";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +28,18 @@ export async function GET(req: NextRequest) {
   // Alcance por rol + marcas — definición única en @/lib/inbox/scope (misma regla que el
   // detalle, el envío y la asignación). undefined = ve todo, no hay condición que agregar.
   // Las marcas (2026-10-12) también recortan la cola "sin asignar": va en el mismo AND.
-  const alcance = inboxScopeWhere(session.user, await getVisibleBrands(session.user));
+  const visible = await getVisibleBrands(session.user);
+  const alcance = inboxScopeWhere(session.user, visible);
   if (alcance) contactConds.push(alcance);
+
+  // Selector «Marca» (entrega 3): recorta por la marca de la CUENTA del hilo (un contacto puede
+  // tener un hilo en cada marca), en AND con el alcance de arriba, que sigue intacto. Nunca amplía.
+  // Inexistente, borrada o ajena → el mismo 400, para no confirmar que la marca existe.
+  const filtroMarca = await loadBrandFilter(req.nextUrl.searchParams.get(BRAND_FILTER_PARAM), visible);
+  if (filtroMarca.kind === "invalid") {
+    return NextResponse.json({ error: "Marca no válida" }, { status: 400 });
+  }
+  if (filtroMarca.kind === "brand") where.AND = [conversationBrandFilterWhere(filtroMarca.filter)];
 
   if (filter === "mine") {
     contactConds.push({ assignedToId: session.user.id });
@@ -60,7 +73,8 @@ export async function GET(req: NextRequest) {
       id: true, status: true, botEnabled: true, unreadCount: true,
       lastMessageAt: true, aiSummary: true, channel: true,
       // brand (2026-10-09): la marca asignada a la cuenta etiqueta el hilo; sin ella, config.brand.
-      connector: { select: { name: true, config: true, brand: { select: { name: true } } } },
+      // brandId (2026-10-12, entrega 3): marca de la cuenta del hilo para el badge.
+      connector: { select: { name: true, config: true, brandId: true, brand: { select: { name: true } } } },
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, temperature: true,
@@ -77,7 +91,7 @@ export async function GET(req: NextRequest) {
   const data = conversations.map(({ connector, contact, ...c }) => ({
     ...c,
     connector: connector
-      ? { name: connector.name, brand: connectorBrandLabel(connector) }
+      ? { name: connector.name, brand: connectorBrandLabel(connector), brandId: connector.brandId ?? null }
       : null,
     contact: {
       ...contact,

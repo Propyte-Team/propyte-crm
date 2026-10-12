@@ -1,7 +1,7 @@
 // Vista del pipeline con toggle Kanban/Tabla y barra de filtros
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LayoutGrid, Table as TableIcon, Plus, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import {
 import { KanbanBoard } from "@/components/pipeline/kanban-board";
 import { DealsTable } from "@/components/pipeline/deals-table";
 import { DealForm } from "@/components/pipeline/deal-form";
+import { BrandFilterSelect, useBrandFilterParam } from "@/components/brands/brand-view";
 import {
   PIPELINE_STAGES,
   DEAL_TYPE_LABELS,
@@ -58,6 +59,8 @@ export interface PipelineDeal {
   lostReasonDetail?: string | null;
   actualCloseDate?: string | null;
   commissionTotal?: number | null;
+  // Marcas del contacto (entrega 3): el negocio la hereda. [] = predeterminada; null = no vino.
+  contactBrandIds?: string[] | null;
 }
 
 interface PipelineViewProps {
@@ -121,6 +124,9 @@ function transformDeal(deal: any): PipelineDeal {
     lostReasonDetail: deal.lostReasonDetail,
     actualCloseDate: deal.actualCloseDate,
     commissionTotal: deal.commissionTotal ? Number(deal.commissionTotal) : null,
+    contactBrandIds: Array.isArray(deal.contact?.brands)
+      ? deal.contact.brands.map((b: { brandId: string }) => b.brandId)
+      : null,
   };
 }
 
@@ -165,10 +171,18 @@ export function PipelineView({
     0
   );
 
+  // Selector «Marca» (entrega 3, 2026-10-12): lo filtra el servidor, así que aplica al Kanban y a
+  // la tabla por igual (los filtros de etapa y tipo de arriba solo filtran la tabla en memoria).
+  // reloadDeals lo lee de un ref: tiene muchos llamadores y su identidad no debe cambiar.
+  const [brandFilter, setBrandFilter] = useBrandFilterParam();
+  const brandRef = useRef<string | null>(brandFilter);
+  brandRef.current = brandFilter;
+
   // Recargar datos
   const reloadDeals = useCallback(async () => {
     try {
-      const res = await fetch("/api/deals?pageSize=500");
+      const marca = brandRef.current ? `&marca=${encodeURIComponent(brandRef.current)}` : "";
+      const res = await fetch(`/api/deals?pageSize=500${marca}`);
       if (!res.ok) return;
       const json = await res.json();
       const deals: PipelineDeal[] = (json.data || []).map(transformDeal);
@@ -184,6 +198,16 @@ export function PipelineView({
       console.error("Error al recargar deals:", err);
     }
   }, []);
+
+  // El tablero inicial ya vino filtrado del servidor; se recarga solo cuando se mueve el selector.
+  const handleBrandChange = useCallback(
+    (brandId: string | null) => {
+      setBrandFilter(brandId);
+      brandRef.current = brandId;
+      reloadDeals();
+    },
+    [setBrandFilter, reloadDeals]
+  );
 
   // Manejar transición de etapa desde kanban (drag & drop)
   const handleStageTransition = useCallback(
@@ -254,6 +278,13 @@ export function PipelineView({
             <Filter className="mr-1 h-4 w-4" />
             Filtros
           </Button>
+
+          {/* Marca (solo si el usuario ve más de una) */}
+          <BrandFilterSelect
+            value={brandFilter}
+            onChange={handleBrandChange}
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+          />
         </div>
 
         <div className="flex items-center gap-3">

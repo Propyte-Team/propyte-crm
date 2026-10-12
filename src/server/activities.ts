@@ -9,6 +9,8 @@ import { ActivityType, ActivityStatus, Prisma } from "@prisma/client"
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher"
 import { canModifyActivity } from "@/lib/activities/permissions"
 import { resolveActivityScope } from "@/lib/activities/scope"
+import { getVisibleBrands } from "@/lib/brands/user-access"
+import { activityBrandVisibilityWhere } from "@/lib/brands/visibility"
 
 /** Los userId que un rol TEAM puede ver: él mismo + quienes le reportan. */
 async function teamMemberIds(currentUserId: string): Promise<string[]> {
@@ -405,6 +407,12 @@ export async function getOverdueTasks(userId?: string) {
     }
     // ALL: sin restricción de userId
   }
+
+  // Marcas (2026-10-12, entrega 3): el único llamador es el dashboard, cuyas cifras ya solo cuentan
+  // las marcas del usuario (decisión 4). La tarea cuenta si se ve su contacto (o su negocio); las
+  // que no cuelgan de nada se quedan. ADMIN no se recorta.
+  const porMarca = activityBrandVisibilityWhere(session.user, await getVisibleBrands(session.user))
+  if (porMarca) where.AND = [porMarca]
 
   const tasks = await prisma.activity.findMany({
     where,

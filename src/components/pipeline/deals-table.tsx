@@ -26,6 +26,7 @@ import {
   formatCurrency,
 } from "@/lib/constants";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
+import { BrandBadges } from "@/components/brands/brand-view";
 
 interface DealsTableProps {
   deals: PipelineDeal[];
@@ -129,7 +130,13 @@ export function DealsTable({ deals, onDealUpdate }: DealsTableProps) {
                     className="border-b last:border-0 hover:bg-muted/50 cursor-pointer"
                     onClick={() => router.push(`/pipeline/${deal.id}`)}
                   >
-                    <td className="py-3 font-medium">{deal.contactName}</td>
+                    <td className="py-3 font-medium">
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <span>{deal.contactName}</span>
+                        {/* Marca del contacto (entrega 3): solo si aporta, ver brandBadges */}
+                        <BrandBadges brandIds={deal.contactBrandIds} />
+                      </span>
+                    </td>
                     <td className="py-3 text-muted-foreground">
                       {deal.development || "-"}
                     </td>
