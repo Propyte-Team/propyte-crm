@@ -66,7 +66,7 @@ async function main() {
   const presets: BotTonePreset[] = arg
     ? [arg.split("=")[1] as BotTonePreset]
     : (Object.keys(TONE_PRESETS) as BotTonePreset[]);
-  const model = process.env.BOT_MODEL?.trim() || "claude-sonnet-5";
+  const model = process.env.BOT_MODEL?.trim() || "claude-sonnet-5-5";
 
   for (const preset of presets) {
     console.log(`\n===== PRESET: ${preset} =====`);

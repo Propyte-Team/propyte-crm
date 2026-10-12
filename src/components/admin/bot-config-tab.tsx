@@ -204,7 +204,8 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="claude-sonnet-5">Claude Sonnet 5 (recomendado)</SelectItem>
+              <SelectItem value="claude-sonnet-5-5">Claude Sonnet 5.5 (recomendado)</SelectItem>
+              <SelectItem value="claude-sonnet-5">Claude Sonnet 5</SelectItem>
               <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
               <SelectItem value="claude-haiku-4-5">Claude Haiku 4.5 (más barato)</SelectItem>
             </SelectContent>
