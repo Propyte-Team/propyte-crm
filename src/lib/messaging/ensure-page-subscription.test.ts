@@ -15,7 +15,7 @@ vi.mock("./webhook-subscription", async (orig) => {
 
 import { ensurePageSubscription } from "./ensure-page-subscription";
 
-const ALL = ["messages", "message_echoes", "feed"];
+const ALL = ["messages", "message_echoes", "feed", "messaging_policy_enforcement"];
 
 beforeEach(() => {
   probe.mockReset();
@@ -71,6 +71,6 @@ describe("ensurePageSubscription", () => {
       .mockResolvedValueOnce({ subscribedFields: [], error: null })
       .mockResolvedValueOnce({ subscribedFields: ["messages"], error: null });
     const out = await ensurePageSubscription("PAGE-1", "TOKEN");
-    expect(out).toMatchObject({ ok: true, missing: ["message_echoes", "feed"] });
+    expect(out).toMatchObject({ ok: true, missing: ["message_echoes", "feed", "messaging_policy_enforcement"] });
   });
 });

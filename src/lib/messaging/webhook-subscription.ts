@@ -83,7 +83,12 @@ export function missingCommentFields(subscribedFields: string[]): string[] {
 // propia Página desde Meta Business Suite (`message_echoes`) y los comentarios
 // de Facebook (`feed`). En una cuenta de Instagram es la Página vinculada: los
 // DMs de IG también necesitan la app instalada ahí.
-export const REQUIRED_PAGE_FIELDS = ["messages", "message_echoes", "feed"] as const;
+//
+// `messaging_policy_enforcement` (2026-10-12): el aviso de Meta cuando bloquea o
+// advierte a la Página por sus políticas. Meta recomienda suscribirlo; sin él un
+// bloqueo se ve igual que un día sin mensajes. Ya está activo a nivel app para el
+// objeto `page`; falta en cada Página hasta que alguien pulse «Suscribir página».
+export const REQUIRED_PAGE_FIELDS = ["messages", "message_echoes", "feed", "messaging_policy_enforcement"] as const;
 
 /** De los campos que el CRM necesita en la Página, los que faltan. */
 export function missingPageFields(subscribedFields: string[]): string[] {

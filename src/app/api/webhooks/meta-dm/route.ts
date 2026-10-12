@@ -5,6 +5,9 @@
 //   Campos a suscribir: `messages` (DM) y `comments`/`feed` (comentarios) para
 //   los objetos instagram y page. Meta permite UNA callback URL por objeto, así
 //   que ambos tipos llegan aquí y se bifurcan por la forma del payload.
+//   En page también `messaging_policy_enforcement` (2026-10-12): Meta avisa aquí
+//   cuando bloquea o advierte a una Página por sus políticas (ver
+//   lib/messaging/policy-enforcement.ts).
 //
 // Acuse rápido (2026-10-12): Meta exige `200 OK` en menos de 20 s (requisito de App
 // Review para Messenger); si tardamos más, reintenta, duplica eventos o marca el webhook.
@@ -36,6 +39,11 @@ import { parseCommentWebhook, type IncomingComment } from "@/lib/comments/parse"
 import type { IncomingMessage } from "@/lib/messaging/types";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 import { runAfterResponse } from "@/lib/runtime/after-response";
+import {
+  parsePolicyEnforcement,
+  handlePolicyEnforcement,
+  type PolicyEnforcementEvent,
+} from "@/lib/messaging/policy-enforcement";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -180,11 +188,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Avisos de políticas (messaging_policy_enforcement): parseMessengerWebhook los ignora
+  // —no traen sender ni message— y se leen aparte. Parsear es puro y barato; marcar las
+  // cuentas y avisar a los admins va con lo de después del 200.
+  const avisos = parsePolicyEnforcement(body);
+
   // Lo lento va después del 200 (ver cabecera). Solo se agenda si hay algo que hacer.
   const bots = [...botTargets.values()];
   const comments = parsed.comments;
-  if (bots.length > 0 || comments.length > 0) {
-    runAfterResponse(() => trabajoEnSegundoPlano(bots, comments));
+  if (bots.length > 0 || comments.length > 0 || avisos.length > 0) {
+    runAfterResponse(() => trabajoEnSegundoPlano(bots, comments, avisos));
   }
 
   // `comments` es lo ENCOLADO, no lo procesado: al responder todavía no corre ninguno.
@@ -197,11 +210,15 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Lo que corre después de mandar el 200. Cada tarea lleva su try/catch: un bot o un
- * comentario que revienta no detiene a los demás. Secuencial, igual que cuando corría
- * dentro de la petición.
+ * Lo que corre después de mandar el 200. Cada tarea lleva su try/catch: un bot, un
+ * comentario o un aviso que revienta no detiene a los demás. Secuencial, igual que cuando
+ * corría dentro de la petición.
  */
-async function trabajoEnSegundoPlano(bots: BotTarget[], comments: IncomingComment[]): Promise<void> {
+async function trabajoEnSegundoPlano(
+  bots: BotTarget[],
+  comments: IncomingComment[],
+  avisos: PolicyEnforcementEvent[]
+): Promise<void> {
   // Una respuesta del bot por contacto+canal (guards internos de botRespond deciden).
   for (const t of bots) {
     try {
@@ -218,6 +235,15 @@ async function trabajoEnSegundoPlano(bots: BotTarget[], comments: IncomingCommen
       await handleComment(c);
     } catch (err) {
       console.error("[meta-dm] comentario:", err);
+    }
+  }
+
+  // handlePolicyEnforcement ya es best-effort; el try/catch es el mismo cinturón que el resto.
+  for (const a of avisos) {
+    try {
+      await handlePolicyEnforcement(a);
+    } catch (err) {
+      console.error("[meta-dm] policy_enforcement:", err);
     }
   }
 }
