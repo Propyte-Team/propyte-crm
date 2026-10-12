@@ -1668,7 +1668,7 @@ model BotConfig {
   botEnabled         Boolean       @default(true) // kill-switch global (≠ Conversation.botEnabled)
   tonePreset         BotTonePreset @default(PROFESIONAL_CALIDO)
   autonomyLevel      AutonomyLevel @default(L2)
-  model              String        @default("claude-sonnet-5")
+  model              String        @default("claude-sonnet-5-5")
   openerStyle        String        @default("WARM_NAME") // WARM_NAME | DIRECT
   maxLines           Int           @default(4)
   dataGateStrict     Boolean       @default(true)

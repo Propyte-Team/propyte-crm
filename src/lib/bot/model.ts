@@ -34,12 +34,19 @@
  * la necesitan `lib/bot/*` y `lib/agents/*`, y `lib/` no importa de `server/` en ningún
  * otro sitio del repositorio. El esquema de validación la importa de aquí.
  */
-export const ALLOWED_MODELS = ["claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5"] as const;
+// Sonnet 5 se queda en la lista aunque ya no sea el default: la fila de bot_config puede
+// seguir guardando `claude-sonnet-5` y el CRM no debe tratarla como inválida.
+export const ALLOWED_MODELS = [
+  "claude-sonnet-5-5",
+  "claude-sonnet-5",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+] as const;
 
 export type AllowedModel = (typeof ALLOWED_MODELS)[number];
 
-/** El default cuando no hay nada configurado. Generación vigente y la más barata de la lista. */
-export const DEFAULT_BOT_MODEL: AllowedModel = "claude-sonnet-5";
+/** El default cuando no hay nada configurado: Sonnet 5.5 (actualizado 2026-10-12; antes Sonnet 5). */
+export const DEFAULT_BOT_MODEL: AllowedModel = "claude-sonnet-5-5";
 
 export function esModeloPermitido(valor: string): valor is AllowedModel {
   return (ALLOWED_MODELS as readonly string[]).includes(valor);

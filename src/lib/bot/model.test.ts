@@ -42,7 +42,12 @@ describe("resolveBotModel", () => {
   });
 
   it("sin nada configurado, el default es la generación vigente", () => {
-    expect(resolveBotModel()).toBe("claude-sonnet-5");
+    expect(resolveBotModel()).toBe("claude-sonnet-5-5");
+  });
+
+  it("Sonnet 5 sigue siendo válido: la fila guardada en bot_config puede traerlo", () => {
+    expect(resolveBotModel("claude-sonnet-5")).toBe("claude-sonnet-5");
+    expect(console.warn).not.toHaveBeenCalled();
   });
 
   it("el argumento de quien llama gana sobre la variable de entorno", () => {
@@ -55,7 +60,7 @@ describe("resolveBotModel", () => {
     expect(resolveBotModel("modelo-que-no-existe")).toBe("claude-haiku-4-5");
   });
 
-  it("acepta los tres modelos del allowlist tal cual", () => {
+  it("acepta todos los modelos del allowlist tal cual", () => {
     for (const m of ALLOWED_MODELS) expect(resolveBotModel(m)).toBe(m);
   });
 });
