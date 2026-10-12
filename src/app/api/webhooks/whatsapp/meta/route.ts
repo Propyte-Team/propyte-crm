@@ -3,6 +3,13 @@
 //   Callback URL: https://crm.propyte.com/api/webhooks/whatsapp/meta
 //   Verify token: META_WA_VERIFY_TOKEN · Suscribir campo: messages
 // Mismo flujo downstream que Twilio: handleInboundWhatsApp (inbox, bot, SLA, opt-out).
+//
+// Acuse rápido (2026-10-12), igual que webhooks/meta-dm: Meta reintenta si el 200 no llega
+// a tiempo, y antes este POST esperaba al bot (Claude + envío por Graph) de cada contacto
+// del batch antes de responder. Ahora la ingesta (inbox, media, acuses, BSUID) sigue antes
+// del 200 —el mensaje queda persistido— y el bot se agenda con runAfterResponse para
+// después. El costo: si el bot falla ahí, Meta ya no reintenta; el mensaje ya está en el
+// inbox y el fallo sale en el console.error de esa tarea.
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import prisma from "@/lib/db";
@@ -11,6 +18,7 @@ import { resolveWaMediaToStorage } from "@/lib/whatsapp/media";
 import { mediaTypeFromWaType } from "@/lib/messaging/media";
 import { resolveConnectorByPhoneNumberId, getWhatsAppCredentials } from "@/lib/whatsapp/accounts";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
+import { runAfterResponse } from "@/lib/runtime/after-response";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -337,8 +345,17 @@ export async function POST(req: NextRequest) {
   }
 
   // Una respuesta del bot por contacto del batch (los guards internos de botRespond
-  // deciden si procede: status BOT, opt-out, canal habilitado, staleness).
-  for (const t of botTargets.values()) {
+  // deciden si procede: status BOT, opt-out, canal habilitado, staleness). Después del
+  // 200: Meta exige el acuse rápido y reintenta si no llega (ver cabecera).
+  const bots = [...botTargets.values()];
+  if (bots.length > 0) runAfterResponse(() => responderConElBot(bots));
+
+  return NextResponse.json({ ok: true, processed });
+}
+
+/** Corre después del 200. Cada contacto con su try/catch: uno que revienta no frena al resto. */
+async function responderConElBot(bots: Array<{ contactId: string; connectorId: string | null }>): Promise<void> {
+  for (const t of bots) {
     try {
       const { botRespond } = await import("@/lib/bot/bot-respond");
       await botRespond(t.contactId, { channel: "WHATSAPP", connectorId: t.connectorId });
@@ -346,7 +363,4 @@ export async function POST(req: NextRequest) {
       console.error("[whatsapp-meta] botRespond:", err);
     }
   }
-
-  // Meta exige 200 rápido; reintenta si no
-  return NextResponse.json({ ok: true, processed });
 }
