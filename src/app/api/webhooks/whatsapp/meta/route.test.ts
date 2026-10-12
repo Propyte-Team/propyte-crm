@@ -35,6 +35,11 @@ vi.mock("@/lib/whatsapp/media", () => ({
   resolveWaMediaToStorage: (...a: unknown[]) => resolveWaMediaToStorage(...a),
 }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
+// 2026-10-12: el número desconocido deja una nota (su escritura se prueba en send-failure.test.ts).
+const recordBotSilence = vi.fn();
+vi.mock("@/lib/messaging/send-failure", () => ({
+  recordBotSilence: (...a: unknown[]) => recordBotSilence(...a),
+}));
 
 // Acuse rápido (2026-10-12): el bot ya no corre antes del 200, se agenda con
 // runAfterResponse (`after()` de Next). Este doble guarda el callback para que cada prueba
@@ -64,6 +69,8 @@ beforeEach(() => {
   getWhatsAppCredentials.mockReturnValue(null);
   resolveWaMediaToStorage.mockReset();
   botRespond.mockReset();
+  recordBotSilence.mockReset();
+  recordBotSilence.mockResolvedValue(undefined);
   agendados.length = 0;
   runAfterResponse.mockReset();
   runAfterResponse.mockImplementation((fn: () => unknown) => {
@@ -659,6 +666,124 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     expect(res.status).toBe(200);
     expect(resolveWaMediaToStorage).toHaveBeenCalledWith("media-1", null);
     expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-12: el número desconocido solo dejaba un console.warn, y sin acceso a los registros
+// del servidor nadie podía saber por qué el agente no contestó. Ahora deja una nota en la
+// conversación del mensaje, con el número y su id, sin mostrar nunca el valor del env.
+// ---------------------------------------------------------------------------
+describe("webhook de WhatsApp Cloud — nota cuando el agente no contesta por número desconocido", () => {
+  function cuerpoDe(phoneNumberId: string, display?: string) {
+    return JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: phoneNumberId, ...(display ? { display_phone_number: display } : {}) },
+                contacts: [{ profile: { name: "Ana" }, wa_id: "5219981234567" }],
+                messages: [{ id: "wamid.1", from: "5219981234567", type: "text", text: { body: "hola" } }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("META_WA_PHONE_NUMBER_ID", "pn-global-secreto");
+    handleInboundWhatsApp.mockResolvedValue({ id: "m1", contactId: "c1", conversationId: "conv-1" });
+  });
+
+  it("🚨 número desconocido: nota en la conversación del mensaje, con el número visible y su id", async () => {
+    const res = await POST(postFirmado(cuerpoDe("pn-desconocido", "+52 998 000 0000")));
+
+    expect(res.status).toBe(200);
+    expect(recordBotSilence).toHaveBeenCalledTimes(1);
+    expect(recordBotSilence).toHaveBeenCalledWith({
+      contactId: "c1",
+      conversationId: "conv-1",
+      channel: "WHATSAPP",
+      reason:
+        "este WhatsApp llegó al número +52 998 000 0000 (id pn-desconocido), " +
+        "que no está dado de alta en Conexiones ni es el número general del CRM.",
+    });
+    // la nota no sustituye nada: el agente sigue sin contestar
+    await enSegundoPlano();
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("la nota se deja ANTES del 200 (no depende de lo que corre después)", async () => {
+    await POST(postFirmado(cuerpoDe("pn-desconocido")));
+    expect(recordBotSilence).toHaveBeenCalledTimes(1);
+    expect(runAfterResponse).not.toHaveBeenCalled();
+  });
+
+  it("sin display_phone_number: usa el phone_number_id", async () => {
+    await POST(postFirmado(cuerpoDe("pn-desconocido")));
+    expect(recordBotSilence.mock.calls[0][0].reason).toContain("llegó al número pn-desconocido (id pn-desconocido)");
+  });
+
+  it("nunca muestra el número general configurado en el env (solo lo compara)", async () => {
+    await POST(postFirmado(cuerpoDe("pn-desconocido", "+52 998 000 0000")));
+    expect(JSON.stringify(recordBotSilence.mock.calls)).not.toContain("pn-global-secreto");
+  });
+
+  it("env sin número general: la nota lo advierte, sin inventar un valor", async () => {
+    vi.stubEnv("META_WA_PHONE_NUMBER_ID", "");
+
+    await POST(postFirmado(cuerpoDe("pn-1")));
+
+    const reason = recordBotSilence.mock.calls[0][0].reason as string;
+    expect(reason).toContain("que no está dado de alta en Conexiones ni es el número general del CRM.");
+    expect(reason).toContain("el servidor no tiene configurado el número general (META_WA_PHONE_NUMBER_ID está vacía)");
+  });
+
+  it("si la consulta de Conexiones falló, la nota no dice «no está dado de alta» sino que no se pudo consultar", async () => {
+    resolveConnectorByPhoneNumberId.mockRejectedValue(new Error("db caída"));
+
+    await POST(postFirmado(cuerpoDe("pn-1")));
+
+    const reason = recordBotSilence.mock.calls[0][0].reason as string;
+    expect(reason).toContain("no se pudo consultar en Conexiones de qué cuenta es");
+    expect(reason).not.toContain("no está dado de alta");
+  });
+
+  it("sin conversación en el resultado de la ingesta: igual avisa (recordBotSilence con null solo registra)", async () => {
+    handleInboundWhatsApp.mockResolvedValue({ contactId: "c1" });
+
+    await POST(postFirmado(cuerpoDe("pn-desconocido")));
+
+    expect(recordBotSilence).toHaveBeenCalledWith(expect.objectContaining({ conversationId: null }));
+  });
+
+  it("número general sin cuenta: el agente contesta y NO hay nota", async () => {
+    await POST(postFirmado(cuerpoDe("pn-global-secreto")));
+    await enSegundoPlano();
+
+    expect(recordBotSilence).not.toHaveBeenCalled();
+    expect(botRespond).toHaveBeenCalledTimes(1);
+  });
+
+  it("número con cuenta registrada: el agente contesta y NO hay nota", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue({ id: "conn-1" });
+
+    await POST(postFirmado(cuerpoDe("pn-marca")));
+    await enSegundoPlano();
+
+    expect(recordBotSilence).not.toHaveBeenCalled();
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: "conn-1" });
+  });
+
+  it("sin contacto (opt-out por palabra clave): no hay a quién dejarle nota", async () => {
+    handleInboundWhatsApp.mockResolvedValue(null);
+
+    await POST(postFirmado(cuerpoDe("pn-desconocido")));
+
+    expect(recordBotSilence).not.toHaveBeenCalled();
   });
 });
 

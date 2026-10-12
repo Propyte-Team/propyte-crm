@@ -2,7 +2,15 @@
 // Contexto → RAG catálogo Hub (data-gate) → Claude (voz Sage) → brand linter →
 // envía o ESCALA a humano (intención fuerte / sin confianza).
 import prisma from "@/lib/db";
-import { askClaude, buildSystemPrompt, ESCALATE_TOKEN, type BotMessage, type BrandPromptInput } from "./claude";
+import {
+  askClaude,
+  buildSystemPrompt,
+  ESCALATE_TOKEN,
+  type BotMessage,
+  type BrandPromptInput,
+  type ClaudeSinRespuesta,
+  type DiagnosticoClaude,
+} from "./claude";
 import { ESCALATE_MARKETING_TOKEN, getMarketingOwnerId } from "./marketing-routing";
 import { getBotConfig, type BotConfigResolved } from "./config";
 import { lintBrandVoice } from "./brand-linter";
@@ -10,9 +18,9 @@ import { findMatchingDevelopments } from "./hub-catalog";
 import { runPlaybookStep } from "./playbook/run";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
-import { recordBotSendFailure } from "@/lib/messaging/send-failure";
+import { recordBotSendFailure, recordBotSilence } from "@/lib/messaging/send-failure";
 import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profiles";
-import { resolveBrandForConnector, isBrandScoped } from "@/lib/brands/resolve";
+import { resolveBrandForConnector, isBrandScoped, type BrandResolution } from "@/lib/brands/resolve";
 import { brandEnabledChannels } from "@/lib/brands/settings";
 
 /**
@@ -97,6 +105,63 @@ export async function escalateToHuman(
   }
 }
 
+// ─────────────── Por qué se calló el agente (2026-10-12) ───────────────
+//
+// Dos WhatsApp al número general se quedaron sin respuesta y sin rastro: ni saliente, ni nota,
+// la conversación en BOT, el canal activo, el contacto sin baja. Sin acceso a los registros del
+// servidor, cada `return false` de botRespond se veía igual. Ahora los que delatan algo mal o
+// mal configurado dejan una nota interna «El agente no contestó: …» (recordBotSilence). Los
+// silencios NORMALES no la dejan, a propósito: interruptor maestro apagado, contacto dado de
+// baja, hilo en manos de un humano o con el bot apagado, la ráfaga que contesta otro disparo,
+// el agente de la marca apagado (ya escala) y el contacto que es solo de otra marca.
+
+const CHANNEL_NAMES: Record<MessagingChannel, string> = {
+  WHATSAPP: "WhatsApp",
+  INSTAGRAM: "Instagram",
+  MESSENGER: "Messenger",
+};
+
+function channelList(channels: string[]): string {
+  return channels.length > 0
+    ? channels.map((c) => CHANNEL_NAMES[c as MessagingChannel] ?? c).join(", ")
+    : "ninguno";
+}
+
+/** Motivo de la nota cuando la marca de la cuenta no se puede usar. */
+function brandUnavailableReason(brandId: string): string {
+  return brandId === "?"
+    ? "no se pudo leer la cuenta por la que llegó el mensaje para saber de qué marca es; " +
+        "por seguridad no se contesta con una marca sin confirmar."
+    : `la cuenta por la que llegó el mensaje está asignada a una marca que fue borrada o no se pudo leer (marca ${brandId}). ` +
+        "Revisa la marca de la cuenta en Conexiones.";
+}
+
+function accountLabel(connectorId: string | null, res: BrandResolution): string {
+  if (!connectorId) return "el número general";
+  const marca = res.kind === "brand" ? ` (marca «${res.brand.name}»)` : res.kind === "unavailable" ? " (marca no disponible)" : "";
+  return `la cuenta ${connectorId}${marca}`;
+}
+
+/** Texto de la nota cuando la IA no trajo respuesta. Sin diagnóstico (doble de prueba), lo genérico. */
+export function describeAiSilence(motivo: ClaudeSinRespuesta | undefined, err?: unknown): string {
+  const base = "la IA no devolvió respuesta";
+  if (motivo?.motivo === "sin_api_key") {
+    return `${base}: falta la llave de la API de Claude (ANTHROPIC_API_KEY) en el servidor.`;
+  }
+  if (motivo?.motivo === "respuesta_vacia") {
+    return `${base}: la API de Claude contestó sin texto${motivo.stopReason ? ` (stop_reason: ${motivo.stopReason})` : ""}.`;
+  }
+  if (motivo?.motivo === "error_api") {
+    return motivo.status !== null
+      ? `${base}: la API de Claude respondió con error HTTP ${motivo.status} (${motivo.detalle}).`
+      : `${base}: la llamada a la API de Claude no se completó (${motivo.detalle}).`;
+  }
+  if (err !== undefined) {
+    return `${base}: ${(err instanceof Error ? err.message : String(err)).slice(0, 300)}`;
+  }
+  return `${base}.`;
+}
+
 /**
  * ¿El contacto pertenece SOLO a otra marca (no predeterminada, no borrada)? Es decir: tiene fila
  * en contact_brands de una marca no predeterminada y NO tiene la fila de la predeterminada.
@@ -158,14 +223,45 @@ export async function botRespond(
       ? opts.connectorId
       : ((await findConversationForChannel(contactId, channel))?.connectorId ?? null);
 
+  // El hilo de esta cuenta (ver el comentario de `conv` más abajo). Función para poder usarla
+  // también en los silencios que ocurren ANTES de resolver la conversación.
+  const findThread = async () =>
+    opts.connectorId !== undefined
+      ? ((await prisma.conversation.findFirst({ where: { contactId, channel, connectorId: opts.connectorId } })) ??
+        (await findConversationForChannel(contactId, channel)))
+      : await findConversationForChannel(contactId, channel);
+
+  // Nota de un silencio previo a resolver la conversación (marca, canal). Solo lectura: nunca
+  // crea un hilo. Sin hilo, o con un humano al mando (ahí callar es lo normal), no hay nota y
+  // queda solo el console.warn de recordBotSilence.
+  const noteEarlySilence = async (reason: string) => {
+    const thread = await findThread().catch(() => null);
+    const conversationId = thread && thread.status === "BOT" && thread.botEnabled ? thread.id : null;
+    await recordBotSilence({ contactId, conversationId, channel, reason });
+  };
+
   // Marca de la cuenta (2026-10-09, spec marcas-agente §3.2). Solo una marca NO
   // predeterminada cambia algo; "unavailable" = la cuenta tiene marca pero no se puede
   // usar → NO contestar (mejor callado que responder como otra marca). El chequeo de
   // canal va DESPUÉS de resolver la marca porque los canales pueden ser propios de la marca.
   const brandRes = await resolveBrandForConnector(connectorId);
-  if (brandRes.kind === "unavailable") return false;
+  if (brandRes.kind === "unavailable") {
+    await noteEarlySilence(brandUnavailableReason(brandRes.brandId));
+    return false;
+  }
   const brand = isBrandScoped(brandRes) ? brandRes.brand : null;
-  if (!shouldBotRespondForChannel(config, channel, brand ? brandEnabledChannels(brand) : null)) return false;
+  const brandChannels = brand ? brandEnabledChannels(brand) : null;
+  if (!shouldBotRespondForChannel(config, channel, brandChannels)) {
+    // El interruptor maestro ya se revisó arriba: aquí solo puede faltar el canal.
+    await noteEarlySilence(
+      brand && brandChannels
+        ? `el canal ${CHANNEL_NAMES[channel]} no está activado para la marca «${brand.name}» ` +
+            `(canales de la marca: ${channelList(brandChannels)}).`
+        : `el canal ${CHANNEL_NAMES[channel]} no está activado en la configuración general del agente ` +
+            `(canales activos: ${channelList(config.enabledChannels)}).`,
+    );
+    return false;
+  }
 
   // Abrir conversación SIN cuenta (AI_REPLY de un workflow, 2026-10-09, revisión final I3) = escribir
   // desde el número global con la voz de Propyte. Si el contacto pertenece SOLO a otra marca (fila en
@@ -184,18 +280,23 @@ export async function botRespond(
   // el cinturón de abajo no deja contestar (2026-10-09).
   const conv = opts.createConversation
     ? await ensureConversation({ contactId, channel, connectorId })
-    : opts.connectorId !== undefined
-      ? ((await prisma.conversation.findFirst({ where: { contactId, channel, connectorId: opts.connectorId } })) ??
-        (await findConversationForChannel(contactId, channel)))
-      : await findConversationForChannel(contactId, channel);
+    : await findThread();
   if (!conv || conv.status !== "BOT" || !conv.botEnabled) return false;
+  const noteSilence = (reason: string) =>
+    recordBotSilence({ contactId, conversationId: conv.id, channel, reason });
 
   // Cinturón: si aun así el hilo es de otra cuenta que la resuelta, y alguna de las dos tiene
   // marca (o no se puede resolver), NO se contesta — nunca como una marca por la cuenta de
   // otra. Si ambas son predeterminadas, sigue como siempre.
   if ((conv.connectorId ?? null) !== (connectorId ?? null)) {
     const convBrandRes = await resolveBrandForConnector(conv.connectorId);
-    if (brandRes.kind !== "default" || convBrandRes.kind !== "default") return false;
+    if (brandRes.kind !== "default" || convBrandRes.kind !== "default") {
+      await noteSilence(
+        `esta conversación es de ${accountLabel(conv.connectorId ?? null, convBrandRes)} y el mensaje llegó por ` +
+          `${accountLabel(connectorId ?? null, brandRes)}; con una marca de por medio no se contesta por la cuenta de otra.`,
+      );
+      return false;
+    }
   }
 
   // Agente de la marca apagado: no contesta, pero tampoco deja al cliente sin atender —
@@ -350,8 +451,21 @@ export async function botRespond(
     ...(brandPrompt ? { brand: brandPrompt } : {}),
   });
 
-  const reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model });
-  if (!reply) return false; // sin API key
+  // El diagnóstico dice por qué no hubo texto (sin llave, respuesta vacía o error de la API).
+  // Ante un error se deja la nota y se relanza igual que siempre: quien llamó lo sigue
+  // registrando y el flujo no cambia.
+  const diagnostico: DiagnosticoClaude = {};
+  let reply: string | null;
+  try {
+    reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model }, diagnostico);
+  } catch (err) {
+    await noteSilence(describeAiSilence(diagnostico.sinRespuesta, err));
+    throw err;
+  }
+  if (!reply) {
+    await noteSilence(describeAiSilence(diagnostico.sinRespuesta));
+    return false;
+  }
 
   // Guard anti-burst (BUG 2026-07-24: texto + 2 PDFs → 3 respuestas): si mientras
   // generábamos llegó CUALQUIER mensaje nuevo (inbound del cliente, respuesta de otra
@@ -379,11 +493,28 @@ export async function botRespond(
     return false;
   }
 
+  if (!clean) {
+    // La respuesta traía solo los tokens: el cliente no recibe nada, aunque el hilo sí pase a
+    // un humano. Sin ningún token (solo espacios; askClaude ya recorta, así que no debería
+    // pasar) nadie se enteraría → `false`: antes devolvía `true` sin haber enviado nada.
+    const escalates = shouldEscalate || shouldEscalateMarketing;
+    await noteSilence(
+      `la respuesta de la IA quedó vacía al quitarle las marcas internas (${ESCALATE_TOKEN} / ${ESCALATE_MARKETING_TOKEN})` +
+        (escalates ? "; la conversación pasa a un humano." : "."),
+    );
+    if (!escalates) return false;
+  }
+
   if (clean) {
     const ownerId =
       contact.assignedToId ??
       (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
-    if (!ownerId) return false;
+    if (!ownerId) {
+      await noteSilence(
+        "no hay a nombre de quién enviar la respuesta: el contacto no tiene asesor asignado y no hay ningún usuario ADMIN activo.",
+      );
+      return false;
+    }
 
     // sendChannelMessage con opts.bot=true marca sender=BOT, aiGenerated=true, aiAutonomy=L2.
     try {
@@ -393,11 +524,11 @@ export async function botRespond(
       // hilo), el error moría en el console.error de quien llamó y el bot se
       // quedaba callado sin rastro. Se deja una nota interna con el motivo y se
       // relanza igual: el flujo (qué se manda, cuándo, y que no se escale tras
-      // un envío fallido) no cambia. Solo Instagram/Messenger (Send API de
-      // Meta); WhatsApp va por otro transporte y queda como estaba.
-      if (channel !== "WHATSAPP") {
-        await recordBotSendFailure({ contactId: contact.id, conversationId: conv.id, channel, err });
-      }
+      // un envío fallido) no cambia.
+      // 2026-10-12: también WhatsApp. Era justo el canal que se quedó callado sin
+      // rastro; su transporte lanza Error con el código de Meta en el texto y
+      // describeBotSendFailure lo reconoce.
+      await recordBotSendFailure({ contactId: contact.id, conversationId: conv.id, channel, err });
       throw err;
     }
     await prisma.conversation.update({

@@ -11,7 +11,13 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { describeBotSendFailure, recordBotSendFailure, BOT_SEND_REJECTED_PREFIX } from "./send-failure";
+import {
+  describeBotSendFailure,
+  recordBotSendFailure,
+  recordBotSilence,
+  BOT_SEND_REJECTED_PREFIX,
+  BOT_SILENCE_PREFIX,
+} from "./send-failure";
 import { GraphSendError } from "./graph";
 
 function graphErr(code: number, message: string, subcode?: number) {
@@ -64,6 +70,22 @@ describe("describeBotSendFailure", () => {
     const text = describeBotSendFailure(new Error("fallo en /me/messages?access_token=EAAB-SECRETO&x=1"));
     expect(text).not.toContain("EAAB-SECRETO");
     expect(text).toContain("access_token=[oculto]");
+  });
+
+  // 2026-10-12: WhatsApp también deja la nota. Su transporte lanza Error (no GraphSendError)
+  // con el código de Meta en el texto: esos son rechazos de Meta, el resto falló antes.
+  it.each([
+    "Meta Cloud API 131030: Recipient phone number not in allowed list",
+    "Fuera de la ventana de 24h de WhatsApp (131047): se requiere plantilla aprobada. Re-engagement message",
+    "WhatsApp (131062): este tipo de mensaje no acepta destinatario por BSUID — hace falta el teléfono. x",
+  ])("WhatsApp: rechazo de la Cloud API (%s) → «Meta rechazó…» con el texto del transporte", (msg) => {
+    expect(describeBotSendFailure(new Error(msg))).toBe(`${BOT_SEND_REJECTED_PREFIX}: ${msg}`);
+  });
+
+  it("WhatsApp: un fallo antes de llegar a Meta NO se reporta como rechazo de Meta", () => {
+    expect(describeBotSendFailure(new Error("Contacto sin teléfono ni Usuario de WhatsApp"))).toBe(
+      "No se pudo enviar la respuesta del bot: Contacto sin teléfono ni Usuario de WhatsApp"
+    );
   });
 });
 
@@ -126,5 +148,110 @@ describe("recordBotSendFailure", () => {
     await expect(recordBotSendFailure(args)).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+});
+
+// 2026-10-12: silencios del agente. Mismo rastro que los rechazos (nota interna SYSTEM,
+// deduplicada, nunca lanza), con su propio prefijo para que el monitoreo los distinga.
+describe("recordBotSilence", () => {
+  beforeEach(() => {
+    msgFindFirst.mockReset();
+    msgCreate.mockReset();
+    msgFindFirst.mockResolvedValue(null);
+    msgCreate.mockResolvedValue({ id: "note-1" });
+  });
+
+  const args = {
+    contactId: "c1",
+    conversationId: "conv1",
+    channel: "WHATSAPP" as const,
+    reason: "el canal WhatsApp no está activado en la configuración general del agente (canales activos: ninguno).",
+  };
+
+  it("el prefijo de los silencios es distinto del de los rechazos (el monitoreo busca los dos)", () => {
+    expect(BOT_SILENCE_PREFIX).toBe("El agente no contestó");
+    expect(BOT_SILENCE_PREFIX).not.toBe(BOT_SEND_REJECTED_PREFIX);
+  });
+
+  it("deja la nota interna «El agente no contestó: {motivo}» en la conversación (WhatsApp incluido)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await recordBotSilence(args);
+    expect(msgCreate).toHaveBeenCalledTimes(1);
+    expect(msgCreate.mock.calls[0][0].data).toEqual({
+      contactId: "c1",
+      conversationId: "conv1",
+      channel: "WHATSAPP",
+      direction: "OUTBOUND",
+      body: `El agente no contestó: ${args.reason}`,
+      status: "FAILED",
+      sender: "SYSTEM",
+      internalNote: true,
+    });
+    // y el motivo también va a los registros
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(args.reason), expect.anything());
+    warn.mockRestore();
+  });
+
+  it("no repite la misma nota de las últimas 24 h en esa conversación", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    msgFindFirst.mockResolvedValue({ id: "note-vieja" });
+    await recordBotSilence(args);
+    const where = msgFindFirst.mock.calls[0][0].where;
+    expect(where).toMatchObject({
+      conversationId: "conv1",
+      internalNote: true,
+      sender: "SYSTEM",
+      body: `El agente no contestó: ${args.reason}`,
+    });
+    expect(where.createdAt.gte).toBeInstanceOf(Date);
+    expect(Date.now() - where.createdAt.gte.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1000);
+    expect(msgCreate).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("un motivo distinto en la misma conversación sí deja su nota", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await recordBotSilence(args);
+    await recordBotSilence({ ...args, reason: "la IA no devolvió respuesta." });
+    expect(msgCreate).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it("sin conversación: no toca la base, solo deja el aviso con el motivo", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await recordBotSilence({ ...args, conversationId: null });
+    expect(msgFindFirst).not.toHaveBeenCalled();
+    expect(msgCreate).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(args.reason), expect.anything());
+    warn.mockRestore();
+  });
+
+  it.each([
+    ["la lectura del deduplicado", () => msgFindFirst.mockRejectedValue(new Error("db caída"))],
+    ["la escritura de la nota", () => msgCreate.mockRejectedValue(new Error("db caída"))],
+  ])("si falla %s, no lanza y lo registra", async (_caso, romper) => {
+    romper();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(recordBotSilence(args)).resolves.toBeUndefined();
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+    warn.mockRestore();
+  });
+
+  it("nunca deja pasar algo que parezca un secreto (token, Bearer, llave de Anthropic)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await recordBotSilence({
+      ...args,
+      reason: "x access_token=EAAB-SECRETO&y Authorization: Bearer EAAG-OTRO llave sk-ant-api03-abc_DEF-123 fin",
+    });
+    const body = msgCreate.mock.calls[0][0].data.body as string;
+    expect(body).not.toContain("EAAB-SECRETO");
+    expect(body).not.toContain("EAAG-OTRO");
+    expect(body).not.toContain("sk-ant-api03-abc_DEF-123");
+    expect(body).toContain("access_token=[oculto]");
+    expect(body).toContain("Bearer [oculto]");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("sk-ant-api03");
+    warn.mockRestore();
   });
 });

@@ -14,6 +14,11 @@ vi.mock("@/lib/messaging/social-accounts", () => ({
   markSocialConnectorsSignatureRejected: (...a: unknown[]) => markSignatureRejected(...a),
 }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
+// 2026-10-12: la cuenta sin conexión activa deja una nota (su escritura se prueba en send-failure.test.ts).
+const recordBotSilence = vi.fn();
+vi.mock("@/lib/messaging/send-failure", () => ({
+  recordBotSilence: (...a: unknown[]) => recordBotSilence(...a),
+}));
 vi.mock("@/lib/comments/handle-comment", () => ({
   handleComment: (...a: unknown[]) => handleComment(...a),
 }));
@@ -60,6 +65,8 @@ beforeEach(() => {
   markSignatureRejected.mockReset();
   markSignatureRejected.mockResolvedValue(undefined);
   botRespond.mockReset();
+  recordBotSilence.mockReset();
+  recordBotSilence.mockResolvedValue(undefined);
   handleComment.mockReset();
   handleComment.mockResolvedValue({ status: "procesado", logId: "log-1" });
   agendados.length = 0;
@@ -215,6 +222,59 @@ describe("meta-dm webhook", () => {
     expect(botRespond).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
     warn.mockRestore();
+  });
+
+  // 2026-10-12, gemelo del número desconocido de WhatsApp: ese silencio solo dejaba el
+  // console.warn. Ahora deja una nota en la conversación del mensaje.
+  it.each([
+    ["page", "MESSENGER", "Messenger", "PAGE-X"],
+    ["instagram", "INSTAGRAM", "Instagram", "17841-SIN-CUENTA"],
+  ] as const)("%s sin conector activo → nota en la conversación con la cuenta", async (object, channel, nombre, accountId) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveByPage.mockResolvedValue(null);
+    resolveByIg.mockResolvedValue(null);
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9", conversationId: "conv-9" });
+    const body = JSON.stringify({ object, entry: [{ id: accountId, messaging: [
+      { sender: { id: "USER-1" }, recipient: { id: accountId }, message: { mid: "m-nota", text: "hola" } },
+    ] }] });
+
+    const res = await POST(postFirmado(body));
+
+    expect(res.status).toBe(200);
+    expect(recordBotSilence).toHaveBeenCalledTimes(1);
+    expect(recordBotSilence).toHaveBeenCalledWith({
+      contactId: "c9",
+      conversationId: "conv-9",
+      channel,
+      reason: `este mensaje de ${nombre} llegó a la cuenta ${accountId}, que no tiene una conexión activa en Conexiones.`,
+    });
+    await enSegundoPlano();
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("cuenta que SÍ resuelve → sin nota", async () => {
+    resolveByIg.mockResolvedValue({ id: "conn_ig" });
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9", conversationId: "conv-9" });
+    const body = JSON.stringify({ object: "instagram", entry: [{ id: "17841", messaging: [
+      { sender: { id: "IGSID-1" }, message: { mid: "mi-ok-2", text: "hola" } },
+    ] }] });
+    await POST(postFirmado(body));
+    await enSegundoPlano();
+    expect(recordBotSilence).not.toHaveBeenCalled();
+    expect(botRespond).toHaveBeenCalledTimes(1);
+  });
+
+  it("echo de una página sin conector → sin nota (el bot nunca contesta ecos)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveByPage.mockResolvedValue(null);
+    handleInboundMessage.mockResolvedValue({ id: "m-echo", contactId: "c9", conversationId: "conv-9" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "PAGE-X", messaging: [{
+      sender: { id: "PAGE-X" },
+      recipient: { id: "PSID-user" },
+      message: { mid: "mid-echo-nota", text: "respuesta externa", is_echo: true },
+    }] }] });
+    await POST(postFirmado(body));
+    expect(recordBotSilence).not.toHaveBeenCalled();
   });
 
   it("cuenta que SÍ resuelve → el bot responde con ese connectorId", async () => {

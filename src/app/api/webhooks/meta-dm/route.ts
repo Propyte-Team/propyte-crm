@@ -44,6 +44,7 @@ import {
   handlePolicyEnforcement,
   type PolicyEnforcementEvent,
 } from "@/lib/messaging/policy-enforcement";
+import { recordBotSilence } from "@/lib/messaging/send-failure";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -164,6 +165,18 @@ export async function POST(req: NextRequest) {
           contactId: saved.contactId,
           channel: msg.channel,
           connectorId: msg.connectorId ?? null,
+        });
+      } else if (!msg.isEcho && saved?.contactId && cuentaSinConector) {
+        // 2026-10-12, gemelo del número desconocido de WhatsApp: este silencio solo dejaba
+        // el console.warn de arriba. Ahora queda la nota en la conversación del mensaje
+        // (recordBotSilence nunca lanza y deduplica: una por conversación cada 24 h).
+        await recordBotSilence({
+          contactId: saved.contactId,
+          conversationId: saved.conversationId ?? null,
+          channel: msg.channel,
+          reason:
+            `este mensaje de ${msg.channel === "INSTAGRAM" ? "Instagram" : "Messenger"} llegó a la cuenta ${msg.accountId}, ` +
+            "que no tiene una conexión activa en Conexiones.",
         });
       }
       processed++;
