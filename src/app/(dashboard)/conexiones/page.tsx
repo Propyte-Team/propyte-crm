@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
 import prisma from "@/lib/db";
 import { ConnectionsView } from "@/components/conexiones/connections-view";
+import { countOrphanLeads } from "@/server/orphan-leads";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
@@ -10,16 +11,20 @@ export default async function ConexionesPage() {
   if (!session?.user) redirect("/login");
   if (!ALLOWED_ROLES.includes(session.user.role)) redirect("/dashboard");
 
-  const connectors = await prisma.leadConnector.findMany({
-    where: { deletedAt: null },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true, name: true, provider: true, status: true,
-      lastLeadAt: true, errorCount: true, lastError: true, fieldMap: true,
-      brandId: true, brand: { select: { id: true, name: true } },
-      _count: { select: { leadLogs: true } },
-    },
-  });
+  const [connectors, orphanCount] = await Promise.all([
+    prisma.leadConnector.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true, name: true, provider: true, status: true,
+        lastLeadAt: true, errorCount: true, lastError: true, fieldMap: true,
+        brandId: true, brand: { select: { id: true, name: true } },
+        _count: { select: { leadLogs: true } },
+      },
+    }),
+    // Aviso de «Leads huérfanos» (2026-10-12, entrega 3). Best-effort: null = sin número.
+    countOrphanLeads(session.user),
+  ]);
 
   return (
     <ConnectionsView
@@ -27,6 +32,7 @@ export default async function ConexionesPage() {
         ...c,
         lastLeadAt: c.lastLeadAt?.toISOString() ?? null,
       }))}
+      orphanCount={orphanCount}
     />
   );
 }

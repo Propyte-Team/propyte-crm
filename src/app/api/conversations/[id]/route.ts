@@ -20,7 +20,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     where: { id: params.id },
     include: {
       // brand (2026-10-09): la marca asignada a la cuenta etiqueta el hilo; sin ella, config.brand.
-      connector: { select: { name: true, config: true, brand: { select: { name: true } } } },
+      // brandId (2026-10-12, entrega 3): marca de la cuenta del hilo para el badge del encabezado.
+      connector: { select: { name: true, config: true, brandId: true, brand: { select: { name: true } } } },
       contact: {
         select: {
           id: true, firstName: true, lastName: true, phone: true, email: true,
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     ...rest,
     messages,
     connector: connector
-      ? { name: connector.name, brand: connectorBrandLabel(connector) }
+      ? { name: connector.name, brand: connectorBrandLabel(connector), brandId: connector.brandId ?? null }
       : null,
     contact: {
       ...contact,

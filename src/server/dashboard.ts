@@ -9,6 +9,12 @@ import { getServerSession } from "@/lib/auth/session"
 import { DealStage, Prisma } from "@prisma/client"
 import { PIPELINE_STAGES } from "@/lib/constants"
 import { getActivityAgreementProgress, getOverdueTasks } from "./activities"
+import { getVisibleBrands } from "@/lib/brands/user-access"
+import {
+  activityBrandVisibilityWhere,
+  contactBrandVisibilityWhere,
+  dealBrandVisibilityWhere,
+} from "@/lib/brands/visibility"
 
 // Roles con acceso total a todas las plazas
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"]
@@ -82,6 +88,11 @@ export interface MonthlyTrendItem {
 // getDashboardStats — obtener todos los KPIs según rol
 // ============================================================
 
+/** `{ AND: [w] }` para esparcir en un where, o nada si no hay recorte (ADMIN). */
+function andDe<T>(w: T | undefined): { AND?: T[] } {
+  return w ? { AND: [w] } : {}
+}
+
 export async function getDashboardStats(
   userId: string,
   role: string,
@@ -121,6 +132,17 @@ export async function getDashboardStats(
   }
   // DIRECTOR y DEVELOPER_EXT ven todo
 
+  // Marcas (2026-10-12, entrega 3, decisión 4 del dueño): quien no es ADMIN solo ve cifras de sus
+  // marcas, con la regla de visibility.ts (lo asignado a uno siempre cuenta). Va en `AND` junto al
+  // alcance por rol de arriba, que no cambia; todas las consultas de negocios esparcen
+  // dealBaseWhere y ninguna escribe su propio AND, así que el recorte llega a todas.
+  const visible = await getVisibleBrands({ id: userId, role })
+  const dealPorMarca = dealBrandVisibilityWhere({ id: userId }, visible)
+  const contactPorMarca = contactBrandVisibilityWhere({ id: userId }, visible)
+  const activityPorMarca = activityBrandVisibilityWhere({ id: userId }, visible)
+  if (dealPorMarca) dealBaseWhere.AND = [dealPorMarca]
+  const contactMarcaAnd: Prisma.ContactWhereInput = contactPorMarca ? { AND: [contactPorMarca] } : {}
+
   // ---- KPIs del mes actual ----
 
   // Etapas activas (excluir WON, LOST, FROZEN)
@@ -153,6 +175,7 @@ export async function getDashboardStats(
       where: realLeadWhere({
         createdAt: { gte: monthStart },
         deletedAt: null,
+        ...contactMarcaAnd,
         ...(dealBaseWhere.assignedToId
           ? { assignedToId: dealBaseWhere.assignedToId as string }
           : dealBaseWhere.assignedTo
@@ -165,6 +188,7 @@ export async function getDashboardStats(
       where: realLeadWhere({
         createdAt: { gte: prevMonthStart, lte: prevMonthEnd },
         deletedAt: null,
+        ...contactMarcaAnd,
         ...(dealBaseWhere.assignedToId
           ? { assignedToId: dealBaseWhere.assignedToId as string }
           : dealBaseWhere.assignedTo
@@ -277,6 +301,8 @@ export async function getDashboardStats(
   } else if (role === "GERENTE" && plaza) {
     activityWhere.user = { plaza: plaza as any }
   }
+  // La actividad no tiene marca: se ve si se ve su contacto (o su negocio, si no tiene contacto).
+  if (activityPorMarca) activityWhere.AND = [activityPorMarca]
 
   const recentActivities = await prisma.activity.findMany({
     where: activityWhere,
@@ -319,17 +345,18 @@ export async function getDashboardStats(
       select: {
         id: true,
         name: true,
+        // Los usuarios no tienen marca; lo que se cuenta de cada uno sí (negocios y actividades).
         _count: {
           select: {
-            deals: { where: { stage: { in: activeStages }, deletedAt: null } },
+            deals: { where: { stage: { in: activeStages }, deletedAt: null, ...andDe(dealPorMarca) } },
           },
         },
         deals: {
-          where: { stage: { in: activeStages }, deletedAt: null },
+          where: { stage: { in: activeStages }, deletedAt: null, ...andDe(dealPorMarca) },
           select: { estimatedValue: true },
         },
         activities: {
-          where: { createdAt: { gte: weekStart }, deletedAt: null },
+          where: { createdAt: { gte: weekStart }, deletedAt: null, ...andDe(activityPorMarca) },
           select: { id: true },
         },
       },
@@ -344,6 +371,7 @@ export async function getDashboardStats(
         dueDate: { lt: new Date() },
         deletedAt: null,
         userId: { in: advisors.map((a) => a.id) },
+        ...andDe(activityPorMarca),
       },
       _count: { id: true },
     })

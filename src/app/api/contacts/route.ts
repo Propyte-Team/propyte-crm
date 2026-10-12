@@ -17,7 +17,9 @@ import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER } from "@/lib/
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
 import { getVisibleBrands } from "@/lib/brands/user-access";
-import { contactBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { loadBrandFilter } from "@/lib/brands/view-context";
+import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -103,7 +105,7 @@ const createContactSchema = contactCoreFields.refine(
 /**
  * GET /api/contacts
  * Lista contactos con paginación, búsqueda y filtros.
- * Soporta: ?search=, ?source=, ?temperature=, ?type=, ?assignedTo=, ?page=, ?pageSize=
+ * Soporta: ?search=, ?source=, ?temperature=, ?type=, ?assignedTo=, ?marca=, ?page=, ?pageSize=
  * El acceso se filtra según el rol del usuario (RBAC).
  */
 export async function GET(request: NextRequest) {
@@ -224,10 +226,21 @@ export async function GET(request: NextRequest) {
     // Marcas (2026-10-12): se agrega al FINAL y con AND, para que ningún filtro de arriba la
     // pise (los de arriba asignan claves sueltas de `where`). Es la misma ruta que usan los
     // buscadores de contacto (agenda, actividades, negocio): ninguno ve leads de otra marca.
-    const porMarca = contactBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
-    if (porMarca) {
+    const visible = await getVisibleBrands(session.user);
+    const porMarca = contactBrandVisibilityWhere(session.user, visible);
+    // Selector «Marca» (entrega 3): otro recorte en el mismo AND. Una marca inexistente, borrada
+    // o que el usuario no ve da el MISMO 400: distinguirlas confirmaría que la marca existe.
+    const filtroMarca = await loadBrandFilter(searchParams.get(BRAND_FILTER_PARAM), visible);
+    if (filtroMarca.kind === "invalid") {
+      return NextResponse.json({ error: "Marca no válida" }, { status: 400 });
+    }
+    const recortes = [
+      ...(porMarca ? [porMarca] : []),
+      ...(filtroMarca.kind === "brand" ? [contactBrandFilterWhere(filtroMarca.filter)] : []),
+    ];
+    if (recortes.length > 0) {
       const previos = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
-      where.AND = [...previos, porMarca];
+      where.AND = [...previos, ...recortes];
     }
 
     // Ejecutar consulta con paginación
@@ -237,6 +250,8 @@ export async function GET(request: NextRequest) {
         include: {
           assignedTo: { select: { id: true, name: true, email: true } },
           _count: { select: { deals: true, activities: true } },
+          // Badge de marca en la lista (entrega 3).
+          brands: CONTACT_BRAND_SELECT,
         },
         orderBy: orden.orderBy,
         skip,

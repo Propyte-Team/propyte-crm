@@ -45,6 +45,7 @@ import {
   type PolicyEnforcementEvent,
 } from "@/lib/messaging/policy-enforcement";
 import { recordBotSilence } from "@/lib/messaging/send-failure";
+import { unknownMetaAccountReason } from "@/lib/messaging/unregistered-account";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -174,9 +175,9 @@ export async function POST(req: NextRequest) {
           contactId: saved.contactId,
           conversationId: saved.conversationId ?? null,
           channel: msg.channel,
-          reason:
-            `este mensaje de ${msg.channel === "INSTAGRAM" ? "Instagram" : "Messenger"} llegó a la cuenta ${msg.accountId}, ` +
-            "que no tiene una conexión activa en Conexiones.",
+          // Texto en lib/messaging/unregistered-account: lo lee el panel de leads huérfanos.
+          // cuentaSinConector solo se prende con accountId presente; String() = lo que hacía el template.
+          reason: unknownMetaAccountReason(msg.channel === "INSTAGRAM" ? "INSTAGRAM" : "MESSENGER", String(msg.accountId)),
         });
       }
       processed++;

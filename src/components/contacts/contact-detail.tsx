@@ -35,6 +35,7 @@ import { CustomFieldsSection } from "@/components/metadata/custom-fields-section
 import { ActivityLog } from "@/components/activities/activity-log";
 import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
+import { BrandBadges } from "@/components/brands/brand-view";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -273,9 +274,13 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display, inherit)" }}>
-              {contact.firstName} {contact.lastName}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display, inherit)" }}>
+                {contact.firstName} {contact.lastName}
+              </h1>
+              {/* Marca(s) del contacto (entrega 3, 2026-10-12): solo si aporta, ver brandBadges */}
+              <BrandBadges brandIds={contact.brands?.map((b: { brandId: string }) => b.brandId)} />
+            </div>
             {/* Chips editables inline */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {acc("contactStatus") !== "HIDDEN" && (

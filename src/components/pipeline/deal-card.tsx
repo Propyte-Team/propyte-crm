@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { formatCurrency, TEMPERATURE_COLORS, STAGE_COLORS, DEAL_TYPE_LABELS } from "@/lib/constants";
 import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
+import { BrandBadges } from "@/components/brands/brand-view";
 
 interface DealCardProps {
   deal: PipelineDeal;
@@ -71,9 +72,13 @@ export function DealCard({ deal, isDragging = false }: DealCardProps) {
     >
       {/* Fila superior: nombre del contacto + indicador de temperatura */}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold leading-tight truncate">
-          {deal.contactName}
-        </p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="text-sm font-semibold leading-tight truncate">
+            {deal.contactName}
+          </p>
+          {/* Marca del contacto (entrega 3): solo si aporta, ver brandBadges */}
+          <BrandBadges brandIds={deal.contactBrandIds} />
+        </div>
         <div
           className={cn("h-2.5 w-2.5 rounded-full flex-shrink-0", tempColor)}
           title={deal.temperature}

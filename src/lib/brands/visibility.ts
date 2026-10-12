@@ -97,6 +97,27 @@ export function dealBrandVisibilityWhere(
 }
 
 /**
+ * Filtro de Prisma para actividades (2026-10-12, entrega 3: tableros y reportes). Una actividad no
+ * tiene marca propia: se ve si se ve su contacto; si no tiene contacto, si se ve su negocio. Las
+ * que no cuelgan de nada (tareas internas) no son de ninguna marca y no se esconden.
+ */
+export function activityBrandVisibilityWhere(
+  user: { id: string },
+  visible: VisibleBrands,
+): Prisma.ActivityWhereInput | undefined {
+  const contactWhere = contactBrandVisibilityWhere(user, visible);
+  const dealWhere = dealBrandVisibilityWhere(user, visible);
+  if (!contactWhere || !dealWhere) return undefined;
+  return {
+    OR: [
+      { contact: { is: contactWhere } },
+      { contactId: null, deal: { is: dealWhere } },
+      { contactId: null, dealId: null },
+    ],
+  };
+}
+
+/**
  * Misma regla que `contactBrandVisibilityWhere`, sobre un contacto ya leído.
  * Si el llamador no trajo `brands`, falla CERRADO: solo pasa si el contacto es suyo.
  */

@@ -14,7 +14,9 @@ import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 import { dueDateSchema } from "@/lib/due-date";
 import { ordenValidado } from "@/lib/api/orden";
 import { getVisibleBrands } from "@/lib/brands/user-access";
-import { dealBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { CONTACT_BRAND_SELECT, dealBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { loadBrandFilter } from "@/lib/brands/view-context";
+import { BRAND_FILTER_PARAM, dealBrandFilterWhere } from "@/lib/brands/filter";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -133,15 +135,32 @@ export async function GET(request: NextRequest) {
     // Marcas (2026-10-12): al FINAL y con AND, para que ningún filtro de arriba la pise. El
     // negocio no tiene marca propia: se ve si es mío o si veo la marca de su contacto. Es la
     // ruta del tablero del pipeline (pageSize=500).
-    const porMarca = dealBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
-    if (porMarca) where.AND = [porMarca];
+    const visible = await getVisibleBrands(session.user);
+    const porMarca = dealBrandVisibilityWhere(session.user, visible);
+    // Selector «Marca» de Negocios (entrega 3): recorte por la marca del contacto, en el mismo AND.
+    // Inexistente, borrada o ajena → el mismo 400, para no confirmar que la marca existe.
+    const filtroMarca = await loadBrandFilter(searchParams.get(BRAND_FILTER_PARAM), visible);
+    if (filtroMarca.kind === "invalid") {
+      return NextResponse.json({ error: "Marca no válida" }, { status: 400 });
+    }
+    const recortes = [
+      ...(porMarca ? [porMarca] : []),
+      ...(filtroMarca.kind === "brand" ? [dealBrandFilterWhere(filtroMarca.filter)] : []),
+    ];
+    if (recortes.length > 0) where.AND = recortes;
 
     // Ejecutar consulta con relaciones
     const [deals, total] = await Promise.all([
       prisma.deal.findMany({
         where,
         include: {
-          contact: { select: { id: true, firstName: true, lastName: true, phone: true, temperature: true } },
+          // brands: badge de marca en la tarjeta del tablero (entrega 3).
+          contact: {
+            select: {
+              id: true, firstName: true, lastName: true, phone: true, temperature: true,
+              brands: CONTACT_BRAND_SELECT,
+            },
+          },
           assignedTo: { select: { id: true, name: true, email: true, avatarUrl: true } },
           development: { select: { id: true, name: true } },
           unit: { select: { id: true, unitNumber: true } },

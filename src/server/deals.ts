@@ -23,6 +23,8 @@ import {
   canSeeDealBrand,
   dealBrandVisibilityWhere,
 } from "@/lib/brands/visibility";
+import { loadBrandFilter } from "@/lib/brands/view-context";
+import { dealBrandFilterWhere } from "@/lib/brands/filter";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -681,8 +683,13 @@ export async function transitionDealStage(
 /**
  * Obtiene deals agrupados por etapa con conteos y valores totales.
  * Para renderizar el Kanban board.
+ *
+ * `brandId` = selector «Marca» de Negocios (entrega 3, 2026-10-12): recorta por la marca del
+ * contacto, en AND con el alcance por rol y la visibilidad por marca de buildRBACFilter. Una marca
+ * ajena o inexistente se ignora: la página la lee del `?marca=` de la URL y mostrar lo que el
+ * usuario ya ve no revela nada (la API /api/deals sí responde 400).
  */
-export async function getDealsByStage() {
+export async function getDealsByStage(filters: { brandId?: string } = {}) {
   const session = await getServerSession();
   if (!session?.user) throw new Error("No autorizado");
 
@@ -692,11 +699,21 @@ export async function getDealsByStage() {
     session.user.plaza
   );
 
+  // Solo se vuelve a leer la visibilidad si se pidió marca: el tablero sin filtro hace lo de siempre.
+  const filtroMarca = filters.brandId
+    ? await loadBrandFilter(filters.brandId, await getVisibleBrands(session.user))
+    : ({ kind: "none" } as const);
+  const where: Prisma.DealWhereInput =
+    filtroMarca.kind === "brand"
+      ? { ...baseWhere, AND: [...asArray(baseWhere.AND), dealBrandFilterWhere(filtroMarca.filter)] }
+      : baseWhere;
+
   const deals = await prisma.deal.findMany({
-    where: baseWhere,
+    where,
     include: {
       contact: {
-        select: { id: true, firstName: true, lastName: true, temperature: true },
+        // brands: badge de marca en la tarjeta (entrega 3).
+        select: { id: true, firstName: true, lastName: true, temperature: true, brands: CONTACT_BRAND_SELECT },
       },
       assignedTo: {
         select: { id: true, name: true, avatarUrl: true },
@@ -724,6 +741,12 @@ export async function getDealsByStage() {
   }
 
   return grouped;
+}
+
+/** `where.AND` de Prisma acepta un objeto o un arreglo; para sumar condiciones sin pisar ninguna. */
+function asArray<T>(v: T | T[] | undefined): T[] {
+  if (v === undefined) return [];
+  return Array.isArray(v) ? v : [v];
 }
 
 /**

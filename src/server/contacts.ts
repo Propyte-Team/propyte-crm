@@ -17,6 +17,8 @@ import {
   canSeeContactBrand,
   contactBrandVisibilityWhere,
 } from "@/lib/brands/visibility";
+import { loadBrandFilter } from "@/lib/brands/view-context";
+import { contactBrandFilterWhere } from "@/lib/brands/filter";
 
 // Roles con acceso total a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -64,6 +66,8 @@ interface ContactFilters {
   type?: string;
   assignedTo?: string;
   plaza?: string;
+  /** Selector «Marca» (entrega 3, 2026-10-12): acota dentro de lo visible, nunca amplía. */
+  brandId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -142,8 +146,16 @@ export async function getContacts(filters: ContactFilters = {}) {
   // Todo lo que se suma al alcance va en AND: la marca (2026-10-12) y la búsqueda. Antes la
   // búsqueda se asignaba directo a where.AND; con dos condiciones, asignar pisaría la otra.
   const and: Prisma.ContactWhereInput[] = [];
-  const porMarca = contactBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
+  const visible = await getVisibleBrands(session.user);
+  const porMarca = contactBrandVisibilityWhere(session.user, visible);
   if (porMarca) and.push(porMarca);
+
+  // Selector «Marca» (entrega 3): un recorte MÁS dentro del mismo AND, nunca en lugar de la
+  // visibilidad. Una marca ajena o inexistente se ignora (se ve «Todas mis marcas»): esta función
+  // la llama la página con el `?marca=` de la URL, y mostrar lo que el usuario ya ve no filtra nada.
+  // La API de la lista sí responde 400 (ver /api/contacts).
+  const filtroMarca = await loadBrandFilter(filters.brandId, visible);
+  if (filtroMarca.kind === "brand") and.push(contactBrandFilterWhere(filtroMarca.filter));
 
   // Búsqueda por nombre, email o teléfono
   if (filters.search) {
@@ -179,6 +191,8 @@ export async function getContacts(filters: ContactFilters = {}) {
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
         _count: { select: { deals: true, activities: true } },
+        // Badge de marca en la lista (entrega 3).
+        brands: CONTACT_BRAND_SELECT,
       },
       orderBy: { createdAt: "desc" },
       skip,
