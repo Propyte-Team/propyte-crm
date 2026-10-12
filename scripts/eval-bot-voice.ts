@@ -3,7 +3,7 @@
  * Uso: npx tsx scripts/eval-bot-voice.ts [--preset=PROFESIONAL_CALIDO]
  * Sin --preset corre los 4.
  */
-import { buildSystemPrompt } from "../src/lib/bot/claude";
+import { buildSystemPrompt, thinkingFieldFor } from "../src/lib/bot/claude";
 import { lintBrandVoice } from "../src/lib/bot/brand-linter";
 import { DEFAULT_BOT_CONFIG } from "../src/lib/bot/config";
 import { TONE_PRESETS } from "../src/lib/bot/tone-presets";
@@ -38,7 +38,7 @@ async function callClaude(system: string, messages: Scenario["messages"], model:
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model, max_tokens: 300, system, thinking: { type: "disabled" }, messages }),
+    body: JSON.stringify({ model, max_tokens: 300, system, ...thinkingFieldFor(model), messages }),
   });
   const data = (await res.json()) as any;
   if (!res.ok) throw new Error(`API ${res.status}: ${JSON.stringify(data).slice(0, 300)}`);

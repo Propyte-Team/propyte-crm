@@ -32,9 +32,18 @@ Reglas inquebrantables (data-gate):
 - Responde en el idioma del cliente (ES/EN). Mensajes cortos, estilo WhatsApp (máx ~3 líneas).
 - Nunca digas que eres una IA salvo pregunta directa; entonces sé honesto.`;
 
-// Familia 4.6+ acepta thinking:{type:"disabled"}. Modelos previos (Haiku 4.5)
-// no lo usan: se omite (su default es sin thinking).
-export function thinkingFieldFor(model: string): { thinking?: { type: "disabled" } } {
+export type ThinkingField = { thinking?: { type: "disabled" | "between_tools" } };
+
+// Cómo apagar el "pensar antes de responder" según el modelo (el bot contesta WhatsApp:
+// no queremos latencia ni tokens de razonamiento):
+//  - Sonnet 5.5: `disabled` devuelve 400 invalid_request_error; la forma de apagarlo es
+//    `between_tools`. Omitir el campo NO lo apaga (corre thinking adaptativo).
+//    INCIDENTE 2026-10-12: al subir el default a 5.5 se seguía mandando `disabled` y el
+//    bot dejó de contestar (la llamada fallaba con 400 y nadie respondía al cliente).
+//  - Sonnet 5 / 4.6 y Opus 4.6+ aceptan `disabled`.
+//  - Haiku 4.5 y modelos previos no lo usan: se omite (su default es sin thinking).
+export function thinkingFieldFor(model: string): ThinkingField {
+  if (/sonnet-5-5/.test(model)) return { thinking: { type: "between_tools" } };
   const adaptiveFamily = /sonnet-5|sonnet-4-6|opus-4-(6|7|8)/.test(model);
   return adaptiveFamily ? { thinking: { type: "disabled" } } : {};
 }
