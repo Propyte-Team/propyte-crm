@@ -102,8 +102,8 @@ describe("buildClaudeRequestBody", () => {
     expect(body.thinking).toEqual({ type: "disabled" });
   });
 
-  it("Sonnet 5.5 lleva thinking:disabled y el modelo dado", () => {
-    expect(thinkingFieldFor("claude-sonnet-5-5")).toEqual({ thinking: { type: "disabled" } });
+  it("Sonnet 5.5 lleva thinking:between_tools — `disabled` da 400 en ese modelo (incidente 2026-10-12)", () => {
+    expect(thinkingFieldFor("claude-sonnet-5-5")).toEqual({ thinking: { type: "between_tools" } });
     const body = buildClaudeRequestBody({
       model: "claude-sonnet-5-5",
       system: "S",
@@ -111,7 +111,8 @@ describe("buildClaudeRequestBody", () => {
       maxTokens: 300,
     }) as any;
     expect(body.model).toBe("claude-sonnet-5-5");
-    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.thinking).toEqual({ type: "between_tools" });
+    expect(JSON.stringify(body)).not.toContain('"disabled"');
   });
 
   it("Haiku 4.5 NO manda thinking (no pertenece a la familia 4.6+)", () => {

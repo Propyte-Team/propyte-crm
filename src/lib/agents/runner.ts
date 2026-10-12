@@ -3,7 +3,7 @@
 // Guardarraíles: tools acotadas por allowedTools∩RBAC, brand linter en send_whatsapp,
 // máx pasos por limits.maxSteps (default 8), escalado registrado.
 import prisma from "@/lib/db";
-import { buildSystemPrompt } from "@/lib/bot/claude";
+import { buildSystemPrompt, thinkingFieldFor } from "@/lib/bot/claude";
 import { getBotConfig } from "@/lib/bot/config";
 import { resolveBotModel } from "@/lib/bot/model";
 import { toolsForAgent, type AgentTool } from "./tools";
@@ -120,6 +120,9 @@ export async function runAgent(
           // allowlist de server/bot-config.schema.ts: leer la variable en crudo aquí
           // permitía un modelo que la configuración del bot habría rechazado.
           model: resolveBotModel(),
+          // Sin esto, Sonnet 5.5 corre thinking adaptativo por defecto y el razonamiento
+          // se come el tope de tokens del paso.
+          ...thinkingFieldFor(resolveBotModel()),
           max_tokens: maxTokens,
           system,
           messages,
