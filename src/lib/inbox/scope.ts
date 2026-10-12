@@ -11,8 +11,19 @@
 //
 // Las dos funciones expresan la MISMA regla en dos formas (consulta SQL vs chequeo de un
 // registro ya leído). scope.test.ts las cruza en una tabla de paridad: si divergen, rompe.
+//
+// Marcas (entrega 2, 2026-10-12): encima del alcance por rol va el filtro de marca de
+// @/lib/brands/visibility, con AND. Aplica a TODOS los roles salvo ADMIN — incluida la vista
+// completa (DIRECTOR/GERENTE) y la cola sin asignar: un hilo libre de Yaxnáh no aparece a quien
+// no tiene Yaxnáh. `visible` es OBLIGATORIO a propósito: si fuera opcional, una ruta nueva que
+// lo olvide mostraría todas las marcas sin que nada truene.
 import type { Prisma } from "@prisma/client";
 import { hasInboxFullView } from "./roles";
+import {
+  canSeeContactBrand,
+  contactBrandVisibilityWhere,
+  type VisibleBrands,
+} from "@/lib/brands/visibility";
 
 export type InboxScopeUser = { id: string; role: string };
 
@@ -21,10 +32,21 @@ export type InboxScopeUser = { id: string; role: string };
 const ROL_CON_EQUIPO = "TEAM_LEADER";
 
 /**
- * Filtro de contactos visibles en el inbox para este usuario.
+ * Filtro de contactos visibles en el inbox para este usuario: alcance por rol AND marcas.
  * @returns `undefined` si el usuario ve TODO (no hay que filtrar nada).
  */
-export function inboxScopeWhere(user: InboxScopeUser): Prisma.ContactWhereInput | undefined {
+export function inboxScopeWhere(
+  user: InboxScopeUser,
+  visible: VisibleBrands
+): Prisma.ContactWhereInput | undefined {
+  const porRol = inboxRoleScopeWhere(user);
+  const porMarca = contactBrandVisibilityWhere(user, visible);
+  if (porRol && porMarca) return { AND: [porRol, porMarca] };
+  return porRol ?? porMarca;
+}
+
+/** Solo el alcance por rol (sin marcas). Privado: toda consulta del inbox pasa por inboxScopeWhere. */
+function inboxRoleScopeWhere(user: InboxScopeUser): Prisma.ContactWhereInput | undefined {
   if (hasInboxFullView(user.role)) return undefined;
 
   const alcance: Prisma.ContactWhereInput[] = [
@@ -47,8 +69,21 @@ export function inboxScopeWhere(user: InboxScopeUser): Prisma.ContactWhereInput 
  * (detalle del hilo, gate de envío, gate de asignación).
  * `assignedTo.teamLeaderId` solo hace falta para el TEAM_LEADER; si el llamador no lo
  * trae, un contacto de otro asesor queda fuera de alcance (falla cerrado, no abierto).
+ * Igual con `brands`: sin ellas, solo pasa lo asignado al propio usuario (ver visibility.ts).
  */
 export function canViewInboxContact(
+  contact: {
+    assignedToId: string | null;
+    assignedTo?: { teamLeaderId: string | null } | null;
+    brands?: ReadonlyArray<{ brandId: string }> | null;
+  },
+  user: InboxScopeUser,
+  visible: VisibleBrands
+): boolean {
+  return canViewInboxContactByRole(contact, user) && canSeeContactBrand(contact, user, visible);
+}
+
+function canViewInboxContactByRole(
   contact: { assignedToId: string | null; assignedTo?: { teamLeaderId: string | null } | null },
   user: InboxScopeUser
 ): boolean {

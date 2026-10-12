@@ -17,6 +17,12 @@ import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
 import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 import { computeDealCommissions } from "@/lib/commission-engine/deal-commissions";
 import { ordenValidado, type ColumnaOrdenable } from "@/lib/api/orden";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import {
+  CONTACT_BRAND_SELECT,
+  canSeeDealBrand,
+  dealBrandVisibilityWhere,
+} from "@/lib/brands/visibility";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -57,10 +63,28 @@ interface DealsResult {
 }
 
 /**
- * Construye la cláusula WHERE para filtrar deals según el rol del usuario.
- * Director = todos, Gerente = por plaza, TL = equipo, Asesor = propios.
+ * Construye la cláusula WHERE para filtrar deals según el rol del usuario y sus marcas.
+ * Director = todos, Gerente = por plaza, TL = equipo, Asesor = propios; y encima, solo los
+ * negocios propios o de contactos de una marca que el usuario ve (2026-10-12).
+ *
+ * La marca va en `AND` y no en claves sueltas: getDeals/getStagnantDeals esparcen este objeto
+ * y luego asignan stage, assignedToId, etc. Una clave suelta se podría pisar; `AND` no.
  */
 async function buildRBACFilter(
+  userId: string,
+  userRole: string,
+  userPlaza: string
+): Promise<Prisma.DealWhereInput> {
+  const porRol = await buildRoleFilter(userId, userRole, userPlaza);
+  const porMarca = dealBrandVisibilityWhere(
+    { id: userId },
+    await getVisibleBrands({ id: userId, role: userRole })
+  );
+  return porMarca ? { ...porRol, AND: [porMarca] } : porRol;
+}
+
+/** Solo el alcance por rol. Privado: todas las consultas pasan por buildRBACFilter. */
+async function buildRoleFilter(
   userId: string,
   userRole: string,
   userPlaza: string
@@ -233,6 +257,8 @@ export async function getDeal(id: string) {
           temperature: true, investmentProfile: true, propertyType: true,
           budgetMin: true, budgetMax: true, purchaseTimeline: true,
           leadSource: true, contactType: true,
+          // Las pide el filtro por marca (2026-10-12).
+          assignedToId: true, brands: CONTACT_BRAND_SELECT,
         },
       },
       assignedTo: {
@@ -268,6 +294,10 @@ export async function getDeal(id: string) {
   });
 
   if (!deal) return null;
+
+  // Marcas (2026-10-12): encima del rol. Fuera de marca = null → notFound(), igual que fuera
+  // de alcance; la página no distingue (un 403 confirmaría que el negocio existe).
+  if (!canSeeDealBrand(deal, session.user, await getVisibleBrands(session.user))) return null;
 
   // Verificar acceso RBAC
   const userRole = session.user.role;

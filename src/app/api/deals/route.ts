@@ -13,6 +13,8 @@ import { Prisma } from "@prisma/client";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 import { dueDateSchema } from "@/lib/due-date";
 import { ordenValidado } from "@/lib/api/orden";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { dealBrandVisibilityWhere } from "@/lib/brands/visibility";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -127,6 +129,12 @@ export async function GET(request: NextRequest) {
     if (dealType) where.dealType = dealType as any;
     if (advisorId) where.assignedToId = advisorId;
     if (developmentId) where.developmentId = developmentId;
+
+    // Marcas (2026-10-12): al FINAL y con AND, para que ningún filtro de arriba la pise. El
+    // negocio no tiene marca propia: se ve si es mío o si veo la marca de su contacto. Es la
+    // ruta del tablero del pipeline (pageSize=500).
+    const porMarca = dealBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
+    if (porMarca) where.AND = [porMarca];
 
     // Ejecutar consulta con relaciones
     const [deals, total] = await Promise.all([

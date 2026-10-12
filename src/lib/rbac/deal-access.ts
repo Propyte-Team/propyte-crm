@@ -18,6 +18,8 @@
 // decisión, no en la query, y así se puede probar rol por rol sin base de datos.
 
 import prisma from "@/lib/db";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { CONTACT_BRAND_SELECT, canSeeDealBrand } from "@/lib/brands/visibility";
 
 // Los mismos conjuntos que usa /api/deals/[id]. Se copian tal cual, sin "unificarlos" con
 // los de contactos o comisiones: no son iguales (comisiones mete a GERENTE en el nivel
@@ -79,6 +81,11 @@ export type AccesoNegocio =
  * Carga lo mínimo del negocio y decide. Devuelve `not_found` y `forbidden` por separado
  * para que quien llama pueda distinguirlos en su log; **hacia el cliente los dos se
  * responden 404**, porque un 403 confirma que el id existe.
+ *
+ * Marcas (2026-10-12): además del rol, el negocio tiene que ser visible por marca — suyo, o
+ * de un contacto de una marca que el usuario ve (src/lib/brands/visibility.ts). Va aquí y no
+ * en `puedeVerNegocio` para que esa función siga siendo pura y síncrona; todo lo que cuelga de
+ * un negocio (cotizaciones, documentos, shortlists, vínculos) pasa por esta función.
  */
 export async function verificarAccesoANegocio(
   dealId: string,
@@ -91,13 +98,17 @@ export async function verificarAccesoANegocio(
       id: true,
       assignedToId: true,
       assignedTo: { select: { plaza: true, teamLeaderId: true } },
+      contact: { select: { assignedToId: true, brands: CONTACT_BRAND_SELECT } },
     },
   });
   if (!deal) return { ok: false, reason: "not_found" };
 
   const permitido =
     modo === "ver" ? puedeVerNegocio(deal, user) : puedeEditarNegocio(deal, user);
-  return permitido ? { ok: true, deal } : { ok: false, reason: "forbidden" };
+  if (!permitido) return { ok: false, reason: "forbidden" };
+  if (!canSeeDealBrand(deal, user, await getVisibleBrands(user))) return { ok: false, reason: "forbidden" };
+
+  return { ok: true, deal };
 }
 
 /** ¿Este rol ve la empresa entera? Lo usan los objetos que no cuelgan de un negocio. */

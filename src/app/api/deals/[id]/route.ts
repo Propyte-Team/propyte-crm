@@ -15,6 +15,8 @@ import { dealCommissionFields } from "@/lib/commission-engine/for-deal";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
 import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { CONTACT_BRAND_SELECT, canSeeDealBrand } from "@/lib/brands/visibility";
 
 // Roles con acceso completo
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -68,6 +70,8 @@ async function verifyDealAccess(dealId: string, userId: string, userRole: string
           id: true, firstName: true, lastName: true, phone: true, email: true,
           temperature: true, investmentProfile: true, propertyType: true,
           budgetMin: true, purchaseTimeline: true, leadSource: true, contactType: true,
+          // Las pide el filtro por marca (2026-10-12).
+          assignedToId: true, brands: CONTACT_BRAND_SELECT,
         },
       },
       assignedTo: {
@@ -91,6 +95,11 @@ async function verifyDealAccess(dealId: string, userId: string, userRole: string
   });
 
   if (!deal) return null;
+
+  // Marcas (2026-10-12): encima del rol, para GET y PATCH. Fuera de marca = null → el mismo
+  // 404 "no encontrado o sin acceso" que fuera de alcance.
+  const visible = await getVisibleBrands({ id: userId, role: userRole });
+  if (!canSeeDealBrand(deal, { id: userId }, visible)) return null;
 
   // Director ve todo
   if (FULL_ACCESS_ROLES.includes(userRole)) return deal;

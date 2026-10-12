@@ -8,6 +8,11 @@ vi.mock("@/lib/db", () => ({
   default: { conversation: { findMany: (...a: unknown[]) => convFindMany(...a) } },
 }));
 
+// Marcas (2026-10-12): por defecto el usuario ve todas, así las pruebas de arriba siguen
+// midiendo solo el alcance por rol. Las de marca (al final) cambian el valor.
+const getVisibleBrands = vi.fn();
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
+
 import { GET } from "./route";
 
 function req(qs = "") {
@@ -15,8 +20,9 @@ function req(qs = "") {
 }
 
 beforeEach(() => {
-  [getServerSession, convFindMany].forEach((m) => m.mockReset());
+  [getServerSession, convFindMany, getVisibleBrands].forEach((m) => m.mockReset());
   convFindMany.mockResolvedValue([]);
+  getVisibleBrands.mockResolvedValue("ALL");
 });
 
 const ASESOR = { user: { id: "ase-1", role: "ASESOR_SR" } };
@@ -107,5 +113,90 @@ describe("GET /api/conversations — aislamiento", () => {
     await GET(req("?filter=bot"));
     expect(whereUsed().status).toBe("BOT");
     expect(whereUsed().contact).toBeUndefined();
+  });
+});
+
+// ── Marcas (entrega 2, 2026-10-12) ──────────────────────────────────────────────────────
+// Evaluador manual del where.contact sobre un contacto en memoria (AND/OR/assignedToId/marcas).
+// Lo que no reconoce LANZA, para que una forma nueva no se apruebe sin mirar.
+type Fila = { assignedToId: string | null; brands: { brandId: string }[] };
+function evalContacto(where: unknown, fila: Fila): boolean {
+  if (where === undefined) return true;
+  const w = where as Record<string, unknown>;
+  if (Array.isArray(w.AND)) return (w.AND as unknown[]).every((x) => evalContacto(x, fila));
+  if (Array.isArray(w.OR)) return (w.OR as unknown[]).some((x) => evalContacto(x, fila));
+  if ("assignedToId" in w) return fila.assignedToId === w.assignedToId;
+  if ("brands" in w) {
+    const b = w.brands as { some?: { brandId: { in: string[] } }; none?: object };
+    if (b.some) return fila.brands.some((x) => b.some!.brandId.in.includes(x.brandId));
+    if (b.none) return fila.brands.length === 0;
+  }
+  throw new Error(`término no soportado: ${JSON.stringify(where)}`);
+}
+
+const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
+const CON_YAXNAH = { brandIds: ["b-def", "b-yax"], includesDefault: true };
+const YAX_LIBRE: Fila = { assignedToId: null, brands: [{ brandId: "b-yax" }] };
+const PROPYTE_LIBRE: Fila = { assignedToId: null, brands: [] };
+
+describe("GET /api/conversations — marcas (AND sobre el alcance por rol)", () => {
+  it("pide las marcas del usuario de la sesión", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    await GET(req());
+    expect(getVisibleBrands).toHaveBeenCalledWith(ASESOR.user);
+  });
+
+  it("asesor SIN Yaxnáh, cola sin asignar: el hilo libre de Yaxnáh NO sale; el de Propyte sí", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    await GET(req("?filter=unassigned"));
+    const contact = whereUsed().contact;
+    expect(evalContacto(contact, YAX_LIBRE)).toBe(false);
+    expect(evalContacto(contact, PROPYTE_LIBRE)).toBe(true);
+  });
+
+  it("asesor CON Yaxnáh, cola sin asignar: el hilo libre de Yaxnáh sí sale", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    getVisibleBrands.mockResolvedValue(CON_YAXNAH);
+    await GET(req("?filter=unassigned"));
+    expect(evalContacto(whereUsed().contact, YAX_LIBRE)).toBe(true);
+  });
+
+  it("GERENTE (vista completa) también se recorta por marca: ya no es `undefined`", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    await GET(req());
+    const contact = whereUsed().contact;
+    expect(contact).toBeDefined();
+    expect(evalContacto(contact, YAX_LIBRE)).toBe(false);
+    expect(evalContacto(contact, { assignedToId: "otro", brands: [] })).toBe(true);
+  });
+
+  it("forma: el alcance por rol y la marca van en AND, y la búsqueda se suma sin pisarlos", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    await GET(req("?q=ana"));
+    const and = whereUsed().contact.AND;
+    expect(and).toHaveLength(2);
+    expect(and[0]).toEqual({
+      AND: [
+        { OR: [{ assignedToId: "ase-1" }, { assignedToId: null }] },
+        {
+          OR: [
+            { assignedToId: "ase-1" },
+            { brands: { some: { brandId: { in: ["b-def"] } } } },
+            { brands: { none: {} } },
+          ],
+        },
+      ],
+    });
+    expect(and[1].OR).toEqual(expect.arrayContaining([expect.objectContaining({ firstName: expect.anything() })]));
+  });
+
+  it("la marca nunca amplía: un asesor CON Yaxnáh no ve el hilo de Yaxnáh de otro asesor", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    getVisibleBrands.mockResolvedValue(CON_YAXNAH);
+    await GET(req());
+    expect(evalContacto(whereUsed().contact, { assignedToId: "otro", brands: [{ brandId: "b-yax" }] })).toBe(false);
   });
 });

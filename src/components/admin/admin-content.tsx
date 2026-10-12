@@ -50,6 +50,7 @@ import { BotAgentsTab, type AgentProfileRow } from "./bot-agents-tab";
 import { BrandsTab } from "./brands/brands-tab";
 import { CommentRulesTab } from "./comments/comment-rules-tab";
 import type { BotTonePreset } from "@prisma/client";
+import type { UserBrandAccessOverview } from "@/lib/brands/user-access";
 
 // Configuracion de colores para estados de usuario
 const USER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -177,6 +178,8 @@ interface AdminContentProps {
   agentProfiles: AgentProfileRow[];
   activePlaybookId: string | null;
   contactCustomFields: string[];
+  /** «Marcas que ve» por usuario (2026-10-12); null si no se pudo leer. */
+  brandAccess: UserBrandAccessOverview | null;
 }
 
 export function AdminContent({
@@ -194,6 +197,7 @@ export function AdminContent({
   agentProfiles,
   activePlaybookId,
   contactCustomFields,
+  brandAccess,
 }: AdminContentProps) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -273,12 +277,31 @@ export function AdminContent({
   }
 
   async function handleUpdateUser(id: string, data: Record<string, unknown>) {
+    // brandIds no es un campo de User (no hay columna en users: el Hub comparte la tabla). Va por
+    // su propia ruta, que solo acepta ADMIN — ver user-form-dialog.tsx (2026-10-12).
+    const { brandIds, ...userData } = data;
     startTransition(async () => {
       try {
-        const result = await updateUser(id, data as any);
+        const result = await updateUser(id, userData as any);
         if (esErrorDeNegocio(result)) {
           toast({ title: "Error", description: result.error, variant: "destructive" });
           return;
+        }
+        if (Array.isArray(brandIds)) {
+          const res = await fetch(`/api/admin/users/${id}/brands`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brandIds }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            toast({
+              title: "Usuario actualizado, pero sus marcas no se guardaron",
+              description: typeof body.error === "string" ? body.error : "Intenta de nuevo",
+              variant: "destructive",
+            });
+            return;
+          }
         }
         window.location.reload();
         toast({ title: "Usuario actualizado" });
@@ -976,6 +999,9 @@ export function AdminContent({
         onOpenChange={setUserDialogOpen}
         user={editingUser}
         teamLeaderUsers={teamLeaderUsers}
+        brandOptions={brandAccess?.brands ?? null}
+        explicitBrandIds={editingUser ? brandAccess?.explicitByUser[editingUser.id] ?? null : null}
+        canEditBrands={currentUserRole === "ADMIN"}
         onSubmit={async (data) => {
           if (editingUser) {
             await handleUpdateUser(editingUser.id, data);

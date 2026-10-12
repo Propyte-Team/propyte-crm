@@ -13,6 +13,7 @@ const brandFindMany = vi.fn();
 const brandCreate = vi.fn();
 const playbookFindFirst = vi.fn();
 const userFindFirst = vi.fn();
+const userFindMany = vi.fn();
 const auditCreate = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
@@ -21,7 +22,10 @@ vi.mock("@/lib/db", () => ({
       create: (...a: unknown[]) => brandCreate(...a),
     },
     botPlaybook: { findFirst: (...a: unknown[]) => playbookFindFirst(...a) },
-    user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
+    user: {
+      findFirst: (...a: unknown[]) => userFindFirst(...a),
+      findMany: (...a: unknown[]) => userFindMany(...a),
+    },
     auditLog: { create: (...a: unknown[]) => auditCreate(...a) },
   },
 }));
@@ -41,13 +45,15 @@ function req(body: unknown) {
 const VALID = { name: "Nativa Tulum", slug: "nativa-tulum" };
 
 beforeEach(() => {
-  for (const m of [brandFindMany, brandCreate, playbookFindFirst, userFindFirst, auditCreate]) m.mockReset();
+  for (const m of [brandFindMany, brandCreate, playbookFindFirst, userFindFirst, userFindMany, auditCreate]) m.mockReset();
   hasSession = true;
   session.user.role = "GERENTE";
   brandFindMany.mockResolvedValue([]);
   brandCreate.mockResolvedValue({ id: "b1", name: "Nativa Tulum", slug: "nativa-tulum", isDefault: false });
   playbookFindFirst.mockResolvedValue({ id: UUID_PB });
   userFindFirst.mockResolvedValue({ id: UUID_USER });
+  // Conteo de quién ve cada marca (2026-10-12): por defecto la tabla aún no existe → sin número.
+  userFindMany.mockRejectedValue(Object.assign(new Error("no table"), { code: "P2021" }));
   auditCreate.mockResolvedValue({});
 });
 
@@ -217,5 +223,34 @@ describe("POST /api/admin/brands", () => {
     expect(playbookFindFirst).not.toHaveBeenCalled();
     expect(userFindFirst).not.toHaveBeenCalled();
     expect(brandCreate.mock.calls[0][0].data).toMatchObject({ playbookId: null, marketingOwnerUserId: null });
+  });
+});
+
+// «Usuarios que la ven» en la tarjeta (2026-10-12, spec marcas-visibilidad).
+describe("GET /api/admin/brands — cuántos usuarios ven cada marca", () => {
+  const rows = [
+    { id: "b0", name: "Propyte", isDefault: true, connectors: [] },
+    { id: "b1", name: "Yaxnáh Caucel", isDefault: false, connectors: [] },
+  ];
+  const fila = (brandId: string, isDefault = false) => ({ brandId, brand: { isDefault, deletedAt: null } });
+
+  it("ADMIN cuenta en todas; sin filas solo en la predeterminada; solo usuarios activos", async () => {
+    brandFindMany.mockResolvedValue(rows);
+    userFindMany.mockResolvedValue([
+      { role: "ADMIN", brandAccess: [] },
+      { role: "ASESOR", brandAccess: [] },
+      { role: "GERENTE", brandAccess: [fila("b1")] },
+    ]);
+    const res = await GET();
+    const data = (await res.json()).data;
+    expect(data.map((b: { visibleUserCount: number }) => b.visibleUserCount)).toEqual([2, 2]);
+    expect(userFindMany.mock.calls[0][0].where).toEqual({ isActive: true, deletedAt: null });
+  });
+
+  it("si el conteo falla, la lista sale igual y sin el número", async () => {
+    brandFindMany.mockResolvedValue(rows);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toEqual(rows);
   });
 });

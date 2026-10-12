@@ -11,6 +11,12 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import {
+  CONTACT_BRAND_SELECT,
+  canSeeContactBrand,
+  contactBrandVisibilityWhere,
+} from "@/lib/brands/visibility";
 
 // Roles con acceso total a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -133,19 +139,24 @@ export async function getContacts(filters: ContactFilters = {}) {
   const rbacFilter = await buildRbacFilter(session as any);
   Object.assign(where, rbacFilter);
 
+  // Todo lo que se suma al alcance va en AND: la marca (2026-10-12) y la búsqueda. Antes la
+  // búsqueda se asignaba directo a where.AND; con dos condiciones, asignar pisaría la otra.
+  const and: Prisma.ContactWhereInput[] = [];
+  const porMarca = contactBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
+  if (porMarca) and.push(porMarca);
+
   // Búsqueda por nombre, email o teléfono
   if (filters.search) {
-    where.AND = [
-      {
-        OR: [
-          { firstName: { contains: filters.search, mode: "insensitive" } },
-          { lastName: { contains: filters.search, mode: "insensitive" } },
-          { email: { contains: filters.search, mode: "insensitive" } },
-          { phone: { contains: filters.search } },
-        ],
-      },
-    ];
+    and.push({
+      OR: [
+        { firstName: { contains: filters.search, mode: "insensitive" } },
+        { lastName: { contains: filters.search, mode: "insensitive" } },
+        { email: { contains: filters.search, mode: "insensitive" } },
+        { phone: { contains: filters.search } },
+      ],
+    });
   }
+  if (and.length > 0) where.AND = and;
 
   // Filtros específicos
   if (filters.source) {
@@ -223,6 +234,8 @@ export async function getContact(id: string) {
         },
         orderBy: { createdAt: "desc" },
       },
+      // Marcas del contacto: las pide el filtro por marca (2026-10-12).
+      brands: CONTACT_BRAND_SELECT,
     },
   });
 
@@ -244,6 +257,12 @@ export async function getContact(id: string) {
         throw new Error("No tienes acceso a este contacto");
       }
     }
+  }
+
+  // Marcas (2026-10-12): encima del alcance por rol. Un contacto de una marca que el usuario
+  // no ve responde igual que uno inexistente (la página lo convierte en 404).
+  if (!canSeeContactBrand(contact, session.user, await getVisibleBrands(session.user))) {
+    throw new Error("Contacto no encontrado");
   }
 
   return contact;
@@ -269,7 +288,13 @@ type ContactAccessResult =
  * (deals/activities/walkIns) — pensado para endpoints ligeros (cronología, status-periods)
  * que solo necesitan confirmar acceso + un puñado de campos escalares.
  * Replica exactamente el mismo gate que usa getContact(): mismo buildRbacFilter() + misma
- * comparación de assignedToId (string exacto o `in` de un array de ids permitidos).
+ * comparación de assignedToId (string exacto o `in` de un array de ids permitidos) + el
+ * filtro por marca (2026-10-12).
+ *
+ * Fuera de marca responde "not_found", no "forbidden": antes de las marcas todo el equipo
+ * compartía la misma base y saber que un contacto existe no revelaba nada; ahora la existencia
+ * de un lead de otra marca ES el dato que se esconde, así que no debe distinguirse de un id que
+ * no existe (mismo criterio que el 404 del inbox y de negocios).
  */
 export async function getContactAccessInfo(
   id: string,
@@ -283,6 +308,7 @@ export async function getContactAccessInfo(
       createdAt: true,
       leadSource: true,
       contactStatus: true,
+      brands: CONTACT_BRAND_SELECT,
     },
   });
   if (!contact) return { ok: false, reason: "not_found" };
@@ -301,7 +327,21 @@ export async function getContactAccessInfo(
     }
   }
 
-  return { ok: true, contact };
+  if (!canSeeContactBrand(contact, session.user, await getVisibleBrands(session.user))) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  // Las marcas solo servían para decidir; quien llama recibe los mismos escalares de antes.
+  return {
+    ok: true,
+    contact: {
+      id: contact.id,
+      assignedToId: contact.assignedToId,
+      createdAt: contact.createdAt,
+      leadSource: contact.leadSource,
+      contactStatus: contact.contactStatus,
+    },
+  };
 }
 
 /**

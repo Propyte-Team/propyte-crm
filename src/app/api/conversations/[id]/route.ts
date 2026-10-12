@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { canViewInboxContact } from "@/lib/inbox/scope";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { CONTACT_BRAND_SELECT } from "@/lib/brands/visibility";
 import { connectorBrandLabel } from "@/lib/inbox/connector-label";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
           custom: true, assignedToId: true,
           // teamLeaderId lo pide el alcance del TEAM_LEADER; se quita del JSON más abajo.
           assignedTo: { select: { id: true, name: true, teamLeaderId: true } },
+          // Marcas del contacto: las pide el filtro por marca (2026-10-12); no viajan al cliente.
+          brands: CONTACT_BRAND_SELECT,
           deals: {
             where: { deletedAt: null, stage: { notIn: ["WON", "LOST"] } },
             select: { id: true, stage: true, estimatedValue: true, dealType: true },
@@ -49,7 +53,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   // tampoco le muestra este hilo a quien está fuera de su alcance, así que un 403
   // confirmaría por URL directa que el hilo existe a alguien que no debe saberlo — la
   // misma respuesta da hoy messages/route.ts (simetría real desde el 404 unificado).
-  if (!canViewInboxContact(conversation.contact, session.user)) {
+  // Marcas (2026-10-12): un hilo de una marca que el usuario no ve es igual de inexistente.
+  if (!canViewInboxContact(conversation.contact, session.user, await getVisibleBrands(session.user))) {
     return NextResponse.json({ error: "No existe" }, { status: 404 });
   }
 
@@ -81,6 +86,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     contact: {
       ...contact,
       custom: undefined,
+      brands: undefined,
       // teamLeaderId es dato interno de jerarquía (solo alimenta el alcance del TL):
       // se reconstruye assignedTo con lo que la UI sí usa, igual que se corta custom.
       assignedTo: contact.assignedTo ? { id: contact.assignedTo.id, name: contact.assignedTo.name } : null,

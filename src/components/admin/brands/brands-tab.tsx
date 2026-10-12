@@ -5,6 +5,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Plus, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -112,6 +113,18 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
               )}
             </CardHeader>
             <CardContent className="space-y-1.5">
+              {/* Visibilidad por usuario (entrega 2, 2026-10-12): cuántos la ven. Se cambia por
+                  usuario en Usuarios & Roles → «Marcas que ve». */}
+              {typeof b.visibleUserCount === "number" && (
+                <p className="text-[12px] text-muted-foreground">
+                  {b.visibleUserCount === 1 ? "1 usuario la ve" : `${b.visibleUserCount} usuarios la ven`}{" "}
+                  (se cambia en{" "}
+                  <Link href="/admin?tab=users" className="underline">
+                    Usuarios &amp; Roles
+                  </Link>
+                  )
+                </p>
+              )}
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cuentas asignadas</p>
               {b.isDefault && (
                 <p className="text-[12px] text-muted-foreground">Incluye todas las cuentas que no tienen marca asignada.</p>

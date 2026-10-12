@@ -15,6 +15,11 @@ vi.mock("@/lib/db", () => ({ default: {
   message: { create: vi.fn(async ({ data }: { data: unknown }) => data) },
 } }));
 
+// Marcas (2026-10-12): por defecto el usuario ve todas, así las pruebas de arriba siguen
+// midiendo solo el alcance por rol. Las de marca (al final) cambian el valor.
+const getVisibleBrands = vi.fn();
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
+
 import { POST } from "./route";
 
 // Fixture base de conversación con contact.assignedToId=null (hilo libre) por default.
@@ -49,6 +54,7 @@ beforeEach(() => {
   findUnique.mockReset();
   update.mockReset();
   assignContact.mockReset().mockResolvedValue({ ok: true, assignedTo: null });
+  getVisibleBrands.mockReset().mockResolvedValue("ALL");
 });
 
 it("pasa connectorId de la conversación a sendChannelMessage", async () => {
@@ -255,5 +261,39 @@ describe("gate de asignación + auto-claim", () => {
     } finally {
       errSpy.mockRestore();
     }
+  });
+});
+
+describe("marcas (2026-10-12)", () => {
+  const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
+  const yaxLibre = () => convWith({ contact: { brands: [{ brandId: "b-yax" }] } as never });
+  const post = (body: unknown) =>
+    POST(new Request("https://x", { method: "POST", body: JSON.stringify(body) }) as never, {
+      params: Promise.resolve({ id: "conv1" }),
+    });
+
+  it("asesor sin Yaxnáh no escribe en un hilo libre de Yaxnáh → 404, sin envío ni auto-claim", async () => {
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    findUnique.mockResolvedValue(yaxLibre());
+    const res = await post({ body: "hola" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "No existe" });
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(assignContact).not.toHaveBeenCalled();
+    expect(findUnique.mock.calls[0][0].include.contact.select.brands).toEqual({ select: { brandId: true } });
+  });
+
+  it("ni siquiera una nota interna entra a un hilo de una marca que no ve → 404", async () => {
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    findUnique.mockResolvedValue(yaxLibre());
+    const res = await post({ body: "nota", internalNote: true });
+    expect(res.status).toBe(404);
+  });
+
+  it("la nota interna sigue sin gate por ROL cuando la marca sí se ve (regla previa intacta)", async () => {
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u2", brands: [] } as never }));
+    const res = await post({ body: "nota", internalNote: true });
+    expect(res.status).toBe(201);
   });
 });

@@ -20,6 +20,11 @@ vi.mock("@/lib/storage/chat-media", () => ({
   isStoragePath: (v: string) => !/^https?:\/\//i.test(v),
 }));
 
+// Marcas (2026-10-12): por defecto el usuario ve todas, así las pruebas de arriba siguen
+// midiendo solo el alcance por rol. Las de marca (al final) cambian el valor.
+const getVisibleBrands = vi.fn();
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
+
 import { GET } from "./route";
 
 function req(qs = "") {
@@ -72,8 +77,9 @@ function convWith(
 }
 
 beforeEach(() => {
-  [getServerSession, findUnique, update].forEach((m) => m.mockReset());
+  [getServerSession, findUnique, update, getVisibleBrands].forEach((m) => m.mockReset());
   update.mockResolvedValue({});
+  getVisibleBrands.mockResolvedValue("ALL");
 });
 
 const ASESOR_SR = { user: { id: "u3", role: "ASESOR_SR" } };
@@ -187,5 +193,53 @@ describe("GET /api/conversations/[id] — alcance (espejo de la lista)", () => {
     expect(resPermiso.status).toBe(404);
     expect(resPermiso.status).toBe(resInexistente.status);
     expect(bodyPermiso).toEqual(bodyInexistente);
+  });
+});
+
+describe("GET /api/conversations/[id] — marcas (2026-10-12)", () => {
+  const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
+  const CON_YAXNAH = { brandIds: ["b-def", "b-yax"], includesDefault: true };
+  const yaxLibre = () => convWith({ contact: { brands: [{ brandId: "b-yax" }] } as never });
+
+  it("el select trae las marcas del contacto (sin ellas el chequeo fallaría cerrado)", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    findUnique.mockResolvedValue(convWith());
+    await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
+    expect(findUnique.mock.calls[0][0].include.contact.select.brands).toEqual({ select: { brandId: true } });
+  });
+
+  it("GERENTE sin Yaxnáh abre un hilo libre de Yaxnáh → 404 idéntico al de inexistente, y NO se marca leído", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    findUnique.mockResolvedValue(yaxLibre());
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "No existe" });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("asesor sin Yaxnáh en la cola libre de Yaxnáh → 404 (el rol lo dejaría pasar; la marca no)", async () => {
+    getServerSession.mockResolvedValue(ASESOR_SR);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    findUnique.mockResolvedValue(yaxLibre());
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
+    expect(res.status).toBe(404);
+  });
+
+  it("con Yaxnáh prendida → 200, y las marcas no viajan en el JSON", async () => {
+    getServerSession.mockResolvedValue(ASESOR_SR);
+    getVisibleBrands.mockResolvedValue(CON_YAXNAH);
+    findUnique.mockResolvedValue(yaxLibre());
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.contact.brands).toBeUndefined();
+  });
+
+  it("asignado a mí aunque sea de Yaxnáh → 200", async () => {
+    getServerSession.mockResolvedValue(ASESOR_SR);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    findUnique.mockResolvedValue(convWith({ contact: { assignedToId: "u3", brands: [{ brandId: "b-yax" }] } as never }));
+    const res = await GET(req(), { params: Promise.resolve({ id: "conv1" }) });
+    expect(res.status).toBe(200);
   });
 });

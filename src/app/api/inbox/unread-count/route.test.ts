@@ -8,11 +8,17 @@ vi.mock("@/lib/db", () => ({
   default: { conversation: { count: (...a: unknown[]) => convCount(...a) } },
 }));
 
+// Marcas (2026-10-12): por defecto el usuario ve todas, así las pruebas de arriba siguen
+// midiendo solo el alcance por rol. Las de marca (al final) cambian el valor.
+const getVisibleBrands = vi.fn();
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
+
 import { GET } from "./route";
 
 beforeEach(() => {
-  [getServerSession, convCount].forEach((m) => m.mockReset());
+  [getServerSession, convCount, getVisibleBrands].forEach((m) => m.mockReset());
   convCount.mockResolvedValue(0);
+  getVisibleBrands.mockResolvedValue("ALL");
 });
 
 const ASESOR = { user: { id: "ase-1", role: "ASESOR_SR" } };
@@ -58,5 +64,39 @@ describe("GET /api/inbox/unread-count", () => {
     getServerSession.mockResolvedValue(GERENTE);
     await GET();
     expect(whereUsed().contact).toBeUndefined();
+  });
+});
+
+describe("GET /api/inbox/unread-count — marcas (2026-10-12)", () => {
+  const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
+  const MARCA = {
+    OR: [
+      { assignedToId: "boss-1" },
+      { brands: { some: { brandId: { in: ["b-def"] } } } },
+      { brands: { none: {} } },
+    ],
+  };
+
+  it("gerente sin Yaxnáh: el badge no cuenta hilos de marcas que no ve", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    await GET();
+    expect(whereUsed().contact).toEqual({ AND: [MARCA] });
+  });
+
+  it("asesor: alcance por rol AND marca, en el mismo término", async () => {
+    getServerSession.mockResolvedValue(ASESOR);
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    await GET();
+    expect(whereUsed().contact).toEqual({
+      AND: [
+        {
+          AND: [
+            { OR: [{ assignedToId: "ase-1" }, { assignedToId: null }] },
+            { OR: [{ assignedToId: "ase-1" }, MARCA.OR[1], MARCA.OR[2]] },
+          ],
+        },
+      ],
+    });
   });
 });
