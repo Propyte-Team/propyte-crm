@@ -19,6 +19,7 @@ import { mediaTypeFromWaType } from "@/lib/messaging/media";
 import { resolveConnectorByPhoneNumberId, getWhatsAppCredentials } from "@/lib/whatsapp/accounts";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 import { runAfterResponse } from "@/lib/runtime/after-response";
+import { recordBotSilence } from "@/lib/messaging/send-failure";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -193,6 +194,21 @@ function extractBody(msg: MetaMessage): string {
   return `[${msg.type}]`;
 }
 
+/**
+ * Motivo de la nota cuando el número que recibió el mensaje no es de ninguna cuenta ni el
+ * general (2026-10-12). El env solo se COMPARA, nunca se muestra: lo único que se dice de él
+ * es si está vacío, que es justo el caso en el que todo número parece desconocido.
+ */
+function unknownNumberReason(phoneNumberId: string, displayNumber: string | null, lookupFailed: boolean): string {
+  const numero = `${displayNumber ?? phoneNumberId} (id ${phoneNumberId})`;
+  const base = lookupFailed
+    ? `este WhatsApp llegó al número ${numero}; no se pudo consultar en Conexiones de qué cuenta es (falló la lectura) y no es el número general del CRM.`
+    : `este WhatsApp llegó al número ${numero}, que no está dado de alta en Conexiones ni es el número general del CRM.`;
+  return process.env.META_WA_PHONE_NUMBER_ID?.trim()
+    ? base
+    : `${base} Ojo: el servidor no tiene configurado el número general (META_WA_PHONE_NUMBER_ID está vacía).`;
+}
+
 const STATUS_MAP: Record<string, "SENT" | "DELIVERED" | "READ" | "FAILED"> = {
   sent: "SENT",
   delivered: "DELIVERED",
@@ -256,6 +272,7 @@ export async function POST(req: NextRequest) {
       let connectorId: string | null = null;
       let connectorToken: string | null = null;
       let unknownNumber = false;
+      let lookupFailed = false;
       const phoneNumberId = value.metadata?.phone_number_id ?? null;
       if (phoneNumberId) {
         try {
@@ -263,6 +280,7 @@ export async function POST(req: NextRequest) {
           connectorId = conn?.id ?? null;
           connectorToken = conn ? getWhatsAppCredentials(conn)?.accessToken ?? null : null;
         } catch (err) {
+          lookupFailed = true;
           console.error("[whatsapp-meta] resolución de conector falló:", err);
         }
         // Número que llegó a la app pero no está dado de alta (2026-10-09, spec §4.3): se
@@ -333,6 +351,17 @@ export async function POST(req: NextRequest) {
           if (saved?.contactId) {
             if (!unknownNumber) {
               botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });
+            } else if (phoneNumberId) {
+              // 2026-10-12: este silencio solo dejaba un console.warn, y sin acceso a los
+              // registros del servidor nadie podía saber por qué el agente no contestó. Ahora
+              // queda la nota en la conversación del mensaje. recordBotSilence nunca lanza
+              // (la ingesta no se negocia) y deduplica: una nota por conversación cada 24 h.
+              await recordBotSilence({
+                contactId: saved.contactId,
+                conversationId: saved.conversationId ?? null,
+                channel: "WHATSAPP",
+                reason: unknownNumberReason(phoneNumberId, value.metadata?.display_phone_number ?? null, lookupFailed),
+              });
             }
             await guardarBsuid(saved.contactId, bsuid);
           }

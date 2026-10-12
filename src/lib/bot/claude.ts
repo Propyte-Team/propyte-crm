@@ -63,14 +63,44 @@ export function buildClaudeRequestBody(opts: {
   };
 }
 
-export async function askClaude(opts: {
-  system?: string;
-  messages: BotMessage[];
-  maxTokens?: number;
-  model?: string;
-}): Promise<string | null> {
+/**
+ * Por qué askClaude no trajo texto (2026-10-12). Antes `null` significaba a la vez «no hay
+ * llave» y «la API contestó vacío», y un error de la API solo llegaba al console.error de
+ * quien llamó: sin acceso a los registros del servidor, el bot callado no decía por qué.
+ * `detalle` ya viene recortado y sin la llave: es seguro ponerlo en una nota interna.
+ */
+export type ClaudeSinRespuesta =
+  | { motivo: "sin_api_key" }
+  | { motivo: "respuesta_vacia"; stopReason: string | null }
+  /** `status` null = la llamada no se completó (tiempo agotado o fallo de red). */
+  | { motivo: "error_api"; status: number | null; detalle: string };
+
+/** Lo llena askClaude cuando no devuelve texto (o justo antes de lanzar). */
+export interface DiagnosticoClaude {
+  sinRespuesta?: ClaudeSinRespuesta;
+}
+
+/**
+ * `diagnostico` es un segundo argumento opcional y no una función nueva: el contrato de
+ * askClaude (texto o null; lanza ante un error de la API) no cambia para ninguno de sus
+ * llamadores, y los dobles de prueba que la sustituyen entera siguen sirviendo. Quien quiere
+ * saber por qué no hubo texto lo pasa y lo lee después.
+ */
+export async function askClaude(
+  opts: {
+    system?: string;
+    messages: BotMessage[];
+    maxTokens?: number;
+    model?: string;
+  },
+  diagnostico?: DiagnosticoClaude,
+): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) return null; // sin llave → quien llama decide el fallback
+  if (!apiKey) {
+    // sin llave → quien llama decide el fallback
+    if (diagnostico) diagnostico.sinRespuesta = { motivo: "sin_api_key" };
+    return null;
+  }
 
   const model = resolveBotModel(opts.model);
   const system = opts.system ?? SAGE_SYSTEM_PROMPT;
@@ -81,15 +111,67 @@ export async function askClaude(opts: {
     maxTokens: opts.maxTokens ?? 400,
   });
 
-  const res = await pedirAClaude(body, apiKey);
+  let res: Response;
+  try {
+    res = await pedirAClaude(body, apiKey);
+  } catch (err) {
+    if (diagnostico) {
+      diagnostico.sinRespuesta = { motivo: "error_api", status: null, detalle: describirFalloDeLlamada(err, apiKey) };
+    }
+    throw err;
+  }
 
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
+    const detail = ocultarLlave(await res.text().catch(() => ""), apiKey);
+    if (diagnostico) {
+      diagnostico.sinRespuesta = { motivo: "error_api", status: res.status, detalle: resumirErrorDeApi(detail) };
+    }
     throw new Error(`Claude API ${res.status}: ${detail.slice(0, 300)}`);
   }
-  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-  const text = data.content?.find((b) => b.type === "text")?.text;
-  return text?.trim() || null;
+  let data: { content?: Array<{ type: string; text?: string }>; stop_reason?: string | null };
+  try {
+    data = (await res.json()) as typeof data;
+  } catch (err) {
+    if (diagnostico) {
+      diagnostico.sinRespuesta = { motivo: "error_api", status: res.status, detalle: "la respuesta de la API no es JSON válido" };
+    }
+    throw err;
+  }
+  const text = data.content?.find((b) => b.type === "text")?.text?.trim();
+  if (!text) {
+    if (diagnostico) diagnostico.sinRespuesta = { motivo: "respuesta_vacia", stopReason: data.stop_reason ?? null };
+    return null;
+  }
+  return text;
+}
+
+/** La llave nunca sale de aquí: ni en el error que se lanza ni en el diagnóstico. */
+function ocultarLlave(text: string, apiKey: string): string {
+  return text.split(apiKey).join("[oculto]").replace(/sk-ant-[\w-]+/g, "[oculto]");
+}
+
+/**
+ * `tipo: mensaje` del cuerpo de error de la API ({"type":"error","error":{…},"request_id":…}).
+ * Sin el request_id a propósito: cambia en cada llamada, y la nota se deduplica por texto.
+ */
+function resumirErrorDeApi(detail: string): string {
+  try {
+    const parsed = JSON.parse(detail) as { error?: { type?: unknown; message?: unknown } } | null;
+    const tipo = typeof parsed?.error?.type === "string" ? parsed.error.type : null;
+    const mensaje = typeof parsed?.error?.message === "string" ? parsed.error.message : null;
+    if (tipo || mensaje) return [tipo, mensaje].filter(Boolean).join(": ").slice(0, 300);
+  } catch {
+    // no era JSON: va el texto tal cual, recortado
+  }
+  return detail.trim().slice(0, 300) || "sin detalle";
+}
+
+function describirFalloDeLlamada(err: unknown, apiKey: string): string {
+  if (err instanceof Error && err.name === "AbortError") {
+    return `sin respuesta en ${TIMEOUT_MS / 1000} s, tampoco en el reintento (tiempo agotado)`;
+  }
+  const text = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  return ocultarLlave(text, apiKey).slice(0, 300);
 }
 
 // ─────────────────── Timeout y reintento (auditoría 2026-09-10) ───────────────────

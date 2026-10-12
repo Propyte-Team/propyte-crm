@@ -10,8 +10,10 @@ vi.mock("@/lib/messaging/dispatcher", () => ({
 // El texto de la nota y su escritura se prueban en lib/messaging/send-failure.test.ts;
 // aquí solo importa CUÁNDO se llama y que el error se siga propagando.
 const recordBotSendFailure = vi.fn();
+const recordBotSilence = vi.fn();
 vi.mock("@/lib/messaging/send-failure", () => ({
   recordBotSendFailure: (...a: unknown[]) => recordBotSendFailure(...a),
+  recordBotSilence: (...a: unknown[]) => recordBotSilence(...a),
 }));
 
 const contactFindUnique = vi.fn();
@@ -131,11 +133,21 @@ describe("botRespond — envío rechazado por Meta", () => {
     }
   );
 
-  it("WhatsApp queda como estaba: sin nota, el error se propaga igual", async () => {
+  // 2026-10-12: antes WhatsApp quedaba fuera (sin nota). Era justo el canal que se quedó
+  // callado sin rastro, así que ahora también deja la nota; el error se propaga igual.
+  it("WhatsApp también deja la nota y relanza el mismo error", async () => {
     const err = new Error("Meta Cloud API 131047");
     sendChannelMessage.mockRejectedValue(err);
     await expect(botRespond("c1", { channel: "WHATSAPP" })).rejects.toBe(err);
-    expect(recordBotSendFailure).not.toHaveBeenCalled();
+    expect(recordBotSendFailure).toHaveBeenCalledWith({
+      contactId: "c1",
+      conversationId: "conv1",
+      channel: "WHATSAPP",
+      err,
+    });
+    expect(convUpdate).not.toHaveBeenCalled();
+    // Un envío fallido no es además un «silencio»: una sola nota, la del rechazo.
+    expect(recordBotSilence).not.toHaveBeenCalled();
   });
 
   it("si el envío sale, no hay nota", async () => {

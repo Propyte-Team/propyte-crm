@@ -12,6 +12,15 @@ vi.mock("@/lib/messaging/dispatcher", () => ({
   sendChannelMessage: (...a: unknown[]) => sendChannelMessage(...a),
 }));
 
+// 2026-10-12: los silencios por marca/canal/cuenta dejan una nota interna. Su texto y su
+// escritura se prueban en bot-respond.silence.test.ts y send-failure.test.ts; aquí solo
+// importa que se deje (o no) en los casos de este archivo.
+const recordBotSilence = vi.fn();
+vi.mock("@/lib/messaging/send-failure", () => ({
+  recordBotSendFailure: vi.fn(),
+  recordBotSilence: (...a: unknown[]) => recordBotSilence(...a),
+}));
+
 const contactFindUnique = vi.fn();
 const convFindFirst = vi.fn();
 const convFindUnique = vi.fn();
@@ -212,6 +221,9 @@ describe("botRespond — cuenta con marca", () => {
 
     expect(result).toBe(false);
     expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(recordBotSilence).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conv-y", reason: expect.stringContaining("configuración general") }),
+    );
   });
 
   it("6. enabledChannels inválido en la marca → hereda el global, sin lanzar", async () => {
@@ -232,6 +244,7 @@ describe("botRespond — cuenta con marca", () => {
     const result = await botRespond("c1", { connectorId: "c-yax" });
 
     expect(result).toBe(false);
+    expect(recordBotSilence).not.toHaveBeenCalled(); // ya escala: no es un silencio sin rastro
     expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(convUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "conv-y" }, data: expect.objectContaining({ status: "HUMAN" }) }),
@@ -252,6 +265,9 @@ describe("botRespond — cuenta con marca", () => {
     expect(askClaude).not.toHaveBeenCalled();
     expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(convUpdate).not.toHaveBeenCalled();
+    expect(recordBotSilence).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conv-y", reason: expect.stringContaining("marca b-x") }),
+    );
   });
 
   it("9. [ESCALAR_MARKETING] con marca → el hilo va al responsable de marketing de la marca si está activo", async () => {
@@ -347,6 +363,9 @@ describe("botRespond — la conversación y la marca salen de la misma cuenta", 
     expect(askClaude).not.toHaveBeenCalled();
     expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(convUpdate).not.toHaveBeenCalled();
+    expect(recordBotSilence).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conv-p", reason: expect.stringContaining("la cuenta de otra") }),
+    );
   });
 
   it("12b. y al revés: cuenta predeterminada pero el hilo encontrado es de una marca → no contesta", async () => {
