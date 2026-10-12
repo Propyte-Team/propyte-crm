@@ -18,6 +18,23 @@ vi.mock("@/lib/comments/handle-comment", () => ({
   handleComment: (...a: unknown[]) => handleComment(...a),
 }));
 
+// Acuse rápido (2026-10-12): el bot y los comentarios ya no corren antes del 200, se
+// agendan con runAfterResponse (`after()` de Next). Con el `after` real el callback corre
+// al cerrarse la respuesta y la prueba no podría esperarlo; este doble lo guarda para que
+// cada prueba decida cuándo correrlo y pueda comprobar que la respuesta NO lo esperó.
+const agendados: Array<() => unknown> = [];
+const runAfterResponse = vi.fn((fn: () => unknown) => {
+  agendados.push(fn);
+});
+vi.mock("@/lib/runtime/after-response", () => ({
+  runAfterResponse: (fn: () => unknown) => runAfterResponse(fn),
+}));
+
+/** Corre lo que el POST dejó para después del 200, como lo haría `after()`. */
+async function enSegundoPlano() {
+  while (agendados.length > 0) await agendados.shift()!();
+}
+
 import { GET, POST } from "./route";
 
 beforeEach(() => {
@@ -29,6 +46,8 @@ beforeEach(() => {
   botRespond.mockReset();
   handleComment.mockReset();
   handleComment.mockResolvedValue({ status: "procesado", logId: "log-1" });
+  agendados.length = 0;
+  runAfterResponse.mockClear();
   process.env.META_DM_VERIFY_TOKEN = "verifyme";
   process.env.META_DM_APP_SECRET = APP_SECRET;
 });
@@ -126,6 +145,9 @@ describe("meta-dm webhook", () => {
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
     expect(handleInboundMessage).toHaveBeenCalledTimes(2);
+    // El coalescing sigue igual, solo que la respuesta ya salió: se agenda UNA tarea.
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+    await enSegundoPlano();
     expect(botRespond).toHaveBeenCalledTimes(1);
     expect(botRespond).toHaveBeenCalledWith("c9", { channel: "MESSENGER", connectorId: "conn_ms" });
   });
@@ -145,6 +167,9 @@ describe("meta-dm webhook", () => {
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
     expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    // Ni siquiera se agenda: no hay a quién contestar.
+    expect(runAfterResponse).not.toHaveBeenCalled();
+    await enSegundoPlano();
     expect(botRespond).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
     warn.mockRestore();
@@ -160,6 +185,9 @@ describe("meta-dm webhook", () => {
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
     expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    // Ni siquiera se agenda: no hay a quién contestar.
+    expect(runAfterResponse).not.toHaveBeenCalled();
+    await enSegundoPlano();
     expect(botRespond).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("[meta-dm] sin conector activo"));
     warn.mockRestore();
@@ -177,6 +205,7 @@ describe("meta-dm webhook", () => {
     ] }] });
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
+    await enSegundoPlano();
     expect(botRespond).toHaveBeenCalledTimes(1);
     expect(botRespond).toHaveBeenCalledWith("c9", { channel: "INSTAGRAM", connectorId: "conn_ig" });
   });
@@ -192,6 +221,7 @@ describe("meta-dm webhook", () => {
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
     expect(resolveByPage).not.toHaveBeenCalled();
+    await enSegundoPlano();
     expect(botRespond).toHaveBeenCalledTimes(1);
     expect(botRespond.mock.calls[0][1]).toEqual({ channel: "MESSENGER", connectorId: null });
     expect(botRespond.mock.calls[0][1].connectorId).toBeNull();
@@ -206,6 +236,8 @@ describe("meta-dm webhook", () => {
       message: { mid: "mid-echo-2", text: "respuesta externa", is_echo: true },
     }] }] });
     await POST(postFirmado(body));
+    expect(runAfterResponse).not.toHaveBeenCalled();
+    await enSegundoPlano();
     expect(botRespond).not.toHaveBeenCalled();
   });
 });
@@ -221,6 +253,8 @@ describe("meta-dm webhook — comentarios", () => {
     });
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
+    expect(handleComment).not.toHaveBeenCalled();
+    await enSegundoPlano();
     expect(handleComment).toHaveBeenCalledWith(
       expect.objectContaining({
         platform: "INSTAGRAM", externalCommentId: "IGCOMMENT-1", accountId: "17841",
@@ -238,6 +272,7 @@ describe("meta-dm webhook — comentarios", () => {
       } }] }],
     });
     await POST(postFirmado(body));
+    await enSegundoPlano();
     expect(handleComment).toHaveBeenCalledWith(
       expect.objectContaining({ platform: "FACEBOOK", externalCommentId: "C-1" })
     );
@@ -250,11 +285,13 @@ describe("meta-dm webhook — comentarios", () => {
       entry: [{ messaging: [{ sender: { id: "IGSID-1" }, message: { mid: "mid-1", text: "hola" } }] }],
     });
     await POST(postFirmado(body));
+    await enSegundoPlano();
     expect(handleInboundMessage).toHaveBeenCalled();
     expect(handleComment).not.toHaveBeenCalled();
   });
 
   it("un comentario que revienta no tumba el resto del batch", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     handleComment.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ status: "procesado" });
     const body = JSON.stringify({
       object: "instagram",
@@ -265,7 +302,98 @@ describe("meta-dm webhook — comentarios", () => {
     });
     const res = await POST(postFirmado(body));
     expect(res.status).toBe(200);
+    await enSegundoPlano();
     expect(handleComment).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledWith("[meta-dm] comentario:", expect.any(Error));
+    error.mockRestore();
+  });
+});
+
+// Acuse rápido (2026-10-12): Meta exige el 200 en menos de 20 s. Antes de responder solo va
+// la ingesta del DM; el bot (Claude + Graph) y los comentarios (hasta ~22 s cada uno) se
+// agendan para después del 200.
+describe("meta-dm webhook — acuse rápido (bot y comentarios después del 200)", () => {
+  /** Un DM y un comentario en la misma entrega de la Página. */
+  const DM_Y_COMENTARIO = JSON.stringify({
+    object: "page",
+    entry: [{
+      id: "PAGE-1",
+      messaging: [{ sender: { id: "PSID-1" }, message: { mid: "mm-1", text: "hola" } }],
+      changes: [{ field: "feed", value: {
+        item: "comment", verb: "add", comment_id: "C-1", post_id: "P-1", parent_id: "P-1",
+        from: { id: "ASID-1", name: "Luis" }, message: "info",
+      } }],
+    }],
+  });
+
+  beforeEach(() => {
+    resolveByPage.mockResolvedValue({ id: "conn_ms" });
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c1" });
+  });
+
+  it("responde 200 con el DM ya ingerido y SIN haber llamado al bot ni al motor de comentarios", async () => {
+    const res = await POST(postFirmado(DM_Y_COMENTARIO));
+
+    expect(res.status).toBe(200);
+    // `comments` es lo encolado: al responder todavía no corre ninguno.
+    expect(await res.json()).toEqual({ ok: true, processed: 1, comments: 1, discarded: 0 });
+    // La ingesta SÍ va antes del 200: el mensaje queda persistido aunque lo de después falle.
+    expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    expect(botRespond).not.toHaveBeenCalled();
+    expect(handleComment).not.toHaveBeenCalled();
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+
+    await enSegundoPlano();
+
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "MESSENGER", connectorId: "conn_ms" });
+    expect(handleComment).toHaveBeenCalledWith(expect.objectContaining({ externalCommentId: "C-1" }));
+  });
+
+  it("un bot que revienta no detiene al siguiente contacto ni a los comentarios", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    handleInboundMessage
+      .mockResolvedValueOnce({ id: "m1", contactId: "c1" })
+      .mockResolvedValueOnce({ id: "m2", contactId: "c2" });
+    botRespond.mockRejectedValueOnce(new Error("Claude caído")).mockResolvedValue(undefined);
+    const body = JSON.stringify({
+      object: "page",
+      entry: [{
+        id: "PAGE-1",
+        messaging: [
+          { sender: { id: "PSID-1" }, message: { mid: "mm-1", text: "hola" } },
+          { sender: { id: "PSID-2" }, message: { mid: "mm-2", text: "buenas" } },
+        ],
+        changes: [{ field: "feed", value: {
+          item: "comment", verb: "add", comment_id: "C-1", post_id: "P-1", parent_id: "P-1",
+          from: { id: "ASID-1", name: "Luis" }, message: "info",
+        } }],
+      }],
+    });
+
+    const res = await POST(postFirmado(body));
+    expect(res.status).toBe(200);
+
+    // La tarea agendada nunca lanza: cada pieza atrapa su propio error.
+    await expect(enSegundoPlano()).resolves.toBeUndefined();
+    expect(botRespond).toHaveBeenCalledTimes(2);
+    expect(botRespond.mock.calls.map((c) => c[0])).toEqual(["c1", "c2"]);
+    expect(handleComment).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith("[meta-dm] botRespond:", expect.any(Error));
+    error.mockRestore();
+  });
+
+  it("un payload sin nada que hacer después (solo un echo) no agenda nada", async () => {
+    const body = JSON.stringify({ object: "page", entry: [{ id: "PAGE-1", messaging: [{
+      sender: { id: "PAGE-1" },
+      recipient: { id: "PSID-1" },
+      message: { mid: "mid-echo-3", text: "desde Business Suite", is_echo: true },
+    }] }] });
+
+    const res = await POST(postFirmado(body));
+
+    expect(res.status).toBe(200);
+    expect(handleInboundMessage).toHaveBeenCalledTimes(1);
+    expect(runAfterResponse).not.toHaveBeenCalled();
   });
 });
 
@@ -283,6 +411,7 @@ describe("meta-dm webhook — autenticación de la firma", () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": firma(body) } }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(runAfterResponse).not.toHaveBeenCalled();
     expect(botRespond).not.toHaveBeenCalled();
     expect(markSignatureRejected).toHaveBeenCalledTimes(1);
   });
@@ -291,6 +420,7 @@ describe("meta-dm webhook — autenticación de la firma", () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": firma("otro cuerpo") } }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(runAfterResponse).not.toHaveBeenCalled();
     expect(markSignatureRejected).toHaveBeenCalledTimes(1);
   });
 
@@ -298,6 +428,7 @@ describe("meta-dm webhook — autenticación de la firma", () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(runAfterResponse).not.toHaveBeenCalled();
     expect(markSignatureRejected).toHaveBeenCalledTimes(1);
     expect(markSignatureRejected.mock.calls[0][0]).toContain("ausente");
   });
@@ -306,6 +437,7 @@ describe("meta-dm webhook — autenticación de la firma", () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body, headers: { "x-hub-signature-256": "sha1=deadbeef" } }));
     expect(res.status).toBe(401);
     expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(runAfterResponse).not.toHaveBeenCalled();
     expect(markSignatureRejected).toHaveBeenCalledTimes(1);
     expect(markSignatureRejected.mock.calls[0][0]).toContain("presente");
   });
