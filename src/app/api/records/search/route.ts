@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { findMatchingDevelopments } from "@/lib/bot/hub-catalog";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { contactBrandVisibilityWhere, dealBrandVisibilityWhere } from "@/lib/brands/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,9 @@ export async function GET(req: NextRequest) {
   let results: Array<{ id: string; name: string; meta?: string }> = [];
 
   if (object === "contact") {
+    // Marcas (2026-10-12): este buscador (paleta de comandos y picker de relaciones) no tiene
+    // alcance por rol, pero sí recorta por marca: no debe encontrar leads de otra marca.
+    const porMarca = contactBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
     const rows = await prisma.contact.findMany({
       where: {
         deletedAt: null,
@@ -28,12 +33,14 @@ export async function GET(req: NextRequest) {
           { phone: { contains: q } },
           { email: { contains: q, mode: "insensitive" } },
         ],
+        ...(porMarca ? { AND: [porMarca] } : {}),
       },
       select: { id: true, firstName: true, lastName: true, phone: true },
       take: 10,
     });
     results = rows.map((r) => ({ id: r.id, name: `${r.firstName} ${r.lastName}`, meta: r.phone }));
   } else if (object === "deal") {
+    const porMarca = dealBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
     const rows = await prisma.deal.findMany({
       where: {
         deletedAt: null,
@@ -43,6 +50,7 @@ export async function GET(req: NextRequest) {
             { lastName: { contains: q, mode: "insensitive" } },
           ],
         },
+        ...(porMarca ? { AND: [porMarca] } : {}),
       },
       select: { id: true, stage: true, estimatedValue: true, contact: { select: { firstName: true, lastName: true } } },
       take: 10,

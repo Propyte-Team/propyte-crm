@@ -20,6 +20,8 @@ const docFindUnique = vi.fn();
 const docUpdate = vi.fn();
 const planCreate = vi.fn();
 
+// Marcas (2026-10-12): estas pruebas miden el alcance por rol; el usuario ve todas las marcas.
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: async () => "ALL" }));
 vi.mock("@/lib/db", () => ({
   default: {
     deal: { findFirst: (...a: unknown[]) => dealFindFirst(...a) },

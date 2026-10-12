@@ -7,6 +7,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { canReadBrands, canWriteBrands } from "@/lib/brands/roles";
 import { brandRefsError, brandWriteData, isMissingTable, isUniqueClash } from "@/lib/brands/admin";
 import { brandCreateSchema } from "@/lib/validations/brand";
+import { countVisibleUsersByBrand } from "@/lib/brands/visibility";
 
 async function assertRole(check: (role: string | null | undefined) => boolean) {
   const session = await getServerSession();
@@ -29,11 +30,37 @@ export async function GET() {
         },
       },
     });
-    return NextResponse.json({ data: brands });
+    const conteo = await visibleUserCounts(brands);
+    return NextResponse.json({
+      data: conteo ? brands.map((b) => ({ ...b, visibleUserCount: conteo[b.id] ?? 0 })) : brands,
+    });
   } catch (err) {
     if (isMissingTable(err)) return NextResponse.json({ data: [] });
     console.error("[brands] GET:", err);
     return NextResponse.json({ error: "Error al listar marcas" }, { status: 500 });
+  }
+}
+
+/**
+ * Cuántos usuarios activos ven cada marca (2026-10-12, spec marcas-visibilidad), para la tarjeta.
+ * Best-effort: si falta la tabla user_brand_access o falla la lectura, la tarjeta no muestra el
+ * número en vez de romper la lista de marcas.
+ */
+async function visibleUserCounts(
+  brands: Array<{ id: string; isDefault: boolean }>
+): Promise<Record<string, number> | null> {
+  try {
+    const users = await prisma.user.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: {
+        role: true,
+        brandAccess: { select: { brandId: true, brand: { select: { isDefault: true, deletedAt: true } } } },
+      },
+    });
+    return countVisibleUsersByBrand(brands, users);
+  } catch (err) {
+    if (!isMissingTable(err)) console.error("[brands] no se pudo contar quién ve cada marca:", err);
+    return null;
   }
 }
 

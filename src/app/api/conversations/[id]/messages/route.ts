@@ -8,6 +8,8 @@ import type { MessagingChannel } from "@/lib/messaging/types";
 import { CHAT_MEDIA_TYPES, type ChatMediaType } from "@/lib/messaging/media";
 import { isInboxManager, canOwnInboxContact } from "@/lib/inbox/roles";
 import { canViewInboxContact } from "@/lib/inbox/scope";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { CONTACT_BRAND_SELECT, canSeeContactBrand } from "@/lib/brands/visibility";
 import { assignContact } from "@/lib/inbox/assign";
 
 const sendSchema = z
@@ -44,11 +46,22 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           id: true, phone: true, doNotContact: true, assignedToId: true,
           // teamLeaderId: lo necesita el alcance del TEAM_LEADER (ver scope.ts).
           assignedTo: { select: { teamLeaderId: true } },
+          // Marcas del contacto: las pide el filtro por marca (2026-10-12).
+          brands: CONTACT_BRAND_SELECT,
         },
       },
     },
   });
   if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
+
+  // Marcas (2026-10-12): un hilo de una marca que el usuario no ve no existe para él, ni
+  // siquiera para dejar una nota interna. Va ANTES de la nota a propósito; el gate por ROL
+  // sigue más abajo y la nota sigue sin pasar por él (decisión previa, ver la prueba "nota
+  // interna en hilo ajeno"): la marca solo recorta, no cambia esa regla.
+  const visible = await getVisibleBrands(session.user);
+  if (!canSeeContactBrand(conv.contact, session.user, visible)) {
+    return NextResponse.json({ error: "No existe" }, { status: 404 });
+  }
 
   // Nota interna: NO se envía al contacto (§I.2)
   if (parsed.data.internalNote) {
@@ -77,7 +90,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // que el hilo existe Y su estado a alguien que ni siquiera lo ve en la lista. Mismo
   // cuerpo que el "No existe" de arriba: indistinguible a propósito.
   const esMando = isInboxManager(session.user.role);
-  if (!canViewInboxContact(conv.contact, session.user)) {
+  if (!canViewInboxContact(conv.contact, session.user, visible)) {
     return NextResponse.json({ error: "No existe" }, { status: 404 });
   }
 

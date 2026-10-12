@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { ROLE_LABELS, PLAZA_LABELS, CAREER_REQUIREMENTS } from "@/lib/constants";
 import { z } from "zod";
+import { UserBrandsField } from "./user-brands-field";
+import { effectiveBrandIds, sameBrandSet, type BrandOption } from "./user-brands-helpers";
 
 // Esquema de validacion del formulario
 const userFormSchema = z.object({
@@ -74,6 +76,12 @@ interface UserFormDialogProps {
   teamLeaderUsers: TeamLeaderOption[];
   onSubmit: (data: Record<string, unknown>) => Promise<void>;
   isPending: boolean;
+  /** «Marcas que ve» (2026-10-12): marcas vivas, o null si no se pudieron leer. */
+  brandOptions?: BrandOption[] | null;
+  /** Filas explícitas del usuario que se edita; null = sin filas (ve solo la predeterminada). */
+  explicitBrandIds?: string[] | null;
+  /** Solo ADMIN cambia las marcas; los demás roles de /admin las ven de solo lectura. */
+  canEditBrands?: boolean;
 }
 
 export function UserFormDialog({
@@ -83,8 +91,15 @@ export function UserFormDialog({
   teamLeaderUsers,
   onSubmit,
   isPending,
+  brandOptions = null,
+  explicitBrandIds = null,
+  canEditBrands = false,
 }: UserFormDialogProps) {
   const isEditing = !!user;
+  // Conjunto efectivo con que abre el formulario: si no cambia, no se manda (y un usuario sin
+  // filas sigue sin filas, o sea, viendo solo la predeterminada).
+  const initialBrands = brandOptions ? effectiveBrandIds(brandOptions, explicitBrandIds) : [];
+  const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
 
   // Estado del formulario
   const [formData, setFormData] = useState({
@@ -133,7 +148,10 @@ export function UserFormDialog({
       });
     }
     setErrors({});
-  }, [user, open]);
+    setSelectedBrands(brandOptions ? effectiveBrandIds(brandOptions, explicitBrandIds) : []);
+    // brandOptions/explicitBrandIds salen de la misma prop de /admin: no cambian con el diálogo
+    // abierto, así que no reinician lo que el admin está editando.
+  }, [user, open, brandOptions, explicitBrandIds]);
 
   // Manejar cambios en campos de texto
   function handleChange(field: string, value: string) {
@@ -189,6 +207,22 @@ export function UserFormDialog({
 
     if (!isEditing && formData.password) {
       submitData.password = formData.password;
+    }
+
+    // Marcas que ve (2026-10-12): solo si las puede cambiar, si el rol las usa (ADMIN ve todas)
+    // y si de verdad cambiaron. Vacío no se puede guardar: se leería como "solo la predeterminada".
+    if (
+      isEditing &&
+      canEditBrands &&
+      brandOptions &&
+      formData.role !== "ADMIN" &&
+      !sameBrandSet(selectedBrands, initialBrands)
+    ) {
+      if (selectedBrands.length === 0) {
+        setErrors({ brands: "Elige al menos una marca" });
+        return;
+      }
+      submitData.brandIds = selectedBrands;
     }
 
     await onSubmit(submitData);
@@ -343,6 +377,21 @@ export function UserFormDialog({
               </Select>
             </div>
           </div>
+
+          {/* Marcas que ve (2026-10-12) */}
+          <UserBrandsField
+            role={formData.role}
+            brands={brandOptions}
+            selected={selectedBrands}
+            onChange={(next) => {
+              setSelectedBrands(next);
+              if (errors.brands) setErrors((prev) => ({ ...prev, brands: "" }));
+            }}
+            canEdit={canEditBrands}
+            isEditing={isEditing}
+            hasExplicit={explicitBrandIds !== null}
+            error={errors.brands || undefined}
+          />
 
           {/* Telefono */}
           <div className="space-y-2">

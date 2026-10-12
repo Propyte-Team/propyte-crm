@@ -18,6 +18,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma } from "@prisma/client";
 import { inboxScopeWhere } from "@/lib/inbox/scope";
+import { getVisibleBrands } from "@/lib/brands/user-access";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,8 @@ export async function GET() {
     unreadCount: { gt: 0 },
   };
 
-  const alcance = inboxScopeWhere(session.user);
+  // Con marcas (2026-10-12): el badge no cuenta hilos de marcas que el usuario no ve.
+  const alcance = inboxScopeWhere(session.user, await getVisibleBrands(session.user));
   if (alcance) where.contact = { AND: [alcance] };
 
   const count = await prisma.conversation.count({ where });

@@ -41,6 +41,11 @@ vi.mock("@/lib/inbox/assign", () => ({
   assignContact: (...a: unknown[]) => assignContact(...a),
 }));
 
+// Marcas (2026-10-12): por defecto el usuario ve todas, así las pruebas de arriba siguen
+// midiendo solo el alcance por rol. Las de marca (al final) cambian el valor.
+const getVisibleBrands = vi.fn();
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
+
 import { POST } from "./route";
 
 function req(body: unknown) {
@@ -99,8 +104,10 @@ beforeEach(() => {
     blockOnMeta,
     getSocialPageToken,
     assignContact,
+    getVisibleBrands,
   ].forEach((m) => m.mockReset());
   getServerSession.mockResolvedValue({ user: { id: "user-1", role: "ADMIN" } });
+  getVisibleBrands.mockResolvedValue("ALL");
   convUpdate.mockResolvedValue({ id: "conv-1", botEnabled: false });
   markConversationAsSpam.mockResolvedValue({
     ok: true,
@@ -410,5 +417,39 @@ describe("POST acciones del hilo — alcance antes que permiso", () => {
     const res = await POST(req({ action: "mark_spam" }), PARAMS);
     expect(res.status).toBe(200);
     expect(convFindUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST acciones — marcas (2026-10-12)", () => {
+  const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
+  const YAX = [{ brandId: "b-yax" }];
+
+  it("assign: hilo libre de Yaxnáh y usuario sin Yaxnáh → 404 y assignContact ni se llama", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "ase-1", role: "ASESOR_SR" } });
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    convFindUnique.mockResolvedValue(convAssign({ assignedToId: null, brands: YAX } as never));
+    const res = await POST(req({ action: "assign", assigneeId: "ase-1" }), PARAMS);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "No existe" });
+    expect(assignContact).not.toHaveBeenCalled();
+    expect(convFindUnique.mock.calls[0][0].select.contact.select.brands).toEqual({ select: { brandId: true } });
+  });
+
+  it("acción genérica (close) de un GERENTE sin Yaxnáh sobre un hilo de Yaxnáh → 404 y no escribe", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "ger-1", role: "GERENTE" } });
+    getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
+    convFindUnique.mockResolvedValue(convGenerica({ assignedToId: "otro", brands: YAX } as never));
+    const res = await POST(req({ action: "close" }), PARAMS);
+    expect(res.status).toBe(404);
+    expect(convUpdate).not.toHaveBeenCalled();
+    expect(convFindUnique.mock.calls[0][0].include.contact.select.brands).toEqual({ select: { brandId: true } });
+  });
+
+  it("con la marca prendida el GERENTE sí cierra el hilo", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "ger-1", role: "GERENTE" } });
+    getVisibleBrands.mockResolvedValue({ brandIds: ["b-def", "b-yax"], includesDefault: true });
+    convFindUnique.mockResolvedValue(convGenerica({ assignedToId: "otro", brands: YAX } as never));
+    const res = await POST(req({ action: "close" }), PARAMS);
+    expect(res.status).toBe(200);
   });
 });

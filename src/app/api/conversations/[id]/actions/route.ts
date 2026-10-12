@@ -7,6 +7,8 @@ import { getServerSession } from "@/lib/auth/session";
 import { canMarkSpam } from "@/lib/moderation/roles";
 import { isInboxManager } from "@/lib/inbox/roles";
 import { canViewInboxContact } from "@/lib/inbox/scope";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { CONTACT_BRAND_SELECT } from "@/lib/brands/visibility";
 
 const actionSchema = z.object({
   action: z.enum(["takeover", "release", "close", "snooze", "toggle_bot", "mark_spam", "assign"]),
@@ -109,7 +111,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         contactId: true,
         // El alcance se decide aquí, no en assignContact: teamLeaderId alimenta la regla
         // del TEAM_LEADER (ver scope.ts).
-        contact: { select: { assignedToId: true, assignedTo: { select: { teamLeaderId: true } } } },
+        // brands: el filtro por marca (2026-10-12) también decide si el hilo existe para él.
+        contact: {
+          select: {
+            assignedToId: true,
+            assignedTo: { select: { teamLeaderId: true } },
+            brands: CONTACT_BRAND_SELECT,
+          },
+        },
       },
     });
     if (!conv) return NextResponse.json({ error: "No existe" }, { status: 404 });
@@ -119,7 +128,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     // confirmación gratis de que existe y de su estado. Con el chequeo aquí, del módulo
     // solo pueden llegar sin-permiso (403, el ROL no puede ser dueño) y ya-asignado (409,
     // sobre un hilo que el usuario SÍ ve).
-    if (!canViewInboxContact(conv.contact, session.user)) {
+    if (!canViewInboxContact(conv.contact, session.user, await getVisibleBrands(session.user))) {
       return NextResponse.json({ error: "No existe" }, { status: 404 });
     }
 
@@ -147,6 +156,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           id: true, assignedToId: true, whatsappOptOut: true, firstName: true, lastName: true,
           // teamLeaderId: lo necesita el alcance del TEAM_LEADER (ver scope.ts).
           assignedTo: { select: { teamLeaderId: true } },
+          // Marcas del contacto: las pide el filtro por marca (2026-10-12).
+          brands: CONTACT_BRAND_SELECT,
         },
       },
     },
@@ -159,7 +170,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // (TEAM_LEADER) podía cerrar o tomar control de un hilo que su GET devuelve como 404.
   // El orden importa: un 403 "sin permiso" aquí ya confirmaría que el hilo existe a quien
   // ni siquiera debería saberlo, que es justo lo que el 404 unificado evita.
-  if (!canViewInboxContact(conv.contact, session.user)) {
+  if (!canViewInboxContact(conv.contact, session.user, await getVisibleBrands(session.user))) {
     return NextResponse.json({ error: "No existe" }, { status: 404 });
   }
 

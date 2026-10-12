@@ -43,6 +43,8 @@ export interface BrandRow {
   marketingOwnerUserId: string | null;
   botEnabled: boolean;
   connectors: BrandConnector[];
+  /** Usuarios activos que ven la marca (2026-10-12). Ausente si no se pudo contar. */
+  visibleUserCount?: number;
 }
 
 export type BrandFormMode = "create" | "edit" | "edit-default";

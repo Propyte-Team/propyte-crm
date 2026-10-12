@@ -4,6 +4,7 @@ import { getUsers, getDeletedUsers, getUserAuditHistory, getCommissionRules, get
 import { getBotConfigForAdmin } from "@/server/bot-config";
 import { listPlaybooks } from "@/server/bot-playbook";
 import { listAgentProfiles } from "@/server/bot-agents";
+import { getUserBrandAccessOverview } from "@/lib/brands/user-access";
 import prisma from "@/lib/db";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
@@ -35,7 +36,7 @@ export default async function AdminPage(
     .catch(() => [] as string[]);
 
   // Obtener datos en paralelo
-  const [users, deletedUsers, userHistory, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles] = await Promise.all([
+  const [users, deletedUsers, userHistory, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles, brandAccess] = await Promise.all([
     getUsers(),
     getDeletedUsers(),
     getUserAuditHistory(),
@@ -47,6 +48,8 @@ export default async function AdminPage(
     listPlaybooks(),
     // best-effort pre-migración: la pestaña Agentes muestra vacío en vez de romper /admin
     listAgentProfiles().catch(() => []),
+    // «Marcas que ve» por usuario (2026-10-12). Nunca lanza: sin la migración devuelve null.
+    getUserBrandAccessOverview(),
   ]);
 
   return (
@@ -70,6 +73,7 @@ export default async function AdminPage(
         }))}
         activePlaybookId={botConfig.activePlaybookId}
         contactCustomFields={contactCustomFields}
+        brandAccess={brandAccess}
       />
     </div>
   );

@@ -16,6 +16,8 @@ import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fie
 import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { contactBrandVisibilityWhere } from "@/lib/brands/visibility";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -217,6 +219,15 @@ export async function GET(request: NextRequest) {
     }
     if (assignedToId) {
       where.assignedToId = assignedToId;
+    }
+
+    // Marcas (2026-10-12): se agrega al FINAL y con AND, para que ningún filtro de arriba la
+    // pise (los de arriba asignan claves sueltas de `where`). Es la misma ruta que usan los
+    // buscadores de contacto (agenda, actividades, negocio): ninguno ve leads de otra marca.
+    const porMarca = contactBrandVisibilityWhere(session.user, await getVisibleBrands(session.user));
+    if (porMarca) {
+      const previos = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
+      where.AND = [...previos, porMarca];
     }
 
     // Ejecutar consulta con paginación

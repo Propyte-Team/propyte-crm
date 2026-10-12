@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma } from "@prisma/client";
 import { inboxScopeWhere } from "@/lib/inbox/scope";
+import { getVisibleBrands } from "@/lib/brands/user-access";
 import { connectorBrandLabel } from "@/lib/inbox/connector-label";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +22,10 @@ export async function GET(req: NextRequest) {
   // el OR del aislamiento y un asesor buscando veía hilos ajenos (fuga, ago-2026).
   const contactConds: Prisma.ContactWhereInput[] = [];
 
-  // Alcance por rol — definición única en @/lib/inbox/scope (misma regla que el detalle,
-  // el envío y la asignación). undefined = ve todo, no hay condición que agregar.
-  const alcance = inboxScopeWhere(session.user);
+  // Alcance por rol + marcas — definición única en @/lib/inbox/scope (misma regla que el
+  // detalle, el envío y la asignación). undefined = ve todo, no hay condición que agregar.
+  // Las marcas (2026-10-12) también recortan la cola "sin asignar": va en el mismo AND.
+  const alcance = inboxScopeWhere(session.user, await getVisibleBrands(session.user));
   if (alcance) contactConds.push(alcance);
 
   if (filter === "mine") {

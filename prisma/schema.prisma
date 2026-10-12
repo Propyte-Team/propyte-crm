@@ -718,6 +718,9 @@ model User {
   shortlistsCreated       Shortlist[]       @relation("ShortlistsCreated")
   botConfigUpdates        BotConfig[]       @relation("BotConfigUpdatedBy")
   brandsMarketing         Brand[]           @relation("BrandMarketingOwner")
+  // Marcas que ve (entrega 2, 2026-10-12). Relación solo de Prisma: vive en user_brand_access
+  // y NO agrega columnas a users (el Hub comparte esa tabla, .claude/AI_TASKS.md).
+  brandAccess             UserBrandAccess[]
 
   // Metas/Scorecard (§5.14)
   goals        Goal[] @relation("UserGoals")
@@ -1585,6 +1588,7 @@ model Brand {
   botEnabled           Boolean         @default(false)
   connectors           LeadConnector[]
   contacts             ContactBrand[]
+  userAccess           UserBrandAccess[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   deletedAt            DateTime?
@@ -1607,6 +1611,24 @@ model ContactBrand {
   @@unique([contactId, brandId])
   @@index([brandId])
   @@map("contact_brands")
+  @@schema("propyte_crm")
+}
+
+// Marcas que ve cada usuario (entrega 2 de 3 — spec 2026-10-12-marcas-visibilidad-design.md).
+// Un usuario SIN filas ve solo la marca predeterminada (misma regla que contact_brands), así que
+// no se rellena nada. Cuando un admin edita los interruptores se guarda el conjunto COMPLETO,
+// incluida la predeterminada si queda prendida. ADMIN ve todas sin importar sus filas.
+// Tabla aparte y no columna en users: el Hub comparte propyte_crm.users. Ver src/lib/brands/visibility.ts.
+model UserBrandAccess {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brandId   String
+  brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, brandId])
+  @@index([brandId])
+  @@map("user_brand_access")
   @@schema("propyte_crm")
 }
 
