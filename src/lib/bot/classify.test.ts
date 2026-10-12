@@ -57,7 +57,11 @@ describe("classifyContactType", () => {
 function mkDb() {
   const contactUpdate = vi.fn().mockResolvedValue({});
   const auditCreate = vi.fn().mockResolvedValue({});
-  const userFindFirst = vi.fn().mockResolvedValue({ id: "admin-1" });
+  // Usuarios falsos (helper de actor, 2026-10-12): el que se pide por id existe y es
+  // persona; el ADMIN de respaldo es admin-1.
+  const userFindFirst = vi.fn(async ({ where }: { where: { id?: string } }): Promise<{ id: string } | null> =>
+    where.id ? { id: where.id } : { id: "admin-1" },
+  );
   const db = {
     contact: { update: contactUpdate },
     auditLog: { create: auditCreate },
@@ -86,6 +90,41 @@ describe("maybeClassifyContact", () => {
     expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ changes: expect.objectContaining({ to: "EMPLEO", source: "bot_classifier" }) }),
     }));
+  });
+
+  // 2026-10-12: el cambio de segmento salía en la cronología firmado por la cuenta técnica
+  // a la que estaba asignado el contacto (agentes@propyte.local). Ahora firma el helper común.
+  it("asesor que es cuenta técnica: firma el ADMIN persona más antiguo y el contacto NO cambia de dueño", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("EMPLEO")));
+    const { db, contactUpdate, auditCreate, userFindFirst } = mkDb();
+    // agentes@propyte.local no pasa el filtro de persona: la consulta por id no lo trae.
+    userFindFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id ? null : { id: "admin-1" },
+    );
+    const r = await maybeClassifyContact(db as never, { ...baseContact, assignedToId: "u-agentes" }, msgs, "m");
+    expect(r).toBe("EMPLEO");
+    expect(setChangeSource).toHaveBeenCalledWith(expect.anything(), { source: "bot_classifier", actorId: "admin-1" });
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "admin-1" }) }));
+    expect(contactUpdate.mock.calls[0][0].data).not.toHaveProperty("assignedToId");
+  });
+
+  it("sin ninguna persona (solo cuentas técnicas): clasifica igual, firmado como antes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("EMPLEO")));
+    const { db, auditCreate, userFindFirst } = mkDb();
+    userFindFirst.mockImplementation(async () => null);
+    const r = await maybeClassifyContact(db as never, { ...baseContact, assignedToId: "u-agentes" }, msgs, "m");
+    expect(r).toBe("EMPLEO");
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "u-agentes" }) }));
+  });
+
+  it("sin nadie a quien atribuirlo: guarda el marker pero no cambia el segmento (igual que antes)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("EMPLEO")));
+    const { db, contactUpdate, auditCreate, userFindFirst } = mkDb();
+    userFindFirst.mockImplementation(async () => null);
+    const r = await maybeClassifyContact(db as never, { ...baseContact, assignedToId: null }, msgs, "m");
+    expect(r).toBe("COMPRADOR");
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(contactUpdate.mock.calls[0][0].data).not.toHaveProperty("contactType");
   });
 
   it("NUNCA pisa un contactType puesto por humano (no default)", async () => {

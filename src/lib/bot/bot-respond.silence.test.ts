@@ -45,6 +45,8 @@ vi.mock("@/lib/db", () => ({
     notification: { create: (...a: unknown[]) => notificationCreate(...a) },
     contactBrand: { findFirst: (...a: unknown[]) => contactBrandFindFirst(...a) },
     botAgentProfile: { count: async () => 0 },
+    // Marca de la cuenta para la firma del envío (helper de actor): aquí, ninguna.
+    leadConnector: { findFirst: async () => null },
   },
 }));
 

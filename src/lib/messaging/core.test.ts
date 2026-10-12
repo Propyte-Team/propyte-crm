@@ -103,6 +103,14 @@ vi.mock("@/lib/contacts/duplicate-alert", () => ({
   detectDuplicatesForContact: (...a: unknown[]) => detectDuplicatesForContact(...a),
 }));
 
+// A quién se atribuye la actividad de inbound (2026-10-12): lo decide el helper común,
+// que tiene sus propias pruebas (lib/users/actor-sistema.test.ts). Aquí solo importa que
+// core.ts le pregunte a él, con el asesor y la cuenta del mensaje, y use lo que devuelva.
+const resolveActorUserId = vi.fn();
+vi.mock("@/lib/users/actor-sistema", () => ({
+  resolveActorUserId: (...a: unknown[]) => resolveActorUserId(...a),
+}));
+
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
@@ -113,7 +121,10 @@ beforeEach(() => {
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
     commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
     slaTimerFindFirst, leadConnectorUpdate, leadConnectorFindUnique, attachBrand, getDefaultBrandId,
+    resolveActorUserId,
   ].forEach((m) => m.mockReset());
+  // Por defecto el asesor asignado es una persona: el helper lo devuelve tal cual.
+  resolveActorUserId.mockImplementation(async ({ assignedToId }: { assignedToId?: string | null }) => assignedToId ?? null);
   autoRouteLead.mockResolvedValue("u-nuevo");
   slaTimerFindFirst.mockResolvedValue(null); // por defecto: nunca se enrutó
   leadConnectorUpdate.mockResolvedValue({});
@@ -196,21 +207,67 @@ describe("handleInboundMessage", () => {
   describe("contacto sin asignar (assignedToId null)", () => {
     beforeEach(() => {
       contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: null, firstName: "A", lastName: "B" });
-      userFindFirst.mockResolvedValue({ id: "u-admin" });
+      resolveActorUserId.mockResolvedValue("u-admin");
     });
 
-    it("la actividad se atribuye a un ADMIN activo, jamás a contact.id", async () => {
+    it("la actividad se atribuye a quien diga el helper (un usuario), jamás a contact.id", async () => {
       await handleInboundMessage(base);
       expect(activityCreate).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ userId: "u-admin" }) })
       );
     });
 
-    it("sin ADMIN disponible: se salta la actividad pero el bot IGUAL responde", async () => {
-      userFindFirst.mockResolvedValue(null);
+    it("sin nadie a quien atribuirla: se salta la actividad pero el bot IGUAL responde", async () => {
+      resolveActorUserId.mockResolvedValue(null);
       await handleInboundMessage(base);
       expect(activityCreate).not.toHaveBeenCalled();
       expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+    });
+  });
+
+  // 2026-10-12: la cronología mostraba los mensajes entrantes hechos «por Audit Temp
+  // (Claude)». La firma de la actividad ya no la elige core.ts: se la pide al helper común,
+  // con el asesor del contacto y la cuenta por la que llegó el mensaje (de ahí sale la marca).
+  describe("firma de la actividad de inbound (helper común)", () => {
+    it("le pregunta al helper con el asesor del contacto y la cuenta del mensaje", async () => {
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u-agentes", firstName: "A", lastName: "B" });
+      await handleInboundMessage({ ...base, connectorId: "conn-ig" });
+      expect(resolveActorUserId).toHaveBeenCalledWith({ assignedToId: "u-agentes", connectorId: "conn-ig" });
+    });
+
+    it("asesor técnico: la actividad sale a nombre de quien devuelve el helper, y el contacto NO cambia de dueño", async () => {
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u-agentes", firstName: "A", lastName: "B" });
+      resolveActorUserId.mockResolvedValue("u-marketing");
+      await handleInboundMessage({ ...base, connectorId: "conn-ig" });
+
+      expect(activityCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: "u-marketing", activityType: "INSTAGRAM_IN" }) })
+      );
+      // El mensaje entrante sigue colgando del dueño del contacto, y nadie toca la asignación.
+      expect(msgCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: "u-agentes" }) })
+      );
+      for (const [arg] of contactUpdate.mock.calls) {
+        expect((arg as { data: Record<string, unknown> }).data).not.toHaveProperty("assignedToId");
+      }
+      expect(autoRouteLead).not.toHaveBeenCalled();
+    });
+
+    it("sin cuenta (número global) pasa connectorId null", async () => {
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+      await handleInboundMessage(base);
+      expect(resolveActorUserId).toHaveBeenCalledWith({ assignedToId: "u1", connectorId: null });
+    });
+
+    it("si el helper lanza, la actividad se omite pero la ingesta y el bot siguen", async () => {
+      contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+      resolveActorUserId.mockRejectedValue(new Error("db down"));
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      const r = await handleInboundMessage(base);
+      expect(r).toBeTruthy();
+      expect(activityCreate).not.toHaveBeenCalled();
+      expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+      err.mockRestore();
     });
   });
 

@@ -33,6 +33,7 @@ const botAgentCountMock = vi.fn();
 const botPlaybookFindFirstMock = vi.fn();
 const convCreate = vi.fn();
 const contactBrandFindFirst = vi.fn();
+const leadConnectorFindFirst = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) },
@@ -52,8 +53,24 @@ vi.mock("@/lib/db", () => ({
     notification: { create: (...a: unknown[]) => notificationCreate(...a) },
     botAgentProfile: { count: (...a: unknown[]) => botAgentCountMock(...a) },
     botPlaybook: { findFirst: (...a: unknown[]) => botPlaybookFindFirstMock(...a) },
+    // La marca de la cuenta del hilo, para la firma del envío (helper de actor, 2026-10-12).
+    leadConnector: { findFirst: (...a: unknown[]) => leadConnectorFindFirst(...a) },
   },
 }));
+
+// El helper de actor corre DE VERDAD contra el db falso; el espía solo deja ver con qué se
+// le llamó.
+const resolveActorSpy = vi.fn();
+vi.mock("@/lib/users/actor-sistema", async (importActual) => {
+  const real = await importActual<typeof import("@/lib/users/actor-sistema")>();
+  return {
+    ...real,
+    resolveActorUserId: (...a: Parameters<typeof real.resolveActorUserId>) => {
+      resolveActorSpy(...a);
+      return real.resolveActorUserId(...a);
+    },
+  };
+});
 
 const askClaude = vi.fn();
 const buildSystemPromptMock = vi.fn();
@@ -161,6 +178,7 @@ beforeEach(() => {
     id: "conv-nueva", status: "BOT", botEnabled: true, connectorId: data.connectorId,
   }));
   contactBrandFindFirst.mockResolvedValue(null);
+  leadConnectorFindFirst.mockResolvedValue(null);
 });
 
 describe("botRespond — cuenta con marca", () => {
@@ -675,5 +693,86 @@ describe("botRespond — createConversation sin cuenta", () => {
     await botRespond("c1", { connectorId: null });
 
     expect(contactBrandFindFirst).not.toHaveBeenCalled();
+  });
+});
+
+// 2026-10-12: la cronología mostraba las respuestas del bot hechas «por Audit Temp (Claude)»
+// (`audit-temp@propyte.local`) o por `agentes@propyte.local`, el dueño técnico de la mayoría
+// de los contactos. La firma la decide ahora el helper común; el dueño del contacto no se
+// toca (el db falso ni siquiera tiene `contact.update`: reasignar reventaría la prueba).
+describe("botRespond — a nombre de quién sale la respuesta", () => {
+  const AGENTES = "u-agentes"; // agentes@propyte.local: no pasa el filtro de persona
+
+  /** El `userId` con que se mandó la respuesta (4º argumento de sendChannelMessage). */
+  function firma(): string {
+    expect(sendChannelMessage).toHaveBeenCalledTimes(1);
+    return sendChannelMessage.mock.calls[0][3] as string;
+  }
+
+  it("asesor persona: firma el asesor, y al helper se le pregunta con la cuenta del hilo", async () => {
+    setActiveUsers([LUIS, "u-owner"]);
+
+    await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(resolveActorSpy).toHaveBeenCalledWith(
+      { assignedToId: "u-owner", connectorId: "c-yax" },
+      { ultimoRecurso: true },
+    );
+    expect(firma()).toBe("u-owner");
+  });
+
+  it("asesor que es cuenta técnica y cuenta con marca: firma el responsable de marketing de la marca", async () => {
+    contactFindUnique.mockResolvedValue({ ...CONTACT, assignedToId: AGENTES });
+    setActiveUsers([LUIS, "u-mkt-yax"]);
+    withBrand();
+    leadConnectorFindFirst.mockResolvedValue({ brand: { marketingOwnerUserId: "u-mkt-yax" } });
+
+    await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(leadConnectorFindFirst.mock.calls[0][0].where.id).toBe("c-yax");
+    expect(firma()).toBe("u-mkt-yax");
+  });
+
+  it("asesor técnico y cuenta sin marca: firma el ADMIN persona más antiguo, nunca una cuenta técnica", async () => {
+    contactFindUnique.mockResolvedValue({ ...CONTACT, assignedToId: AGENTES });
+    userFindFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id ? null : { id: "u-admin-persona" },
+    );
+
+    await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(userFindFirst).toHaveBeenCalledWith({
+      where: { role: "ADMIN", isActive: true, deletedAt: null, NOT: { email: { endsWith: ".local" } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+    expect(firma()).toBe("u-admin-persona");
+  });
+
+  it("sin ninguna persona a quien atribuirla: firma como antes antes que dejar al cliente sin respuesta", async () => {
+    // Solo queda la cuenta técnica: ni el asesor ni ningún ADMIN pasan el filtro de persona.
+    userFindFirst.mockImplementation(async ({ where }: { where: { id?: string; NOT?: unknown } }) =>
+      where.id || where.NOT ? null : { id: "u-audit-temp" },
+    );
+
+    contactFindUnique.mockResolvedValue({ ...CONTACT, assignedToId: AGENTES });
+    await botRespond("c1", { connectorId: "c-yax" });
+    expect(firma()).toBe(AGENTES);
+
+    sendChannelMessage.mockClear();
+    contactFindUnique.mockResolvedValue({ ...CONTACT, assignedToId: null });
+    await botRespond("c1", { connectorId: "c-yax" });
+    expect(firma()).toBe("u-audit-temp");
+  });
+
+  it("si la lectura de la firma falla, la respuesta sale igual a nombre del asesor asignado", async () => {
+    userFindFirst.mockRejectedValue(new Error("db down"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(botRespond("c1", { connectorId: "c-yax" })).resolves.toBe(true);
+
+    expect(firma()).toBe("u-owner");
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[bot-respond]"), expect.any(Error));
+    error.mockRestore();
   });
 });

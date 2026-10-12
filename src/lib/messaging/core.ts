@@ -484,12 +484,18 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   // al bot (BUG 2026-07-24: contacto SIN asignar → la actividad se creaba con
   // userId = contact.id → FK violada → moría TODO: sin actividad, SLA, eventos ni bot).
   try {
-    // Activity.userId es NOT NULL (FK a users): sin asesor asignado se atribuye a un
-    // ADMIN activo; si tampoco hay, se omite la actividad (el mensaje ya quedó en el hilo).
-    // El fallback vive en lib/activities/actor.ts: esta misma regla estaba copiada en
-    // captureLead y ahí seguía rota (tarjeta #663).
-    const { actorDeActividad } = await import("@/lib/activities/actor");
-    const activityUserId = await actorDeActividad(contact.assignedToId);
+    // Activity.userId es NOT NULL (FK a users). A quién se atribuye lo decide el helper
+    // común (lib/users/actor-sistema.ts, 2026-10-12): el asesor si es una persona activa,
+    // si no el responsable de la marca de esta cuenta, si no el ADMIN persona más antiguo.
+    // Antes era «el asignado o cualquier ADMIN activo», y la cronología mostraba estos
+    // mensajes hechos «por Audit Temp (Claude)». Sin nadie, se omite la actividad (el
+    // mensaje ya quedó en el hilo). La regla estuvo copiada en captureLead y ahí seguía
+    // rota (tarjeta #663): por eso vive en un solo sitio.
+    const { resolveActorUserId } = await import("@/lib/users/actor-sistema");
+    const activityUserId = await resolveActorUserId({
+      assignedToId: contact.assignedToId,
+      connectorId: msg.connectorId ?? null,
+    });
     if (activityUserId) {
       await prisma.activity.create({
         data: {

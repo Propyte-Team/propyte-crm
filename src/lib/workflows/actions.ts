@@ -10,6 +10,7 @@ import { sendSmtpEmail } from "@/lib/email/mailer";
 import { sendGmail } from "@/lib/google/gmail";
 import { getConnectionStatus } from "@/lib/google/workspace.service";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { resolveActorUserId, type ActorCache } from "@/lib/users/actor-sistema";
 
 export interface ActionResult {
   skipped?: boolean;
@@ -28,7 +29,12 @@ async function loadContact(item: ActionQueue): Promise<Contact | null> {
   return null;
 }
 
-// Usuario "dueño" para acciones que necesitan userId (Activity/Notification)
+// Usuario "dueño" para acciones que necesitan userId (Activity/Notification).
+//
+// Ojo (2026-10-12): esto es el DESTINATARIO —a quién le cae la tarea, la llamada, el aviso
+// o de qué buzón sale el correo— y por eso no se tocó. La FIRMA de un envío automático
+// (quién aparece como autor del WhatsApp en la cronología) la decide `resolveActorUserId`,
+// que no firma con cuentas técnicas: ver SEND_WHATSAPP.
 async function ownerUserId(contact: Contact | null): Promise<string | null> {
   if (contact?.assignedToId) return contact.assignedToId;
   const admin = await prisma.user.findFirst({
@@ -58,7 +64,11 @@ async function renderTemplateBody(templateRef: string | undefined, contact: Cont
   return body || null;
 }
 
-export async function executeAction(item: ActionQueue): Promise<ActionResult> {
+/**
+ * `ctx.actorCache`: memoria de la firma para un lote (`runQueue`), así el ADMIN de respaldo
+ * se consulta una vez por lote y no una vez por acción. Opcional: sin ella, igual funciona.
+ */
+export async function executeAction(item: ActionQueue, ctx: { actorCache?: ActorCache } = {}): Promise<ActionResult> {
   const config = (item.config ?? {}) as Record<string, unknown>;
   const contact = await loadContact(item);
   // Cronología: identifica la regla de origen cuando está disponible (barato — ya viene en item).
@@ -219,7 +229,18 @@ export async function executeAction(item: ActionQueue): Promise<ActionResult> {
         (await renderTemplateBody(config.template as string | undefined, contact, contact.preferredLanguage)) ??
         (typeof config.body === "string" ? config.body : null);
       if (!body) return { skipped: true, note: "Sin plantilla ni body" };
-      const userId = await ownerUserId(contact);
+      // Firma del envío (2026-10-12): el helper común (asesor persona → ADMIN persona más
+      // antiguo; sale por el número global, sin cuenta ni marca). Si no da nadie —o la lectura
+      // falla—, la regla de siempre (`ownerUserId`), para que esto nunca deje de enviar algo
+      // que antes salía.
+      const firma = await resolveActorUserId(
+        { assignedToId: contact.assignedToId },
+        { cache: ctx.actorCache },
+      ).catch((err: unknown) => {
+        console.error("[workflows] no se pudo resolver la firma del WhatsApp; se usa la regla de siempre:", err);
+        return null;
+      });
+      const userId = firma ?? (await ownerUserId(contact));
       if (!userId) return { skipped: true, note: "Sin usuario emisor" };
       await sendWhatsAppMessage(contact.phone, body, contact.id, userId);
       return {};

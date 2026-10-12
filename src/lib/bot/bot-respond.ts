@@ -22,6 +22,7 @@ import { recordBotSendFailure, recordBotSilence } from "@/lib/messaging/send-fai
 import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profiles";
 import { resolveBrandForConnector, isBrandScoped, type BrandResolution } from "@/lib/brands/resolve";
 import { brandEnabledChannels } from "@/lib/brands/settings";
+import { resolveActorUserId } from "@/lib/users/actor-sistema";
 
 /**
  * `enabledChannelsOverride` (2026-10-09, marcas del agente): los canales propios de la marca
@@ -506,9 +507,22 @@ export async function botRespond(
   }
 
   if (clean) {
-    const ownerId =
-      contact.assignedToId ??
-      (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
+    // A nombre de quién sale la respuesta (2026-10-12): firmaba el asignado tal cual o «el
+    // primer ADMIN activo» sin orden, y así la cronología se llenó de mensajes del bot hechos
+    // «por Audit Temp (Claude)» o por `agentes@propyte.local`. Ahora decide el helper común
+    // (asesor persona → responsable de la marca de la cuenta del hilo → ADMIN persona más
+    // antiguo). Solo cambia la firma: el contacto conserva su `assignedToId` y los avisos no
+    // se mueven. `ultimoRecurso`: sin ninguna persona a mano se firma como antes, porque un
+    // nombre técnico en la cronología es mejor que un cliente sin respuesta. Por lo mismo,
+    // si la lectura de la firma falla se firma con el asignado: la respuesta ya está escrita
+    // y no se pierde por un hipo de la base en algo que es cosmético.
+    const ownerId = await resolveActorUserId(
+      { assignedToId: contact.assignedToId, connectorId: conv.connectorId ?? null },
+      { ultimoRecurso: true },
+    ).catch((err: unknown) => {
+      console.error("[bot-respond] no se pudo resolver la firma; se usa el asesor asignado:", err);
+      return contact.assignedToId;
+    });
     if (!ownerId) {
       await noteSilence(
         "no hay a nombre de quién enviar la respuesta: el contacto no tiene asesor asignado y no hay ningún usuario ADMIN activo.",

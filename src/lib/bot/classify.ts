@@ -173,28 +173,30 @@ export async function maybeClassifyContact(
     };
     const newCustom = { ...custom, bot_classification: newMarker };
 
-    // Escritura auditada: cronología (GUC) + AuditLog, mismo patrón que apply.ts
-    const admin = contact.assignedToId
-      ? { id: contact.assignedToId }
-      : await db.user.findFirst({
-          where: { role: "ADMIN", isActive: true, deletedAt: null },
-          select: { id: true },
-        });
-    if (!admin) {
+    // Escritura auditada: cronología (GUC) + AuditLog, mismo patrón que apply.ts.
+    // El actor lo decide el helper común (2026-10-12): antes era el asignado tal cual o
+    // «cualquier ADMIN activo», y el cambio de segmento salía en la cronología firmado por
+    // una cuenta técnica (Audit Temp, agentes@propyte.local). Aquí no hay cuenta a mano,
+    // así que va del asesor persona al ADMIN persona más antiguo. `ultimoRecurso`: sin
+    // actor el segmento NO se escribe, así que si no hay ninguna persona se firma como antes
+    // antes que dejar de clasificar.
+    const { resolveActorUserId } = await import("@/lib/users/actor-sistema");
+    const actorId = await resolveActorUserId({ assignedToId: contact.assignedToId }, { db, ultimoRecurso: true });
+    if (!actorId) {
       await db.contact.update({ where: { id: contact.id }, data: { custom: newCustom as unknown as Prisma.InputJsonValue } });
       return contact.contactType;
     }
 
     const { setChangeSource } = await import("@/lib/audit/change-context");
     await db.$transaction(async (tx) => {
-      await setChangeSource(tx, { source: "bot_classifier", actorId: admin.id });
+      await setChangeSource(tx, { source: "bot_classifier", actorId });
       await tx.contact.update({
         where: { id: contact.id },
         data: { contactType: detected, custom: newCustom as unknown as Prisma.InputJsonValue },
       });
       await tx.auditLog.create({
         data: {
-          userId: admin.id,
+          userId: actorId,
           action: "UPDATE",
           entity: "Contact",
           entityId: contact.id,

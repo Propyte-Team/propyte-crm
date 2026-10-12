@@ -8,6 +8,7 @@ const messageCreate = vi.fn();
 const conversationUpdate = vi.fn();
 const activityCreate = vi.fn();
 const userFindFirst = vi.fn();
+const leadConnectorFindFirst = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     contact: { findFirst: (...a: unknown[]) => contactFindFirst(...a) },
@@ -20,6 +21,8 @@ vi.mock("@/lib/db", () => ({
     conversation: { update: (...a: unknown[]) => conversationUpdate(...a) },
     activity: { create: (...a: unknown[]) => activityCreate(...a) },
     user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
+    // La marca de la cuenta del DM (helper de actor, 2026-10-12).
+    leadConnector: { findFirst: (...a: unknown[]) => leadConnectorFindFirst(...a) },
   },
 }));
 
@@ -40,10 +43,15 @@ beforeEach(() => {
   for (const m of [
     contactFindFirst, logFindFirst, logUpdate, logUpdateMany, messageCreate,
     conversationUpdate, activityCreate, userFindFirst, ensureConversation, captureLead,
+    leadConnectorFindFirst,
   ]) m.mockReset();
   ensureConversation.mockResolvedValue({ id: "conv-1", status: "BOT" });
   messageCreate.mockResolvedValue({ id: "msg-1" });
-  userFindFirst.mockResolvedValue({ id: "admin-1" });
+  // Usuarios falsos: el que se pide por id existe y es persona; el ADMIN de respaldo es admin-1.
+  userFindFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+    where.id ? { id: where.id } : { id: "admin-1" },
+  );
+  leadConnectorFindFirst.mockResolvedValue(null); // cuenta sin marca con responsable
   logUpdateMany.mockResolvedValue({ count: 1 });
   captureLead.mockResolvedValue({ contactId: "c-new", isNew: true, assignedToId: "u-9" });
 });
@@ -211,14 +219,36 @@ describe("persistOpenerCreatingContact", () => {
       expect(data.description).toContain("info");
     });
 
-    it("sin asesor asignado la nota se atribuye a un ADMIN activo", async () => {
+    // 2026-10-12: antes era «cualquier ADMIN activo», que podía ser la cuenta técnica
+    // Audit Temp. Ahora es el ADMIN persona más antiguo, siempre el mismo.
+    it("sin asesor asignado la nota se atribuye al ADMIN persona más antiguo", async () => {
       captureLead.mockResolvedValue({ contactId: "c-new", isNew: true, assignedToId: null });
       await persistOpenerCreatingContact(args);
       expect(userFindFirst).toHaveBeenCalledWith({
-        where: { role: "ADMIN", isActive: true },
+        where: { role: "ADMIN", isActive: true, deletedAt: null, NOT: { email: { endsWith: ".local" } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { id: true },
       });
       expect(activityCreate.mock.calls[0][0].data.userId).toBe("admin-1");
+    });
+
+    it("sin asesor y con marca en la cuenta del DM: la nota se atribuye al responsable de marketing de la marca", async () => {
+      captureLead.mockResolvedValue({ contactId: "c-new", isNew: true, assignedToId: null });
+      leadConnectorFindFirst.mockResolvedValue({ brand: { marketingOwnerUserId: "u-mkt" } });
+      await persistOpenerCreatingContact(args);
+      expect(leadConnectorFindFirst.mock.calls[0][0].where.id).toBe("conn-ig");
+      expect(activityCreate.mock.calls[0][0].data.userId).toBe("u-mkt");
+    });
+
+    it("asesor que es cuenta técnica: la nota NO sale a su nombre, y el opener sigue colgando de él", async () => {
+      captureLead.mockResolvedValue({ contactId: "c-new", isNew: true, assignedToId: "u-agentes" });
+      // agentes@propyte.local no pasa el filtro de persona: la consulta por id no lo trae.
+      userFindFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+        where.id === "u-agentes" ? null : { id: "admin-1" },
+      );
+      await persistOpenerCreatingContact(args);
+      expect(activityCreate.mock.calls[0][0].data.userId).toBe("admin-1");
+      expect(messageCreate.mock.calls[0][0].data.userId).toBe("u-agentes");
     });
 
     it("captureLead no capturable: no revienta, no escribe opener ni estampa el log", async () => {
@@ -320,9 +350,10 @@ describe("linkCommentOrigin", () => {
     });
   });
 
-  it("registra la actividad del origen", async () => {
+  it("registra la actividad del origen, con la marca de la cuenta del log", async () => {
     logFindFirst.mockResolvedValue(OLD_LOG);
     await linkCommentOrigin("c-1", "INSTAGRAM", "IGSID-1");
+    expect(leadConnectorFindFirst.mock.calls[0][0].where.id).toBe("conn-ig");
     expect(activityCreate.mock.calls[0][0].data).toMatchObject({
       contactId: "c-1",
       activityType: "NOTE",

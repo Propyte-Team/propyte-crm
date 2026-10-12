@@ -3,6 +3,7 @@
 import prisma from "@/lib/db";
 import type { ActionQueue, Prisma } from "@prisma/client";
 import { executeAction } from "./actions";
+import { crearCacheDeActor } from "@/lib/users/actor-sistema";
 
 export function dayBucket(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -107,6 +108,9 @@ export async function runQueue(batch = 20): Promise<{ ran: number; failed: numbe
   });
 
   let ran = 0, failed = 0, skipped = 0;
+  // Una memoria de firma por lote (2026-10-12): el ADMIN de respaldo de los envíos se busca
+  // una vez aquí, no una vez por acción. Vive lo que dura el lote, nada más.
+  const actorCache = crearCacheDeActor();
   for (const item of candidates) {
     const claimed = await prisma.actionQueue.updateMany({
       where: { id: item.id, status: "PENDING" },
@@ -115,7 +119,7 @@ export async function runQueue(batch = 20): Promise<{ ran: number; failed: numbe
     if (claimed.count === 0) continue; // otro runner la tomó
 
     try {
-      const result = await executeAction(item);
+      const result = await executeAction(item, { actorCache });
       await prisma.actionQueue.update({
         where: { id: item.id },
         data: {
