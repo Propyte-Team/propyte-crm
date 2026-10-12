@@ -139,20 +139,22 @@ async function writeOpener(args: {
  * versiones del mismo texto en la cronología es exactamente el ruido que se
  * quiere evitar.
  *
- * Activity.userId es NOT NULL: sin asesor asignado se atribuye a un ADMIN
- * activo; si tampoco hay, no se crea nada (la nota es trazabilidad, no dato
- * crítico).
+ * Activity.userId es NOT NULL. A quién se atribuye lo decide el helper común
+ * (lib/users/actor-sistema.ts, 2026-10-12): el asesor si es una persona activa,
+ * si no el responsable de la marca de la cuenta que mandó el DM, si no el ADMIN
+ * persona más antiguo. Antes era «cualquier ADMIN activo», que podía ser la
+ * cuenta técnica Audit Temp. Sin nadie, no se crea nada (la nota es
+ * trazabilidad, no dato crítico).
  */
 async function createOriginActivity(args: {
   contactId: string;
   assignedToId: string | null;
+  connectorId: string | null;
   postId: string;
   matchedPhrase: string;
 }): Promise<void> {
-  const userId =
-    args.assignedToId ??
-    (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))
-      ?.id;
+  const { resolveActorUserId } = await import("@/lib/users/actor-sistema");
+  const userId = await resolveActorUserId({ assignedToId: args.assignedToId, connectorId: args.connectorId });
   if (!userId) return;
 
   await prisma.activity.create({
@@ -303,6 +305,7 @@ export async function persistOpenerCreatingContact(args: {
       await createOriginActivity({
         contactId,
         assignedToId,
+        connectorId: args.connectorId,
         postId: args.postId,
         matchedPhrase: args.matchedPhrase,
       });
@@ -378,6 +381,7 @@ export async function linkCommentOrigin(
     await createOriginActivity({
       contactId,
       assignedToId,
+      connectorId: log.connectorId,
       postId: log.postId,
       matchedPhrase: log.matchedPhrase,
     });

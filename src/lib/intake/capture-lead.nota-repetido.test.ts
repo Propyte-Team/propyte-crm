@@ -49,7 +49,11 @@ const repetido = (assignedToId: string | null) => {
 beforeEach(() => {
   vi.clearAllMocks();
   activityCreate.mockResolvedValue({});
-  userFindFirst.mockResolvedValue({ id: "u-admin" });
+  // Usuarios falsos (helper de actor, 2026-10-12): el que se pide por id existe y es
+  // persona; el ADMIN de respaldo es u-admin.
+  userFindFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+    where.id ? { id: where.id } : { id: "u-admin" },
+  );
 });
 
 describe("captureLead — la nota de lead repetido", () => {
@@ -65,20 +69,51 @@ describe("captureLead — la nota de lead repetido", () => {
    * 🚨 El caso roto. `userId` tiene que ser un usuario de verdad, nunca el contacto: el id
    * del contacto en esa columna es lo que reventaba la FK.
    */
-  it("sin asesor, se atribuye a un ADMIN activo y NUNCA al contacto", async () => {
+  it("sin asesor, se atribuye al ADMIN persona más antiguo y NUNCA al contacto", async () => {
     await repetido(null);
 
     const data = activityCreate.mock.calls[0][0].data as { userId: string; contactId: string };
     expect(data.userId).toBe("u-admin");
     expect(data.userId).not.toBe(data.contactId);
     expect(userFindFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { role: "ADMIN", isActive: true } }),
+      expect.objectContaining({
+        where: { role: "ADMIN", isActive: true, deletedAt: null, NOT: { email: { endsWith: ".local" } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
     );
+  });
+
+  // 2026-10-12: el asesor de la mayoría de los contactos es agentes@propyte.local. La nota
+  // ya no se firma con esa cuenta técnica; el contacto, eso sí, sigue siendo suyo.
+  it("con asesor que es cuenta técnica, la nota se atribuye al ADMIN persona y el contacto no cambia de dueño", async () => {
+    userFindFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === "u-agentes" ? null : { id: "u-admin" },
+    );
+    const { default: db } = await import("@/lib/db");
+
+    await repetido("u-agentes");
+
+    expect(activityCreate.mock.calls[0][0].data.userId).toBe("u-admin");
+    for (const [arg] of (db.contact.update as unknown as ReturnType<typeof vi.fn>).mock.calls) {
+      expect((arg as { data: Record<string, unknown> }).data).not.toHaveProperty("assignedToId");
+    }
+  });
+
+  it("si leer a quién atribuirla falla, la captura sigue y queda registrado", async () => {
+    userFindFirst.mockRejectedValue(new Error("db down"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await repetido("u-asesor");
+
+    expect(activityCreate).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ contactId: "c-1", isNew: false });
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 
   // Sin nadie a quien atribuirla, se omite y se dice. Inventar un id costaría la FK.
   it("sin asesor ni ADMIN activo, no se escribe la nota y queda avisado", async () => {
-    userFindFirst.mockResolvedValue(null);
+    userFindFirst.mockImplementation(async () => null);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const r = await repetido(null);

@@ -58,14 +58,16 @@ export async function applyCapture(
 
     if (nativeWrites.length === 0 && customWrites.length === 0) return;
 
-    const actorId =
-      contact.assignedToId ??
-      (
-        await db.user.findFirst({
-          where: { role: "ADMIN", isActive: true },
-          select: { id: true },
-        })
-      )?.id;
+    // A quién se atribuye lo capturado (2026-10-12): el helper común, con la marca de la
+    // cuenta de ESTE hilo. Antes era el asignado tal cual o «cualquier ADMIN activo», y la
+    // cronología mostraba los datos que capturó el bot como cambios de una cuenta técnica.
+    // `ultimoRecurso`: sin actor el dato NO se guarda, así que si no hay ninguna persona se
+    // firma como antes antes que perder lo que el cliente contestó.
+    const { resolveActorUserId } = await import("@/lib/users/actor-sistema");
+    const actorId = await resolveActorUserId(
+      { assignedToId: contact.assignedToId, conversationId: meta.conversationId },
+      { db, ultimoRecurso: true },
+    );
     if (!actorId) return;
 
     const contactRecord = contact as unknown as Record<string, unknown>;

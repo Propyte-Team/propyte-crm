@@ -198,8 +198,23 @@ export async function captureLead(
     // el rechazo, así que la nota simplemente no aparecía — sin error, sin aviso, sin
     // rastro. Y solo fallaba para los contactos SIN asesor, que hoy son justo los que
     // entran por DM y comentario: la única vía viva.
-    const { actorDeActividad } = await import("@/lib/activities/actor");
-    const actor = await actorDeActividad(existing.assignedToId);
+    //
+    // 2026-10-12: la firma la decide el helper común (asesor persona → responsable de la
+    // marca de la cuenta → ADMIN persona más antiguo), no «cualquier ADMIN activo», que
+    // podía ser la cuenta técnica Audit Temp. La marca ya está resuelta arriba: se pasa
+    // tal cual y no cuesta otra lectura de la cuenta.
+    //
+    // La lectura también es best-effort: ahora consulta al asesor incluso cuando hay uno
+    // (para saber si es persona), y un hipo de la base en esa lectura no vale perder la
+    // captura del lead repetido. `undefined` = no se pudo saber; `null` = no hay nadie.
+    const { resolveActorUserId } = await import("@/lib/users/actor-sistema");
+    const actor = await resolveActorUserId({
+      assignedToId: existing.assignedToId,
+      brandId: outcome.connectorBrandId ?? null,
+    }).catch((err: unknown) => {
+      console.error("[captureLead] no se pudo resolver a quién atribuir la nota de lead repetido:", err);
+      return undefined;
+    });
     if (actor) {
       await prisma.activity
         .create({
@@ -217,9 +232,9 @@ export async function captureLead(
         // ahora deja rastro. Un catch mudo convierte cualquier regresión futura en
         // «la nota no sale y nadie sabe desde cuándo».
         .catch((err) => console.error("[captureLead] nota de lead repetido:", err));
-    } else {
+    } else if (actor === null) {
       console.warn(
-        `[captureLead] sin asesor ni ADMIN activo: no se registró la nota de lead repetido del contacto ${existing.id}`,
+        `[captureLead] sin asesor, responsable de marca ni ADMIN activo que sea persona: no se registró la nota de lead repetido del contacto ${existing.id}`,
       );
     }
     await prisma.contact.update({

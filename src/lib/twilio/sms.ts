@@ -106,10 +106,12 @@ export async function handleInboundSMS(payload: {
   // Crear actividad — best-effort: Activity.userId es NOT NULL (FK a users); el viejo
   // fallback `contact.id` era una FK violada garantizada con contacto sin asignar
   // (misma clase del BUG 2026-07-24 en core.ts) y mataba la ingesta del SMS.
+  // 2026-10-12: la firma la decide el helper común, igual que el inbound de core.ts; el SMS
+  // no llega por una cuenta con marca, así que va del asesor persona al ADMIN persona más
+  // antiguo. El aviso de abajo sigue yendo al asignado, sea quien sea: eso no cambia.
   try {
-    const activityUserId =
-      contact.assignedToId ??
-      (await prisma.user.findFirst({ where: { role: "ADMIN", isActive: true }, select: { id: true } }))?.id;
+    const { resolveActorUserId } = await import("@/lib/users/actor-sistema");
+    const activityUserId = await resolveActorUserId({ assignedToId: contact.assignedToId });
     if (activityUserId) {
       await prisma.activity.create({
         data: {

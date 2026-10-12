@@ -25,6 +25,12 @@ vi.mock("@/lib/intake/intake-lock", async (importOriginal) => {
   return { ...actual, withIntakeLock: async (_key: string | null, fn: (d: unknown) => Promise<unknown>) => fn(db) };
 });
 
+// La firma de la nota de lead repetido la decide el helper de actor (2026-10-12), que tiene
+// sus propias pruebas; aquí el asesor asignado se toma por persona y se devuelve tal cual.
+vi.mock("@/lib/users/actor-sistema", () => ({
+  resolveActorUserId: async ({ assignedToId }: { assignedToId?: string | null }) => assignedToId ?? null,
+}));
+
 import { captureLead } from "./capture-lead";
 
 beforeEach(() => { findFirst.mockReset(); create.mockReset(); });
