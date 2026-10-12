@@ -28,6 +28,10 @@ import { POST } from "./route";
 
 const call = () => POST({} as never, { params: Promise.resolve({ id: "c1" }) });
 
+// Lo que el CRM necesita en cada Página (REQUIRED_PAGE_FIELDS). Escrito a mano a propósito:
+// si alguien quita un campo de la lista, estas pruebas se ponen rojas.
+const TODOS = ["messages", "message_echoes", "feed", "messaging_policy_enforcement"];
+
 const YAXNAH = {
   id: "c1",
   name: "Messenger | DM Yaxnah",
@@ -44,16 +48,16 @@ beforeEach(() => {
 });
 
 describe("POST /api/admin/connectors/[id]/subscribe", () => {
-  it("Página sin campos: suscribe los tres y devuelve lo que confirmó Meta", async () => {
+  it("Página sin campos: suscribe los cuatro y devuelve lo que confirmó Meta", async () => {
     probe
       .mockResolvedValueOnce({ subscribedFields: [], error: null })
-      .mockResolvedValueOnce({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
+      .mockResolvedValueOnce({ subscribedFields: TODOS, error: null });
     const res = await call();
     expect(res.status).toBe(200);
-    expect(subscribe).toHaveBeenCalledWith("PAGE-1", "TOKEN", ["messages", "message_echoes", "feed"]);
+    expect(subscribe).toHaveBeenCalledWith("PAGE-1", "TOKEN", TODOS);
     expect((await res.json()).data).toEqual({
       changed: true,
-      subscribedFields: ["messages", "message_echoes", "feed"],
+      subscribedFields: TODOS,
       missing: [],
     });
   });
@@ -61,11 +65,21 @@ describe("POST /api/admin/connectors/[id]/subscribe", () => {
   it("no borra los campos que ya tenía la Página", async () => {
     probe.mockResolvedValue({ subscribedFields: ["leadgen", "messages"], error: null });
     await call();
-    expect(subscribe).toHaveBeenCalledWith("PAGE-1", "TOKEN", ["leadgen", "messages", "message_echoes", "feed"]);
+    expect(subscribe).toHaveBeenCalledWith("PAGE-1", "TOKEN", [
+      "leadgen", "messages", "message_echoes", "feed", "messaging_policy_enforcement",
+    ]);
+  });
+
+  // 2026-10-12: el caso de después del deploy — las Páginas ya suscritas a los tres campos
+  // de antes solo reciben el nuevo, sin perder nada.
+  it("Página suscrita antes de messaging_policy_enforcement: agrega solo ese", async () => {
+    probe.mockResolvedValue({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
+    await call();
+    expect(subscribe).toHaveBeenCalledWith("PAGE-1", "TOKEN", TODOS);
   });
 
   it("si ya tiene todo, no escribe en Meta", async () => {
-    probe.mockResolvedValue({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
+    probe.mockResolvedValue({ subscribedFields: TODOS, error: null });
     const body = await (await call()).json();
     expect(body.data.changed).toBe(false);
     expect(subscribe).not.toHaveBeenCalled();
@@ -106,7 +120,7 @@ describe("POST /api/admin/connectors/[id]/subscribe", () => {
 
   it("MARKETING puede suscribir sus cuentas", async () => {
     session.user.role = "MARKETING";
-    probe.mockResolvedValue({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
+    probe.mockResolvedValue({ subscribedFields: TODOS, error: null });
     expect((await call()).status).toBe(200);
   });
 

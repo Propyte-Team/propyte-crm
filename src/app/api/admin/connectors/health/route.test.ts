@@ -37,6 +37,9 @@ class NextRequestLike {
   }
 }
 
+// Lo que el CRM necesita en cada Página (REQUIRED_PAGE_FIELDS), escrito a mano a propósito.
+const TODOS = ["messages", "message_echoes", "feed", "messaging_policy_enforcement"];
+
 const MESSENGER = {
   id: "c1",
   name: "Messenger | DM Propyte",
@@ -50,7 +53,7 @@ beforeEach(() => {
   session.user.role = "ADMIN";
   connectorFindMany.mockResolvedValue([MESSENGER]);
   getToken.mockReturnValue("TOKEN");
-  probe.mockResolvedValue({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
+  probe.mockResolvedValue({ subscribedFields: TODOS, error: null });
 });
 
 describe("GET /api/admin/connectors/health", () => {
@@ -63,7 +66,7 @@ describe("GET /api/admin/connectors/health", () => {
   it("con ?probe=1 reporta los campos suscritos de la Página", async () => {
     const res = await GET(req("?probe=1"));
     expect((await res.json()).data[0].webhook).toEqual({
-      subscribedFields: ["messages", "message_echoes", "feed"],
+      subscribedFields: TODOS,
       missingForComments: [],
       missingPageFields: [],
       error: null,
@@ -73,7 +76,15 @@ describe("GET /api/admin/connectors/health", () => {
   it("Página sin campos (Yaxnáh): reporta lo que el botón agregaría", async () => {
     probe.mockResolvedValue({ subscribedFields: [], error: null });
     const body = await (await GET(req("?probe=1"))).json();
-    expect(body.data[0].webhook.missingPageFields).toEqual(["messages", "message_echoes", "feed"]);
+    expect(body.data[0].webhook.missingPageFields).toEqual(TODOS);
+  });
+
+  // 2026-10-12: tras el deploy, una Página que estaba completa pide solo el campo nuevo, y
+  // por eso vuelve a aparecer «Suscribir página».
+  it("Página suscrita antes de messaging_policy_enforcement: le falta solo ese", async () => {
+    probe.mockResolvedValue({ subscribedFields: ["messages", "message_echoes", "feed"], error: null });
+    const body = await (await GET(req("?probe=1"))).json();
+    expect(body.data[0].webhook.missingPageFields).toEqual(["messaging_policy_enforcement"]);
   });
 
   it("si Graph falló no ofrece suscribir", async () => {

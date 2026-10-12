@@ -36,6 +36,20 @@ vi.mock("@/lib/whatsapp/media", () => ({
 }));
 vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRespond(...a) }));
 
+// Acuse rápido (2026-10-12): el bot ya no corre antes del 200, se agenda con
+// runAfterResponse (`after()` de Next). Este doble guarda el callback para que cada prueba
+// decida cuándo correrlo y pueda comprobar que la respuesta NO lo esperó.
+const agendados: Array<() => unknown> = [];
+const runAfterResponse = vi.fn();
+vi.mock("@/lib/runtime/after-response", () => ({
+  runAfterResponse: (fn: () => unknown) => runAfterResponse(fn),
+}));
+
+/** Corre lo que el POST dejó para después del 200, como lo haría `after()`. */
+async function enSegundoPlano() {
+  while (agendados.length > 0) await agendados.shift()!();
+}
+
 import { GET, POST } from "./route";
 
 const APP_SECRET = "test-wa-app-secret";
@@ -50,6 +64,11 @@ beforeEach(() => {
   getWhatsAppCredentials.mockReturnValue(null);
   resolveWaMediaToStorage.mockReset();
   botRespond.mockReset();
+  agendados.length = 0;
+  runAfterResponse.mockReset();
+  runAfterResponse.mockImplementation((fn: () => unknown) => {
+    agendados.push(fn);
+  });
   messageUpdateMany.mockReset();
   messageUpdateMany.mockResolvedValue({ count: 0 });
   messageFindFirst.mockReset();
@@ -123,8 +142,9 @@ describe("webhook de WhatsApp Cloud — la firma falla CERRADO", () => {
     delete process.env.META_WA_APP_SECRET;
     const res = await POST(postFirmado(CUERPO_OK));
     expect(res.status).toBe(401);
-    // Y sobre todo: no ingirió nada.
+    // Y sobre todo: no ingirió nada ni agendó al bot.
     expect(handleInboundWhatsApp).not.toHaveBeenCalled();
+    expect(runAfterResponse).not.toHaveBeenCalled();
   });
 
   it("🚨 rechaza con 401 si la variable está pero vacía", async () => {
@@ -149,6 +169,7 @@ describe("webhook de WhatsApp Cloud — la firma falla CERRADO", () => {
   it("rechaza con 401 si falta el header de firma", async () => {
     const res = await POST(req(URL_WEBHOOK, { method: "POST", body: CUERPO_OK }));
     expect(res.status).toBe(401);
+    expect(runAfterResponse).not.toHaveBeenCalled();
   });
 
   it("rechaza con 401 un header cuyo prefijo no es sha256=", async () => {
@@ -536,6 +557,8 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, processed: 1 });
     expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+    expect(runAfterResponse).not.toHaveBeenCalled();
+    await enSegundoPlano();
     expect(botRespond).not.toHaveBeenCalled();
     const avisos = (console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls;
     expect(JSON.stringify(avisos)).toContain("pn-desconocido");
@@ -545,6 +568,7 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     const res = await POST(postFirmado(cuerpoDe("pn-global")));
 
     expect(res.status).toBe(200);
+    await enSegundoPlano();
     expect(botRespond).toHaveBeenCalledTimes(1);
     expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: null });
     expect(JSON.stringify((console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
@@ -556,6 +580,7 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     vi.stubEnv("META_WA_PHONE_NUMBER_ID", "  pn-global \n");
 
     await POST(postFirmado(cuerpoDe("pn-global")));
+    await enSegundoPlano();
 
     expect(botRespond).toHaveBeenCalledTimes(1);
   });
@@ -565,6 +590,7 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     getWhatsAppCredentials.mockReturnValue({ phoneNumberId: "pn-marca", accessToken: "tok-test" });
 
     await POST(postFirmado(cuerpoDe("pn-marca")));
+    await enSegundoPlano();
 
     expect(resolveConnectorByPhoneNumberId).toHaveBeenCalledWith("pn-marca");
     expect(botRespond).toHaveBeenCalledTimes(1);
@@ -580,6 +606,7 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
 
     expect(res.status).toBe(200);
     expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+    await enSegundoPlano();
     expect(botRespond).not.toHaveBeenCalled();
     // El fallo de la resolución sigue registrándose (no se traga en silencio).
     expect(console.error).toHaveBeenCalled();
@@ -589,6 +616,7 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     resolveConnectorByPhoneNumberId.mockRejectedValue(new Error("db caída"));
 
     await POST(postFirmado(cuerpoDe("pn-global")));
+    await enSegundoPlano();
 
     expect(botRespond).toHaveBeenCalledTimes(1);
   });
@@ -631,5 +659,88 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     expect(res.status).toBe(200);
     expect(resolveWaMediaToStorage).toHaveBeenCalledWith("media-1", null);
     expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Acuse rápido (2026-10-12), gemelo del de meta-dm: Meta reintenta si el 200 no llega a
+// tiempo. La ingesta va antes de responder (el mensaje queda en el inbox); el bot (Claude +
+// envío por Graph) se agenda para después del 200.
+// ---------------------------------------------------------------------------
+describe("webhook de WhatsApp Cloud — acuse rápido (bot después del 200)", () => {
+  /** Un batch con un mensaje por cada remitente, al número global. */
+  function cuerpoCon(mensajes: Array<{ id: string; from: string }>) {
+    return JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: "pn-global" },
+                contacts: mensajes.map((m) => ({ wa_id: m.from })),
+                messages: mensajes.map((m) => ({ ...m, type: "text", text: { body: "hola" } })),
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("META_WA_PHONE_NUMBER_ID", "pn-global");
+  });
+
+  it("responde 200 con el mensaje ya ingerido y SIN haber llamado al bot; el bot corre al ejecutar lo agendado", async () => {
+    const res = await POST(postFirmado(cuerpoCon([{ id: "wamid.1", from: "5219981234567" }])));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, processed: 1 });
+    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(1);
+    expect(botRespond).not.toHaveBeenCalled();
+    expect(runAfterResponse).toHaveBeenCalledTimes(1);
+
+    await enSegundoPlano();
+
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "WHATSAPP", connectorId: null });
+  });
+
+  it("coalescing: dos mensajes del mismo contacto → el bot contesta UNA vez", async () => {
+    await POST(
+      postFirmado(
+        cuerpoCon([
+          { id: "wamid.1", from: "5219981234567" },
+          { id: "wamid.2", from: "5219981234567" },
+        ]),
+      ),
+    );
+    await enSegundoPlano();
+
+    expect(handleInboundWhatsApp).toHaveBeenCalledTimes(2);
+    expect(botRespond).toHaveBeenCalledTimes(1);
+  });
+
+  it("un bot que revienta no detiene al siguiente contacto", async () => {
+    handleInboundWhatsApp.mockResolvedValueOnce({ contactId: "c1" }).mockResolvedValueOnce({ contactId: "c2" });
+    botRespond.mockRejectedValueOnce(new Error("Claude caído")).mockResolvedValue(undefined);
+
+    const res = await POST(
+      postFirmado(
+        cuerpoCon([
+          { id: "wamid.1", from: "5219981234567" },
+          { id: "wamid.2", from: "5219990000000" },
+        ]),
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    await expect(enSegundoPlano()).resolves.toBeUndefined();
+    expect(botRespond.mock.calls.map((c) => c[0])).toEqual(["c1", "c2"]);
+    expect(console.error).toHaveBeenCalledWith("[whatsapp-meta] botRespond:", expect.any(Error));
+  });
+
+  it("un batch solo de acuses (sin mensajes) no agenda nada", async () => {
+    await POST(postFirmado(cuerpoConStatus({ id: "wamid.1", status: "delivered" })));
+    expect(runAfterResponse).not.toHaveBeenCalled();
   });
 });

@@ -91,7 +91,10 @@ beforeEach(() => {
     ig: { status: 200, body: { id: "PAGE-1", instagram_business_account: { id: IG_ID, username: "nativatulum" } } },
     subGet: [
       { status: 200, body: { data: [{ subscribed_fields: ["leadgen"] }] } },
-      { status: 200, body: { data: [{ subscribed_fields: ["leadgen", "messages", "message_echoes", "feed"] }] } },
+      {
+        status: 200,
+        body: { data: [{ subscribed_fields: ["leadgen", "messages", "message_echoes", "feed", "messaging_policy_enforcement"] }] },
+      },
     ],
     subPost: { status: 200, body: { success: true } },
   };
@@ -334,17 +337,24 @@ describe("POST /api/admin/connectors/meta-dms · suscripción de la Página", ()
     const res = await call();
     const [post] = subscribeCalls();
     expect(String(post[0])).toBe("https://graph.facebook.com/v24.0/PAGE-1/subscribed_apps");
-    expect(new URLSearchParams(post[1].body).get("subscribed_fields")).toBe("leadgen,messages,message_echoes,feed");
+    expect(new URLSearchParams(post[1].body).get("subscribed_fields")).toBe(
+      "leadgen,messages,message_echoes,feed,messaging_policy_enforcement"
+    );
     expect((await res.json()).data.subscription).toEqual({
       ok: true,
       changed: true,
-      subscribedFields: ["leadgen", "messages", "message_echoes", "feed"],
+      subscribedFields: ["leadgen", "messages", "message_echoes", "feed", "messaging_policy_enforcement"],
       missing: [],
     });
   });
 
   it("si ya estaba suscrita, no escribe en Meta", async () => {
-    graph.subGet = [{ status: 200, body: { data: [{ subscribed_fields: ["messages", "message_echoes", "feed"] }] } }];
+    graph.subGet = [
+      {
+        status: 200,
+        body: { data: [{ subscribed_fields: ["messages", "message_echoes", "feed", "messaging_policy_enforcement"] }] },
+      },
+    ];
     const res = await call();
     expect(subscribeCalls()).toHaveLength(0);
     expect((await res.json()).data.subscription).toMatchObject({ ok: true, changed: false });

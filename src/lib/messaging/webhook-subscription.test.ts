@@ -57,12 +57,18 @@ describe("probePageSubscription", () => {
 });
 
 describe("missingPageFields / fieldsToSubscribe", () => {
-  it("Página sin nada: faltan los tres", () => {
-    expect(missingPageFields([])).toEqual(["messages", "message_echoes", "feed"]);
+  it("Página sin nada: faltan los cuatro", () => {
+    expect(missingPageFields([])).toEqual(["messages", "message_echoes", "feed", "messaging_policy_enforcement"]);
   });
 
-  it("solo DMs: falta feed", () => {
-    expect(missingPageFields(["messages", "message_echoes"])).toEqual(["feed"]);
+  it("solo DMs: faltan feed y los avisos de políticas", () => {
+    expect(missingPageFields(["messages", "message_echoes"])).toEqual(["feed", "messaging_policy_enforcement"]);
+  });
+
+  // 2026-10-12: una Página suscrita antes de este campo sale con un faltante, y eso es lo
+  // que hace aparecer «Suscribir página» en las que ya estaban bien.
+  it("Página con todo lo de antes: falta solo messaging_policy_enforcement", () => {
+    expect(missingPageFields(["messages", "message_echoes", "feed"])).toEqual(["messaging_policy_enforcement"]);
   });
 
   it("conserva lo que ya tenía la Página (el POST reemplaza la lista)", () => {
@@ -71,6 +77,7 @@ describe("missingPageFields / fieldsToSubscribe", () => {
       "messages",
       "message_echoes",
       "feed",
+      "messaging_policy_enforcement",
     ]);
   });
 });

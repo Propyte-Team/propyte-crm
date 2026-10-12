@@ -5,6 +5,26 @@
 //   Campos a suscribir: `messages` (DM) y `comments`/`feed` (comentarios) para
 //   los objetos instagram y page. Meta permite UNA callback URL por objeto, así
 //   que ambos tipos llegan aquí y se bifurcan por la forma del payload.
+//   En page también `messaging_policy_enforcement` (2026-10-12): Meta avisa aquí
+//   cuando bloquea o advierte a una Página por sus políticas (ver
+//   lib/messaging/policy-enforcement.ts).
+//
+// Acuse rápido (2026-10-12): Meta exige `200 OK` en menos de 20 s (requisito de App
+// Review para Messenger); si tardamos más, reintenta, duplica eventos o marca el webhook.
+// Antes el POST esperaba al bot (Claude + envío por Graph) por cada contacto y a cada
+// comentario (respuesta pública + privada + lecturas de verificación, hasta ~22 s solo
+// uno), así que un batch normal podía pasarse del límite.
+//
+// Ahora antes del 200 solo va lo que no se puede perder: firma, JSON y la INGESTA de cada
+// DM (handleInboundMessage), para que el mensaje quede persistido antes de contestar. El
+// bot y los comentarios se agendan con runAfterResponse (`after()` de Next) y corren
+// cuando la respuesta ya salió.
+//
+// El costo, asumido a propósito: si el trabajo en segundo plano falla, Meta NO reintenta,
+// porque ya le dijimos 200. Lo que importa no se pierde: los DMs quedan en la base antes
+// del 200 (un bot que no contestó se ve en el inbox, con el hilo esperando respuesta) y
+// cada comentario deja su rastro dentro de handleComment. Un fallo del bot o de un
+// comentario sale en el console.error de su tarea.
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { handleInboundMessage } from "@/lib/messaging/core";
@@ -15,8 +35,15 @@ import {
   resolveConnectorByPageId,
   markSocialConnectorsSignatureRejected,
 } from "@/lib/messaging/social-accounts";
-import { parseCommentWebhook } from "@/lib/comments/parse";
+import { parseCommentWebhook, type IncomingComment } from "@/lib/comments/parse";
+import type { IncomingMessage } from "@/lib/messaging/types";
 import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
+import { runAfterResponse } from "@/lib/runtime/after-response";
+import {
+  parsePolicyEnforcement,
+  handlePolicyEnforcement,
+  type PolicyEnforcementEvent,
+} from "@/lib/messaging/policy-enforcement";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -57,6 +84,13 @@ function validSignature(rawBody: string, signature: string | null): boolean {
 interface MetaWebhookBody {
   object?: string;
   entry?: unknown[];
+}
+
+/** A quién le contesta el bot después del 200: uno por contacto+canal. */
+interface BotTarget {
+  contactId: string;
+  channel: IncomingMessage["channel"];
+  connectorId: string | null;
 }
 
 export async function POST(req: NextRequest) {
@@ -102,7 +136,7 @@ export async function POST(req: NextRequest) {
   // Coalescing del bot (BUG 2026-07-24): cada mensaje del batch disparaba una respuesta
   // completa. Se ingiere todo con triggerBot:false y el bot responde UNA vez por
   // contacto+canal al final. Los echoes jamás disparan al bot.
-  const botTargets = new Map<string, { contactId: string; channel: typeof messages[number]["channel"]; connectorId: string | null }>();
+  const botTargets = new Map<string, BotTarget>();
   for (const msg of messages) {
     try {
       // Marcas del agente (2026-10-09, seguimiento T4): si el mensaje traía accountId pero ninguna
@@ -138,16 +172,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Una respuesta del bot por contacto+canal (guards internos de botRespond deciden).
-  for (const t of botTargets.values()) {
-    try {
-      const { botRespond } = await import("@/lib/bot/bot-respond");
-      await botRespond(t.contactId, { channel: t.channel, connectorId: t.connectorId });
-    } catch (err) {
-      console.error("[meta-dm] botRespond:", err);
-    }
-  }
-
   // Comentarios (entry[].changes): camino independiente del de DMs. Un fallo
   // aquí nunca debe afectar lo que ya se ingirió arriba.
   const parsed = parseCommentWebhook(body);
@@ -157,27 +181,69 @@ export async function POST(req: NextRequest) {
   // comentarista bloqueó la Página, falta pages_read_engagement, o la cuenta
   // fue borrada). parseCommentWebhook es pura y no loguea; este es el único
   // lugar donde se deja rastro de un comentario de cliente real que se cayó.
+  // Va ANTES del 200: es un console.warn, no cuesta nada.
   for (const d of parsed.discarded) {
     console.warn(
       `[meta-dm] comentario descartado (${d.reason}) platform=${d.platform} account=${d.accountId} comment=${d.externalCommentId ?? "?"}`
     );
   }
 
-  let commentsProcessed = 0;
-  for (const c of parsed.comments) {
+  // Avisos de políticas (messaging_policy_enforcement): parseMessengerWebhook los ignora
+  // —no traen sender ni message— y se leen aparte. Parsear es puro y barato; marcar las
+  // cuentas y avisar a los admins va con lo de después del 200.
+  const avisos = parsePolicyEnforcement(body);
+
+  // Lo lento va después del 200 (ver cabecera). Solo se agenda si hay algo que hacer.
+  const bots = [...botTargets.values()];
+  const comments = parsed.comments;
+  if (bots.length > 0 || comments.length > 0 || avisos.length > 0) {
+    runAfterResponse(() => trabajoEnSegundoPlano(bots, comments, avisos));
+  }
+
+  // `comments` es lo ENCOLADO, no lo procesado: al responder todavía no corre ninguno.
+  return NextResponse.json({
+    ok: true,
+    processed,
+    comments: parsed.comments.length,
+    discarded: parsed.discarded.length,
+  });
+}
+
+/**
+ * Lo que corre después de mandar el 200. Cada tarea lleva su try/catch: un bot, un
+ * comentario o un aviso que revienta no detiene a los demás. Secuencial, igual que cuando
+ * corría dentro de la petición.
+ */
+async function trabajoEnSegundoPlano(
+  bots: BotTarget[],
+  comments: IncomingComment[],
+  avisos: PolicyEnforcementEvent[]
+): Promise<void> {
+  // Una respuesta del bot por contacto+canal (guards internos de botRespond deciden).
+  for (const t of bots) {
+    try {
+      const { botRespond } = await import("@/lib/bot/bot-respond");
+      await botRespond(t.contactId, { channel: t.channel, connectorId: t.connectorId });
+    } catch (err) {
+      console.error("[meta-dm] botRespond:", err);
+    }
+  }
+
+  for (const c of comments) {
     try {
       const { handleComment } = await import("@/lib/comments/handle-comment");
       await handleComment(c);
-      commentsProcessed++;
     } catch (err) {
       console.error("[meta-dm] comentario:", err);
     }
   }
 
-  return NextResponse.json({
-    ok: true,
-    processed,
-    comments: commentsProcessed,
-    discarded: parsed.discarded.length,
-  });
+  // handlePolicyEnforcement ya es best-effort; el try/catch es el mismo cinturón que el resto.
+  for (const a of avisos) {
+    try {
+      await handlePolicyEnforcement(a);
+    } catch (err) {
+      console.error("[meta-dm] policy_enforcement:", err);
+    }
+  }
 }
