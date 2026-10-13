@@ -241,8 +241,24 @@ export async function createActivity(data: CreateActivityInput) {
 // updateActivity — actualizar (completar tarea, reprogramar, etc.)
 // ============================================================
 
+// HUB #859: familias de actividad que la Agenda edita desde sus tablas. El tipo solo se puede
+// cambiar dentro de la misma familia (virtual <-> presencial, saliente <-> entrante).
+const MEETING_TYPES: ActivityType[] = ["MEETING_VIRTUAL", "MEETING_PRESENTIAL", "MEETING_SHOWROOM"]
+const CALL_TYPES: ActivityType[] = ["CALL_OUTBOUND", "CALL_INBOUND"]
+
+function sameTypeFamily(a: ActivityType, b: ActivityType): boolean {
+  return (
+    (MEETING_TYPES.includes(a) && MEETING_TYPES.includes(b)) ||
+    (CALL_TYPES.includes(a) && CALL_TYPES.includes(b))
+  )
+}
+
 export interface UpdateActivityInput {
   subject?: string
+  /** Cambiar el contacto ligado (HUB #859). No admite null: quitar el contacto no es una edición. */
+  contactId?: string
+  /** Cambiar el tipo dentro de su familia: reunión <-> reunión, llamada <-> llamada. */
+  activityType?: ActivityType
   description?: string | null
   dueDate?: Date | null
   status?: ActivityStatus
@@ -265,8 +281,22 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
     throw new Error("No tienes permiso para editar esta actividad")
   }
 
+  if (data.activityType !== undefined && !sameTypeFamily(existing.activityType, data.activityType)) {
+    throw new Error("Tipo de actividad no válido para esta actividad")
+  }
+
+  if (data.contactId !== undefined) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: data.contactId, deletedAt: null },
+      select: { id: true },
+    })
+    if (!contact) throw new Error("Contacto no encontrado")
+  }
+
   // Si se está completando, registrar fecha de completado
   const updateData: Prisma.ActivityUpdateInput = {}
+  if (data.activityType !== undefined) updateData.activityType = data.activityType
+  if (data.contactId !== undefined) updateData.contact = { connect: { id: data.contactId } }
   if (data.subject !== undefined) updateData.subject = data.subject
   if (data.description !== undefined) updateData.description = data.description
   if (data.dueDate !== undefined) updateData.dueDate = data.dueDate

@@ -17,7 +17,6 @@ export const COLUMNAS_REUNIONES: ColumnaDef[] = [
   { key: "titulo", label: "Título", required: true, defaultVisible: true },
   { key: "de", label: "De", defaultVisible: true },
   { key: "a", label: "A", defaultVisible: true },
-  { key: "relacionado", label: "Relacionado con", defaultVisible: true },
   { key: "contacto", label: "Nombre de contacto", defaultVisible: true },
   { key: "host", label: "Host" },
   { key: "tipo", label: "Tipo de reunión" },
@@ -30,12 +29,11 @@ export const COLUMNAS_REUNIONES: ColumnaDef[] = [
 
 export const COLUMNAS_LLAMADAS: ColumnaDef[] = [
   { key: "asunto", label: "Asunto", required: true, defaultVisible: true },
-  { key: "relacionado", label: "Relacionado con", defaultVisible: true },
+  { key: "contacto", label: "Contacto", defaultVisible: true },
   { key: "inicio", label: "Hora de inicio de la llamada", defaultVisible: true },
   { key: "telefono", label: "Número de destino", defaultVisible: true },
   { key: "propietario", label: "Propietario de la llamada" },
   { key: "tipo", label: "Tipo de llamada" },
-  { key: "contacto", label: "Nombre de contacto" },
   { key: "duracion", label: "Duración de la llamada" },
   { key: "descripcion", label: "Descripción" },
 ];
@@ -45,9 +43,13 @@ export const COLUMNAS: Record<TablaAgenda, ColumnaDef[]> = {
   llamadas: COLUMNAS_LLAMADAS,
 };
 
-/** Clave de localStorage de cada tabla. Versionada: si cambia el catálogo se sube el sufijo. */
+/**
+ * Clave de localStorage de cada tabla. Versionada: si cambia el catálogo se sube el sufijo.
+ * v2 (HUB #859): se quitó "Relacionado con" y en llamadas "Nombre de contacto" pasó a ser
+ * "Contacto" visible por defecto; las preferencias v1 ya no cuadran con el catálogo.
+ */
 export function storageKeyColumnas(tabla: TablaAgenda): string {
-  return `agenda.columnas.${tabla}.v1`;
+  return `agenda.columnas.${tabla}.v2`;
 }
 
 /**
