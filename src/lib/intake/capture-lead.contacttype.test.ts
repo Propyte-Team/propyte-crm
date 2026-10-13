@@ -44,7 +44,8 @@ describe("captureLead — contactType/temperature opcionales", () => {
     );
   });
 
-  it("sin contactType → fallback COMPRADOR", async () => {
+  // #863: antes caía a COMPRADOR y todo contacto parecía comprador sin que nadie lo decidiera.
+  it("sin contactType → nace SIN tipo (null), no COMPRADOR", async () => {
     findFirst.mockResolvedValue(null);
     create.mockResolvedValueOnce({ id: "c-2", assignedToId: null });
     await captureLead(
@@ -52,7 +53,7 @@ describe("captureLead — contactType/temperature opcionales", () => {
       { connectorId: "conn-1", skipRouting: true }
     );
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ contactType: "COMPRADOR" }) })
+      expect.objectContaining({ data: expect.objectContaining({ contactType: null }) })
     );
   });
 

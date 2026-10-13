@@ -53,7 +53,8 @@ export const contactFormSchema = z
     secondaryPhone: phoneField.optional().or(z.literal("")),
     whatsappUserId: whatsappUserIdField.optional().or(z.literal("")),
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
+  // null = sin tipo (#863): el contacto nace en «—» salvo que se elija uno.
+  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).nullable().optional(),
   leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
   residenceCity: z.string().max(100).optional(),
@@ -98,6 +99,10 @@ interface ContactFormProps {
 // Solo los tipos nuevos se ofrecen al crear/editar; los viejos (LEAD/PROSPECTO/CLIENTE/REFERIDO)
 // no aparecen en el selector pero CONTACT_TYPE_LABELS (de constants) los sigue resolviendo
 // para mostrar correctamente contactos existentes con valores legacy.
+// Radix Select no admite "" como valor de un item: «—» viaja con este centinela y se
+// traduce a null al guardar (#863).
+const SIN_TIPO = "__SIN_TIPO__";
+
 const CONTACT_TYPE_OPTIONS = [
   { value: "COMPRADOR", label: "Comprador" },
   { value: "INVERSIONISTA", label: "Inversionista" },
@@ -214,7 +219,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
     secondaryPhone: initialData?.secondaryPhone || "",
     whatsappUserId: initialData?.whatsappUserId || "",
     preferredLanguage: initialData?.preferredLanguage || "ES",
-    contactType: initialData?.contactType || "COMPRADOR",
+    contactType: initialData?.contactType ?? null, // #863: antes "COMPRADOR" por defecto
     leadSource: initialData?.leadSource || "OTRO",
     leadSourceDetail: initialData?.leadSourceDetail || "",
     residenceCity: initialData?.residenceCity || "",
@@ -443,8 +448,8 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
           <div className="space-y-2">
             <Label htmlFor="contactType">Tipo de contacto</Label>
             <Select
-              value={formData.contactType || "COMPRADOR"}
-              onValueChange={(v) => updateField("contactType", v)}
+              value={formData.contactType || SIN_TIPO}
+              onValueChange={(v) => updateField("contactType", v === SIN_TIPO ? null : v)}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -456,6 +461,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
                     {formData.contactType} (legacy)
                   </SelectItem>
                 )}
+                <SelectItem value={SIN_TIPO}>— Sin tipo</SelectItem>
                 {CONTACT_TYPE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}

@@ -747,7 +747,11 @@ model Contact {
   email             String?
   phone             String
   secondaryPhone    String?
-  contactType       ContactType       @default(COMPRADOR)
+  // Sin default (#863, 2026-10-13): un contacto nuevo nace SIN tipo («—» en la UI) y lo
+  // clasifica el asesor, o el clasificador del bot si la intención es explícita en el chat.
+  // Antes era @default(COMPRADOR) y todo contacto parecía comprador sin que nadie lo
+  // decidiera. Migración: prisma/migrations-manual/2026-10-13-contact-type-nullable.sql.
+  contactType       ContactType?
   leadSource        LeadSource
   leadSourceDetail  String?
   residenceCity     String?

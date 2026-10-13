@@ -211,3 +211,41 @@ describe("maybeClassifyContact", () => {
     expect(r).toBe("COMPRADOR");
   });
 });
+
+// #863: los contactos nuevos nacen SIN tipo (null) en vez de COMPRADOR.
+describe("maybeClassifyContact — contacto sin tipo (#863)", () => {
+  const sinTipo = { ...baseContact, contactType: null };
+
+  it("intención explícita → le pone el tipo detectado (auditado)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("BROKER_EXTERNO")));
+    const { db, contactUpdate, auditCreate } = mkDb();
+    const r = await maybeClassifyContact(db as never, sinTipo, msgs, "m");
+    expect(r).toBe("BROKER_EXTERNO");
+    expect(contactUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contactType: "BROKER_EXTERNO" }),
+    }));
+    expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ changes: expect.objectContaining({ from: null, to: "BROKER_EXTERNO" }) }),
+    }));
+  });
+
+  it("sin intención explícita (UNKNOWN) → se queda sin tipo: NO lo vuelve COMPRADOR", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("UNKNOWN")));
+    const { db, contactUpdate, auditCreate } = mkDb();
+    const r = await maybeClassifyContact(db as never, sinTipo, msgs, "m");
+    expect(r).toBeNull();
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(contactUpdate.mock.calls[0][0].data).not.toHaveProperty("contactType");
+  });
+
+  it("un asesor lo regresó a «—» después de que el bot lo clasificara → se respeta", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { db, contactUpdate } = mkDb();
+    const vaciado = { ...sinTipo, custom: { bot_classification: { type: "INVERSIONISTA", attempts: 1 } } };
+    const r = await maybeClassifyContact(db as never, vaciado, msgs, "m");
+    expect(r).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(contactUpdate).not.toHaveBeenCalled();
+  });
+});

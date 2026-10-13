@@ -10,7 +10,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
-import { LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import {
   CONTACT_BRAND_SELECT,
@@ -36,7 +36,7 @@ const contactSchema = z.object({
   email: z.string().email("Email inválido").toLowerCase().trim().optional().or(z.literal("")),
   phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
+  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).nullable().optional(),
   // Única fuente de verdad = LEAD_SOURCE_ORDER (constants.ts) — AUD-20260710-02.
   leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
@@ -178,7 +178,7 @@ export async function getContacts(filters: ContactFilters = {}) {
     where.temperature = filters.temperature as any;
   }
   if (filters.type) {
-    where.contactType = filters.type as any;
+    where.contactType = filters.type === CONTACT_TYPE_SIN_TIPO ? null : (filters.type as any);
   }
   if (filters.assignedTo) {
     where.assignedToId = filters.assignedTo;
@@ -398,7 +398,7 @@ export async function createContact(data: z.infer<typeof contactSchema>) {
       email: validData.email || null,
       phone: validData.phone,
       secondaryPhone: validData.secondaryPhone || null,
-      contactType: validData.contactType || "LEAD",
+      contactType: validData.contactType ?? null, // #863: nace sin tipo salvo que se elija
       leadSource: validData.leadSource,
       leadSourceDetail: validData.leadSourceDetail || null,
       temperature: validData.temperature || "COLD",
@@ -680,7 +680,7 @@ export async function importContactsFromCSV(csvData: string) {
           phone,
           email: email || null,
           leadSource: leadSource as any,
-          contactType: "LEAD",
+          contactType: null, // #863: el CSV no trae tipo; lo clasifica el asesor
           temperature: "COLD",
           preferredLanguage: "ES",
           tags: [],

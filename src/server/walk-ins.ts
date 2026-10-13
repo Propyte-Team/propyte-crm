@@ -172,7 +172,7 @@ export async function createWalkIn(
         lastName: data.lastName.trim(),
         phone: data.phone.trim(),
         email: data.email?.trim() || null,
-        contactType: "LEAD",
+        contactType: null, // #863: nace sin tipo; lo elige el asesor
         leadSource: "WALK_IN",
         temperature: "WARM",
       },

@@ -17,6 +17,15 @@ describe("selectAgentProfile", () => {
     expect(args.take).toBe(1);
   });
 
+  // #863: un contacto sin tipo lo sigue atendiendo el agente que antes le tocaba por el
+  // default COMPRADOR — el bot no cambia de comportamiento por el cambio de default.
+  it("contacto sin tipo (null) → se busca el agente de COMPRADOR", async () => {
+    findMany.mockResolvedValue([{ id: "p-comp", name: "Compradores", playbook: null }]);
+    const r = await selectAgentProfile(db as never, null);
+    expect(r?.id).toBe("p-comp");
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ contactTypes: { has: "COMPRADOR" } });
+  });
+
   it("sin perfil para el tipo → null; error de BD → null (nunca lanza)", async () => {
     findMany.mockResolvedValue([]);
     expect(await selectAgentProfile(db as never, "EMPLEO")).toBeNull();

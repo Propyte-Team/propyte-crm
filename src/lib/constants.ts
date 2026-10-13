@@ -379,6 +379,25 @@ export const CONTACT_TYPE_ORDER = [
   "EMPLEO",
 ] as const;
 
+/**
+ * Valor del filtro «Sin tipo» (#863): contactos con contactType NULL. No es un valor del
+ * enum ContactType — solo viaja como `?type=` y se traduce a `contactType: null`.
+ */
+export const CONTACT_TYPE_SIN_TIPO = "SIN_TIPO";
+
+/** Etiqueta de un contacto sin tipo, en tablas y selectores. */
+export const CONTACT_TYPE_VACIO_LABEL = "—";
+
+/**
+ * ¿El contacto lleva ciclo de vida (Lead → MQL → SQL…)? Compradores, inversionistas y, desde
+ * el #863, los que aún no tienen tipo: antes todos nacían COMPRADOR y entraban aquí, así que
+ * excluir a los «sin tipo» habría dejado de avanzar la etapa de cada prospecto nuevo.
+ * Única fuente de la regla: la usan el auto-avance (lifecycle/apply.ts) y la ficha.
+ */
+export function tieneCicloDeVida(contactType: string | null | undefined): boolean {
+  return contactType == null || contactType === "COMPRADOR" || contactType === "INVERSIONISTA";
+}
+
 export const CONTACT_TYPE_LABELS: Record<string, string> = {
   LEAD: "Lead",
   PROSPECTO: "Prospecto",

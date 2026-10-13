@@ -59,7 +59,7 @@ const contactBaseSchema = z.object({
   // #730, la otra mitad: eran 6 de los 9 valores de ContactType. Faltaban EMPLEO,
   // REFERIDOR y —el que importa— COMPRADOR, que es el DEFAULT del modelo en Prisma y el
   // que escribe el intake: el valor por defecto del sistema no era elegible.
-  contactType: z.enum(CONTACT_TYPE_ORDER).optional(),
+  contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(), // null = sin tipo (#863)
 
   // Fuente del lead (enum LeadSource)
   // #730: esta era la última copia a mano del enum LeadSource, con 12 de los 21
