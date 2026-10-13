@@ -179,6 +179,8 @@ export interface CreateActivityInput {
   duration_minutes?: number
   outcome?: string
   status?: ActivityStatus
+  /** HUB #860: la reunión o llamada sobre la que se escribe esta nota. */
+  parentActivityId?: string
 }
 
 export async function createActivity(data: CreateActivityInput) {
@@ -223,6 +225,8 @@ export async function createActivity(data: CreateActivityInput) {
       duration_minutes: data.duration_minutes ?? null,
       completedAt: finalStatus === "COMPLETADA" ? new Date() : null,
       completedById: finalStatus === "COMPLETADA" ? session.user.id : null,
+      // Solo cuando viene: el resto de altas no cambia la forma de lo que se escribe.
+      ...(data.parentActivityId ? { parentActivityId: data.parentActivityId } : {}),
     },
     include: {
       contact: { select: { id: true, firstName: true, lastName: true } },
