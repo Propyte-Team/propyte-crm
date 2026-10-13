@@ -48,7 +48,9 @@ import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
 import { SavedViewsBar } from "@/components/views/saved-views-bar";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } from "@/components/brands/brand-view";
-import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
+import { COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
+import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Tipos ---
 interface ContactData {
@@ -63,6 +65,12 @@ interface ContactData {
   contactStatus: string;
   lifecycleStage: string | null;
   createdAt: string;
+  // Solo para las columnas opcionales de "Gestionar columnas"; la API ya las manda (include
+  // trae todos los escalares del contacto).
+  secondaryPhone?: string | null;
+  residenceCity?: string | null;
+  lastActivityAt?: string | null;
+  updatedAt?: string;
   assignedTo: { id: string; name: string; email: string } | null;
   _count: { deals: number; activities: number };
   // Filas de contact_brands (entrega 3 de marcas): alimentan el badge. [] = predeterminada.
@@ -98,15 +106,11 @@ const TEMP_VARIANT: Record<string, "hot" | "warm" | "cold" | "dead"> = {
   DEAD: "dead",
 };
 
-// Etiquetas para tipo de contacto
-const TYPE_LABEL: Record<string, string> = {
-  LEAD: "Lead",
-  PROSPECTO: "Prospecto",
-  CLIENTE: "Cliente",
-  INVERSIONISTA: "Inversionista",
-  BROKER_EXTERNO: "Broker externo",
-  REFERIDO: "Referido",
-};
+// Tipo de contacto: etiquetas y orden salen de constants.ts (CONTACT_TYPE_*). Aquí había una
+// copia a mano con 6 de los 9 tipos, sin COMPRADOR —el default del modelo y lo que escribe el
+// intake—, así que el filtro no podía encontrar al tipo más común.
+
+const FECHA_CORTA: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short", year: "numeric" };
 
 // Tamaño de página
 const PAGE_SIZE = 20;
@@ -135,6 +139,11 @@ export function ContactsList({
   const [editOpen, setEditOpen] = useState(false);
   const [editContact, setEditContact] = useState<ContactData | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  // "Gestionar columnas", igual que en Reuniones/Llamadas de la Agenda. La preferencia vive en
+  // el navegador de cada usuario.
+  const [visibles, guardarColumnas] = useColumnasVisibles(COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS);
+  const [columnasOpen, setColumnasOpen] = useState(false);
+  const columnas = COLUMNAS_CONTACTOS.filter((c) => visibles.includes(c.key));
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   // Selector «Marca» (entrega 3, 2026-10-12). Vive en la URL (?marca=). fetchContacts es un
   // useCallback sin dependencias que recibe los demás filtros por argumento; la marca la lee de
@@ -261,6 +270,22 @@ export function ContactsList({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contactStatus }),
     }).catch(() => null);
+  };
+
+  // Cambio rápido del tipo de contacto desde la lista. Si el servidor lo rechaza (permisos,
+  // validación), se regresa al valor anterior para no mostrar un tipo que no se guardó.
+  const updateType = async (id: string, contactType: string) => {
+    const previo = contacts.find((c) => c.id === id)?.contactType;
+    if (previo === contactType) return;
+    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactType } : c)));
+    const res = await fetch(`/api/contacts?id=${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactType }),
+    }).catch(() => null);
+    if (!res?.ok && previo !== undefined) {
+      setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactType: previo } : c)));
+    }
   };
 
   // Abrir WhatsApp con el número del contacto
@@ -426,17 +451,14 @@ export function ContactsList({
               value={filterType}
               onValueChange={(v) => handleFilterChange("type", v)}
             >
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-44">
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Todos</SelectItem>
-                <SelectItem value="LEAD">Lead</SelectItem>
-                <SelectItem value="PROSPECTO">Prospecto</SelectItem>
-                <SelectItem value="CLIENTE">Cliente</SelectItem>
-                <SelectItem value="INVERSIONISTA">Inversionista</SelectItem>
-                <SelectItem value="BROKER_EXTERNO">Broker externo</SelectItem>
-                <SelectItem value="REFERIDO">Referido</SelectItem>
+                <SelectItem value="ALL">Todos los tipos</SelectItem>
+                {CONTACT_TYPE_ORDER.map((t) => (
+                  <SelectItem key={t} value={t}>{CONTACT_TYPE_LABELS[t]}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -464,6 +486,10 @@ export function ContactsList({
                 Limpiar
               </Button>
             )}
+
+            <div className="sm:ml-auto">
+              <BotonColumnas onClick={() => setColumnasOpen(true)} titulo="Contactos" />
+            </div>
           </div>
 
           {/* Estado de carga (skeleton) */}
@@ -507,14 +533,11 @@ export function ContactsList({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-3 font-medium">Nombre</th>
-                    <th className="pb-3 font-medium">Estado</th>
-                    <th className="pb-3 font-medium">Teléfono</th>
-                    <th className="pb-3 font-medium">Email</th>
-                    <th className="pb-3 font-medium">Fuente</th>
-                    <th className="pb-3 font-medium">Temperatura</th>
-                    <th className="pb-3 font-medium">Asesor asignado</th>
-                    <th className="pb-3 font-medium">Fecha de registro</th>
+                    {columnas.map((c) => (
+                      <th key={c.key} className="whitespace-nowrap pb-3 pr-3 font-medium">
+                        {c.label}
+                      </th>
+                    ))}
                     <th className="pb-3 font-medium">Acciones</th>
                   </tr>
                 </thead>
@@ -525,74 +548,15 @@ export function ContactsList({
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/50"
                       onClick={() => router.push(`/contacts/${contact.id}`)}
                     >
-                      {/* Nombre completo + marca(s) */}
-                      <td className="py-3 font-medium">
-                        <span className="inline-flex flex-wrap items-center gap-1.5">
-                          <span>
-                            {contact.firstName} {contact.lastName}
-                          </span>
-                          <BrandBadges brandIds={contact.brands?.map((b) => b.brandId)} />
-                        </span>
-                      </td>
-                      {/* Estado de contacto — edición rápida inline */}
-                      <td className="py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="relative inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs" style={{ borderColor: "var(--border-default, #e5e5e5)" }}>
-                          <span
-                            className="h-2 w-2 rounded-full"
-                            style={{ background: CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF" }}
-                          />
-                          {CONTACT_STATUS_LABELS[contact.contactStatus] ?? "Nuevo"}
-                          <select
-                            className="absolute inset-0 cursor-pointer opacity-0"
-                            value={contact.contactStatus ?? "NUEVO"}
-                            onChange={(e) => updateStatus(contact.id, e.target.value)}
-                            aria-label="Cambiar estado"
-                          >
-                            {CONTACT_STATUS_ORDER.map((s) => (
-                              <option key={s} value={s}>{CONTACT_STATUS_LABELS[s]}</option>
-                            ))}
-                          </select>
-                        </div>
-                        {contact.lifecycleStage && (
-                          <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium"
-                                style={{ color: LIFECYCLE_COLORS[contact.lifecycleStage] }}>
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: LIFECYCLE_COLORS[contact.lifecycleStage] }} />
-                            {LIFECYCLE_LABELS[contact.lifecycleStage] ?? contact.lifecycleStage}
-                          </span>
-                        )}
-                      </td>
-                      {/* Teléfono */}
-                      <td className="py-3">{contact.phone}</td>
-                      {/* Email */}
-                      <td className="py-3 text-muted-foreground">
-                        {contact.email || "-"}
-                      </td>
-                      {/* Fuente del lead */}
-                      <td className="py-3">
-                        <Badge variant="outline">
-                          {SOURCE_LABEL[contact.leadSource] || contact.leadSource}
-                        </Badge>
-                      </td>
-                      {/* Temperatura */}
-                      <td className="py-3">
-                        <Badge variant={TEMP_VARIANT[contact.temperature] || "cold"}>
-                          {TEMP_LABEL[contact.temperature] || contact.temperature}
-                        </Badge>
-                      </td>
-                      {/* Asesor asignado */}
-                      <td className="py-3">
-                        {contact.assignedTo?.name || (
-                          <span className="text-muted-foreground">Sin asignar</span>
-                        )}
-                      </td>
-                      {/* Fecha de registro */}
-                      <td className="py-3 text-muted-foreground">
-                        {formatDate(contact.createdAt, {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </td>
+                      {columnas.map((c) => (
+                        <CeldaContacto
+                          key={c.key}
+                          col={c.key}
+                          contact={contact}
+                          onStatus={updateStatus}
+                          onType={updateType}
+                        />
+                      ))}
                       {/* Menú de acciones */}
                       <td className="py-3" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
@@ -683,6 +647,18 @@ export function ContactsList({
         </CardContent>
       </Card>
 
+      {columnasOpen && (
+        <GestionarColumnas
+          defs={COLUMNAS_CONTACTOS}
+          visibles={visibles}
+          onClose={() => setColumnasOpen(false)}
+          onSave={(keys) => {
+            guardarColumnas(keys);
+            setColumnasOpen(false);
+          }}
+        />
+      )}
+
       {/* Diálogo de edición de contacto */}
       <Dialog open={editOpen} onOpenChange={(open) => {
         setEditOpen(open);
@@ -703,4 +679,153 @@ export function ContactsList({
       </Dialog>
     </div>
   );
+}
+
+// --- Celdas ---
+
+/** Pastilla con un <select> invisible encima: se ve como etiqueta y se cambia con un clic. */
+function PastillaEditable({
+  label,
+  color,
+  value,
+  options,
+  ariaLabel,
+  onChange,
+}: {
+  label: string;
+  color?: string;
+  value: string;
+  options: readonly { value: string; label: string }[];
+  ariaLabel: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div
+      className="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs"
+      style={{ borderColor: "var(--border-default, #e5e5e5)" }}
+    >
+      {color && <span className="h-2 w-2 rounded-full" style={{ background: color }} />}
+      {label}
+      <select
+        className="absolute inset-0 cursor-pointer opacity-0"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={ariaLabel}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+const STATUS_OPTIONS = CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }));
+const TYPE_OPTIONS = CONTACT_TYPE_ORDER.map((t) => ({ value: t, label: CONTACT_TYPE_LABELS[t] }));
+
+function CeldaContacto({
+  col,
+  contact,
+  onStatus,
+  onType,
+}: {
+  col: string;
+  contact: ContactData;
+  onStatus: (id: string, v: string) => void;
+  onType: (id: string, v: string) => void;
+}) {
+  const vacio = <span className="text-muted-foreground">-</span>;
+  const fecha = (iso: string | null | undefined) => (iso ? formatDate(iso, FECHA_CORTA) : null);
+
+  switch (col) {
+    case "nombre":
+      return (
+        <td className="py-3 pr-3 font-medium">
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <span>
+              {contact.firstName} {contact.lastName}
+            </span>
+            <BrandBadges brandIds={contact.brands?.map((b) => b.brandId)} />
+          </span>
+        </td>
+      );
+    case "estado":
+      // Estado de contacto — edición rápida inline, con la etapa del ciclo debajo.
+      return (
+        <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
+          <PastillaEditable
+            label={CONTACT_STATUS_LABELS[contact.contactStatus] ?? "Nuevo"}
+            color={CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF"}
+            value={contact.contactStatus ?? "NUEVO"}
+            options={STATUS_OPTIONS}
+            ariaLabel="Cambiar estado"
+            onChange={(v) => onStatus(contact.id, v)}
+          />
+          {contact.lifecycleStage && (
+            <span
+              className="mt-1 flex items-center gap-1 text-[11px] font-medium"
+              style={{ color: LIFECYCLE_COLORS[contact.lifecycleStage] }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: LIFECYCLE_COLORS[contact.lifecycleStage] }} />
+              {LIFECYCLE_LABELS[contact.lifecycleStage] ?? contact.lifecycleStage}
+            </span>
+          )}
+        </td>
+      );
+    case "tipo":
+      // Tipo de contacto — antes solo se veía (y cambiaba) entrando a cada contacto.
+      return (
+        <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
+          <PastillaEditable
+            label={CONTACT_TYPE_LABELS[contact.contactType] ?? contact.contactType}
+            value={contact.contactType}
+            options={TYPE_OPTIONS}
+            ariaLabel="Cambiar tipo de contacto"
+            onChange={(v) => onType(contact.id, v)}
+          />
+        </td>
+      );
+    case "telefono":
+      return <td className="whitespace-nowrap py-3 pr-3">{contact.phone || vacio}</td>;
+    case "email":
+      return <td className="py-3 pr-3 text-muted-foreground">{contact.email || "-"}</td>;
+    case "fuente":
+      return (
+        <td className="py-3 pr-3">
+          <Badge variant="outline">{SOURCE_LABEL[contact.leadSource] || contact.leadSource}</Badge>
+        </td>
+      );
+    case "temperatura":
+      return (
+        <td className="py-3 pr-3">
+          <Badge variant={TEMP_VARIANT[contact.temperature] || "cold"}>
+            {TEMP_LABEL[contact.temperature] || contact.temperature}
+          </Badge>
+        </td>
+      );
+    case "asesor":
+      return (
+        <td className="py-3 pr-3">
+          {contact.assignedTo?.name || <span className="text-muted-foreground">Sin asignar</span>}
+        </td>
+      );
+    case "registro":
+      return <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">{fecha(contact.createdAt)}</td>;
+    case "telefono2":
+      return <td className="whitespace-nowrap py-3 pr-3">{contact.secondaryPhone || vacio}</td>;
+    case "ciudad":
+      return <td className="py-3 pr-3">{contact.residenceCity || vacio}</td>;
+    case "ultimaActividad":
+      return (
+        <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">{fecha(contact.lastActivityAt) ?? "-"}</td>
+      );
+    case "negocios":
+      return <td className="num py-3 pr-3">{contact._count?.deals ?? 0}</td>;
+    case "actividades":
+      return <td className="num py-3 pr-3">{contact._count?.activities ?? 0}</td>;
+    case "modificado":
+      return <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">{fecha(contact.updatedAt) ?? "-"}</td>;
+    default:
+      return <td className="py-3 pr-3">{vacio}</td>;
+  }
 }
