@@ -72,7 +72,18 @@ function celda(tabla: TablaAgenda, key: string, row: AgendaActivityRow): React.R
       dash
     );
   }
-  if (key === "relacionado") return texto(row.dealLabel);
+  if (key === "relacionado") {
+    // "Relacionado con" muestra el negocio si lo hay; si no, el contacto con quien se agendó
+    // (las citas creadas con el "+" llevan contacto pero no negocio).
+    if (row.dealLabel && row.dealLabel.trim()) return row.dealLabel;
+    return row.contactId && row.contactName ? (
+      <Link href={`/contacts/${row.contactId}`} className="hover:underline">
+        {row.contactName}
+      </Link>
+    ) : (
+      dash
+    );
+  }
   if (key === "descripcion") return texto(row.description);
 
   if (tabla === "reuniones") {
