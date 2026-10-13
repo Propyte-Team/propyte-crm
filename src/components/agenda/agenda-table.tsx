@@ -5,7 +5,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Check, Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { Check, Loader2, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { formatDateTime } from "@/lib/format-date";
 import {
   COLUMNAS,
@@ -15,6 +15,7 @@ import {
   type TablaAgenda,
 } from "@/lib/agenda/columnas";
 import type { AgendaActivityRow } from "@/server/agenda";
+import { NuevaActividad } from "./nueva-actividad";
 
 interface AgendaTableProps {
   tabla: TablaAgenda;
@@ -244,6 +245,8 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
   // guardada tras montar, para no provocar un mismatch de hidratación.
   const [visibles, setVisibles] = React.useState<string[]>(() => columnasVisibles(defs, null));
   const [abierto, setAbierto] = React.useState(false);
+  // Modal "Nueva reunión/llamada" (HUB #857).
+  const [creando, setCreando] = React.useState(false);
 
   React.useEffect(() => {
     setVisibles(columnasVisibles(defs, leerGuardadas(tabla)));
@@ -267,15 +270,26 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
             {rows.length}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setAbierto(true)}
-          aria-label={`Gestionar columnas de ${titulo}`}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-black/5"
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          Columnas
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setCreando(true)}
+            aria-label={tabla === "reuniones" ? "Agregar reunión" : "Agregar llamada"}
+            title={tabla === "reuniones" ? "Agregar reunión" : "Agregar llamada"}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[color:var(--text-secondary)] hover:bg-black/5"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAbierto(true)}
+            aria-label={`Gestionar columnas de ${titulo}`}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[color:var(--text-secondary)] hover:bg-black/5"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Columnas
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -339,6 +353,8 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
           </tbody>
         </table>
       </div>
+
+      {creando && <NuevaActividad tabla={tabla} onClose={() => setCreando(false)} />}
 
       {abierto && (
         <GestionarColumnas
