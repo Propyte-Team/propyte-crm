@@ -12,8 +12,22 @@ describe("columnasVisibles", () => {
       "titulo",
       "de",
       "a",
-      "relacionado",
       "contacto",
+    ]);
+  });
+
+  // HUB #859: "Relacionado con" ya no existe; la columna de contacto es la única.
+  it("reuniones no ofrece 'Relacionado con' y llamadas llama 'Contacto' a su columna", () => {
+    expect(COLUMNAS_REUNIONES.some((c) => c.key === "relacionado")).toBe(false);
+    expect(COLUMNAS_LLAMADAS.some((c) => c.key === "relacionado")).toBe(false);
+    expect(COLUMNAS_LLAMADAS.find((c) => c.key === "contacto")?.label).toBe("Contacto");
+    expect(COLUMNAS_LLAMADAS.filter((c) => c.key === "contacto")).toHaveLength(1);
+  });
+
+  it("una preferencia v1 con 'relacionado' ya no rompe: se descarta la clave", () => {
+    expect(columnasVisibles(COLUMNAS_LLAMADAS, ["asunto", "relacionado", "telefono"])).toEqual([
+      "asunto",
+      "telefono",
     ]);
   });
 
@@ -40,7 +54,7 @@ describe("columnasVisibles", () => {
   it("una preferencia sin ninguna clave reconocible vuelve al default", () => {
     expect(columnasVisibles(COLUMNAS_LLAMADAS, ["x", "y"])).toEqual([
       "asunto",
-      "relacionado",
+      "contacto",
       "inicio",
       "telefono",
     ]);

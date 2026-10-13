@@ -72,18 +72,6 @@ function celda(tabla: TablaAgenda, key: string, row: AgendaActivityRow): React.R
       dash
     );
   }
-  if (key === "relacionado") {
-    // "Relacionado con" muestra el negocio si lo hay; si no, el contacto con quien se agendó
-    // (las citas creadas con el "+" llevan contacto pero no negocio).
-    if (row.dealLabel && row.dealLabel.trim()) return row.dealLabel;
-    return row.contactId && row.contactName ? (
-      <Link href={`/contacts/${row.contactId}`} className="hover:underline">
-        {row.contactName}
-      </Link>
-    ) : (
-      dash
-    );
-  }
   if (key === "descripcion") return texto(row.description);
 
   if (tabla === "reuniones") {
@@ -256,8 +244,9 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
   // guardada tras montar, para no provocar un mismatch de hidratación.
   const [visibles, setVisibles] = React.useState<string[]>(() => columnasVisibles(defs, null));
   const [abierto, setAbierto] = React.useState(false);
-  // Modal "Nueva reunión/llamada" (HUB #857).
+  // Modal "Nueva reunión/llamada" (HUB #857) y edición de una fila (HUB #859).
   const [creando, setCreando] = React.useState(false);
+  const [editando, setEditando] = React.useState<AgendaActivityRow | null>(null);
 
   React.useEffect(() => {
     setVisibles(columnasVisibles(defs, leerGuardadas(tabla)));
@@ -308,6 +297,7 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
               <th className="w-10 px-4 py-2" aria-label="Completar" />
+              <th className="w-8 px-0 py-2" aria-label="Editar" />
               {columnas.map((c) => (
                 <th
                   key={c.key}
@@ -322,7 +312,7 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={columnas.length + 1}
+                  colSpan={columnas.length + 2}
                   className="px-4 py-6 text-center text-[13px] text-[color:var(--text-tertiary)]"
                 >
                   {vacio}
@@ -349,6 +339,21 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
                       )}
                     </button>
                   </td>
+                  <td className="px-0 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditando(row)}
+                      aria-label={`Editar: ${row.subject}`}
+                      title="Editar"
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-[color:var(--text-tertiary)] hover:bg-black/5"
+                    >
+                      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                        <circle cx="8" cy="3" r="1.4" />
+                        <circle cx="8" cy="8" r="1.4" />
+                        <circle cx="8" cy="13" r="1.4" />
+                      </svg>
+                    </button>
+                  </td>
                   {columnas.map((c) => (
                     <td
                       key={c.key}
@@ -366,6 +371,11 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
       </div>
 
       {creando && <NuevaActividad tabla={tabla} onClose={() => setCreando(false)} />}
+
+      {editando && (
+        // key: al abrir otra fila el formulario arranca con sus datos, no con los de la anterior.
+        <NuevaActividad key={editando.id} tabla={tabla} actividad={editando} onClose={() => setEditando(null)} />
+      )}
 
       {abierto && (
         <GestionarColumnas
