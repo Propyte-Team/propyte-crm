@@ -130,7 +130,7 @@ export async function processEvent(eventId: string): Promise<void> {
 
     // Auto-avance del lifecycle (forward-only) — corre haya o no reglas configuradas.
     if (needsLifecycle) {
-      const c = ctx.contact as { id: string; score: number; contactType: string; lifecycleStage: import("@prisma/client").LifecycleStage | null } | null;
+      const c = ctx.contact as { id: string; score: number; contactType: string | null; lifecycleStage: import("@prisma/client").LifecycleStage | null } | null;
       if (c?.id) {
         const { maybeAdvanceLifecycleFromEvent } = await import("@/lib/lifecycle/apply");
         const { getQualifiedThreshold } = await import("@/lib/lifecycle/threshold");

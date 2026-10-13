@@ -3,6 +3,7 @@ import type { LifecycleStage } from "@prisma/client";
 import { emitEvent } from "@/lib/workflows/events";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { isForward, candidateStageForSignal } from "./transitions";
+import { tieneCicloDeVida } from "@/lib/constants";
 
 export interface ApplyArgs {
   contactId: string;
@@ -48,11 +49,11 @@ export async function applyLifecycleTransition(args: ApplyArgs): Promise<ApplyRe
 /** Engancha auto-avance a un evento de dominio. Devuelve la etapa nueva si avanzó. */
 export async function maybeAdvanceLifecycleFromEvent(
   signal: string,
-  contact: { id: string; score: number; contactType: string; lifecycleStage: LifecycleStage | null },
+  contact: { id: string; score: number; contactType: string | null; lifecycleStage: LifecycleStage | null },
   qualifiedThreshold: number,
 ): Promise<LifecycleStage | null> {
-  // Solo compradores/inversionistas tienen lifecycle.
-  if (!["COMPRADOR", "INVERSIONISTA"].includes(contact.contactType)) return null;
+  // Solo compradores/inversionistas (y los aún sin tipo, #863) tienen lifecycle.
+  if (!tieneCicloDeVida(contact.contactType)) return null;
   const candidate = candidateStageForSignal(signal, contact, qualifiedThreshold);
   if (!candidate) return null;
   const res = await applyLifecycleTransition({

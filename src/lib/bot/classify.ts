@@ -8,8 +8,17 @@ import type { BotMessage } from "./claude";
 const API_URL = "https://api.anthropic.com/v1/messages";
 const TIMEOUT_MS = 4000;
 export const MAX_CLASSIFY_ATTEMPTS = 3;
-/** Valores que el intake pone por default — los únicos que el clasificador puede pisar. */
+/**
+ * Valores que el intake ponía por default — los únicos tipos puestos que el clasificador puede
+ * pisar sin haberlos escrito él. Desde el #863 un contacto nuevo nace SIN tipo (null), que
+ * también es pisable; COMPRADOR/LEAD se quedan en la lista por los contactos anteriores, que
+ * nacieron con esos defaults sin que nadie los eligiera.
+ */
 export const OVERRIDABLE_TYPES: ContactType[] = ["COMPRADOR", "LEAD"];
+
+function esPisable(t: ContactType | null): boolean {
+  return t === null || OVERRIDABLE_TYPES.includes(t);
+}
 
 const CLASSIFIABLE: ContactType[] = [
   "COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "REFERIDOR", "CLIENTE",
@@ -114,14 +123,17 @@ interface ClassifyMarker {
  * Solo pisa contactType si el valor actual es un default del intake (COMPRADOR/LEAD) o
  * si el bot es dueño del valor actual — jamás sobrescribe lo que puso un humano.
  * Escritura auditada (source bot_classifier). Devuelve el ContactType efectivo a usar
- * para elegir agente. NUNCA lanza.
+ * para elegir agente — null si el contacto sigue sin tipo (#863). NUNCA lanza.
+ *
+ * #863: el clasificador ya solo responde ante intención EXPLÍCITA (UNKNOWN si no), así que
+ * un contacto nuevo se queda sin tipo («—») hasta que lo diga claro o un asesor lo elija.
  */
 export async function maybeClassifyContact(
   db: PrismaClient,
-  contact: { id: string; contactType: ContactType; assignedToId: string | null; custom: unknown },
+  contact: { id: string; contactType: ContactType | null; assignedToId: string | null; custom: unknown },
   messages: BotMessage[],
   model: string
-): Promise<ContactType> {
+): Promise<ContactType | null> {
   try {
     const custom =
       typeof contact.custom === "object" && contact.custom !== null && !Array.isArray(contact.custom)
@@ -135,9 +147,10 @@ export async function maybeClassifyContact(
     const botOwnsCurrentType = !marker.type || marker.type === contact.contactType;
     if (!botOwnsCurrentType) return contact.contactType;
 
-    // Sin clasificación del bot todavía: solo tiene sentido intentar sobre defaults del
-    // intake (COMPRADOR/LEAD). Si ya es un tipo real puesto por otra vía, no se toca.
-    if (!marker.type && !OVERRIDABLE_TYPES.includes(contact.contactType)) return contact.contactType;
+    // Sin clasificación del bot todavía: solo tiene sentido intentar sobre un contacto sin
+    // tipo o con un default del intake (COMPRADOR/LEAD). Si ya es un tipo real puesto por
+    // otra vía, no se toca.
+    if (!marker.type && !esPisable(contact.contactType)) return contact.contactType;
 
     // El tope de intentos solo aplica en fase "sin clasificar todavía".
     if (!marker.type && (marker.attempts ?? 0) >= MAX_CLASSIFY_ATTEMPTS) return contact.contactType;

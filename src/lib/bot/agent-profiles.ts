@@ -7,17 +7,25 @@ export type AgentProfileWithPlaybook = BotAgentProfile & {
   playbook: (BotPlaybook & { tasks: BotTask[] }) | null;
 };
 
+/**
+ * Segmento con el que el bot atiende a un contacto SIN tipo (#863). Antes todo contacto nacía
+ * COMPRADOR y lo atendía el agente de compradores; ahora nace sin tipo, pero el bot debe
+ * seguir hablándole igual mientras no se clasifique. Solo afecta a qué agente responde: el
+ * contacto NO se marca como comprador.
+ */
+export const TIPO_AGENTE_SIN_CLASIFICAR: ContactType = "COMPRADOR";
+
 /** Perfil activo cuyo contactTypes incluye el tipo; menor priority gana. null = sin agente. */
 export async function selectAgentProfile(
   db: PrismaClient,
-  contactType: ContactType
+  contactType: ContactType | null
 ): Promise<AgentProfileWithPlaybook | null> {
   try {
     const profiles = await db.botAgentProfile.findMany({
       where: {
         isActive: true,
         deletedAt: null,
-        contactTypes: { has: contactType },
+        contactTypes: { has: contactType ?? TIPO_AGENTE_SIN_CLASIFICAR },
       },
       orderBy: { priority: "asc" },
       take: 1,

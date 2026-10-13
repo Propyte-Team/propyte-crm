@@ -13,7 +13,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
-import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, CONTACT_TYPE_SIN_TIPO } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
 import { getVisibleBrands } from "@/lib/brands/user-access";
@@ -64,7 +64,8 @@ const contactCoreFields = z.object({
   phone: optionalPhone,
   whatsappUserId: optionalWhatsappUserId,
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).optional(),
+  // null = «sin tipo» (#863): permite al asesor dejarlo en «—».
+  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).nullable().optional(),
   // Única fuente de verdad = CONTACT_STATUS_ORDER (constants.ts) — evita el bug clásico
   // "enum Prisma ≠ enum zod" (un valor válido en BD pero ausente aquí se rechaza en silencio).
   contactStatus: z.enum(CONTACT_STATUS_ORDER).optional(),
@@ -210,7 +211,9 @@ export async function GET(request: NextRequest) {
     if (temperature) {
       where.temperature = temperature as any;
     }
-    if (contactType) {
+    if (contactType === CONTACT_TYPE_SIN_TIPO) {
+      where.contactType = null;
+    } else if (contactType) {
       where.contactType = contactType as any;
     }
     if (contactStatus) {
@@ -379,7 +382,7 @@ export async function POST(request: NextRequest) {
         phone: data.phone || "",
         whatsappUserId: data.whatsappUserId || null,
         secondaryPhone: data.secondaryPhone || null,
-        contactType: data.contactType || "COMPRADOR",
+        contactType: data.contactType ?? null, // #863: nace sin tipo salvo que se elija
         leadSource: data.leadSource,
         leadSourceDetail: data.leadSourceDetail || null,
         temperature: data.temperature || "COLD",

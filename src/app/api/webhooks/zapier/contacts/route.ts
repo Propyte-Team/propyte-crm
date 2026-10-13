@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
         email: d.email || null,
         phone: d.phone,
         secondaryPhone: d.secondaryPhone || null,
-        contactType: d.contactType ?? "LEAD",
+        contactType: d.contactType ?? null, // #863: sin tipo salvo que Zapier lo mande
         leadSource: d.leadSource || "OTRO",
         leadSourceDetail: d.leadSourceDetail || null,
         residenceCity: d.residenceCity || null,

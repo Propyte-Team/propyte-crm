@@ -43,6 +43,9 @@ import {
   URGENCY_LABELS,
   URGENCY_COLORS,
   CONTACT_TYPE_LABELS,
+  CONTACT_TYPE_ORDER,
+  CONTACT_TYPE_VACIO_LABEL,
+  tieneCicloDeVida,
   LEAD_TEMPERATURE_LABELS,
   LEAD_SOURCE_ORDER,
   LEAD_SOURCE_LABELS,
@@ -305,11 +308,15 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               )}
               {acc("contactType") !== "HIDDEN" && (
                 <ChipSelect
-                  value={contact.contactType ?? "LEAD"}
-                  options={Object.entries(CONTACT_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                  // #863: sin tipo se muestra «—» (antes caía a "LEAD" y mostraba un tipo falso).
+                  value={contact.contactType ?? ""}
+                  options={[
+                    { value: "", label: `Tipo ${CONTACT_TYPE_VACIO_LABEL}` },
+                    ...CONTACT_TYPE_ORDER.map((value) => ({ value, label: CONTACT_TYPE_LABELS[value] })),
+                  ]}
                   loading={busy === "contactType"}
                   readOnly={acc("contactType") !== "EDIT"}
-                  onChange={(v) => changeField("contactType", v)}
+                  onChange={(v) => changeField("contactType", v || null)}
                 />
               )}
               {acc("urgency") !== "HIDDEN" && (
@@ -430,7 +437,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             {gSelect("rentalStrategy", "Estrategia de renta", [{ value: "", label: "—" }, ...Object.entries(RENTAL_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
           </Section>
 
-          {["COMPRADOR","INVERSIONISTA"].includes(contact.contactType) && (
+          {tieneCicloDeVida(contact.contactType) && (
             <Section title="Ciclo de vida">
               <div className="space-y-1 py-1">
                 <label className="text-xs text-[color:var(--text-tertiary)]">Etapa</label>

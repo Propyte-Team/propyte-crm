@@ -150,7 +150,9 @@ export async function captureLead(
           leadSource: lead.source,
           leadSourceDetail: lead.sourceDetail ?? null,
           preferredLanguage: lead.language ?? "ES",
-          contactType: lead.contactType ?? "COMPRADOR",
+          // #863: sin tipo explícito del formulario/mapeo el contacto nace SIN tipo; lo pone
+          // el asesor o el clasificador del bot cuando la intención es explícita.
+          contactType: lead.contactType ?? null,
           contactStatus: "NUEVO",
           lifecycleStage: "LEAD",
           targetPlaza,

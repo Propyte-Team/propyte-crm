@@ -50,7 +50,7 @@ import { SavedViewsBar } from "@/components/views/saved-views-bar";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } from "@/components/brands/brand-view";
 import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
 import { COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
-import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_VACIO_LABEL, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Tipos ---
 interface ContactData {
@@ -61,7 +61,7 @@ interface ContactData {
   email: string | null;
   leadSource: string;
   temperature: string;
-  contactType: string;
+  contactType: string | null; // null = sin tipo (#863): «—» hasta que alguien lo elija
   contactStatus: string;
   lifecycleStage: string | null;
   createdAt: string;
@@ -274,7 +274,8 @@ export function ContactsList({
 
   // Cambio rápido del tipo de contacto desde la lista. Si el servidor lo rechaza (permisos,
   // validación), se regresa al valor anterior para no mostrar un tipo que no se guardó.
-  const updateType = async (id: string, contactType: string) => {
+  // null = «—» (sin tipo, #863).
+  const updateType = async (id: string, contactType: string | null) => {
     const previo = contacts.find((c) => c.id === id)?.contactType;
     if (previo === contactType) return;
     setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactType } : c)));
@@ -456,6 +457,7 @@ export function ContactsList({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Todos los tipos</SelectItem>
+                <SelectItem value={CONTACT_TYPE_SIN_TIPO}>Sin tipo</SelectItem>
                 {CONTACT_TYPE_ORDER.map((t) => (
                   <SelectItem key={t} value={t}>{CONTACT_TYPE_LABELS[t]}</SelectItem>
                 ))}
@@ -721,7 +723,11 @@ function PastillaEditable({
 }
 
 const STATUS_OPTIONS = CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }));
-const TYPE_OPTIONS = CONTACT_TYPE_ORDER.map((t) => ({ value: t, label: CONTACT_TYPE_LABELS[t] }));
+// "" = sin tipo (#863). Un <select> nativo no admite null como valor, así que viaja como "".
+const TYPE_OPTIONS = [
+  { value: "", label: CONTACT_TYPE_VACIO_LABEL },
+  ...CONTACT_TYPE_ORDER.map((t) => ({ value: t, label: CONTACT_TYPE_LABELS[t] })),
+];
 
 function CeldaContacto({
   col,
@@ -732,7 +738,7 @@ function CeldaContacto({
   col: string;
   contact: ContactData;
   onStatus: (id: string, v: string) => void;
-  onType: (id: string, v: string) => void;
+  onType: (id: string, v: string | null) => void;
 }) {
   const vacio = <span className="text-muted-foreground">-</span>;
   const fecha = (iso: string | null | undefined) => (iso ? formatDate(iso, FECHA_CORTA) : null);
@@ -777,11 +783,15 @@ function CeldaContacto({
       return (
         <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
           <PastillaEditable
-            label={CONTACT_TYPE_LABELS[contact.contactType] ?? contact.contactType}
-            value={contact.contactType}
+            label={
+              contact.contactType
+                ? CONTACT_TYPE_LABELS[contact.contactType] ?? contact.contactType
+                : CONTACT_TYPE_VACIO_LABEL
+            }
+            value={contact.contactType ?? ""}
             options={TYPE_OPTIONS}
             ariaLabel="Cambiar tipo de contacto"
-            onChange={(v) => onType(contact.id, v)}
+            onChange={(v) => onType(contact.id, v || null)}
           />
         </td>
       );
