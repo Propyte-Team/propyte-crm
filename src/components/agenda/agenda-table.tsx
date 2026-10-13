@@ -16,6 +16,7 @@ import {
 } from "@/lib/agenda/columnas";
 import type { AgendaActivityRow } from "@/server/agenda";
 import { NuevaActividad } from "./nueva-actividad";
+import { CitaAcciones } from "./cita-acciones";
 
 interface AgendaTableProps {
   tabla: TablaAgenda;
@@ -297,7 +298,7 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
               <th className="w-10 px-4 py-2" aria-label="Completar" />
-              <th className="w-8 px-0 py-2" aria-label="Editar" />
+              <th className="w-8 px-0 py-2" aria-label="Acciones" />
               {columnas.map((c) => (
                 <th
                   key={c.key}
@@ -340,19 +341,8 @@ export function AgendaTable({ tabla, id, titulo, icon: Icon, rows, vacio, onDone
                     </button>
                   </td>
                   <td className="px-0 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setEditando(row)}
-                      aria-label={`Editar: ${row.subject}`}
-                      title="Editar"
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-[color:var(--text-tertiary)] hover:bg-black/5"
-                    >
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                        <circle cx="8" cy="3" r="1.4" />
-                        <circle cx="8" cy="8" r="1.4" />
-                        <circle cx="8" cy="13" r="1.4" />
-                      </svg>
-                    </button>
+                    {/* HUB #860: menú con Editar, Notas y Eliminar. */}
+                    <CitaAcciones row={row} tabla={tabla} onEditar={() => setEditando(row)} />
                   </td>
                   {columnas.map((c) => (
                     <td

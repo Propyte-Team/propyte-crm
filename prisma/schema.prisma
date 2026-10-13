@@ -1002,6 +1002,10 @@ model Activity {
   status           ActivityStatus @default(PENDIENTE)
   outcome          String?
   duration_minutes Int?
+  // HUB #860: una NOTE escrita sobre una reunión o llamada de la Agenda apunta a ella. FK lógica a
+  // activities(id) ON DELETE SET NULL e índice parcial (WHERE "parentActivityId" IS NOT NULL) en la
+  // migración SQL agenda_notas_de_citas_parent_activity; sin relation de Prisma, como completedById.
+  parentActivityId String?
 
   // Trazabilidad Google Workspace (GW-1 Gmail / GW-2 Calendar). FKs lógicas a Gmail/Calendar — no Prisma relations.
   gmailThreadId  String?
