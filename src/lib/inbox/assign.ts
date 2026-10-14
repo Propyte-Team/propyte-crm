@@ -7,14 +7,22 @@
 //              propio rol puede ser dueño de un contacto (canOwnInboxContact)
 // En ambos casos el ASIGNADO final también debe poder ser dueño (mismo gate) —
 // el mando no puede colgarle un lead a un rol que no lo atiende (p.ej. HOSTESS).
+//
+// Panel de leads huérfanos (2026-10-14, #883): la asignación masiva pasa por AQUÍ, una vez por
+// contacto, para llevarse los mismos permisos sobre el asignado, la misma cronología, el mismo
+// cierre del ORPHAN y la misma liberación del hilo. Ver la opción `panelHuerfanos`.
 import prisma from "@/lib/db";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { canSeeOrphanLeads } from "@/lib/leads/orphans";
+import { esCuentaTecnica, usuarioRuteableWhere } from "@/lib/workflows/ruteables";
 import { isInboxManager, canOwnInboxContact } from "./roles";
 
 export const ASSIGN_NOTIFICATION_TYPE = "conversation_assigned";
 
 export type AssignResult =
-  | { ok: true; assignedTo: { id: string; name: string } | null }
+  // sinCambio (2026-10-14): el destino ya era el dueño y no se escribió nada. Lo lee el lote del
+  // panel de huérfanos para contar cuántos se asignaron de verdad (y avisar con ese número).
+  | { ok: true; assignedTo: { id: string; name: string } | null; sinCambio?: true }
   | { ok: false; code: "sin-permiso" | "ya-asignado" | "no-existe" | "usuario-invalido" | "conflicto" };
 
 export async function assignContact(opts: {
@@ -22,18 +30,45 @@ export async function assignContact(opts: {
   assigneeId: string | null;
   actor: { id: string; role: string };
   conversationId?: string | null;
-  source?: "inbox_assign" | "inbox_autoclaim";
+  source?: "inbox_assign" | "inbox_autoclaim" | "orphan_bulk_assign";
+  /**
+   * Asignación desde el panel de leads huérfanos (#883). Cambia tres cosas y nada más:
+   *  - QUIÉN puede: los roles del panel (canSeeOrphanLeads) en vez de los mandos de la bandeja.
+   *    MARKETING ve el panel y ya asignaba desde ahí; un rol fuera del panel no pasa (falla cerrado);
+   *  - SOBRE QUÉ: solo un contacto que SIGUE huérfano —sin dueño o con dueño técnico— o que ya es
+   *    del destino. Con dueño de verdad → "ya-asignado": un «Seleccionar todos» no le quita a nadie
+   *    un lead que otra persona asignó mientras la lista estaba abierta. Y siempre a una persona:
+   *    el panel no desasigna;
+   *  - no avisa por contacto: el lote manda UN aviso por asignado (server/orphan-leads.ts).
+   * El asignado se valida igual que siempre (abajo).
+   */
+  panelHuerfanos?: boolean;
 }): Promise<AssignResult> {
   const { contactId, assigneeId, actor } = opts;
+  const panel = opts.panelHuerfanos === true;
 
   const contact = await prisma.contact.findFirst({
     where: { id: contactId, deletedAt: null },
-    select: { id: true, assignedToId: true, updatedAt: true, firstName: true, lastName: true },
+    select: {
+      id: true,
+      assignedToId: true,
+      updatedAt: true,
+      firstName: true,
+      lastName: true,
+      // Solo lo lee el modo panel (¿el dueño actual es una cuenta técnica?).
+      assignedTo: { select: { email: true } },
+    },
   });
   if (!contact) return { ok: false, code: "no-existe" };
 
-  const manager = isInboxManager(actor.role);
-  if (!manager) {
+  if (panel) {
+    if (!canSeeOrphanLeads(actor.role) || assigneeId === null) return { ok: false, code: "sin-permiso" };
+    const sigueHuerfano =
+      contact.assignedToId === null ||
+      contact.assignedToId === assigneeId ||
+      esCuentaTecnica(contact.assignedTo?.email);
+    if (!sigueHuerfano) return { ok: false, code: "ya-asignado" };
+  } else if (!isInboxManager(actor.role)) {
     // No-mando: solo claim, y solo si el ROL del actor puede ser dueño de un contacto.
     // Sin este check, un rol como HOSTESS/MARKETING podía "reclamar" mandando su propio
     // id — el gate genérico de la ruta ya no los detiene porque assign se resuelve antes.
@@ -50,13 +85,15 @@ export async function assignContact(opts: {
   // Validar al asignado: activo, sin email .local (los usuarios QA no reciben leads ni
   // a mano — espíritu del gate anti-test AUD-09 del routing) y con un ROL que pueda ser
   // dueño de un contacto — el mando tampoco puede colgarle un lead a HOSTESS/MARKETING.
+  // Las tres primeras son la regla única de ruteables.ts (2026-10-14): antes vivían copiadas
+  // aquí. esCuentaTecnica se repite en memoria a propósito: es la misma regla y no cuesta nada.
   let assignee: { id: string; name: string } | null = null;
   if (assigneeId !== null) {
     const user = await prisma.user.findFirst({
-      where: { id: assigneeId, isActive: true, deletedAt: null },
+      where: { id: assigneeId, ...usuarioRuteableWhere() },
       select: { id: true, name: true, email: true, role: true },
     });
-    if (!user || user.email.endsWith(".local") || !canOwnInboxContact(user.role)) {
+    if (!user || esCuentaTecnica(user.email) || !canOwnInboxContact(user.role)) {
       return { ok: false, code: "usuario-invalido" };
     }
     assignee = { id: user.id, name: user.name };
@@ -69,7 +106,7 @@ export async function assignContact(opts: {
   // corriera antes, un no-mando podría "reasignar" con éxito un contacto que ya es de
   // un tercero, filtrando el nombre de ese tercero sin tener permiso real.
   if (contact.assignedToId === assigneeId) {
-    return { ok: true, assignedTo: assignee };
+    return { ok: true, assignedTo: assignee, sinCambio: true };
   }
 
   // Escritura con lock optimista sobre el updatedAt leído: si el contacto cambió
@@ -135,8 +172,12 @@ export async function assignContact(opts: {
   }
 
   const contactName = `${contact.firstName} ${contact.lastName}`.trim();
-  const subject =
-    assigneeId === null
+  // Desde el panel de huérfanos se asigna el contacto, no un hilo: la cronología lo dice así.
+  const subject = panel
+    ? assigneeId === actor.id
+      ? "Se asignó el contacto desde Leads huérfanos"
+      : `Asignó el contacto a ${assignee?.name ?? assigneeId} desde Leads huérfanos`
+    : assigneeId === null
       ? "Quitó la asignación de la conversación"
       : assigneeId === actor.id
         ? "Reclamó la conversación"
@@ -156,7 +197,8 @@ export async function assignContact(opts: {
     console.error("[inbox] no se pudo crear la actividad de asignación", e);
   }
 
-  if (assignee && assignee.id !== actor.id) {
+  // En el panel de huérfanos el aviso es del lote, uno por asignado (ver panelHuerfanos).
+  if (assignee && assignee.id !== actor.id && !panel) {
     try {
       await prisma.notification.create({
         data: {

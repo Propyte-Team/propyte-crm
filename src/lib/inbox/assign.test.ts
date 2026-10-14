@@ -117,7 +117,7 @@ describe("assignContact — permisos", () => {
   it("mando reasigna al MISMO dueño actual → ok idempotente, sin update ni Notification", async () => {
     contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-2" });
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MANDO });
-    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-2", name: "Pedro Ruiz" } });
+    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-2", name: "Pedro Ruiz" }, sinCambio: true });
     expect(txContactUpdate).not.toHaveBeenCalled();
     expect(notificationCreate).not.toHaveBeenCalled();
     expect(activityCreate).not.toHaveBeenCalled();
@@ -126,7 +126,7 @@ describe("assignContact — permisos", () => {
   it("mando desasigna un contacto que YA estaba libre → ok idempotente, sin update ni Activity", async () => {
     contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: null });
     const r = await assignContact({ contactId: "c1", assigneeId: null, actor: MANDO });
-    expect(r).toEqual({ ok: true, assignedTo: null });
+    expect(r).toEqual({ ok: true, assignedTo: null, sinCambio: true });
     expect(txContactUpdate).not.toHaveBeenCalled();
     expect(activityCreate).not.toHaveBeenCalled();
   });
@@ -165,7 +165,7 @@ describe("assignContact — permisos", () => {
     contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-1" });
     userFindFirst.mockResolvedValue({ id: "ase-1", name: "Luisa", email: "l@propyte.com", role: "ASESOR_SR" });
     const r = await assignContact({ contactId: "c1", assigneeId: "ase-1", actor: ASESOR });
-    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-1", name: "Luisa" } });
+    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-1", name: "Luisa" }, sinCambio: true });
     expect(txContactUpdate).not.toHaveBeenCalled();
   });
 
@@ -371,5 +371,104 @@ describe("assignContact — cumple el reloj del Pond (#753)", () => {
     expect(errores).toHaveBeenCalled();
 
     errores.mockRestore();
+  });
+});
+
+// #883 (2026-10-14): modo panel de leads huérfanos. La asignación masiva pasa por aquí una vez por
+// contacto; el modo cambia quién puede (los roles del panel), sobre qué (solo huérfanos) y quita el
+// aviso por contacto (el lote manda uno). Todo lo demás —validar al asignado, cronología con el
+// actor, ORPHAN, soltar el hilo, actividad— es el camino de siempre.
+describe("assignContact — modo panel de leads huérfanos (#883)", () => {
+  const MKT = { id: "mkt-1", role: "MARKETING" } as const;
+  const panel = (extra: Partial<Parameters<typeof assignContact>[0]> = {}) =>
+    assignContact({
+      contactId: "c1",
+      assigneeId: "ase-2",
+      actor: MKT,
+      source: "orphan_bulk_assign",
+      panelHuerfanos: true,
+      ...extra,
+    });
+
+  it("MARKETING (ve el panel, no es mando de la bandeja) asigna un huérfano: mismo camino, sin aviso por contacto", async () => {
+    const r = await panel();
+    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-2", name: "Pedro Ruiz" } });
+    expect(txContactUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "c1", updatedAt: CONTACTO_LIBRE.updatedAt }, data: { assignedToId: "ase-2" } }),
+    );
+    // Cronología: el cambio sale a nombre de quien asignó, con su propio origen.
+    expect(changeSourceCalls).toEqual([{ source: "orphan_bulk_assign", actorId: "mkt-1" }]);
+    expect(txConversationUpdateMany).toHaveBeenCalledWith({
+      where: { contactId: "c1", controlledById: { not: "ase-2" } },
+      data: { controlledById: null },
+    });
+    expect(cumplirOrphan).toHaveBeenCalledWith("c1");
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ userId: "mkt-1", subject: "Asignó el contacto a Pedro Ruiz desde Leads huérfanos" }),
+      }),
+    );
+    expect(notificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("sin el modo panel, MARKETING sigue sin poder asignar a otro (la bandeja no cambia)", async () => {
+    const r = await assignContact({ contactId: "c1", assigneeId: "ase-2", actor: MKT });
+    expect(r).toEqual({ ok: false, code: "sin-permiso" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(["ASESOR", "ASESOR_SR", "TEAM_LEADER", "HOSTESS", "BROKER", "DEVELOPER_EXT"])(
+    "🚨 %s no ve el panel → sin-permiso aunque mande el modo panel",
+    async (role) => {
+      const r = await panel({ actor: { id: "x-1", role } });
+      expect(r).toEqual({ ok: false, code: "sin-permiso" });
+      expect(txContactUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("el panel no desasigna (assigneeId null → sin-permiso)", async () => {
+    const r = await panel({ assigneeId: null });
+    expect(r).toEqual({ ok: false, code: "sin-permiso" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+  });
+
+  it("dueño técnico (.local) → se reasigna", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "qa-1", assignedTo: { email: "agentes@propyte.local" } });
+    const r = await panel();
+    expect(r.ok).toBe(true);
+    expect(txContactUpdate).toHaveBeenCalled();
+  });
+
+  it("🚨 dueño de verdad (lo asignaron mientras la lista estaba abierta) → ya-asignado, sin escribir", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-9", assignedTo: { email: "ana@propyte.com" } });
+    const r = await panel();
+    expect(r).toEqual({ ok: false, code: "ya-asignado" });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
+  });
+
+  it("ya era del destino → ok sinCambio, sin escribir (repetir el lote no hace nada)", async () => {
+    contactFindFirst.mockResolvedValue({ ...CONTACTO_LIBRE, assignedToId: "ase-2", assignedTo: { email: "pedro@propyte.com" } });
+    const r = await panel();
+    expect(r).toEqual({ ok: true, assignedTo: { id: "ase-2", name: "Pedro Ruiz" }, sinCambio: true });
+    expect(txContactUpdate).not.toHaveBeenCalled();
+    expect(activityCreate).not.toHaveBeenCalled();
+  });
+
+  it("el asignado se valida con la regla única de ruteables (activo, no borrado, sin .local)", async () => {
+    await panel();
+    expect(userFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "ase-2", isActive: true, deletedAt: null, NOT: { email: { endsWith: ".local" } } },
+      }),
+    );
+  });
+
+  it("asignarse a sí mismo desde el panel → la actividad lo dice así", async () => {
+    userFindFirst.mockResolvedValue({ id: "boss-1", name: "Luis", email: "luis@propyte.com", role: "ADMIN" });
+    await panel({ assigneeId: "boss-1", actor: { id: "boss-1", role: "ADMIN" } });
+    expect(activityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subject: "Se asignó el contacto desde Leads huérfanos" }) }),
+    );
   });
 });
