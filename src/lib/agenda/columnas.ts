@@ -9,6 +9,11 @@ export interface ColumnaDef {
   required?: boolean;
   /** Visible la primera vez, antes de que el usuario guarde su preferencia. */
   defaultVisible?: boolean;
+  /**
+   * Alineación del contenido de la celda (#865). Opcional: las tablas que no la declaran
+   * (Agenda) no cambian.
+   */
+  align?: "left" | "center";
 }
 
 export type TablaAgenda = "reuniones" | "llamadas";

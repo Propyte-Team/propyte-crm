@@ -10,22 +10,25 @@ import type { ColumnaDef } from "@/lib/agenda/columnas";
  * no un dato, y siempre se muestra al final.
  */
 export const COLUMNAS_CONTACTOS: ColumnaDef[] = [
-  { key: "nombre", label: "Nombre", required: true, defaultVisible: true },
-  { key: "estado", label: "Estado", defaultVisible: true },
-  { key: "tipo", label: "Tipo de contacto", defaultVisible: true },
-  { key: "telefono", label: "Teléfono", defaultVisible: true },
-  { key: "email", label: "Email", defaultVisible: true },
-  { key: "fuente", label: "Fuente", defaultVisible: true },
-  { key: "temperatura", label: "Temperatura", defaultVisible: true },
-  { key: "asesor", label: "Asesor asignado", defaultVisible: true },
-  { key: "registro", label: "Fecha de registro", defaultVisible: true },
+  // `align` (#865): el texto libre (nombres, teléfonos, correos, ciudad) a la izquierda; las
+  // pastillas, etiquetas, fechas y conteos centrados. Los encabezados van todos centrados.
+  { key: "nombre", label: "Nombre", required: true, defaultVisible: true, align: "left" },
+  { key: "estado", label: "Estado", defaultVisible: true, align: "center" },
+  { key: "tipo", label: "Tipo de contacto", defaultVisible: true, align: "center" },
+  { key: "telefono", label: "Teléfono", defaultVisible: true, align: "left" },
+  { key: "email", label: "Email", defaultVisible: true, align: "left" },
+  { key: "fuente", label: "Fuente", defaultVisible: true, align: "center" },
+  { key: "temperatura", label: "Temperatura", defaultVisible: true, align: "center" },
+  { key: "asesor", label: "Asesor asignado", defaultVisible: true, align: "left" },
+  { key: "registro", label: "Fecha de registro", defaultVisible: true, align: "center" },
   // Ocultas por defecto: el asesor las activa si le sirven.
-  { key: "telefono2", label: "Teléfono secundario" },
-  { key: "ciudad", label: "Ciudad de residencia" },
-  { key: "ultimaActividad", label: "Última actividad" },
-  { key: "negocios", label: "Negocios" },
-  { key: "actividades", label: "Actividades" },
-  { key: "modificado", label: "Última modificación" },
+  // Teléfono secundario: temporal, se planea quitar esa opción del CRM (#865).
+  { key: "telefono2", label: "Teléfono secundario", align: "left" },
+  { key: "ciudad", label: "Ciudad", align: "left" }, // antes «Ciudad de residencia» (#865)
+  { key: "ultimaActividad", label: "Última actividad", align: "center" },
+  { key: "negocios", label: "Negocios", align: "center" },
+  { key: "actividades", label: "Actividades", align: "center" },
+  { key: "modificado", label: "Última modificación", align: "center" },
 ];
 
 /** Clave de localStorage. Versionada: si el catálogo cambia de forma incompatible, se sube. */

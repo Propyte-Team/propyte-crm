@@ -39,3 +39,20 @@ describe("COLUMNAS_CONTACTOS", () => {
     expect(columnasVisibles(COLUMNAS_CONTACTOS, ["no-existe"])).toContain("tipo");
   });
 });
+
+// #865: alineación declarada en el catálogo (una sola fuente), no celda por celda.
+describe("COLUMNAS_CONTACTOS — alineación (#865)", () => {
+  it("cada columna declara su alineación", () => {
+    for (const c of COLUMNAS_CONTACTOS) expect(c.align, c.key).toBeDefined();
+  });
+
+  it("a la izquierda solo el texto libre; todo lo demás centrado", () => {
+    const izquierda = COLUMNAS_CONTACTOS.filter((c) => c.align === "left").map((c) => c.key);
+    expect(izquierda).toEqual(["nombre", "telefono", "email", "asesor", "telefono2", "ciudad"]);
+  });
+
+  it("la columna de ciudad se llama solo «Ciudad» y conserva su clave (las preferencias guardadas siguen valiendo)", () => {
+    const ciudad = COLUMNAS_CONTACTOS.find((c) => c.key === "ciudad");
+    expect(ciudad?.label).toBe("Ciudad");
+  });
+});
