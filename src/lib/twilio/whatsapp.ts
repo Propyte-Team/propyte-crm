@@ -243,7 +243,7 @@ export async function handleInboundWhatsApp(payload: {
   ProfileName?: string;
   /** Conector WHATSAPP del número que RECIBIÓ el mensaje (metadata.phone_number_id). */
   ConnectorId?: string | null;
-}, opts: { triggerBot?: boolean } = {}) {
+}, opts: { triggerBot?: boolean; route?: boolean } = {}) {
   const rawPhone = payload.From ? payload.From.replace("whatsapp:", "") : null;
   const bsuid = payload.WhatsAppUserId ?? null;
 

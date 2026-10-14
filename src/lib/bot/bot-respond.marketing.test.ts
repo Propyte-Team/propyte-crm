@@ -37,6 +37,13 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+// #858 (2026-10-14): un escalamiento sin nadie a quien pasárselo ya no se queda en silencio;
+// a quién avisa se prueba en lib/messaging/aviso-sin-dueno.test.ts.
+const avisarHiloSinDueno = vi.fn();
+vi.mock("@/lib/messaging/aviso-sin-dueno", () => ({
+  avisarHiloSinDueno: (...a: unknown[]) => avisarHiloSinDueno(...a),
+}));
+
 const askClaude = vi.fn();
 vi.mock("./claude", () => ({
   askClaude: (...a: unknown[]) => askClaude(...a),
@@ -194,7 +201,7 @@ describe("botRespond — [ESCALAR_MARKETING]", () => {
     expect(notificationCreate.mock.calls[0][0].data.userId).toBe("asesor-9");
   });
 
-  it("sin responsable válido, escala igual (sin romper) con el comportamiento anterior", async () => {
+  it("sin responsable válido, escala igual (sin romper) y avisa como hilo sin dueño (#858)", async () => {
     setConfig({});
     askClaude.mockResolvedValueOnce(`Listo. ${ESCALATE_MARKETING_TOKEN}`).mockResolvedValueOnce("Resumen");
 
@@ -202,7 +209,9 @@ describe("botRespond — [ESCALAR_MARKETING]", () => {
 
     const escalada = convUpdate.mock.calls.find((c) => c[0].data.status === "HUMAN");
     expect(escalada?.[0].data.controlledById).toBeNull();
-    expect(notificationCreate).not.toHaveBeenCalled(); // no hay a quién avisar: igual que antes
+    expect(notificationCreate).not.toHaveBeenCalled(); // el aviso directo no tiene a quién
+    // …pero ya no se queda en silencio: va por el camino de hilo sin dueño.
+    expect(avisarHiloSinDueno).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -20,6 +20,9 @@ const SOURCE_LABELS: Record<string, string> = {
   ui: "Manual",
   bot_playbook: "Bot",
   routing: "Ruteo automático",
+  // #748 (2026-10-14): el reparto usó la marca de la cuenta (su plaza predeterminada o, sin
+  // asesor en la plaza, su responsable de marketing). Distinto de "routing" a propósito.
+  routing_marca: "Ruteo automático (marca de la cuenta)",
   merge: "Fusión de duplicados",
   zapier: "Zapier",
   lifecycle_auto: "Ciclo de vida (auto)",

@@ -160,7 +160,9 @@ export async function POST(req: NextRequest) {
           console.warn(`[meta-dm] sin conector activo para ${msg.channel} accountId=${msg.accountId}`);
         }
       }
-      const saved = await handleInboundMessage(msg, { triggerBot: false });
+      // #748 (2026-10-14): el mismo candado para el reparto. Sin cuenta que lo reclame, el
+      // contacto no se reparte entre los asesores de Propyte (podría ser de otra marca).
+      const saved = await handleInboundMessage(msg, { triggerBot: false, ...(cuentaSinConector ? { route: false } : {}) });
       if (!msg.isEcho && saved?.contactId && !cuentaSinConector) {
         botTargets.set(`${saved.contactId}:${msg.channel}`, {
           contactId: saved.contactId,

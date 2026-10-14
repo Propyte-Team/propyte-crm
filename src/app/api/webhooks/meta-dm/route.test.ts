@@ -224,6 +224,30 @@ describe("meta-dm webhook", () => {
     warn.mockRestore();
   });
 
+  // #748 (2026-10-14): el mismo candado vale para el reparto. Una cuenta que no está dada de
+  // alta podría ser la de otra marca: el contacto no se reparte entre los asesores de Propyte.
+  it("cuenta sin conector activo: la ingesta se pide SIN reparto (route:false)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveByPage.mockResolvedValue(null);
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "PAGE-X", messaging: [
+      { sender: { id: "PSID-1" }, recipient: { id: "PAGE-X" }, message: { mid: "mm-r", text: "hola" } },
+    ] }] });
+    await POST(postFirmado(body));
+    expect(handleInboundMessage.mock.calls[0][1]).toEqual({ triggerBot: false, route: false });
+    warn.mockRestore();
+  });
+
+  it("cuenta que SÍ resuelve: la ingesta se pide como siempre (sí reparte)", async () => {
+    resolveByPage.mockResolvedValue({ id: "conn_ms" });
+    handleInboundMessage.mockResolvedValue({ id: "m1", contactId: "c9" });
+    const body = JSON.stringify({ object: "page", entry: [{ id: "103981", messaging: [
+      { sender: { id: "PSID-1" }, message: { mid: "mm-s", text: "hola" } },
+    ] }] });
+    await POST(postFirmado(body));
+    expect(handleInboundMessage.mock.calls[0][1]).toEqual({ triggerBot: false });
+  });
+
   // 2026-10-12, gemelo del número desconocido de WhatsApp: ese silencio solo dejaba el
   // console.warn. Ahora deja una nota en la conversación del mensaje.
   it.each([

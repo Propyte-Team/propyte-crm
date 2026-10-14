@@ -1,9 +1,11 @@
 // Motor de ruteo (Anexo Técnico §C.1 autoRouteLead) — aplica RoutingRule por prioridad,
 // asigna asesor, crea SlaTimer FIRST_TOUCH y notifica. Emite lead.assigned.
+import type { Brand } from "@prisma/client";
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
 import { createSlaTimer, cumplirOrphan } from "./sla";
-import { ROLES_RUTEABLES, usuarioRuteableWhere, mandoWhere } from "./ruteables";
+import { ROLES_RUTEABLES, usuarioRuteableWhere } from "./ruteables";
+import { gerenciaDeLaPlaza } from "./gerencia";
 import {
   motivoSinAsignar,
   explicacion,
@@ -117,25 +119,31 @@ async function sendToPond(
   // «no hay reglas» de «no hay a quién asignar».
   motivo?: MotivoSinAsignar,
 ): Promise<void> {
-  await createSlaTimer(contact.id, "ORPHAN").catch((err) =>
-    console.error("[routing] pond: no se pudo crear el SlaTimer ORPHAN:", err),
-  );
+  const nuevo = await createSlaTimer(contact.id, "ORPHAN").catch((err) => {
+    console.error("[routing] pond: no se pudo crear el SlaTimer ORPHAN:", err);
+    return true; // sin saberlo, se avisa como siempre: mejor un aviso de más que uno de menos
+  });
+  // #748 (2026-10-14): un contacto sin dueño ahora se vuelve a repartir con cada mensaje
+  // directo. Si sigue sin candidato y su ORPHAN todavía corre, ya está en el Pond: la gerencia
+  // ya recibió el aviso y el vencimiento del reloj le volverá a avisar (#756). Repetirlo aquí
+  // sería un aviso y un `lead.orphaned` por mensaje, e inflaría el conteo de huérfanos.
+  if (nuevo === false) {
+    console.info(`[routing] lead ${contact.id} ya estaba en el Pond (ORPHAN corriendo): no se repite el aviso`);
+    return;
+  }
   // #756: estas cuatro condiciones salieron a `./ruteables` sin cambiar de valor, porque el
   // aviso de vencimiento necesita EL MISMO mando y una segunda copia habría divergido —
-  // el defecto de la #715 A-03, la #730 y la #682.
-  const managerWhere = mandoWhere();
-  let managers = await prisma.user.findMany({
-    where: { ...managerWhere, ...(contact.targetPlaza ? { plaza: contact.targetPlaza as never } : {}) },
-    select: { id: true },
-  });
+  // el defecto de la #715 A-03, la #730 y la #682. #858 (2026-10-14): la consulta en sí
+  // salió a `./gerencia`, porque el aviso de un hilo sin dueño necesita a la misma gente.
+  let managers = await gerenciaDeLaPlaza(contact.targetPlaza);
   if (managers.length === 0) {
     // Sin gerencia en la plaza del lead: avisar a toda la gerencia para que no quede ciego.
-    managers = await prisma.user.findMany({ where: managerWhere, select: { id: true } });
+    managers = await gerenciaDeLaPlaza(null);
   }
   if (managers.length > 0) {
     await prisma.notification.createMany({
-      data: managers.map((m) => ({
-        userId: m.id,
+      data: managers.map((id) => ({
+        userId: id,
         title: "Lead sin asignar (Pond)",
         message: `${contact.firstName} ${contact.lastName} (${contact.leadSource})${contact.targetPlaza ? ` · ${contact.targetPlaza}` : ""} — nadie disponible para tomarlo`,
         type: "lead_pond",
@@ -151,12 +159,67 @@ async function sendToPond(
   });
 }
 
+/**
+ * #748 (2026-10-14): la marca de la cuenta por la que entró el lead, SOLO si es una marca no
+ * predeterminada. Sin cuenta, con la predeterminada o con una marca que no se puede usar
+ * ("unavailable": borrada o ilegible) → null, y el reparto es exactamente el de siempre.
+ * Import dinámico: el resolvedor solo hace falta cuando hay cuenta.
+ */
+async function marcaDelLead(connectorId: string | null | undefined): Promise<Brand | null> {
+  if (!connectorId) return null;
+  try {
+    const { resolveBrandForConnector } = await import("@/lib/brands/resolve");
+    const res = await resolveBrandForConnector(connectorId);
+    return res.kind === "brand" ? res.brand : null;
+  } catch (err) {
+    console.error(`[routing] no se pudo resolver la marca de la cuenta ${connectorId}; reparto sin marca:`, err);
+    return null;
+  }
+}
+
+/**
+ * #748: el responsable de marketing de la marca, si puede recibir un lead real: persona
+ * activa (mismo criterio que cualquier candidato, `usuarioRuteableWhere`) y fuera de la
+ * lista de excluidos del reparto. Si no, null y el lead sigue al Pond.
+ */
+async function responsableDeLaMarca(marca: Brand, excludedIds: string[]): Promise<string | null> {
+  const id = marca.marketingOwnerUserId;
+  if (!id || excludedIds.includes(id)) return null;
+  const persona = await prisma.user.findFirst({ where: { id, ...usuarioRuteableWhere() }, select: { id: true } });
+  return persona?.id ?? null;
+}
+
+/**
+ * `opts.connectorId` (#748, 2026-10-14): la cuenta por la que entró el lead. Solo cambia algo
+ * si es de una marca NO predeterminada:
+ *  - el contacto sin plaza toma la plaza predeterminada de la marca (y se guarda, igual que
+ *    hace captureLead al dar de alta un lead de esa cuenta);
+ *  - si ninguna regla encuentra asesor y la marca tiene un responsable de marketing que es
+ *    persona activa, el lead es suyo en vez de quedarse huérfano.
+ * Con la marca predeterminada, sin cuenta o sin pasar el parámetro, todo es como antes (Pond).
+ */
 export async function autoRouteLead(
   contactId: string,
-  opts: { reason?: string } = {}
+  opts: { reason?: string; connectorId?: string | null } = {}
 ): Promise<string | null> {
-  const contact = await prisma.contact.findUnique({ where: { id: contactId }, include: { adAttribution: true } });
-  if (!contact || contact.deletedAt) return null;
+  const encontrado = await prisma.contact.findUnique({ where: { id: contactId }, include: { adAttribution: true } });
+  if (!encontrado || encontrado.deletedAt) return null;
+  let contact = encontrado;
+
+  // #748: los leads de Yaxnáh que llegaban por un contacto que ya existía (sin plaza) se
+  // repartían con `sin_plaza_resoluble` aunque la marca dice de qué plaza son. Va ANTES de
+  // las reglas para que la plaza cuente en todo: candidatos, territorio y gerencia del Pond.
+  const marca = await marcaDelLead(opts.connectorId);
+  if (marca && !contact.targetPlaza && marca.defaultPlaza) {
+    const plaza = marca.defaultPlaza;
+    contact = { ...contact, targetPlaza: plaza };
+    // Si guardarla falla, el reparto de hoy la usa igual; solo se pierde que quede escrita.
+    await withChangeSource({ source: "routing_marca" }, (tx) =>
+      tx.contact.update({ where: { id: contactId }, data: { targetPlaza: plaza } }),
+    ).catch((err) =>
+      console.error(`[routing] no se pudo guardar la plaza de la marca en el contacto ${contactId}:`, err),
+    );
+  }
 
   // PRIMERO territorio (speckit Personalización §2.4): si una TerritoryRule matchea,
   // los candidatos se restringen a los miembros del territorio ganador.
@@ -270,6 +333,26 @@ export async function autoRouteLead(
     pasos.push({ reglaId: rule.id, motivo: "estrategia_no_eligio" });
   }
 
+  // #748 (2026-10-14): una marca no predeterminada tiene dueño propio. Si ninguna regla
+  // encontró asesor para su lead —hoy, todo Yaxnáh: su plaza MERIDA no tiene asesores—, el
+  // lead es de su responsable de marketing y no del Pond. Se anota POR QUÉ las reglas no
+  // asignaron (el mismo motivo que llevaría `lead.orphaned`) para que en los registros, en
+  // la cronología (origen `routing_marca`) y en el evento se distinga de un reparto normal.
+  let via: "regla" | "responsable_marca" = "regla";
+  let motivoSinAsesor: MotivoSinAsignar | null = null;
+  if (!assigneeId && marca) {
+    const responsable = await responsableDeLaMarca(marca, excludedIds);
+    if (responsable) {
+      motivoSinAsesor = motivoSinAsignar(pasos, rules.length);
+      assigneeId = responsable;
+      via = "responsable_marca";
+      console.info(
+        `[routing] lead ${contact.id} sin asesor (${motivoSinAsesor}): se asigna al responsable de la marca ` +
+          `«${marca.name}» (${responsable}) · fuente=${contact.leadSource} plaza=${contact.targetPlaza ?? "sin plaza"}`,
+      );
+    }
+  }
+
   if (!assigneeId) {
     const motivo = motivoSinAsignar(pasos, rules.length);
     // #678 (a): el reparto deja de fallar en silencio. Antes solo quedaba el aviso a la
@@ -287,7 +370,7 @@ export async function autoRouteLead(
 
   const previous = contact.assignedToId;
   await withChangeSource(
-    { source: "routing" },
+    { source: via === "responsable_marca" ? "routing_marca" : "routing" },
     (tx) =>
       tx.contact.update({
         where: { id: contactId },
@@ -313,7 +396,12 @@ export async function autoRouteLead(
     data: {
       userId: assigneeId,
       title: previous ? "Lead re-asignado" : "Lead nuevo asignado",
-      message: `${contact.firstName} ${contact.lastName} (${contact.leadSource})${opts.reason ? ` — ${opts.reason}` : ""}`,
+      message:
+        `${contact.firstName} ${contact.lastName} (${contact.leadSource})${opts.reason ? ` — ${opts.reason}` : ""}` +
+        (via === "responsable_marca" && marca
+          ? ` · No hay asesores disponibles${contact.targetPlaza ? ` en ${contact.targetPlaza}` : ""}: ` +
+            `te llega como responsable de la marca «${marca.name}».`
+          : ""),
       type: "lead_assigned",
       link: `/contacts/${contactId}`,
     },
@@ -326,6 +414,12 @@ export async function autoRouteLead(
     previousAssigneeId: previous,
     reason: opts.reason,
     territory: territoryName,
+    // #748: cómo se eligió (regla o responsable de la marca) y, en el segundo caso, por qué
+    // las reglas no asignaron. Es lo que permite contar sin abrir el CRM cuántos leads de
+    // una marca se quedan sin asesor de la plaza.
+    via,
+    brandId: marca?.id ?? null,
+    motivoSinAsesor,
   });
 
   return assigneeId;

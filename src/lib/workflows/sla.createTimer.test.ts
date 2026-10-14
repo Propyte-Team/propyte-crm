@@ -63,4 +63,13 @@ describe("createSlaTimer", () => {
     await createSlaTimer("c1", "FIRST_TOUCH");
     expect(timerCreate).not.toHaveBeenCalled();
   });
+  // 2026-10-14 (#748): el Pond necesita saber si el lead YA estaba ahí para no volver a
+  // avisar a la gerencia en cada mensaje de un contacto que sigue sin dueño.
+  it("dice si creó uno nuevo: true al crear, false si ya había uno RUNNING", async () => {
+    contact.mockResolvedValue({ id: "c1", contactType: "COMPRADOR", adAttribution: null, assignedTo: null });
+    findMany.mockResolvedValue([def]);
+    await expect(createSlaTimer("c1", "ORPHAN")).resolves.toBe(true);
+    timerFindFirst.mockResolvedValue({ id: "existing" });
+    await expect(createSlaTimer("c1", "ORPHAN")).resolves.toBe(false);
+  });
 });

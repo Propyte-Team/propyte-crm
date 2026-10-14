@@ -606,6 +606,24 @@ describe("webhook de WhatsApp Cloud — número desconocido y media por cuenta",
     expect(payload.ConnectorId).toBe("conn-1");
   });
 
+  // #748 (2026-10-14): el mismo candado vale para el reparto. Un número que no es de ninguna
+  // cuenta ni el general podría ser el de otra marca sin registrar: el contacto no se reparte
+  // entre los asesores de Propyte (queda sin dueño, a la vista en el panel de huérfanos).
+  it("phone_number_id desconocido: la ingesta se pide SIN reparto (route:false)", async () => {
+    await POST(postFirmado(cuerpoDe("pn-desconocido")));
+    expect(handleInboundWhatsApp.mock.calls[0][1]).toEqual({ triggerBot: false, route: false });
+  });
+
+  it("número general o cuenta registrada: la ingesta se pide como siempre (sí reparte)", async () => {
+    await POST(postFirmado(cuerpoDe("pn-global")));
+    expect(handleInboundWhatsApp.mock.calls[0][1]).toEqual({ triggerBot: false });
+
+    resolveConnectorByPhoneNumberId.mockResolvedValue({ id: "conn-1" });
+    getWhatsAppCredentials.mockReturnValue({ phoneNumberId: "pn-marca", accessToken: "tok-test" });
+    await POST(postFirmado(cuerpoDe("pn-marca", { id: "wamid.2" })));
+    expect(handleInboundWhatsApp.mock.calls[1][1]).toEqual({ triggerBot: false });
+  });
+
   it("🚨 si resolveConnectorByPhoneNumberId LANZA, se trata como desconocido: ingiere pero sin agente", async () => {
     resolveConnectorByPhoneNumberId.mockRejectedValue(new Error("db caída"));
 

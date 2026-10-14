@@ -25,17 +25,22 @@ async function loadSlaContext(contactId: string): Promise<Record<string, unknown
   };
 }
 
+/**
+ * Devuelve `true` si creó un temporizador y `false` si ya había uno RUNNING del mismo tipo.
+ * 2026-10-14 (#748): el Pond lo usa para saber si el lead YA estaba en la bandeja de
+ * rescate, ahora que un contacto sin dueño se vuelve a repartir en cada mensaje directo.
+ */
 export async function createSlaTimer(
   contactId: string,
   type: "FIRST_TOUCH" | "RETRY" | "ORPHAN",
   dealId?: string
-): Promise<void> {
+): Promise<boolean> {
   // No duplicar un timer RUNNING del mismo tipo para el mismo contacto
   const existing = await prisma.slaTimer.findFirst({
     where: { contactId, type, status: "RUNNING" },
     select: { id: true },
   });
-  if (existing) return;
+  if (existing) return false;
 
   const [ctx, policies] = await Promise.all([
     loadSlaContext(contactId),
@@ -54,6 +59,7 @@ export async function createSlaTimer(
   await prisma.slaTimer.create({
     data: { contactId, dealId: dealId ?? null, policyId: policy?.id ?? null, type, dueAt },
   });
+  return true;
 }
 
 // Llamar SOLO cuando hay un toque SALIENTE real: llamada, WhatsApp, email o DM del

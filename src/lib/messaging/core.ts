@@ -165,6 +165,38 @@ async function findContactByChannel(
 }
 
 /**
+ * #748 (2026-10-14): ¿este contacto tuvo dueño alguna vez? Si lo tuvo y hoy no, alguien se
+ * lo quitó (desasignación desde el Inbox) y el reparto del inbound no se la deshace.
+ *
+ * Dos pruebas, la barata primero:
+ *  - un FIRST_TOUCH en cualquier estado (MET y BREACHED también): lo crea el reparto al
+ *    asignar, así que existe para todo el que alguna vez se repartió con éxito;
+ *  - un cambio de `assignedToId` en la cronología (record_field_changes): lo deja también la
+ *    asignación manual (lib/inbox/assign.ts), que NO crea timer. Sin esta segunda, un contacto
+ *    asignado y desasignado a mano se volvería a repartir con su siguiente mensaje.
+ * Cronología sin migrar (P2021/P2022) = solo cuenta el timer. Cualquier otro fallo de lectura
+ * se propaga: el llamador no reparte esta vez y lo vuelve a intentar con el siguiente mensaje.
+ */
+async function yaTuvoDueno(contactId: string): Promise<boolean> {
+  const timer = await prisma.slaTimer.findFirst({
+    where: { contactId, type: "FIRST_TOUCH" },
+    select: { id: true },
+  });
+  if (timer) return true;
+  try {
+    const cambio = await prisma.recordFieldChange.findFirst({
+      where: { entityType: "contact", entityId: contactId, field: "assignedToId" },
+      select: { id: true },
+    });
+    return !!cambio;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === "P2021" || code === "P2022") return false;
+    throw err;
+  }
+}
+
+/**
  * Echo (Caso 4): envío hecho por la Página desde OTRA superficie (Meta Business
  * Suite / app de la Página / el propio CRM), recibido con `message.is_echo`.
  * - Dedup contra envíos propios: el dispatcher persiste el `message_id` de la
@@ -277,7 +309,17 @@ async function handleEchoMessage(msg: IncomingMessage) {
 // los mensajes primero y disparan el bot UNA vez por conversación al final (BUG 2026-07-24:
 // texto + 2 adjuntos disparaban 3 respuestas). Default true = comportamiento de siempre
 // para el resto de callers (Twilio manda 1 mensaje por webhook).
-export async function handleInboundMessage(msg: IncomingMessage, opts: { triggerBot?: boolean } = {}) {
+//
+// opts.route=false (#748, 2026-10-14): el mensaje llegó a una cuenta que no está dada de alta
+// (cuentaSinConector en meta-dm, unknownNumber en whatsapp/meta). Se ingiere igual —no se
+// pierde— pero NO se reparte: podría ser el número de otra marca todavía sin registrar, y
+// repartirlo entre los asesores de Propyte sería entregarle a alguien un prospecto que no es
+// suyo. Es el mismo candado que ya le impedía contestar al bot. Queda a la vista en el panel
+// de leads huérfanos (sin dueño + la nota de cuenta no registrada).
+export async function handleInboundMessage(
+  msg: IncomingMessage,
+  opts: { triggerBot?: boolean; route?: boolean } = {},
+) {
   if (msg.isEcho) return handleEchoMessage(msg);
 
   // Remitente marcado como spam: se descarta antes de crear nada. Un solo punto
@@ -304,6 +346,9 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   // Seguimiento de marcas (2026-10-09): si el contacto se da de alta (o se deduplica) vía
   // captureLead, captureLead ya registró su marca; aquí solo se atribuye al que YA existía.
   let altaViaCaptureLead = false;
+  // #748: el alta NUEVA ya pasó por el reparto dentro de captureLead (con la cuenta). Si
+  // además se repartiera abajo, un lead que cayó al Pond se repartiría dos veces seguidas.
+  let repartidoEnElAlta = false;
 
   if (!contact) {
     // #827: WhatsApp sin teléfono real (`wa_id` ausente) y sin match previo por BSUID
@@ -334,8 +379,9 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
       lastName: profile?.lastName ?? PLACEHOLDER_LASTNAME,
       message: msg.text,
       ...idField,
-    }, { connectorId: msg.connectorId ?? undefined });
+    }, { connectorId: msg.connectorId ?? undefined, ...(opts.route === false ? { skipRouting: true } : {}) });
     altaViaCaptureLead = true;
+    repartidoEnElAlta = result.isNew && opts.route !== false;
     if (!result.contactId) {
       if (msg.connectorId) {
         const { markConnectorLead } = await import("@/lib/intake/connectors");
@@ -536,57 +582,61 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
   // todos los salientes ya llaman a meetSlaTimers por su cuenta: el eco de core.ts:174,
   // el dispatcher (dispatcher.ts) y el envío de WhatsApp (twilio/whatsapp.ts).
 
-  // ── El provisional deja de serlo: este es su primer reply ──────────────────
-  // Un contacto creado por una regla de comentarios nace sin dueño a propósito
-  // (no era un lead, le escribimos nosotros). Cuando CONTESTA sí lo es, y como
-  // el contacto ya existe el intake no vuelve a pasar por captureLead: si no se
-  // enruta aquí, se queda huérfano para siempre — sin dueño, sin SLA y sin
-  // notificación. Y si Sage escala, escalateToHuman deja la conversación en
-  // HUMAN con controlledById null y se salta el aviso, así que el lead más
-  // caliente que produce la feature acaba en silencio.
+  // ── Reparto del contacto sin dueño (#748, 2026-10-14) ──────────────────────
+  // Aquí antes solo se repartía el primer reply de un contacto nacido de una regla de
+  // comentarios (nace sin dueño a propósito; cuando contesta ya es un lead). Pero todos los
+  // demás tenían el mismo hueco: un contacto que ya existe no vuelve a pasar por captureLead,
+  // y si al darse de alta no encontró asesor —o es de antes del reparto— ningún mensaje
+  // posterior lo volvía a repartir. Medido el 2026-10-14: 29 contactos vivos sin dueño, todos
+  // de WhatsApp/Messenger/Instagram y ninguno con un cambio de asesor en la cronología, o sea
+  // que no los desasignó nadie: nunca tuvieron dueño. Ahora cualquier contacto sin dueño que
+  // escribe pasa por el MISMO autoRouteLead que los anuncios —plaza, exclusiones, turno, Pond
+  // con su ORPHAN y aviso a la gerencia— con la cuenta del mensaje, que es de donde sale la
+  // marca (plaza de la marca y, sin asesor, su responsable de marketing; ver routing.ts).
   //
-  // El guard tiene tres tramos, en orden de coste creciente:
-  //   1. sin dueño,
-  //   2. con marca de origen-comentario (un gerente pudo desasignar a alguien
-  //      que nunca vino de un comentario, y no se le deshace la decisión),
-  //   3. sin FIRST_TOUCH previo — la query solo corre si 1 y 2 ya pasaron.
+  // Cuándo NO:
+  //   - con dueño: nunca se reasigna a nadie, y no cuesta ni una consulta;
+  //   - alta nueva: captureLead ya lo repartió en este mismo request;
+  //   - cuenta no registrada (opts.route=false): ver la cabecera de handleInboundMessage;
+  //   - ya TUVO dueño (ver yaTuvoDueno): quedarse sin él después es decisión de alguien y el
+  //     siguiente mensaje del cliente no se la deshace. Antes esta protección era exigir la
+  //     marca de comentario, que de paso dejaba fuera a todos los demás.
+  //   Los ecos salieron arriba (handleEchoMessage) y nunca llegan aquí.
   //
-  // El tramo 3 cierra el hueco que dejaban los otros dos: la marca es dato de
-  // procedencia y no se borra, así que un contacto que SÍ vino de un comentario
-  // y al que un gerente desasignó a mano (feature de asignación del Inbox)
-  // volvería a enrutarse con su siguiente mensaje. Un FIRST_TOUCH existente —en
-  // cualquier estado: MET y BREACHED también prueban que hubo ruteo— significa
-  // "a este ya se le asignó dueño alguna vez", así que quedarse sin dueño ahora
-  // es decisión de alguien.
+  // Reintento: un reparto sin candidato no crea FIRST_TOUCH, así que el siguiente mensaje lo
+  // vuelve a intentar (p. ej. ya hay asesor en la plaza). El aviso del Pond no se repite
+  // mientras su ORPHAN siga corriendo (routing.ts): un contacto que insiste no le manda un
+  // aviso a la gerencia por cada mensaje.
   //
-  // Y conserva el reintento: autoRouteLead sale con `if (!assigneeId) return
-  // null` ANTES de createSlaTimer (routing.ts), así que un ruteo que no
-  // encontró candidato no deja timer y se vuelve a intentar en el siguiente
-  // inbound.
+  // Por qué aquí, antes del 200, y no en el trabajo de después: es solo base de datos (unas
+  // diez consultas indexadas, ninguna llamada a Meta ni a Claude), corre solo para contactos
+  // sin dueño, y es lo mismo que el alta nueva paga desde siempre dentro de captureLead. Lo
+  // que retrasa el 200 de Meta son las llamadas externas del bot, y esas siguen después. Y
+  // tiene que ir ANTES de dos cosas que leen al dueño: el aviso del hilo HUMAN de abajo y el
+  // escalamiento del bot (después del 200, relee el contacto). Después del 200, ese aviso
+  // saldría a la gerencia o a los ADMIN justo antes de que el reparto le pusiera dueño, y la
+  // llamada habría que copiarla en cada webhook y en Twilio.
   //
   // Ya no hay restricción de orden con el SLA: hasta #702 esto tenía que ir DESPUÉS de
   // meetSlaTimers porque aquel updateMany cerraba el FIRST_TOUCH recién creado y dejaba
   // al asesor sin reloj. Ese comentario describía el bug desde el otro lado, tratándolo
   // como una restricción a respetar. El inbound ya no cierra timers, así que la
   // restricción desapareció y el orden de este bloque es libre.
-  if (!contact.assignedToId) {
+  if (!contact.assignedToId && opts.route !== false && !repartidoEnElAlta) {
     try {
-      const { isCommentOriginDetail } = await import("@/lib/comments/link-comment-origin");
-      if (isCommentOriginDetail(contact.leadSourceDetail)) {
-        const routedBefore = await prisma.slaTimer.findFirst({
-          where: { contactId: contact.id, type: "FIRST_TOUCH" },
-          select: { id: true },
-        });
-        if (!routedBefore) {
-          const { autoRouteLead } = await import("@/lib/workflows/routing");
-          const routedTo = await autoRouteLead(contact.id, { reason: "primer reply de comentario" });
-          // Refleja el dueño nuevo en memoria: lo leen el aviso de hilo HUMAN de
-          // más abajo y, vía re-fetch, el escalamiento del bot.
-          if (routedTo) contact = { ...contact, assignedToId: routedTo };
-        }
+      if (!(await yaTuvoDueno(contact.id))) {
+        const { isCommentOriginDetail } = await import("@/lib/comments/link-comment-origin");
+        const reason = isCommentOriginDetail(contact.leadSourceDetail)
+          ? "primer reply de comentario"
+          : `${msg.channel} de un contacto sin dueño`;
+        const { autoRouteLead } = await import("@/lib/workflows/routing");
+        const routedTo = await autoRouteLead(contact.id, { reason, connectorId: msg.connectorId ?? null });
+        // Refleja el dueño nuevo en memoria: lo leen el aviso de hilo HUMAN de
+        // más abajo y, vía re-fetch, el escalamiento del bot.
+        if (routedTo) contact = { ...contact, assignedToId: routedTo };
       }
     } catch (err) {
-      console.error(`[messaging] ruteo del primer reply de comentario falló:`, err);
+      console.error(`[messaging] reparto del contacto sin dueño falló (${contact.id}):`, err);
     }
   }
 
@@ -623,6 +673,26 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
           link: `/inbox?c=${conversation.id}`,
         },
       });
+    } else {
+      // #858 (2026-10-14): hilo en manos de un humano que no existe — el bot escaló un
+      // contacto sin asesor, o alguien contestó desde Business Suite y el eco lo dejó en
+      // HUMAN sin dueño. Aquí no se avisaba a nadie y cada mensaje del cliente caía en el
+      // vacío (conversación 9c1379d8: dos mensajes del valuador de BBVA, cero avisos). Se
+      // avisa por el mismo camino que el escalamiento, que deduplica por hilo: un aviso sin
+      // leer de las últimas horas basta, no uno por mensaje. Side-effect: jamás mata la ingesta.
+      try {
+        const { avisarHiloSinDueno } = await import("./aviso-sin-dueno");
+        await avisarHiloSinDueno({
+          conversationId: conversation.id,
+          connectorId: conversation.connectorId ?? msg.connectorId ?? null,
+          plaza: contact.targetPlaza ?? null,
+          title: `${msg.channel} recibido en un hilo sin dueño`,
+          message: `${contact.firstName} ${contact.lastName}: ${msg.text.slice(0, 80)}`,
+          type: "social_inbound",
+        });
+      } catch (err) {
+        console.error(`[messaging] aviso de hilo HUMAN sin dueño falló (${conversation.id}):`, err);
+      }
     }
   } else if (
     conversation.status === "BOT" &&

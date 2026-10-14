@@ -18,6 +18,7 @@ const meetSlaTimers = vi.fn();
 const commentRuleLogFindFirst = vi.fn();
 const commentRuleLogUpdateMany = vi.fn();
 const slaTimerFindFirst = vi.fn();
+const fieldChangeFindFirst = vi.fn();
 const leadConnectorUpdate = vi.fn();
 const leadConnectorFindUnique = vi.fn();
 
@@ -46,6 +47,7 @@ vi.mock("@/lib/db", () => ({
       updateMany: (...a: unknown[]) => commentRuleLogUpdateMany(...a),
     },
     slaTimer: { findFirst: (...a: unknown[]) => slaTimerFindFirst(...a) },
+    recordFieldChange: { findFirst: (...a: unknown[]) => fieldChangeFindFirst(...a) },
     leadConnector: {
       update: (...a: unknown[]) => leadConnectorUpdate(...a),
       findUnique: (...a: unknown[]) => leadConnectorFindUnique(...a),
@@ -111,6 +113,13 @@ vi.mock("@/lib/users/actor-sistema", () => ({
   resolveActorUserId: (...a: unknown[]) => resolveActorUserId(...a),
 }));
 
+// #858 (2026-10-14): a quién se avisa de un hilo HUMAN sin dueño y el dedup se prueban en
+// aviso-sin-dueno.test.ts; aquí solo importa que core.ts lo pida cuando toca y no cuando no.
+const avisarHiloSinDueno = vi.fn();
+vi.mock("./aviso-sin-dueno", () => ({
+  avisarHiloSinDueno: (...a: unknown[]) => avisarHiloSinDueno(...a),
+}));
+
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
@@ -121,12 +130,14 @@ beforeEach(() => {
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
     commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
     slaTimerFindFirst, leadConnectorUpdate, leadConnectorFindUnique, attachBrand, getDefaultBrandId,
-    resolveActorUserId,
+    resolveActorUserId, avisarHiloSinDueno, fieldChangeFindFirst,
   ].forEach((m) => m.mockReset());
+  avisarHiloSinDueno.mockResolvedValue([]);
   // Por defecto el asesor asignado es una persona: el helper lo devuelve tal cual.
   resolveActorUserId.mockImplementation(async ({ assignedToId }: { assignedToId?: string | null }) => assignedToId ?? null);
   autoRouteLead.mockResolvedValue("u-nuevo");
   slaTimerFindFirst.mockResolvedValue(null); // por defecto: nunca se enrutó
+  fieldChangeFindFirst.mockResolvedValue(null); // …ni se le asignó dueño a mano
   leadConnectorUpdate.mockResolvedValue({});
   contactFindUnique.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B", custom: {} });
   commentRuleLogFindFirst.mockResolvedValue(null);
@@ -955,7 +966,8 @@ describe("handleInboundMessage — señal 'el lead respondió'", () => {
 // Cuando contesta ya es un lead de verdad, pero como el contacto existe el
 // intake no vuelve a pasar por captureLead: si no se enruta en este punto, se
 // queda huérfano — sin dueño, sin SLA y sin notificación — y si Sage escala,
-// escalateToHuman lo deja en HUMAN con controlledById null y sin aviso.
+// escalateToHuman lo dejaba en HUMAN con controlledById null y sin aviso (eso último
+// lo cerró la #858; el reparto de aquí sigue siendo lo que le da dueño).
 describe("handleInboundMessage — el provisional deja de serlo al responder", () => {
   const MARCA = "comentario:MEDIA-1";
   const provisional = {
@@ -967,7 +979,7 @@ describe("handleInboundMessage — el provisional deja de serlo al responder", (
     contactFindFirst.mockResolvedValue(provisional);
     await handleInboundMessage(base);
     expect(autoRouteLead).toHaveBeenCalledTimes(1);
-    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "primer reply de comentario" });
+    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "primer reply de comentario", connectorId: null });
   });
 
   it("CON dueño no se re-enruta (aunque conserve la marca de origen)", async () => {
@@ -976,15 +988,22 @@ describe("handleInboundMessage — el provisional deja de serlo al responder", (
     expect(autoRouteLead).not.toHaveBeenCalled();
   });
 
-  // Un gerente pudo desasignar a propósito: sin marca de origen no se le
-  // deshace la decisión.
-  it("sin dueño pero SIN marca (desasignado a mano) NO se enruta", async () => {
+  // #748 (2026-10-14): hasta aquí, sin la marca de comentario NO se enrutaba, con la idea de
+  // que un contacto sin dueño y sin marca era uno que un gerente había desasignado. En
+  // producción no era así: de los 29 contactos vivos sin dueño, ninguno tiene un cambio de
+  // asesor en la cronología — nacieron sin dueño y ningún mensaje posterior los volvía a
+  // repartir. Lo que protege la decisión de un gerente ahora es que haya TENIDO dueño
+  // (FIRST_TOUCH o cambio de asesor registrado), no la marca de origen.
+  it("sin dueño y SIN marca, que nunca tuvo dueño → también se enruta (#748)", async () => {
     contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
     await handleInboundMessage(base);
-    expect(autoRouteLead).not.toHaveBeenCalled();
+    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "INSTAGRAM de un contacto sin dueño", connectorId: null });
+  });
 
+  it("sin dueño y desasignado a mano (hay cambio de asesor en la cronología) NO se enruta", async () => {
     contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: "web:landing-tulum" });
-    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
+    fieldChangeFindFirst.mockResolvedValue({ id: "rfc-1" });
+    await handleInboundMessage(base);
     expect(autoRouteLead).not.toHaveBeenCalled();
   });
 
@@ -1018,10 +1037,11 @@ describe("handleInboundMessage — el provisional deja de serlo al responder", (
   });
 });
 
-// Tercer tramo del guard: la marca de origen no se borra nunca (es
-// procedencia), así que sin esto un contacto que vino de un comentario y al que
-// un gerente desasignó a mano —con la feature de asignación del Inbox— se
-// volvía a enrutar con su siguiente mensaje, deshaciéndole la decisión.
+// El guard: un contacto que ya tuvo dueño y hoy no lo tiene es decisión de alguien
+// (desasignación desde el Inbox), y su siguiente mensaje no se la deshace. Antes esto era el
+// tercer tramo de un guard que además exigía la marca de comentario; desde la #748 es el
+// único, y mira dos pruebas: un FIRST_TOUCH (lo dejó el reparto) o un cambio de
+// `assignedToId` en la cronología (lo deja también la asignación manual, que no crea timer).
 describe("handleInboundMessage — no re-enrutar a quien desasignaron a propósito", () => {
   const provisional = {
     id: "c1", assignedToId: null, firstName: "luisf", lastName: "(por identificar)",
@@ -1040,6 +1060,29 @@ describe("handleInboundMessage — no re-enrutar a quien desasignaron a propósi
     slaTimerFindFirst.mockResolvedValue({ id: "sla-1" });
     await handleInboundMessage(base);
     expect(autoRouteLead).not.toHaveBeenCalled();
+    expect(fieldChangeFindFirst).not.toHaveBeenCalled(); // con el timer basta
+  });
+
+  // La asignación manual (lib/inbox/assign.ts) no crea FIRST_TOUCH: sin mirar la cronología,
+  // un contacto asignado y desasignado a mano se volvería a repartir con su siguiente mensaje.
+  it("tuvo dueño según la cronología (asignado a mano, sin timer) → NO se re-enruta", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    fieldChangeFindFirst.mockResolvedValue({ id: "rfc-1" });
+    await handleInboundMessage(base);
+    expect(autoRouteLead).not.toHaveBeenCalled();
+    expect(fieldChangeFindFirst).toHaveBeenCalledWith({
+      where: { entityType: "contact", entityId: "c1", field: "assignedToId" },
+      select: { id: true },
+    });
+  });
+
+  it("si la cronología no se puede leer, no se reparte esta vez (se reintenta en el siguiente mensaje)", async () => {
+    contactFindFirst.mockResolvedValue(provisional);
+    fieldChangeFindFirst.mockRejectedValue(new Error("db caída"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(handleInboundMessage(base)).resolves.toBeTruthy();
+    expect(autoRouteLead).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 
   // Cualquier estado del timer sirve de prueba de que hubo ruteo: MET y
@@ -1066,15 +1109,12 @@ describe("handleInboundMessage — no re-enrutar a quien desasignaron a propósi
     expect(autoRouteLead).toHaveBeenCalledTimes(2);
   });
 
-  // La query es el tramo caro: no debe correr en cada inbound.
-  it("no consulta los timers si el contacto ya tiene dueño o no trae la marca", async () => {
+  // Las consultas son el tramo caro: con dueño no corre ninguna (el caso común no paga nada).
+  it("no consulta timers ni cronología si el contacto ya tiene dueño", async () => {
     contactFindFirst.mockResolvedValue({ ...provisional, assignedToId: "u1" });
     await handleInboundMessage(base);
     expect(slaTimerFindFirst).not.toHaveBeenCalled();
-
-    contactFindFirst.mockResolvedValue({ ...provisional, leadSourceDetail: null });
-    await handleInboundMessage({ ...base, externalMessageId: "mid-2" });
-    expect(slaTimerFindFirst).not.toHaveBeenCalled();
+    expect(fieldChangeFindFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -1470,5 +1510,166 @@ describe("handleInboundMessage — resumen de formulario de anuncio", () => {
     expect(msgCreate).toHaveBeenCalled();
     expect(botRespond).toHaveBeenCalledWith("c1", { channel: "MESSENGER" });
     warnSpy.mockRestore();
+  });
+});
+
+// #858 (2026-10-14): la rama HUMAN solo avisaba a `controlledById ?? assignedToId`. Con los dos
+// en null (el bot escaló un contacto sin asesor, o alguien contestó desde Business Suite y el
+// eco dejó el hilo en HUMAN sin dueño) cada mensaje nuevo del cliente caía en el vacío. Caso
+// real: conversación 9c1379d8, dos mensajes del valuador de BBVA después del escalamiento y
+// cero avisos.
+describe("handleInboundMessage — inbound en un hilo HUMAN sin dueño (#858)", () => {
+  const sinDueno = { id: "c1", assignedToId: null, firstName: "Valuador", lastName: "BBVA", targetPlaza: "PDC" };
+  const hiloHumanSinDueno = { id: "conv1", status: "HUMAN", botEnabled: true, controlledById: null, connectorId: "conn_ms" };
+
+  beforeEach(() => {
+    convFindFirst.mockResolvedValue(hiloHumanSinDueno);
+    convUpdate.mockResolvedValue(hiloHumanSinDueno);
+    // El reparto (si corre) no encuentra a nadie: el contacto sigue sin dueño.
+    autoRouteLead.mockResolvedValue(null);
+  });
+
+  it("sin controlledById ni asesor → avisa por el camino de hilo sin dueño, con la cuenta del hilo y la plaza", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    await handleInboundMessage({ ...base, text: "¿Me confirman la visita del valuador?" });
+
+    expect(notifCreate).not.toHaveBeenCalled();
+    expect(avisarHiloSinDueno).toHaveBeenCalledTimes(1);
+    const arg = avisarHiloSinDueno.mock.calls[0][0];
+    expect(arg).toEqual(
+      expect.objectContaining({ conversationId: "conv1", connectorId: "conn_ms", plaza: "PDC", type: "social_inbound" }),
+    );
+    expect(arg.message).toContain("Valuador BBVA");
+    expect(arg.message).toContain("valuador");
+  });
+
+  it("el bot no contesta en un hilo HUMAN (no cambia)", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    await handleInboundMessage(base);
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("si el aviso truena, la ingesta sigue", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    avisarHiloSinDueno.mockRejectedValue(new Error("boom"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(handleInboundMessage(base)).resolves.toEqual({ id: "m1" });
+    error.mockRestore();
+  });
+
+  it("con controlledById → aviso de siempre a quien controla el hilo, sin camino nuevo", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    convUpdate.mockResolvedValue({ ...hiloHumanSinDueno, controlledById: "u-control" });
+    await handleInboundMessage(base);
+    expect(notifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ userId: "u-control", title: "INSTAGRAM recibido (controlas el hilo)", link: "/inbox?c=conv1" }),
+      }),
+    );
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+  });
+
+  it("con asesor (sin controlledById) → aviso de siempre al asesor, sin camino nuevo", async () => {
+    contactFindFirst.mockResolvedValue({ ...sinDueno, assignedToId: "u-asesor" });
+    await handleInboundMessage(base);
+    expect(notifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: "u-asesor" }) }),
+    );
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+  });
+
+  it("hilo en BOT → ni aviso nuevo ni de siempre (contesta el bot)", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    convUpdate.mockResolvedValue({ ...hiloHumanSinDueno, status: "BOT" });
+    await handleInboundMessage(base);
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+    expect(botRespond).toHaveBeenCalled();
+  });
+});
+
+// #748 (2026-10-14): los contactos que llegan por mensaje directo quedaban sin dueño. El alta
+// SÍ pasaba por el reparto (captureLead → autoRouteLead: hay `lead.orphaned` con reason
+// «intake MESSENGER/WHATSAPP» en producción), pero un contacto que ya existía sin dueño no
+// se volvía a repartir nunca: el reintento solo cubría a los que nacieron de un comentario.
+// Ahora cualquier contacto sin dueño que escribe se reparte con el MISMO reparto de los
+// anuncios (plaza, exclusiones, turno, Pond, marca), con la cuenta del mensaje.
+describe("handleInboundMessage — reparto del mensaje directo (#748)", () => {
+  const sinDueno = { id: "c1", assignedToId: null, firstName: "Ana", lastName: "P", leadSourceDetail: null };
+
+  it("contacto existente sin dueño → se reparte, con la cuenta del mensaje (de ahí sale la marca)", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    await handleInboundMessage({ ...base, connectorId: "conn_ig" });
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "INSTAGRAM de un contacto sin dueño", connectorId: "conn_ig" });
+  });
+
+  it("el dueño que le da el reparto es el que usa el bot después (el hilo no queda sin dueño)", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    autoRouteLead.mockResolvedValue("u-nuevo");
+    await handleInboundMessage({ ...base, connectorId: "conn_ig" });
+    expect(botRespond).toHaveBeenCalledWith("c1", { channel: "INSTAGRAM" });
+    expect(autoRouteLead.mock.invocationCallOrder[0]).toBeLessThan(botRespond.mock.invocationCallOrder[0]);
+  });
+
+  it("contacto CON dueño → no se toca: ni reparto ni consultas", async () => {
+    contactFindFirst.mockResolvedValue({ ...sinDueno, assignedToId: "u-asesor" });
+    await handleInboundMessage({ ...base, connectorId: "conn_ig" });
+    expect(autoRouteLead).not.toHaveBeenCalled();
+    expect(slaTimerFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("contacto NUEVO: lo reparte captureLead con la cuenta, y aquí no se reparte otra vez aunque siga sin dueño", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: null });
+    contactFindUnique.mockResolvedValue(sinDueno);
+    await handleInboundMessage({ ...base, connectorId: "conn_ig" });
+    expect(captureLead).toHaveBeenCalledWith(expect.anything(), { connectorId: "conn_ig" });
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+
+  it("captureLead encontró un contacto que ya existía sin dueño (dedup por otro dato) → aquí sí se reparte", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: "c1", isNew: false, assignedToId: null });
+    contactFindUnique.mockResolvedValue(sinDueno);
+    await handleInboundMessage({ ...base, connectorId: "conn_ig" });
+    expect(autoRouteLead).toHaveBeenCalledTimes(1);
+  });
+
+  it("WhatsApp al número general (sin cuenta) → se reparte con connectorId null: marca predeterminada, Pond de siempre", async () => {
+    contactFindFirst.mockResolvedValue({ ...sinDueno, whatsappOptOut: false });
+    await handleInboundMessage({ ...base, channel: "WHATSAPP", senderId: "+5219981234567" });
+    expect(autoRouteLead).toHaveBeenCalledWith("c1", { reason: "WHATSAPP de un contacto sin dueño", connectorId: null });
+  });
+
+  describe("cuenta no registrada (route:false: cuentaSinConector / unknownNumber)", () => {
+    it("alta nueva → captureLead con skipRouting", async () => {
+      contactFindFirst.mockResolvedValue(null);
+      captureLead.mockResolvedValue({ contactId: "c1", isNew: true, assignedToId: null });
+      contactFindUnique.mockResolvedValue(sinDueno);
+      await handleInboundMessage(base, { triggerBot: false, route: false });
+      expect(captureLead).toHaveBeenCalledWith(expect.anything(), { connectorId: undefined, skipRouting: true });
+      expect(autoRouteLead).not.toHaveBeenCalled();
+    });
+
+    it("contacto existente sin dueño → tampoco se reparte, ni se consultan sus timers", async () => {
+      contactFindFirst.mockResolvedValue(sinDueno);
+      await handleInboundMessage(base, { triggerBot: false, route: false });
+      expect(autoRouteLead).not.toHaveBeenCalled();
+      expect(slaTimerFindFirst).not.toHaveBeenCalled();
+    });
+
+    it("el mensaje se ingiere igual", async () => {
+      contactFindFirst.mockResolvedValue(sinDueno);
+      await expect(handleInboundMessage(base, { triggerBot: false, route: false })).resolves.toEqual({ id: "m1" });
+      expect(msgCreate).toHaveBeenCalled();
+    });
+  });
+
+  it("un eco nunca reparte (lo mandó la Página, no el lead)", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue(sinDueno);
+    await handleInboundMessage({ ...base, isEcho: true, connectorId: "conn_ig" });
+    expect(autoRouteLead).not.toHaveBeenCalled();
+    expect(captureLead).not.toHaveBeenCalled();
   });
 });
