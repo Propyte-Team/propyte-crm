@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import type { LeadConnector } from "@prisma/client";
 import { readCredentials } from "@/lib/intake/connectors";
 import { resolveBrandForConnector } from "@/lib/brands/resolve";
+import { readCoexState } from "./coex/status";
 
 export interface WhatsAppCredentials {
   phoneNumberId: string;
@@ -79,6 +80,17 @@ export async function resolveWhatsAppSender(
     throw new Error(
       `El connector de WhatsApp "${connector.name}" (${connector.id}) no tiene phoneNumberId o accessToken. ` +
         `No se envía el mensaje para no responder desde otro número.`,
+    );
+  }
+  // Coexistencia (2026-10-14): mientras el negocio está desconectado (desde la app, o en el
+  // cambio de teléfono que Meta reconecta solo) Meta rechaza todo envío. La doc pide pausar los
+  // envíos; un error claro aquí se ve en la bandeja, el de Graph no dice nada útil.
+  const coex = readCoexState(connector.config);
+  if (coex?.accountState === "DISCONNECTED" || coex?.accountState === "OFFBOARDED") {
+    throw new Error(
+      coex.accountState === "DISCONNECTED"
+        ? `El WhatsApp "${connector.name}" se desconectó desde la app de WhatsApp Business: no se puede enviar hasta que se vuelva a conectar.`
+        : `El WhatsApp "${connector.name}" está desconectado temporalmente (cambio de teléfono). Meta lo reconecta solo; intenta en unos minutos.`,
     );
   }
   return credentials;

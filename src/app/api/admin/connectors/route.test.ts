@@ -52,6 +52,15 @@ beforeEach(() => {
 });
 
 describe("POST /api/admin/connectors · WHATSAPP", () => {
+  // 2026-10-14: índice único del número (migración whatsapp-coexistencia). Dos cuentas vivas con el
+  // mismo phoneNumberId partirían los hilos de ese número; la base lo frena y aquí se dice claro.
+  it("mismo Phone Number ID que otra cuenta viva → 409 legible (no un 500)", async () => {
+    connectorCreate.mockRejectedValue(Object.assign(new Error("Unique constraint failed"), { code: "P2002" }));
+    const res = await POST(req(WA_OK));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("Phone Number ID");
+  });
+
   it("sin accessToken → 400 y no guarda nada", async () => {
     const res = await POST(req({ ...WA_OK, credentials: undefined }));
     expect(res.status).toBe(400);

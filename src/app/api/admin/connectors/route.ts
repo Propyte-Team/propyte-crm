@@ -115,18 +115,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "accessToken requerido para WhatsApp (se usa para responder y descargar media)" }, { status: 400 });
   }
 
-  const connector = await prisma.leadConnector.create({
-    data: {
-      name: parsed.data.name,
-      provider: parsed.data.provider,
-      status: "PAUSED", // se activa explícitamente tras probar
-      credentials: encrypted,
-      config: (parsed.data.config ?? {}) as never,
-      fieldMap: (parsed.data.fieldMap ?? {}) as never,
-      ...(parsed.data.brandId !== undefined ? { brandId: parsed.data.brandId } : {}),
-    },
-    select: { id: true, name: true, provider: true, status: true },
-  });
+  let connector: { id: string; name: string; provider: string; status: string };
+  try {
+    connector = await prisma.leadConnector.create({
+      data: {
+        name: parsed.data.name,
+        provider: parsed.data.provider,
+        status: "PAUSED", // se activa explícitamente tras probar
+        credentials: encrypted,
+        config: (parsed.data.config ?? {}) as never,
+        fieldMap: (parsed.data.fieldMap ?? {}) as never,
+        ...(parsed.data.brandId !== undefined ? { brandId: parsed.data.brandId } : {}),
+      },
+      select: { id: true, name: true, provider: true, status: true },
+    });
+  } catch (err) {
+    // 2026-10-14: índice único del número de WhatsApp (migración whatsapp-coexistencia). Dos
+    // cuentas vivas con el mismo phoneNumberId partirían los hilos de ese número entre las dos.
+    if ((err as { code?: string } | null)?.code === "P2002" && parsed.data.provider === "WHATSAPP") {
+      return NextResponse.json({ error: "Ya hay una cuenta de WhatsApp con ese Phone Number ID." }, { status: 409 });
+    }
+    throw err;
+  }
 
   await prisma.auditLog.create({
     data: {

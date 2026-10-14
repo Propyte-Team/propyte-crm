@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth/session";
 import prisma from "@/lib/db";
 import { ConnectionsView } from "@/components/conexiones/connections-view";
 import { countOrphanLeads } from "@/server/orphan-leads";
+import { embeddedSignupAvailability } from "@/lib/whatsapp/coex/public-config";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
@@ -18,6 +19,8 @@ export default async function ConexionesPage() {
       select: {
         id: true, name: true, provider: true, status: true,
         lastLeadAt: true, errorCount: true, lastError: true, fieldMap: true,
+        // 2026-10-14: estado de la coexistencia de WhatsApp (config.coex). Sin secretos.
+        config: true,
         brandId: true, brand: { select: { id: true, name: true } },
         _count: { select: { leadLogs: true } },
       },
@@ -33,6 +36,8 @@ export default async function ConexionesPage() {
         lastLeadAt: c.lastLeadAt?.toISOString() ?? null,
       }))}
       orphanCount={orphanCount}
+      // Se lee en cada petición (no en el build): ver lib/whatsapp/coex/public-config.ts.
+      embeddedSignup={embeddedSignupAvailability()}
     />
   );
 }

@@ -165,6 +165,21 @@ async function findContactByChannel(
 }
 
 /**
+ * Contacto VIVO de WhatsApp para un remitente, con el mismo emparejado que el webhook (teléfono
+ * exacto o últimos 10 dígitos, BSUID con desempate a su favor). Sin efectos: solo busca.
+ *
+ * Exportada el 2026-10-14 para la coexistencia: los ecos de la app, el historial y la libreta
+ * deciden «¿esto es de un contacto que ya existe?» con ESTA regla y no con una copia, para que un
+ * mensaje que el webhook normal guardaría no se descarte en el historial (ni al revés).
+ */
+export async function findWhatsAppContact(
+  senderId: string,
+  wa?: { userId?: string | null; senderIsPhone?: boolean },
+) {
+  return findContactByChannel("WHATSAPP", senderId, wa);
+}
+
+/**
  * #748 (2026-10-14): ¿este contacto tuvo dueño alguna vez? Si lo tuvo y hoy no, alguien se
  * lo quitó (desasignación desde el Inbox) y el reparto del inbound no se la deshace.
  *
@@ -218,6 +233,13 @@ async function yaTuvoDueno(contactId: string): Promise<boolean> {
 async function handleEchoMessage(msg: IncomingMessage) {
   const own = await prisma.message.findUnique({ where: { externalMessageId: msg.externalMessageId } });
   if (own) return own;
+  // WhatsApp (ecos de la app en coexistencia, 2026-10-14): lo que el CRM manda guarda su wamid
+  // en `twilioSid`, no en `externalMessageId`. Si Meta llegara a mandar el eco de un envío
+  // nuestro, sin esto quedaría dos veces en el hilo.
+  if (msg.channel === "WHATSAPP") {
+    const ownWa = await prisma.message.findUnique({ where: { twilioSid: msg.externalMessageId } });
+    if (ownWa) return ownWa;
+  }
 
   const contact = await findContactByChannel(msg.channel, msg.senderId, {
     userId: msg.whatsappUserId,
@@ -271,6 +293,10 @@ async function handleEchoMessage(msg: IncomingMessage) {
         body: msg.text,
         externalMessageId: msg.externalMessageId,
         mediaUrl: msg.mediaUrl ?? null,
+        // Los ecos de WhatsApp traen media ya resuelta (2026-10-14); IG/Messenger no los mandan.
+        mediaType: msg.mediaType ?? null,
+        mediaFilename: msg.mediaFilename ?? null,
+        mediaMimeType: msg.mediaMimeType ?? null,
         status: "DELIVERED",
         conversationId: conversation.id,
         sender: fromCommentRule ? "BOT" : "ADVISOR",

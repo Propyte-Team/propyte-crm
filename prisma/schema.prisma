@@ -577,6 +577,17 @@ enum ConnectorStatus {
   @@schema("propyte_crm")
 }
 
+// Alcance de una cuenta (2026-10-14, WhatsApp en coexistencia). BRAND = línea de negocio de
+// una marca (todas las de antes). ADVISOR = el WhatsApp Business propio de un asesor: el bot
+// nunca contesta ahí y solo entran al CRM los chats de prospectos (spec
+// docs/superpowers/specs/2026-10-14-whatsapp-coexistencia-design.md).
+enum ConnectorScope {
+  BRAND
+  ADVISOR
+
+  @@schema("propyte_crm")
+}
+
 enum ConnectorLeadStatus {
   RECEIVED
   PROCESSED
@@ -1560,6 +1571,9 @@ model LeadConnector {
   // Marca de la cuenta (2026-10-09). null = marca predeterminada.
   brandId     String?
   brand       Brand?             @relation(fields: [brandId], references: [id])
+  // Alcance (2026-10-14): BRAND = línea de marca; ADVISOR = número propio de un asesor.
+  // Migración: prisma/migrations-manual/2026-10-14-whatsapp-coexistencia.sql.
+  scope       ConnectorScope     @default(BRAND)
 
   leadLogs      ConnectorLeadLog[]
   conversations Conversation[]

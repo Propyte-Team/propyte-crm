@@ -7,7 +7,10 @@ import { ConnectWizard } from "./connect-wizard";
 import { MetaDmsWizard } from "./meta-dms-wizard";
 import { MappingEditor } from "./mapping-editor";
 import { BrandSelect, useBrandOptions } from "./brand-select";
+import { WhatsAppCoexConnect } from "./whatsapp-coex-connect";
 import { formatDate } from "@/lib/format-date";
+import { coexStatusOf, type CoexStatusKind } from "@/lib/whatsapp/coex/status";
+import type { EmbeddedSignupAvailability } from "@/lib/whatsapp/coex/public-config";
 
 interface Conn {
   id: string; name: string; provider: string; status: string;
@@ -17,6 +20,9 @@ interface Conn {
   brandId: string | null;
   brand: { id: string; name: string } | null;
   _count: { leadLogs: number };
+  // 2026-10-14: de aquí sale el estado de la coexistencia (config.coex). Sin secretos: esos
+  // viven cifrados en credentials, que nunca llega al navegador.
+  config?: unknown;
 }
 
 const MAPPING_PROVIDERS = new Set(["META", "INSTAGRAM"]);
@@ -28,15 +34,27 @@ const TOKEN_PROVIDERS = new Set(["INSTAGRAM", "MESSENGER"]);
 const META_DMS_PROVIDER = "MESSENGER";
 
 const STATUS_DOT: Record<string, string> = { ACTIVE: "bg-green-600", PAUSED: "bg-neutral-300", ERROR: "bg-red-600" };
+// 2026-10-14: WhatsApp conectado por Embedded Signup (coexistencia) — ver whatsapp-coex-connect.tsx.
+const WHATSAPP_PROVIDER = "WHATSAPP";
+const COEX_BADGE: Record<CoexStatusKind, string> = {
+  connected: "border-green-600 text-green-700",
+  pending_sync: "border-amber-500 text-amber-700",
+  offboarded: "border-amber-500 text-amber-700",
+  disconnected: "border-destructive text-destructive",
+  not_subscribed: "border-destructive text-destructive",
+};
 const GROUP_ORDER: ProviderGroup[] = ["meta", "tiktok", "google", "linkedin", "pinterest"];
 
 export function ConnectionsView({
   initial,
   orphanCount = null,
+  embeddedSignup = { ok: false, missing: [] },
 }: {
   initial: Conn[];
   /** Leads huérfanos que ve el usuario (2026-10-12); null = no se pudo contar. */
   orphanCount?: number | null;
+  /** ¿Se puede lanzar Embedded Signup? Lo decide el servidor leyendo el entorno (2026-10-14). */
+  embeddedSignup?: EmbeddedSignupAvailability;
 }) {
   const [connectors, setConnectors] = useState<Conn[]>(initial);
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
@@ -46,6 +64,8 @@ export function ConnectionsView({
   // Cuenta cuyo selector de marca está abierto, y las marcas asignables.
   const [brandFor, setBrandFor] = useState<string | null>(null);
   const brands = useBrandOptions(true);
+  // Marca del número que se va a conectar con «Conectar WhatsApp (oficial)».
+  const [coexBrandId, setCoexBrandId] = useState<string | null>(null);
   // 2026-10-10: cambiar el token de una cuenta de IG/Messenger. El token solo vive en
   // `tokenDraft` mientras se escribe; al enviarlo se vacía (ver saveToken).
   const [tokenFor, setTokenFor] = useState<string | null>(null);
@@ -214,6 +234,17 @@ export function ConnectionsView({
                                 {c.brand.name}
                               </span>
                             )}
+                            {(() => {
+                              const coex = c.provider === WHATSAPP_PROVIDER ? coexStatusOf(c.config) : null;
+                              return coex ? (
+                                <span
+                                  title={coex.detail ?? undefined}
+                                  className={`shrink-0 rounded-full border px-1.5 text-[10px] ${COEX_BADGE[coex.kind]}`}
+                                >
+                                  {coex.label}
+                                </span>
+                              ) : null;
+                            })()}
                           </span>
                           <span className="flex shrink-0 items-center gap-3">
                             <span className="font-mono text-[11px] text-muted-foreground">
@@ -298,6 +329,9 @@ export function ConnectionsView({
                             </div>
                           </form>
                         )}
+                        {c.provider === WHATSAPP_PROVIDER && coexStatusOf(c.config)?.detail && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">{coexStatusOf(c.config)?.detail}</p>
+                        )}
                         {tokenNotice?.id === c.id && (
                           <p
                             role="status"
@@ -313,6 +347,31 @@ export function ConnectionsView({
                         {c.name}: {c.lastError}
                       </p>
                     ))}
+                    {p.id === WHATSAPP_PROVIDER && (
+                      <WhatsAppCoexConnect
+                        availability={embeddedSignup}
+                        endpoint="/api/admin/connectors/whatsapp-coex"
+                        buttonLabel="Conectar WhatsApp (oficial)"
+                        extraBody={{ brandId: coexBrandId }}
+                        beforeLaunch={
+                          <BrandSelect
+                            id="coex-brand"
+                            value={coexBrandId}
+                            brands={brands}
+                            onChange={setCoexBrandId}
+                          />
+                        }
+                        description={
+                          <>
+                            Para el WhatsApp Business de una marca que se sigue usando en el teléfono: Meta lo conecta al
+                            CRM y la app sigue funcionando. Se importa el historial (hasta 6 meses) solo de contactos que
+                            ya están en el CRM. Para desconectarlo: en la app, Configuración → Cuenta → Plataforma para
+                            empresas → Desconectar.
+                          </>
+                        }
+                        onConnected={reload}
+                      />
+                    )}
                     {p.id === META_DMS_PROVIDER ? (
                       <button
                         className="mt-1.5 w-full rounded-md border border-dashed p-2 text-left text-[12px] text-muted-foreground hover:text-foreground"
