@@ -342,9 +342,14 @@ async function handleEchoMessage(msg: IncomingMessage) {
 // repartirlo entre los asesores de Propyte sería entregarle a alguien un prospecto que no es
 // suyo. Es el mismo candado que ya le impedía contestar al bot. Queda a la vista en el panel
 // de leads huérfanos (sin dueño + la nota de cuenta no registrada).
+//
+// opts.createContact=false (2026-10-14, WhatsApp de asesor): el llamador ya comprobó que el
+// remitente es un contacto vivo y quiere la garantía de que, si entre esa comprobación y este
+// punto el contacto desapareció, NO se da de alta uno nuevo: en el número propio de un asesor, un
+// remitente desconocido es un chat personal y nunca entra al CRM (decisión 1 del dueño).
 export async function handleInboundMessage(
   msg: IncomingMessage,
-  opts: { triggerBot?: boolean; route?: boolean } = {},
+  opts: { triggerBot?: boolean; route?: boolean; createContact?: boolean } = {},
 ) {
   if (msg.isEcho) return handleEchoMessage(msg);
 
@@ -375,6 +380,8 @@ export async function handleInboundMessage(
   // #748: el alta NUEVA ya pasó por el reparto dentro de captureLead (con la cuenta). Si
   // además se repartiera abajo, un lead que cayó al Pond se repartiría dos veces seguidas.
   let repartidoEnElAlta = false;
+
+  if (!contact && opts.createContact === false) return null;
 
   if (!contact) {
     // #827: WhatsApp sin teléfono real (`wa_id` ausente) y sin match previo por BSUID

@@ -114,6 +114,10 @@ vi.mock("./classify", () => ({ maybeClassifyContact: (...a: unknown[]) => maybeC
 const runPlaybookStepMock = vi.fn();
 vi.mock("./playbook/run", () => ({ runPlaybookStep: (...a: unknown[]) => runPlaybookStepMock(...a) }));
 
+// Número de asesor (2026-10-14): el candado del bot tiene su propia prueba
+// (bot-respond.advisor.test.ts); aquí todas las cuentas son líneas de marca.
+vi.mock("@/lib/whatsapp/coex/advisor-line", () => ({ isAdvisorLine: async () => false }));
+
 import { botRespond } from "./bot-respond";
 import { ESCALATE_MARKETING_TOKEN } from "./marketing-routing";
 
@@ -562,10 +566,14 @@ describe("botRespond — cuenta sin marca (camino de siempre)", () => {
     const result = await botRespond("c1");
 
     expect(result).toBe(true);
-    // dos veces findConversationForChannel (cuenta del hilo + hilo), idénticas a hoy
+    // dos veces findConversationForChannel (cuenta del hilo + hilo), idénticas a hoy salvo que en
+    // WhatsApp ya no miran los hilos de números de asesor (2026-10-14, coexistencia PR 2)
     expect(convFindFirst).toHaveBeenCalledTimes(2);
     for (const call of convFindFirst.mock.calls) {
-      expect(call[0]).toEqual({ where: { contactId: "c1", channel: "WHATSAPP" }, orderBy: { lastMessageAt: "desc" } });
+      expect(call[0]).toEqual({
+        where: { contactId: "c1", channel: "WHATSAPP", OR: [{ connectorId: null }, { connector: { scope: "BRAND" } }] },
+        orderBy: { lastMessageAt: "desc" },
+      });
     }
     // hilo y cuenta coinciden → no hay segunda resolución de marca
     expect(resolveBrandMock).toHaveBeenCalledTimes(1);

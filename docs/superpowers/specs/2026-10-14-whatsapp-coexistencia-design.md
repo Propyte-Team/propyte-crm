@@ -194,7 +194,7 @@ Mismo acuse rápido:
 ## 7. Números de asesor (PR 2)
 
 - **Alta** desde «Mi Perfil» → «Conectar mi WhatsApp»: mismo flujo, `scope: ADVISOR`, `ownerUserId` = la sesión.
-- **Filtro de privacidad** (`src/lib/whatsapp/coex/asesor.ts`), aplicado a `messages`, ecos e historial:
+- **Filtro de privacidad** (`handleAdvisorInbound` en `src/lib/whatsapp/coex/webhook.ts`; posibles prospectos en `src/lib/whatsapp/coex/asesor.ts`), aplicado a `messages`, ecos e historial:
   - contacto vivo (teléfono/BSUID) → se guarda por el camino normal, con `createContact: false` (si el
     contacto desaparece entre la búsqueda y el guardado, no se crea uno) y sin reparto;
   - desconocido → solo `upsert` del posible prospecto (contadores y fechas). Ni cuerpo, ni media, ni
