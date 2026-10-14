@@ -57,6 +57,8 @@ export async function GET() {
       id: true, name: true, provider: true, status: true, config: true, fieldMap: true,
       lastLeadAt: true, lastSyncAt: true, errorCount: true, lastError: true, createdAt: true,
       brandId: true, brand: { select: { id: true, name: true } },
+      // 2026-10-14 (PR 2): números propios de asesores (scope ADVISOR) con su dueño.
+      scope: true, owner: { select: { id: true, name: true } },
       credentials: true,
       _count: { select: { leadLogs: true } },
     },

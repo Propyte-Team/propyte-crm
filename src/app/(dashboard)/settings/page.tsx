@@ -2,6 +2,8 @@
 import { getServerSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { SettingsView } from "@/components/settings/settings-view";
+import { MiWhatsApp } from "@/components/settings/mi-whatsapp";
+import { embeddedSignupAvailability } from "@/lib/whatsapp/coex/public-config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,9 @@ export default async function SettingsPage() {
         <p className="text-muted-foreground">Perfil, correo, tarjeta digital y plantillas</p>
       </div>
       <SettingsView />
+      {/* 2026-10-14: «Conectar mi WhatsApp» (coexistencia). La disponibilidad se lee en cada
+          petición, no en el build: ver lib/whatsapp/coex/public-config.ts. */}
+      <MiWhatsApp availability={embeddedSignupAvailability()} />
     </div>
   );
 }

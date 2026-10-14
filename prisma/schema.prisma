@@ -732,6 +732,11 @@ model User {
   // Marcas que ve (entrega 2, 2026-10-12). Relación solo de Prisma: vive en user_brand_access
   // y NO agrega columnas a users (el Hub comparte esa tabla, .claude/AI_TASKS.md).
   brandAccess             UserBrandAccess[]
+  // WhatsApp propio del asesor (2026-10-14, coexistencia PR 2). Relaciones solo de Prisma: la
+  // columna vive en lead_connectors."ownerUserId" y la tabla de posibles prospectos es aparte;
+  // users NO cambia (el Hub la comparte).
+  ownedWhatsAppConnectors LeadConnector[]           @relation("LeadConnectorOwner")
+  whatsappPendingProspects WhatsappPendingProspect[] @relation("PendingProspectOwner")
 
   // Metas/Scorecard (§5.14)
   goals        Goal[] @relation("UserGoals")
@@ -1574,17 +1579,63 @@ model LeadConnector {
   // Alcance (2026-10-14): BRAND = línea de marca; ADVISOR = número propio de un asesor.
   // Migración: prisma/migrations-manual/2026-10-14-whatsapp-coexistencia.sql.
   scope       ConnectorScope     @default(BRAND)
+  // Dueño del número cuando scope = ADVISOR (2026-10-14, PR 2). Migración:
+  // prisma/migrations-manual/2026-10-14-whatsapp-asesores.sql.
+  ownerUserId String?
+  owner       User?              @relation("LeadConnectorOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
 
   leadLogs      ConnectorLeadLog[]
   conversations Conversation[]
   commentRules  CommentRule[]
+  pendingProspects WhatsappPendingProspect[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   @@index([brandId])
+  @@index([ownerUserId])
   @@map("lead_connectors")
+  @@schema("propyte_crm")
+}
+
+// «Posible prospecto» del WhatsApp de un asesor (2026-10-14, coexistencia PR 2, decisión 1 del
+// dueño). Alguien que no es contacto del CRM le escribió al número propio del asesor: NO se guarda
+// ni el texto ni la media — este modelo no tiene dónde guardarlos, a propósito —, solo quién es y
+// cuántas veces escribió. Lo ve únicamente el asesor dueño, que decide «Es prospecto» (se crea el
+// contacto y desde ahí se guardan sus mensajes) o «Ignorar» (deja de listarse y de contarse).
+enum PendingProspectStatus {
+  PENDING
+  PROMOTED
+  IGNORED
+
+  @@schema("propyte_crm")
+}
+
+model WhatsappPendingProspect {
+  id           String                @id @default(uuid())
+  connectorId  String
+  connector    LeadConnector         @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  ownerUserId  String?
+  owner        User?                 @relation("PendingProspectOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  // Teléfono E.164 si Meta lo mandó; si no, el BSUID. Un remitente = una fila por número.
+  senderKey    String
+  phone        String?
+  waUserId     String?
+  profileName  String?
+  // Nombre con el que el asesor lo tiene en la libreta de la app (smb_app_state_sync), si llegó.
+  contactName  String?
+  firstSeenAt  DateTime
+  lastSeenAt   DateTime
+  messageCount Int                   @default(0)
+  status       PendingProspectStatus @default(PENDING)
+  contactId    String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@unique([connectorId, senderKey])
+  @@index([ownerUserId, status, lastSeenAt])
+  @@map("whatsapp_pending_prospects")
   @@schema("propyte_crm")
 }
 

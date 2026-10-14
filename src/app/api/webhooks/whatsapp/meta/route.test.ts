@@ -55,6 +55,13 @@ async function enSegundoPlano() {
   while (agendados.length > 0) await agendados.shift()!();
 }
 
+// Número de asesor (2026-10-14, PR 2): aquí ningún número es de asesor; el filtro de privacidad
+// se prueba en route.coex.test.ts y lib/whatsapp/coex/*.test.ts.
+vi.mock("@/lib/whatsapp/coex/advisor-line", () => ({
+  findAdvisorLineByPhoneNumberId: async () => null,
+  isAdvisorLine: async () => false,
+}));
+
 import { GET, POST } from "./route";
 
 const APP_SECRET = "test-wa-app-secret";

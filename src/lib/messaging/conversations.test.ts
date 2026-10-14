@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const convFindFirst = vi.fn();
 const convCreate = vi.fn();
 const convUpdate = vi.fn();
+// Alcance de la cuenta (2026-10-14, números de asesor). Por defecto, ninguna es de asesor.
+const connFindUnique = vi.fn(async () => null as unknown);
 vi.mock("@/lib/db", () => ({
   default: {
     conversation: {
@@ -10,6 +12,7 @@ vi.mock("@/lib/db", () => ({
       create: (...a: unknown[]) => convCreate(...a),
       update: (...a: unknown[]) => convUpdate(...a),
     },
+    leadConnector: { findUnique: (...a: unknown[]) => connFindUnique(...(a as [])) },
   },
 }));
 
@@ -20,7 +23,7 @@ vi.mock("@/lib/brands/resolve", () => ({
   resolveBrandForConnector: (...a: unknown[]) => resolveBrandMock(...a),
 }));
 
-import { sameConversationKey, ensureConversation } from "./conversations";
+import { sameConversationKey, ensureConversation, findConversationForChannel } from "./conversations";
 
 interface ConvFixture { id: string; contactId: string; channel: string; connectorId: string | null }
 
@@ -196,5 +199,76 @@ describe("ensureConversation — no cruza marcas", () => {
     await ensureConversation({ contactId: "c1", channel: "WHATSAPP", connectorId: null });
     expect(resolveBrandMock).not.toHaveBeenCalled();
     expect(convCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Números de asesor (2026-10-14, coexistencia PR 2): el WhatsApp propio de un asesor es OTRA
+// línea. Su hilo nace en manos del asesor y con el bot apagado, no adopta el hilo del número
+// global, y lo que se manda «sin cuenta» (workflows, agentes) nunca cae en su chat.
+describe("ensureConversation / findConversationForChannel — números de asesor", () => {
+  const NOT_ADVISOR = { OR: [{ connectorId: null }, { connector: { scope: "BRAND" } }] };
+  beforeEach(() => {
+    convFindFirst.mockReset();
+    convCreate.mockReset();
+    convUpdate.mockReset();
+    resolveBrandMock.mockReset();
+    resolveBrandMock.mockResolvedValue({ kind: "default" });
+    connFindUnique.mockReset();
+    connFindUnique.mockImplementation((async (args: { where: { id: string } }) =>
+      args.where.id === "wa-ana" ? { scope: "ADVISOR", ownerUserId: "u-ana" } : { scope: "BRAND", ownerUserId: null }) as never);
+    convCreate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "conv-new", ...data }));
+  });
+
+  it("hilo nuevo de un número de asesor: HUMAN, bot apagado y al mando el dueño del número", async () => {
+    setupConvs([]);
+    await ensureConversation({ contactId: "c1", channel: "WHATSAPP", connectorId: "wa-ana" });
+    expect(convCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        connectorId: "wa-ana",
+        status: "HUMAN",
+        botEnabled: false,
+        controlledById: "u-ana",
+      }),
+    });
+  });
+
+  it("🚨 un número de asesor NO adopta el hilo del número global", async () => {
+    setupConvs([{ id: "conv-legacy", contactId: "c1", channel: "WHATSAPP", connectorId: null }]);
+    const conv = await ensureConversation({ contactId: "c1", channel: "WHATSAPP", connectorId: "wa-ana" });
+    expect(convUpdate).not.toHaveBeenCalled();
+    expect(conv.id).toBe("conv-new");
+  });
+
+  it("una línea de marca sigue naciendo en BOT, como siempre", async () => {
+    setupConvs([]);
+    await ensureConversation({ contactId: "c1", channel: "WHATSAPP", connectorId: "wa-yax" });
+    expect(convCreate.mock.calls[0][0].data).toMatchObject({ status: "BOT" });
+    expect(convCreate.mock.calls[0][0].data).not.toHaveProperty("botEnabled");
+  });
+
+  it("🚨 clave sin cuenta: la búsqueda del hilo reciente excluye los de asesor", async () => {
+    setupConvs([]);
+    await ensureConversation({ contactId: "c1", channel: "WHATSAPP", connectorId: null });
+    const reciente = convFindFirst.mock.calls.find((c) => (c[0] as { orderBy?: unknown }).orderBy);
+    expect(reciente?.[0]).toEqual({
+      where: { contactId: "c1", channel: "WHATSAPP", ...NOT_ADVISOR },
+      orderBy: { lastMessageAt: "desc" },
+    });
+  });
+
+  it("🚨 findConversationForChannel (workflows, agentes, IA) ignora los hilos de asesor en WhatsApp", async () => {
+    convFindFirst.mockResolvedValue(null);
+    await findConversationForChannel("c1", "WHATSAPP");
+    expect(convFindFirst).toHaveBeenCalledWith({ where: { contactId: "c1", channel: "WHATSAPP", ...NOT_ADVISOR }, orderBy: { lastMessageAt: "desc" } });
+    await findConversationForChannel("c1", "INSTAGRAM");
+    expect(convFindFirst).toHaveBeenLastCalledWith({ where: { contactId: "c1", channel: "INSTAGRAM" }, orderBy: { lastMessageAt: "desc" } });
+  });
+
+  it("si no se puede leer el alcance, el hilo nace como siempre (el bot tiene su propio candado)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    connFindUnique.mockRejectedValue(new Error("db caída") as never);
+    setupConvs([]);
+    await ensureConversation({ contactId: "c1", channel: "WHATSAPP", connectorId: "wa-ana" });
+    expect(convCreate.mock.calls[0][0].data).toMatchObject({ status: "BOT" });
   });
 });

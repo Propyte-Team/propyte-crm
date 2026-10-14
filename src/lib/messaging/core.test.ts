@@ -1724,3 +1724,32 @@ describe("handleInboundMessage — ecos de WhatsApp (coexistencia)", () => {
     expect(captureLead).not.toHaveBeenCalled();
   });
 });
+
+// WhatsApp de un asesor (2026-10-14, PR 2): con createContact:false, un remitente que no es
+// contacto NUNCA se da de alta, aunque haya desaparecido entre la búsqueda del filtro y este punto.
+describe("handleInboundMessage — createContact:false", () => {
+  const waIn = {
+    channel: "WHATSAPP" as const,
+    senderId: "+525550001111",
+    senderIdIsPhone: true,
+    externalMessageId: "wamid.PRIV",
+    text: "algo personal",
+    connectorId: "conn-ana",
+  };
+
+  it("🚨 sin contacto → null, sin captureLead, sin mensaje ni conversación", async () => {
+    contactFindFirst.mockResolvedValue(null);
+    const r = await handleInboundMessage(waIn, { triggerBot: false, route: false, createContact: false });
+    expect(r).toBeNull();
+    expect(captureLead).not.toHaveBeenCalled();
+    expect(msgCreate).not.toHaveBeenCalled();
+    expect(convUpdate).not.toHaveBeenCalled();
+  });
+
+  it("con contacto → se guarda como siempre", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u-ana", firstName: "A", lastName: "B", whatsappOptOut: false });
+    await handleInboundMessage(waIn, { triggerBot: false, route: false, createContact: false });
+    expect(msgCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ direction: "INBOUND", externalMessageId: "wamid.PRIV" }) }));
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+});

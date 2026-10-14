@@ -23,6 +23,9 @@ interface Conn {
   // 2026-10-14: de aquí sale el estado de la coexistencia (config.coex). Sin secretos: esos
   // viven cifrados en credentials, que nunca llega al navegador.
   config?: unknown;
+  // 2026-10-14 (PR 2): número propio de un asesor (ADVISOR) o línea de marca (BRAND).
+  scope?: string;
+  owner?: { id: string; name: string } | null;
 }
 
 const MAPPING_PROVIDERS = new Set(["META", "INSTAGRAM"]);
@@ -202,7 +205,8 @@ export function ConnectionsView({
             {grp.label}
           </h2>
           {grp.providers.map((p) => {
-            const accounts = connectors.filter((c) => c.provider === p.id);
+            // Los números propios de asesores van en su propia sección (abajo): no son de ninguna marca.
+            const accounts = connectors.filter((c) => c.provider === p.id && c.scope !== "ADVISOR");
             const pushOnly = p.pull === "none";
             return (
               <div key={p.id} className="mt-3">
@@ -403,6 +407,57 @@ export function ConnectionsView({
           })}
         </section>
       ))}
+
+      {/* 2026-10-14 (PR 2): números propios de asesores, conectados desde «Mi Perfil». */}
+      {(() => {
+        const advisors = connectors.filter((c) => c.provider === WHATSAPP_PROVIDER && c.scope === "ADVISOR");
+        if (advisors.length === 0) return null;
+        return (
+          <section className="mb-8">
+            <h2 className="border-t border-foreground pt-2 text-[12px] font-semibold uppercase tracking-wide">
+              WhatsApp de asesores
+            </h2>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Cada asesor conecta su propio WhatsApp Business desde Mi Perfil. Solo entran al CRM los chats de contactos y
+              el agente nunca contesta ahí. Para desconectar un número, el asesor entra a la app de WhatsApp Business →
+              Configuración → Cuenta → Plataforma para empresas → Desconectar. Pausar o eliminar la cuenta aquí hace que el
+              CRM descarte lo que llegue de ese número.
+            </p>
+            {advisors.map((c) => {
+              const coex = coexStatusOf(c.config);
+              const display = (c.config as { displayPhone?: string } | null | undefined)?.displayPhone || c.name;
+              return (
+                <div key={c.id} className="mt-1.5 rounded-md border p-2 text-[12px]">
+                  <div className="flex items-center justify-between">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[c.status] ?? "bg-neutral-300"}`} />
+                      <span className="truncate">{c.owner?.name ?? "Sin dueño"}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{display}</span>
+                      {coex && (
+                        <span
+                          title={coex.detail ?? undefined}
+                          className={`shrink-0 rounded-full border px-1.5 text-[10px] ${COEX_BADGE[coex.kind]}`}
+                        >
+                          {coex.label}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <button className="text-[11px] underline" onClick={() => toggle(c)}>
+                        {c.status === "ACTIVE" ? "Pausar" : "Activar"}
+                      </button>
+                      <button className="text-[11px] text-destructive underline" onClick={() => remove(c)}>
+                        Eliminar
+                      </button>
+                    </span>
+                  </div>
+                  {c.lastError && <p className="mt-1 truncate text-[11px] text-destructive">{c.lastError}</p>}
+                </div>
+              );
+            })}
+          </section>
+        );
+      })()}
 
       {wizardProvider && (
         <ConnectWizard

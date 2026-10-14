@@ -25,14 +25,23 @@ vi.mock("@/lib/bot/bot-respond", () => ({ botRespond: (...a: unknown[]) => botRe
 vi.mock("@/lib/messaging/send-failure", () => ({ recordBotSilence: vi.fn() }));
 
 const handleAccountUpdate = vi.fn();
+const handleAdvisorInbound = vi.fn();
 const handleHistory = vi.fn();
 const handleSmbAppStateSync = vi.fn();
 const handleSmbMessageEchoes = vi.fn();
 vi.mock("@/lib/whatsapp/coex/webhook", () => ({
   handleAccountUpdate: (...a: unknown[]) => handleAccountUpdate(...a),
+  handleAdvisorInbound: (...a: unknown[]) => handleAdvisorInbound(...a),
   handleHistory: (...a: unknown[]) => handleHistory(...a),
   handleSmbAppStateSync: (...a: unknown[]) => handleSmbAppStateSync(...a),
   handleSmbMessageEchoes: (...a: unknown[]) => handleSmbMessageEchoes(...a),
+}));
+
+// PR 2: ¿el número sin cuenta activa es de un asesor? (lookup en cualquier estado)
+const findAdvisorLineByPhoneNumberId = vi.fn();
+vi.mock("@/lib/whatsapp/coex/advisor-line", () => ({
+  findAdvisorLineByPhoneNumberId: (...a: unknown[]) => findAdvisorLineByPhoneNumberId(...a),
+  isAdvisorLine: async () => false,
 }));
 
 const agendados: Array<() => unknown> = [];
@@ -71,6 +80,10 @@ beforeEach(() => {
     f.mockResolvedValue(0);
   }
   botRespond.mockReset();
+  handleAdvisorInbound.mockReset();
+  handleAdvisorInbound.mockResolvedValue({ kind: "pending" });
+  findAdvisorLineByPhoneNumberId.mockReset();
+  findAdvisorLineByPhoneNumberId.mockResolvedValue(null);
   agendados.length = 0;
   runAfterResponse.mockReset();
   runAfterResponse.mockImplementation((fn: () => unknown) => {
@@ -156,5 +169,55 @@ describe("webhook de WhatsApp — campos de la coexistencia", () => {
     expect(res.status).toBe(200);
     expect(handleInboundWhatsApp).not.toHaveBeenCalled();
     expect(handleAccountUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// PR 2: el número propio de un asesor pasa SIEMPRE por el filtro de privacidad y nunca por el bot.
+describe("webhook de WhatsApp — número de asesor", () => {
+  const ADVISOR = { ...CONNECTOR, id: "conn-ana", scope: "ADVISOR", ownerUserId: "u-ana" };
+  const value = {
+    metadata: META,
+    contacts: [{ profile: { name: "Juan" }, wa_id: "5215550001111", user_id: "MX.2" }],
+    messages: [{ id: "wamid.A1", from: "5215550001111", type: "text", text: { body: "hola" } }],
+  };
+
+  it("los mensajes van al filtro (con teléfono, BSUID y nombre) y nunca al camino normal ni al bot", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue(ADVISOR);
+    handleAdvisorInbound.mockResolvedValue({ kind: "stored", contactId: "c1" });
+    const res = await post(change("messages", value));
+    expect(res.status).toBe(200);
+    expect(handleAdvisorInbound).toHaveBeenCalledWith({
+      connector: ADVISOR,
+      msg: value.messages[0],
+      phone: "5215550001111",
+      bsuid: "MX.2",
+      profileName: "Juan",
+    });
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
+    expect(runAfterResponse).not.toHaveBeenCalled(); // ni un bot agendado
+    await enSegundoPlano();
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("🚨 número de asesor con la cuenta pausada o borrada → sus mensajes se descartan (no entran como «número sin registrar»)", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue(null);
+    findAdvisorLineByPhoneNumberId.mockResolvedValue({ id: "conn-ana" });
+    await post(change("messages", value));
+    expect(findAdvisorLineByPhoneNumberId).toHaveBeenCalledWith("pn-1");
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
+    expect(handleAdvisorInbound).not.toHaveBeenCalled();
+  });
+
+  it("🚨 si no se puede saber si el número sin cuenta es de un asesor → también se descarta", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue(null);
+    findAdvisorLineByPhoneNumberId.mockRejectedValue(new Error("db caída"));
+    await post(change("messages", value));
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
+  });
+
+  it("un número sin cuenta que NO es de asesor sigue el camino de siempre (se guarda sin reparto ni bot)", async () => {
+    resolveConnectorByPhoneNumberId.mockResolvedValue(null);
+    await post(change("messages", value));
+    expect(handleInboundWhatsApp).toHaveBeenCalledWith(expect.anything(), { triggerBot: false, route: false });
   });
 });

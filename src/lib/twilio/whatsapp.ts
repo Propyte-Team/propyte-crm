@@ -33,6 +33,16 @@ export async function sendWhatsAppMessage(
   // `true`, y esta es la función que decide si un cliente ve un mensaje como humano o no.
   const autoriaBot = opciones?.autoriaBot === true;
 
+  // WhatsApp propio de un asesor (2026-10-14, decisión 2 del dueño): por ese número solo escribe
+  // él. Nada con autoría de bot sale por ahí, venga de donde venga (bot, workflow, agente). Antes de
+  // tocar la red: un mensaje que no debió salir no se puede retirar.
+  if (autoriaBot && connectorId) {
+    const { isAdvisorLine } = await import("@/lib/whatsapp/coex/advisor-line");
+    if (await isAdvisorLine(connectorId)) {
+      throw new Error("No se mandan mensajes automáticos por el WhatsApp propio de un asesor: ahí solo contesta él.");
+    }
+  }
+
   // #829: sin teléfono real se envía por BSUID. `to` llega "" para estos contactos
   // (mismo sentinel que usa el alta sin teléfono de leads email-only en capture-lead.ts
   // — Contact.phone sigue NOT NULL). Con teléfono se usa SIEMPRE el teléfono, aunque
@@ -243,7 +253,7 @@ export async function handleInboundWhatsApp(payload: {
   ProfileName?: string;
   /** Conector WHATSAPP del número que RECIBIÓ el mensaje (metadata.phone_number_id). */
   ConnectorId?: string | null;
-}, opts: { triggerBot?: boolean; route?: boolean } = {}) {
+}, opts: { triggerBot?: boolean; route?: boolean; createContact?: boolean } = {}) {
   const rawPhone = payload.From ? payload.From.replace("whatsapp:", "") : null;
   const bsuid = payload.WhatsAppUserId ?? null;
 

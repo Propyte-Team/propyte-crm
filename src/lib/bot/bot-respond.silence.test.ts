@@ -84,6 +84,10 @@ vi.mock("@/lib/brands/resolve", () => ({
   isBrandScoped: (r: { kind: string }) => r.kind === "brand",
 }));
 
+// Número de asesor (2026-10-14): el candado del bot tiene su propia prueba
+// (bot-respond.advisor.test.ts); aquí todas las cuentas son líneas de marca.
+vi.mock("@/lib/whatsapp/coex/advisor-line", () => ({ isAdvisorLine: async () => false }));
+
 import { botRespond, describeAiSilence } from "./bot-respond";
 
 const CONTACT = {

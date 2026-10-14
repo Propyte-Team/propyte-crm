@@ -9,6 +9,12 @@
 // Quién llama a qué y cuándo lo decide el route: el eco se guarda antes del 200 (son pocos y el
 // asesor espera verlo); el historial y la libreta corren después del 200 porque un solo webhook
 // de historial puede traer miles de mensajes (la doc recomienda capturar y procesar aparte).
+//
+// Números de asesor (PR 2): la misma regla de «solo contactos conocidos» ya es el filtro de
+// privacidad de ecos e historial (decisión 1). Además, el contacto sin asesor se le asigna al
+// dueño del número, el historial no le pega la marca de la cuenta (un número de asesor no es una
+// línea de marca) y los mensajes NUEVOS de desconocidos solo dejan un «posible prospecto»
+// (handleAdvisorInbound, abajo). El bot nunca se agenda aquí.
 import prisma from "@/lib/db";
 import type { LeadConnector, MessageStatus, Prisma } from "@prisma/client";
 import { findWhatsAppContact, handleInboundMessage } from "@/lib/messaging/core";
@@ -21,6 +27,12 @@ import { extractWaBody, waMediaRef, type WaMessageContent } from "@/lib/whatsapp
 import { usuarioRuteableWhere } from "@/lib/workflows/ruteables";
 import { mergeCoexStateSafe } from "./state";
 import { disconnectionReasonText, readCoexState, type CoexAccountState } from "./status";
+import {
+  assignToAdvisorIfUnowned,
+  enrichPendingProspectName,
+  isAdvisorConnector,
+  recordPendingProspect,
+} from "./asesor";
 
 // ─────────────────────────── Tipos de los payloads ───────────────────────────
 
@@ -133,6 +145,7 @@ export async function handleSmbMessageEchoes(value: EchoesValue, connector: Lead
         console.info(`[whatsapp-coex] eco ${echo.id} a un desconocido: no se guarda`);
         continue;
       }
+      await assignToAdvisorIfUnowned(contact, connector);
       const media = await storeMedia(echo, token);
       const saved = await handleInboundMessage({
         channel: "WHATSAPP",
@@ -222,6 +235,7 @@ async function importThread(
   const { who, contact } = await findContactFor(thread.id);
   if (!contact) return null; // decisión 3: solo contactos que ya existen
 
+  await assignToAdvisorIfUnowned(contact, connector);
   const { ensureConversation } = await import("@/lib/messaging/conversations");
   const conv = await ensureConversation({ contactId: contact.id, channel: "WHATSAPP", connectorId: connector.id });
 
@@ -279,7 +293,8 @@ async function importThread(
       data: { lastInboundAt },
     });
   }
-  await attachConnectorBrand(contact.id, connector);
+  // Un número de asesor no es una línea de marca: no le pega marca al contacto.
+  if (!isAdvisorConnector(connector)) await attachConnectorBrand(contact.id, connector);
   return res.count;
 }
 
@@ -370,8 +385,13 @@ export async function handleSmbAppStateSync(value: StateSyncValue, connector: Le
       const phone = item.contact?.phone_number;
       const full = item.contact?.full_name?.trim();
       if (!phone || !full) continue;
-      const { contact } = await findContactFor(phone);
-      if (!contact || !hasPlaceholderName(contact)) continue;
+      const { who, contact } = await findContactFor(phone);
+      if (!contact) {
+        // Asesor: el nombre de su libreta le ayuda a reconocer a un posible prospecto. Nunca crea uno.
+        if (isAdvisorConnector(connector) && who.isPhone && (await enrichPendingProspectName(connector.id, who.senderId, full))) renamed++;
+        continue;
+      }
+      if (!hasPlaceholderName(contact)) continue;
       const { withChangeSource } = await import("@/lib/audit/change-context");
       await withChangeSource({ source: "whatsapp_libreta" }, (tx) =>
         tx.contact.update({ where: { id: contact.id }, data: splitName(full) }),
@@ -397,13 +417,13 @@ export function accountEventState(event: string | undefined): CoexAccountState |
   return (event && ACCOUNT_EVENT_STATE[event]) || null;
 }
 
-/** A quién se avisa: los ADMIN que son personas (activos, no `.local`). */
-async function accountNoticeRecipients(): Promise<string[]> {
+/** A quién se avisa: los ADMIN que son personas (activos, no `.local`) y, si es su número, el asesor. */
+async function accountNoticeRecipients(ownerUserId: string | null): Promise<string[]> {
   const admins = await prisma.user.findMany({
     where: { role: "ADMIN", ...usuarioRuteableWhere() },
     select: { id: true },
   });
-  return admins.map((u) => u.id);
+  return [...new Set([...admins.map((u) => u.id), ...(ownerUserId ? [ownerUserId] : [])])];
 }
 
 function accountNotice(state: CoexAccountState, name: string, display: string, reason: string | null) {
@@ -440,7 +460,7 @@ export async function handleAccountUpdate(wabaId: string | undefined, value: Acc
   try {
     const all = await prisma.leadConnector.findMany({
       where: { provider: "WHATSAPP", deletedAt: null, config: { path: ["wabaId"], equals: wabaId } },
-      select: { id: true, name: true, status: true, config: true },
+      select: { id: true, name: true, status: true, config: true, scope: true, ownerUserId: true },
     });
     // Varias cuentas en la misma WABA: si el evento trae el número, solo la de ese número.
     const phone = digitsOf(value.phone_number);
@@ -484,7 +504,7 @@ export async function handleAccountUpdate(wabaId: string | undefined, value: Acc
       changed++;
 
       try {
-        const userIds = await accountNoticeRecipients();
+        const userIds = await accountNoticeRecipients(c.scope === "ADVISOR" ? c.ownerUserId ?? null : null);
         const notice = accountNotice(target, c.name, display, reason);
         if (userIds.length) {
           await prisma.notification.createMany({
@@ -499,4 +519,66 @@ export async function handleAccountUpdate(wabaId: string | undefined, value: Acc
     console.error("[whatsapp-coex] account_update no aplicado:", err instanceof Error ? err.message : err);
   }
   return changed;
+}
+
+// ─────────────────────────── messages en un número de asesor ───────────────────────────
+
+export interface AdvisorInboundInput {
+  connector: LeadConnector;
+  msg: WaPayloadMessage;
+  /** `contacts[].wa_id`: el teléfono real, si Meta lo mandó. */
+  phone: string | null;
+  /** `contacts[].user_id` (BSUID). */
+  bsuid: string | null;
+  profileName: string | null;
+}
+
+export type AdvisorInboundResult =
+  | { kind: "stored"; contactId: string | null }
+  | { kind: "pending" }
+  | { kind: "skipped" };
+
+/**
+ * Mensaje NUEVO al número propio de un asesor — el filtro de privacidad (decisión 1 del dueño):
+ *  - el remitente ya es contacto vivo → se guarda por el camino de siempre, pero sin reparto, sin
+ *    bot y con `createContact: false` (si el contacto desapareció entre la búsqueda y el guardado,
+ *    no se da de alta otro). Si no tiene asesor, se le asigna al dueño del número;
+ *  - desconocido → solo el «posible prospecto» (metadatos). Ni el texto, ni la media — que ni se
+ *    descarga —, ni conversación, ni actividad.
+ */
+export async function handleAdvisorInbound(input: AdvisorInboundInput): Promise<AdvisorInboundResult> {
+  const { connector, msg } = input;
+  const phone = input.phone ? normalizePhone(input.phone) : null;
+  const senderId = phone ?? input.bsuid;
+  if (!senderId || !msg?.id) return { kind: "skipped" };
+
+  const contact = await findWhatsAppContact(senderId, { userId: input.bsuid, senderIsPhone: phone !== null });
+  if (!contact) {
+    await recordPendingProspect(connector, {
+      phone,
+      bsuid: input.bsuid,
+      profileName: input.profileName,
+      at: timestampOf(msg.timestamp) ?? new Date(),
+    });
+    return { kind: "pending" };
+  }
+
+  await assignToAdvisorIfUnowned(contact, connector);
+  const media = await storeMedia(msg, tokenOf(connector));
+  const { handleInboundWhatsApp } = await import("@/lib/twilio/whatsapp");
+  const saved = await handleInboundWhatsApp(
+    {
+      From: phone ? `whatsapp:${phone}` : null,
+      WhatsAppUserId: input.bsuid,
+      Body: extractWaBody(msg),
+      MessageSid: msg.id,
+      ProfileName: input.profileName ?? undefined,
+      ConnectorId: connector.id,
+      ...(media
+        ? { MediaUrl0: media.mediaUrl, MediaType: media.mediaType, MediaMimeType: media.mediaMimeType, MediaFilename: media.mediaFilename }
+        : {}),
+    },
+    { triggerBot: false, route: false, createContact: false },
+  );
+  return { kind: "stored", contactId: (saved as { contactId?: string } | null)?.contactId ?? null };
 }

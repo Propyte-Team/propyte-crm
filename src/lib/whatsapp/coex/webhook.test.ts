@@ -57,8 +57,23 @@ vi.mock("@/lib/audit/change-context", () => ({
   withChangeSource: (...a: unknown[]) => withChangeSource(...a),
 }));
 
+// Números de asesor (PR 2): las piezas del filtro se prueban en asesor.test.ts; aquí, que el
+// webhook las use cuando toca. isAdvisorConnector queda real.
+const assignToAdvisorIfUnowned = vi.fn();
+const recordPendingProspect = vi.fn();
+const enrichPendingProspectName = vi.fn();
+vi.mock("./asesor", () => ({
+  isAdvisorConnector: (c: { scope: string }) => c.scope === "ADVISOR",
+  assignToAdvisorIfUnowned: (...a: unknown[]) => assignToAdvisorIfUnowned(...a),
+  recordPendingProspect: (...a: unknown[]) => recordPendingProspect(...a),
+  enrichPendingProspectName: (...a: unknown[]) => enrichPendingProspectName(...a),
+}));
+const handleInboundWhatsApp = vi.fn();
+vi.mock("@/lib/twilio/whatsapp", () => ({ handleInboundWhatsApp: (...a: unknown[]) => handleInboundWhatsApp(...a) }));
+
 import {
   handleAccountUpdate,
+  handleAdvisorInbound,
   handleHistory,
   handleSmbAppStateSync,
   handleSmbMessageEchoes,
@@ -118,6 +133,11 @@ beforeEach(() => {
   withChangeSource.mockImplementation(async (_opts: unknown, fn: (tx: unknown) => unknown) =>
     fn({ contact: { update: (...a: unknown[]) => contactUpdateInTx(...a) } }),
   );
+  for (const m of [assignToAdvisorIfUnowned, recordPendingProspect, enrichPendingProspectName, handleInboundWhatsApp]) m.mockReset();
+  assignToAdvisorIfUnowned.mockResolvedValue(false);
+  recordPendingProspect.mockResolvedValue({ id: "p-1" });
+  enrichPendingProspectName.mockResolvedValue(true);
+  handleInboundWhatsApp.mockResolvedValue({ id: "m-1", contactId: "c-ana" });
   vi.spyOn(console, "info").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -443,5 +463,138 @@ describe("account_update — estados de la cuenta", () => {
     expect(connFindMany).not.toHaveBeenCalled();
     connFindMany.mockResolvedValue([{ id: "conn-manual", name: "x", status: "ACTIVE", config: { wabaId: "waba-1" } }]);
     expect(await handleAccountUpdate("waba-1", { event: "PARTNER_REMOVED" })).toBe(0);
+  });
+});
+
+// ─────────────── Números de asesor (PR 2): el filtro de privacidad ───────────────
+
+const ADVISOR_CONN = {
+  ...CONNECTOR,
+  id: "conn-ana",
+  name: "WhatsApp de Ana",
+  scope: "ADVISOR",
+  brandId: null,
+  ownerUserId: "u-ana",
+} as unknown as LeadConnector;
+
+describe("handleAdvisorInbound — mensajes nuevos al WhatsApp de un asesor", () => {
+  it("contacto conocido → se guarda por el camino normal, sin reparto, sin bot y sin poder crear contacto", async () => {
+    const r = await handleAdvisorInbound({
+      connector: ADVISOR_CONN,
+      msg: { id: "wamid.A1", from: "5219981234567", timestamp: "1739230955", type: "text", text: { body: "Sigue disponible?" } },
+      phone: "5219981234567",
+      bsuid: "MX.1",
+      profileName: "Ana",
+    });
+    expect(r).toEqual({ kind: "stored", contactId: "c-ana" });
+    expect(assignToAdvisorIfUnowned).toHaveBeenCalledWith(ANA, ADVISOR_CONN);
+    expect(handleInboundWhatsApp).toHaveBeenCalledWith(
+      expect.objectContaining({ From: "whatsapp:+529981234567", WhatsAppUserId: "MX.1", Body: "Sigue disponible?", MessageSid: "wamid.A1", ConnectorId: "conn-ana" }),
+      { triggerBot: false, route: false, createContact: false },
+    );
+    expect(recordPendingProspect).not.toHaveBeenCalled();
+  });
+
+  it("🚨 desconocido → solo el posible prospecto: ni el texto, ni la media (ni se descarga), ni conversación", async () => {
+    const r = await handleAdvisorInbound({
+      connector: ADVISOR_CONN,
+      msg: { id: "wamid.P1", from: "5215550001111", timestamp: "1739230955", type: "image", image: { id: "media-privada", caption: "foto de mi familia" } },
+      phone: "5215550001111",
+      bsuid: "MX.2",
+      profileName: "Tía Lupe",
+    });
+    expect(r).toEqual({ kind: "pending" });
+    expect(recordPendingProspect).toHaveBeenCalledWith(ADVISOR_CONN, {
+      phone: "+525550001111",
+      bsuid: "MX.2",
+      profileName: "Tía Lupe",
+      at: new Date(1739230955 * 1000),
+    });
+    // Nada del mensaje viaja al registro.
+    expect(JSON.stringify(recordPendingProspect.mock.calls)).not.toContain("familia");
+    expect(resolveWaMediaToStorage).not.toHaveBeenCalled();
+    expect(handleInboundWhatsApp).not.toHaveBeenCalled();
+    expect(ensureConversation).not.toHaveBeenCalled();
+  });
+
+  it("sin teléfono: se busca por BSUID y, si no casa, el pendiente queda por BSUID", async () => {
+    await handleAdvisorInbound({
+      connector: ADVISOR_CONN,
+      msg: { id: "wamid.P2", from: "MX.77", type: "text", text: { body: "hola" } },
+      phone: null,
+      bsuid: "MX.77",
+      profileName: null,
+    });
+    expect(findWhatsAppContact).toHaveBeenCalledWith("MX.77", { userId: "MX.77", senderIsPhone: false });
+    expect(recordPendingProspect).toHaveBeenCalledWith(ADVISOR_CONN, expect.objectContaining({ phone: null, bsuid: "MX.77" }));
+  });
+});
+
+describe("ecos, historial y libreta en el WhatsApp de un asesor", () => {
+  it("🚨 eco a un desconocido → no se guarda (y no suma a posibles prospectos)", async () => {
+    await handleSmbMessageEchoes(
+      { metadata: META, message_echoes: [{ id: "wamid.E9", to: "5215550001111", type: "text", text: { body: "te quiero mamá" } }] },
+      ADVISOR_CONN,
+    );
+    expect(handleInboundMessage).not.toHaveBeenCalled();
+    expect(recordPendingProspect).not.toHaveBeenCalled();
+  });
+
+  it("eco a un contacto → se guarda y, si no tenía asesor, se le asigna al dueño del número", async () => {
+    await handleSmbMessageEchoes(
+      { metadata: META, message_echoes: [{ id: "wamid.E8", to: "5219981234567", type: "text", text: { body: "Te paso el plano" } }] },
+      ADVISOR_CONN,
+    );
+    expect(assignToAdvisorIfUnowned).toHaveBeenCalledWith(ANA, ADVISOR_CONN);
+    expect(handleInboundMessage).toHaveBeenCalledWith(expect.objectContaining({ isEcho: true, connectorId: "conn-ana" }));
+  });
+
+  it("historial: hilos de desconocidos descartados; de contactos importados sin pegarles marca", async () => {
+    const r = await handleHistory(
+      {
+        metadata: META,
+        history: [
+          {
+            metadata: { phase: 0, chunk_order: 1, progress: 100 },
+            threads: [
+              { id: "5215550001111", messages: [{ id: "wamid.X", from: "5215550001111", timestamp: "1", type: "text", text: { body: "personal" } }] },
+              { id: "5219981234567", messages: [{ id: "wamid.Y", from: "5219981234567", timestamp: "2", type: "text", text: { body: "del depa" } }] },
+            ],
+          },
+        ],
+      },
+      ADVISOR_CONN,
+    );
+    expect(r).toMatchObject({ threadsImported: 1, threadsDiscarded: 1, imported: 1 });
+    expect(JSON.stringify(msgCreateMany.mock.calls)).not.toContain("personal");
+    expect(assignToAdvisorIfUnowned).toHaveBeenCalledWith(ANA, ADVISOR_CONN);
+    expect(attachBrand).not.toHaveBeenCalled();
+    expect(recordPendingProspect).not.toHaveBeenCalled();
+  });
+
+  it("libreta: el nombre llega a un posible prospecto pendiente, nunca crea nada", async () => {
+    await handleSmbAppStateSync(
+      { metadata: META, state_sync: [{ type: "contact", action: "add", contact: { full_name: "Juan del depa", phone_number: "5215550001111" } }] },
+      ADVISOR_CONN,
+    );
+    expect(enrichPendingProspectName).toHaveBeenCalledWith("conn-ana", "+525550001111", "Juan del depa");
+    expect(withChangeSource).not.toHaveBeenCalled();
+  });
+
+  it("libreta en una línea de marca: un desconocido no toca posibles prospectos", async () => {
+    await handleSmbAppStateSync(
+      { metadata: META, state_sync: [{ type: "contact", action: "add", contact: { full_name: "Juan", phone_number: "5215550001111" } }] },
+      CONNECTOR,
+    );
+    expect(enrichPendingProspectName).not.toHaveBeenCalled();
+  });
+
+  it("account_update de un número de asesor también le avisa a su dueño", async () => {
+    connFindMany.mockResolvedValue([
+      { id: "conn-ana", name: "WhatsApp de Ana", status: "ACTIVE", scope: "ADVISOR", ownerUserId: "u-ana", config: { wabaId: "waba-9", coex: { accountState: "CONNECTED" } } },
+    ]);
+    await handleAccountUpdate("waba-9", { event: "PARTNER_REMOVED" });
+    const userIds = notifCreateMany.mock.calls[0][0].data.map((n: { userId: string }) => n.userId);
+    expect(userIds).toEqual(["u-admin-1", "u-admin-2", "u-ana"]);
   });
 });
