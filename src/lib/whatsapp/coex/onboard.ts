@@ -41,6 +41,8 @@ export interface OnboardInput {
   scope: ConnectorScope;
   /** Solo BRAND. `undefined` = no tocar la marca de una cuenta que ya existía. */
   brandId?: string | null;
+  /** Solo ADVISOR (PR 2): el asesor dueño del número = quien hace el alta. */
+  ownerUserId?: string | null;
   /** Nombre propuesto; si no, se arma con el nombre verificado del número. */
   name?: string | null;
   /** Quién hizo el alta (auditoría). */
@@ -107,6 +109,7 @@ type ExistingConnector = {
   id: string;
   name: string;
   scope: ConnectorScope;
+  ownerUserId: string | null;
   status: ConnectorStatus;
   brandId: string | null;
   config: Prisma.JsonValue;
@@ -124,6 +127,10 @@ function conflictWith(existing: ExistingConnector, input: OnboardInput, display:
         "Para cambiarlo, primero hay que quitar esa conexión.",
     );
   }
+  // Número de asesor (PR 2): es de UNA persona. Otro usuario no se lo puede quedar reconectándolo.
+  if (input.scope === "ADVISOR" && existing.ownerUserId !== (input.ownerUserId ?? null)) {
+    return fail(409, `El número ${display} ya lo tiene conectado otro usuario del CRM. Si es tuyo, pide a un administrador que revise la conexión.`);
+  }
   return null;
 }
 
@@ -140,6 +147,7 @@ function needsSync(prev: CoexState | null, key: "contactsSync" | "historySync"):
 }
 
 export async function onboardCoexistenceNumber(input: OnboardInput, deps: GraphDeps = {}): Promise<OnboardResult> {
+  if (input.scope === "ADVISOR" && !input.ownerUserId) return fail(400, "Falta el usuario dueño del número.");
   const app = metaAppCredentials();
   if (!app) {
     return fail(503, `Falta configurar ${ENV_APP_ID} y/o ${ENV_APP_SECRET} en el servidor (ver docs/whatsapp-coexistencia-meta-setup.md).`);
@@ -168,7 +176,7 @@ export async function onboardCoexistenceNumber(input: OnboardInput, deps: GraphD
   // 3. Conflictos antes de escribir.
   const existing = (await prisma.leadConnector.findFirst({
     where: { provider: "WHATSAPP", deletedAt: null, config: { path: ["phoneNumberId"], equals: info.id } },
-    select: { id: true, name: true, scope: true, status: true, brandId: true, config: true, credentials: true },
+    select: { id: true, name: true, scope: true, ownerUserId: true, status: true, brandId: true, config: true, credentials: true },
   })) as ExistingConnector | null;
   if (existing) {
     const conflict = conflictWith(existing, input, display);
@@ -215,6 +223,14 @@ export async function onboardCoexistenceNumber(input: OnboardInput, deps: GraphD
     ? null
     : `No se pudo suscribir la app a la cuenta de WhatsApp (${sub.error}). Vuelve a conectar el número.`;
 
+  // Un número de asesor no es de ninguna marca y siempre tiene dueño; uno de marca no tiene dueño.
+  const ownership =
+    input.scope === "ADVISOR"
+      ? { brandId: null, ownerUserId: input.ownerUserId ?? null }
+      : input.brandId !== undefined
+        ? { brandId: input.brandId }
+        : {};
+
   let connector: { id: string; name: string; status: ConnectorStatus };
   let created = false;
   try {
@@ -227,7 +243,7 @@ export async function onboardCoexistenceNumber(input: OnboardInput, deps: GraphD
           errorCount: sub.ok ? 0 : { increment: 1 },
           credentials,
           config: config as unknown as Prisma.InputJsonValue,
-          ...(input.brandId !== undefined ? { brandId: input.brandId } : {}),
+          ...ownership,
           ...(input.name ? { name: input.name.slice(0, 120) } : {}),
         },
         select: { id: true, name: true, status: true },
@@ -243,7 +259,7 @@ export async function onboardCoexistenceNumber(input: OnboardInput, deps: GraphD
           credentials,
           config: config as unknown as Prisma.InputJsonValue,
           fieldMap: {} as Prisma.InputJsonValue,
-          ...(input.brandId !== undefined ? { brandId: input.brandId } : {}),
+          ...ownership,
         },
         select: { id: true, name: true, status: true },
       });

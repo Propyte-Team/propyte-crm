@@ -26,8 +26,10 @@ import { runAfterResponse } from "@/lib/runtime/after-response";
 import { recordBotSilence } from "@/lib/messaging/send-failure";
 import { unknownWhatsAppNumberReason } from "@/lib/messaging/unregistered-account";
 import { extractWaBody, waMediaRef, type WaMessageContent } from "@/lib/whatsapp/message-body";
+import { findAdvisorLineByPhoneNumberId } from "@/lib/whatsapp/coex/advisor-line";
 import {
   handleAccountUpdate,
+  handleAdvisorInbound,
   handleHistory,
   handleSmbAppStateSync,
   handleSmbMessageEchoes,
@@ -275,20 +277,38 @@ export async function POST(req: NextRequest) {
       let connectorToken: string | null = null;
       let unknownNumber = false;
       let lookupFailed = false;
+      // Número propio de un asesor (2026-10-14, PR 2): sus mensajes pasan por el filtro de
+      // privacidad (handleAdvisorInbound) y nunca por el camino normal.
+      let advisorConnector: Awaited<ReturnType<typeof resolveConnectorByPhoneNumberId>> = null;
+      let dropMessages = false;
       const phoneNumberId = value.metadata?.phone_number_id ?? null;
       if (phoneNumberId) {
         try {
           const conn = await resolveConnectorByPhoneNumberId(phoneNumberId);
           connectorId = conn?.id ?? null;
           connectorToken = conn ? getWhatsAppCredentials(conn)?.accessToken ?? null : null;
+          if (conn?.scope === "ADVISOR") advisorConnector = conn;
         } catch (err) {
           lookupFailed = true;
           console.error("[whatsapp-meta] resolución de conector falló:", err);
         }
+        // Sin cuenta activa: ¿es el número de un asesor que pausó o borró su conexión en el CRM
+        // pero sigue conectado en Meta? Entonces NO es «un número sin registrar» —ese camino da de
+        // alta a quien escriba, o sea sus chats personales—: se descartan sus mensajes. Si no se
+        // puede saber, también (decisión 1: un chat personal nunca entra al CRM).
+        if (!connectorId) {
+          try {
+            dropMessages = !!(await findAdvisorLineByPhoneNumberId(phoneNumberId));
+          } catch (err) {
+            dropMessages = true;
+            console.error("[whatsapp-meta] no se pudo saber si el número es de un asesor; se descartan sus mensajes:", err);
+          }
+          if (dropMessages) console.warn("[whatsapp-meta] número de asesor sin cuenta activa: mensajes descartados", { phoneNumberId });
+        }
         // Número que llegó a la app pero no está dado de alta (2026-10-09, spec §4.3): se
         // ingiere para no perderlo, pero el agente NO contesta — respondería desde el número
         // global, o sea desde el WhatsApp de otra marca.
-        unknownNumber = !connectorId && phoneNumberId !== process.env.META_WA_PHONE_NUMBER_ID?.trim();
+        unknownNumber = !connectorId && !dropMessages && phoneNumberId !== process.env.META_WA_PHONE_NUMBER_ID?.trim();
         if (unknownNumber) console.warn("[whatsapp-meta] phone_number_id sin cuenta registrada; sin respuesta automática", { phoneNumberId });
       }
 
@@ -316,9 +336,25 @@ export async function POST(req: NextRequest) {
       }
 
       // Mensajes entrantes → mismo pipeline que Twilio (inbox/SLA/opt-out); bot al final
+      if (dropMessages) continue;
       const profileName = value.contacts?.[0]?.profile?.name;
       for (const msg of value.messages ?? []) {
         try {
+          if (advisorConnector) {
+            // Filtro de privacidad del número de un asesor: conocido → se guarda (sin reparto ni
+            // bot); desconocido → solo «posible prospecto», sin texto ni media.
+            const entrada = entradaDelRemitente(value.contacts, msg.from);
+            const r = await handleAdvisorInbound({
+              connector: advisorConnector,
+              msg,
+              phone: entrada?.wa_id ?? null,
+              bsuid: entrada?.user_id ?? null,
+              profileName: entrada?.profile?.name ?? null,
+            });
+            if (r.kind === "stored" && r.contactId) await guardarBsuid(r.contactId, entrada?.user_id ?? null);
+            processed++;
+            continue;
+          }
           // Media: resolver el media ID → bucket chat-media (best-effort; si falla queda solo el placeholder)
           const mediaType = mediaTypeFromWaType(msg.type);
           const mediaRef = waMediaRef(msg);

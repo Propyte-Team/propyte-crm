@@ -22,6 +22,8 @@ export default async function ConexionesPage() {
         // 2026-10-14: estado de la coexistencia de WhatsApp (config.coex). Sin secretos.
         config: true,
         brandId: true, brand: { select: { id: true, name: true } },
+        // 2026-10-14 (PR 2): números propios de asesores, con su dueño.
+        scope: true, owner: { select: { id: true, name: true } },
         _count: { select: { leadLogs: true } },
       },
     }),

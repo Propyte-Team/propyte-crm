@@ -24,6 +24,7 @@ import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profi
 import { resolveBrandForConnector, isBrandScoped, type BrandResolution } from "@/lib/brands/resolve";
 import { brandEnabledChannels } from "@/lib/brands/settings";
 import { resolveActorUserId } from "@/lib/users/actor-sistema";
+import { isAdvisorLine } from "@/lib/whatsapp/coex/advisor-line";
 
 /**
  * `enabledChannelsOverride` (2026-10-09, marcas del agente): los canales propios de la marca
@@ -246,6 +247,11 @@ export async function botRespond(
       ? opts.connectorId
       : ((await findConversationForChannel(contactId, channel))?.connectorId ?? null);
 
+  // Número de asesor (2026-10-14, decisión 2 del dueño): en el WhatsApp propio de un asesor el bot
+  // NUNCA contesta, solo él (desde el teléfono o la bandeja). Va antes que todo lo demás y sin nota:
+  // callar aquí es lo normal, no un fallo. Sin cuenta (número global) no cuesta ni una consulta.
+  if (await isAdvisorLine(connectorId)) return false;
+
   // El hilo de esta cuenta (ver el comentario de `conv` más abajo). Función para poder usarla
   // también en los silencios que ocurren ANTES de resolver la conversación.
   const findThread = async () =>
@@ -305,6 +311,8 @@ export async function botRespond(
     ? await ensureConversation({ contactId, channel, connectorId })
     : await findThread();
   if (!conv || conv.status !== "BOT" || !conv.botEnabled) return false;
+  // Y si el hilo resultante es de otra cuenta, que esa tampoco sea de asesor.
+  if ((conv.connectorId ?? null) !== (connectorId ?? null) && (await isAdvisorLine(conv.connectorId))) return false;
   const noteSilence = (reason: string) =>
     recordBotSilence({ contactId, conversationId: conv.id, channel, reason });
 
