@@ -1,7 +1,11 @@
 // Webhook de WhatsApp Cloud API (Meta) — inbound de mensajes + estatus de entrega.
 // Configurar en developers.facebook.com → tu app → WhatsApp → Configuration:
 //   Callback URL: https://crm.propyte.com/api/webhooks/whatsapp/meta
-//   Verify token: META_WA_VERIFY_TOKEN · Suscribir campo: messages
+//   Verify token: META_WA_VERIFY_TOKEN · Suscribir campos: messages y, para la coexistencia
+//   (2026-10-14), history, smb_app_state_sync, smb_message_echoes y account_update.
+// Coexistencia: cada `change` se despacha por `change.field` (sin `field` = messages, el formato
+// de siempre). Ecos y estado de la cuenta se aplican antes del 200; historial y libreta, después
+// (un webhook de historial puede traer miles de mensajes). Ver lib/whatsapp/coex/webhook.ts.
 // Mismo flujo downstream que Twilio: handleInboundWhatsApp (inbox, bot, SLA, opt-out).
 //
 // Acuse rápido (2026-10-12), igual que webhooks/meta-dm: Meta reintenta si el 200 no llega
@@ -21,6 +25,17 @@ import { secretosIgualesRecortados } from "@/lib/crypto/secretos";
 import { runAfterResponse } from "@/lib/runtime/after-response";
 import { recordBotSilence } from "@/lib/messaging/send-failure";
 import { unknownWhatsAppNumberReason } from "@/lib/messaging/unregistered-account";
+import { extractWaBody, waMediaRef, type WaMessageContent } from "@/lib/whatsapp/message-body";
+import {
+  handleAccountUpdate,
+  handleHistory,
+  handleSmbAppStateSync,
+  handleSmbMessageEchoes,
+  type AccountUpdateValue,
+  type EchoesValue,
+  type HistoryValue,
+  type StateSyncValue,
+} from "@/lib/whatsapp/coex/webhook";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -78,32 +93,11 @@ function validSignature(rawBody: string, signature: string | null): boolean {
   }
 }
 
-interface MetaMediaRef { id?: string; caption?: string; filename?: string; mime_type?: string }
-
-interface MetaMessage {
+// Texto y media del mensaje: lib/whatsapp/message-body.ts (2026-10-14), compartido con los ecos
+// y el historial de la coexistencia.
+interface MetaMessage extends WaMessageContent {
   id: string;
   from: string;
-  type: string;
-  text?: { body?: string };
-  image?: MetaMediaRef;
-  audio?: MetaMediaRef;
-  video?: MetaMediaRef;
-  document?: MetaMediaRef;
-  sticker?: MetaMediaRef;
-  button?: { text?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
-}
-
-/** Referencia de media del mensaje según su tipo (null si es texto/interactivo). */
-function mediaRefOf(msg: MetaMessage): MetaMediaRef | null {
-  switch (msg.type) {
-    case "image": return msg.image ?? null;
-    case "audio": return msg.audio ?? null;
-    case "video": return msg.video ?? null;
-    case "document": return msg.document ?? null;
-    case "sticker": return msg.sticker ?? null;
-    default: return null;
-  }
 }
 
 interface MetaStatus {
@@ -182,19 +176,6 @@ async function guardarBsuid(contactId: string, bsuid: string | null) {
     .catch((err) => console.error(`[whatsapp-meta] no se pudo guardar el BSUID de ${contactId}:`, err));
 }
 
-function extractBody(msg: MetaMessage): string {
-  if (msg.text?.body) return msg.text.body;
-  if (msg.button?.text) return msg.button.text;
-  if (msg.interactive?.button_reply?.title) return msg.interactive.button_reply.title;
-  if (msg.interactive?.list_reply?.title) return msg.interactive.list_reply.title;
-  if (msg.image) return `[Imagen]${msg.image.caption ? ` ${msg.image.caption}` : ""}`;
-  if (msg.audio) return "[Audio]";
-  if (msg.video) return `[Video]${msg.video.caption ? ` ${msg.video.caption}` : ""}`;
-  if (msg.sticker) return "[Sticker]";
-  if (msg.document) return `[Documento${msg.document.filename ? `: ${msg.document.filename}` : ""}]`;
-  return `[${msg.type}]`;
-}
-
 /**
  * Motivo de la nota cuando el número que recibió el mensaje no es de ninguna cuenta ni el
  * general (2026-10-12). El env solo se COMPARA, nunca se muestra: lo único que se dice de él
@@ -230,7 +211,11 @@ export async function POST(req: NextRequest) {
 
   let body: {
     entry?: Array<{
+      /** WABA. Lo usa `account_update`, que no trae metadata del número. */
+      id?: string;
       changes?: Array<{
+        /** messages | smb_message_echoes | history | smb_app_state_sync | account_update | … */
+        field?: string;
         value?: {
           metadata?: { phone_number_id?: string; display_phone_number?: string };
           contacts?: MetaContact[];
@@ -262,10 +247,25 @@ export async function POST(req: NextRequest) {
   // de timeout + retry de Meta). Se ingiere TODO el batch con triggerBot:false y el bot
   // responde UNA vez por contacto al final, ya con el contexto completo.
   const botTargets = new Map<string, { contactId: string; connectorId: string | null }>();
+  // Coexistencia (2026-10-14): historial y libreta se procesan después del 200.
+  const deferred: Array<{ field: string; run: () => Promise<unknown> }> = [];
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
+
+      // Sin `field` = messages: es el formato de siempre (y el de las pruebas).
+      const field = change.field ?? "messages";
+      if (field === "account_update") {
+        // handleAccountUpdate nunca lanza: el estado de la cuenta no debe tumbar el lote.
+        await handleAccountUpdate(entry.id, value as AccountUpdateValue);
+        continue;
+      }
+      if (COEX_FIELDS.has(field)) {
+        await routeCoexField(field, value, deferred);
+        continue;
+      }
+      if (field !== "messages") continue; // campos que este webhook no usa
 
       // Cuenta receptora (2026-07-25): metadata.phone_number_id identifica a QUÉ número
       // de WhatsApp llegó el mensaje → conector WHATSAPP (config.phoneNumberId) → el
@@ -321,7 +321,7 @@ export async function POST(req: NextRequest) {
         try {
           // Media: resolver el media ID → bucket chat-media (best-effort; si falla queda solo el placeholder)
           const mediaType = mediaTypeFromWaType(msg.type);
-          const mediaRef = mediaRefOf(msg);
+          const mediaRef = waMediaRef(msg);
           let stored: { path: string; mimeType: string | null } | null = null;
           if (mediaType && mediaRef?.id) {
             stored = await resolveWaMediaToStorage(mediaRef.id, connectorToken);
@@ -339,7 +339,7 @@ export async function POST(req: NextRequest) {
           const saved = await handleInboundWhatsApp({
             From: realPhone ? `whatsapp:+${realPhone}` : null,
             WhatsAppUserId: bsuid,
-            Body: extractBody(msg),
+            Body: extractWaBody(msg),
             MessageSid: msg.id, // wamid → idempotencia por UNIQUE
             ProfileName: profileName,
             ...(connectorId ? { ConnectorId: connectorId } : {}),
@@ -382,8 +382,57 @@ export async function POST(req: NextRequest) {
   // 200: Meta exige el acuse rápido y reintenta si no llega (ver cabecera).
   const bots = [...botTargets.values()];
   if (bots.length > 0) runAfterResponse(() => responderConElBot(bots));
+  if (deferred.length > 0) runAfterResponse(() => procesarCoexistencia(deferred));
 
   return NextResponse.json({ ok: true, processed });
+}
+
+/** Campos de la coexistencia que llegan con metadata del número (account_update va aparte). */
+const COEX_FIELDS = new Set(["smb_message_echoes", "history", "smb_app_state_sync"]);
+
+/**
+ * Ecos, historial y libreta de un número conectado en coexistencia. Solo con una cuenta ACTIVA de
+ * ese número: sin ella no hay a qué conversación ni a qué marca pegarlo, y guardar ecos o historial
+ * de un número que nadie dio de alta sería guardar chats ajenos. El eco se guarda ya (el asesor
+ * espera verlo en la bandeja); historial y libreta, después del 200.
+ */
+async function routeCoexField(
+  field: string,
+  value: unknown,
+  deferred: Array<{ field: string; run: () => Promise<unknown> }>,
+): Promise<void> {
+  const phoneNumberId = (value as { metadata?: { phone_number_id?: string } }).metadata?.phone_number_id;
+  if (!phoneNumberId) return;
+  let conn: Awaited<ReturnType<typeof resolveConnectorByPhoneNumberId>> = null;
+  try {
+    conn = await resolveConnectorByPhoneNumberId(phoneNumberId);
+  } catch (err) {
+    console.error(`[whatsapp-meta] ${field}: resolución de conector falló:`, err);
+    return;
+  }
+  if (!conn) {
+    console.warn(`[whatsapp-meta] ${field} de un número sin cuenta activa: se descarta`, { phoneNumberId });
+    return;
+  }
+  const connector = conn;
+  if (field === "smb_message_echoes") {
+    await handleSmbMessageEchoes(value as EchoesValue, connector);
+  } else if (field === "history") {
+    deferred.push({ field, run: () => handleHistory(value as HistoryValue, connector) });
+  } else if (field === "smb_app_state_sync") {
+    deferred.push({ field, run: () => handleSmbAppStateSync(value as StateSyncValue, connector) });
+  }
+}
+
+/** Corre después del 200. Cada trozo con su try/catch: uno que revienta no frena al resto. */
+async function procesarCoexistencia(tareas: Array<{ field: string; run: () => Promise<unknown> }>): Promise<void> {
+  for (const t of tareas) {
+    try {
+      await t.run();
+    } catch (err) {
+      console.error(`[whatsapp-meta] ${t.field} (después del 200):`, err);
+    }
+  }
 }
 
 /** Corre después del 200. Cada contacto con su try/catch: uno que revienta no frena al resto. */

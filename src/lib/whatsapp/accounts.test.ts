@@ -131,3 +131,32 @@ describe("resolveWhatsAppSender", () => {
     error.mockRestore();
   });
 });
+
+// Coexistencia (2026-10-14): mientras el negocio está desconectado (desde la app, o en el cambio de
+// teléfono que Meta reconecta solo) Meta rechaza todo envío. Se lanza un error claro en vez de dejar
+// que Graph conteste algo que nadie entiende.
+describe("resolveWhatsAppSender — número en coexistencia desconectado", () => {
+  beforeEach(() => vi.resetAllMocks());
+  const activa = (accountState: string) => ({
+    id: "wa-coex",
+    name: "WhatsApp · Yaxnáh",
+    provider: "WHATSAPP",
+    config: { phoneNumberId: "111", coex: { accountState } },
+    credentials: { accessToken: "tok" },
+  });
+
+  it("desconectado por el negocio → lanza", async () => {
+    connectorFindFirst.mockResolvedValue(activa("DISCONNECTED"));
+    await expect(resolveWhatsAppSender("wa-coex")).rejects.toThrow(/se desconectó desde la app/);
+  });
+
+  it("desconectado temporalmente (cambio de teléfono) → lanza", async () => {
+    connectorFindFirst.mockResolvedValue(activa("OFFBOARDED"));
+    await expect(resolveWhatsAppSender("wa-coex")).rejects.toThrow(/temporalmente/);
+  });
+
+  it("conectado → sus credenciales, como cualquier cuenta", async () => {
+    connectorFindFirst.mockResolvedValue(activa("CONNECTED"));
+    expect(await resolveWhatsAppSender("wa-coex")).toEqual(expect.objectContaining({ phoneNumberId: "111", accessToken: "tok" }));
+  });
+});

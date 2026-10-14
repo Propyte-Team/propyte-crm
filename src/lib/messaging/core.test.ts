@@ -1673,3 +1673,54 @@ describe("handleInboundMessage — reparto del mensaje directo (#748)", () => {
     expect(captureLead).not.toHaveBeenCalled();
   });
 });
+
+// Ecos de la app de WhatsApp Business en coexistencia (2026-10-14): llegan por el mismo
+// handleEchoMessage que los de IG/Messenger, con dos diferencias que se fijan aquí — lo que el CRM
+// manda por WhatsApp guarda su wamid en `twilioSid` (no en `externalMessageId`), y el eco puede
+// traer media ya resuelta.
+describe("handleInboundMessage — ecos de WhatsApp (coexistencia)", () => {
+  const waEcho = {
+    channel: "WHATSAPP" as const,
+    senderId: "+529981234567",
+    senderIdIsPhone: true,
+    externalMessageId: "wamid.ECO1",
+    text: "[Imagen] plano",
+    isEcho: true,
+    connectorId: "conn-yax",
+    mediaUrl: "chat-media/x.jpg",
+    mediaType: "image",
+    mediaMimeType: "image/jpeg",
+  };
+
+  it("eco de algo que mandó el propio CRM (wamid en twilioSid) → skip total", async () => {
+    msgFindUnique.mockImplementation(async ({ where }: { where: Record<string, string> }) =>
+      where.twilioSid === "wamid.ECO1" ? { id: "m-crm" } : null,
+    );
+    const r = await handleInboundMessage(waEcho);
+    expect(r).toEqual({ id: "m-crm" });
+    expect(msgCreate).not.toHaveBeenCalled();
+    expect(contactFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("eco con contacto → saliente de asesor en la cuenta del número, con su media", async () => {
+    msgFindUnique.mockResolvedValue(null);
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u1", firstName: "A", lastName: "B" });
+    await handleInboundMessage(waEcho);
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          channel: "WHATSAPP",
+          direction: "OUTBOUND",
+          sender: "ADVISOR",
+          externalMessageId: "wamid.ECO1",
+          mediaUrl: "chat-media/x.jpg",
+          mediaType: "image",
+          mediaMimeType: "image/jpeg",
+        }),
+      }),
+    );
+    // Lo escribió una persona desde el teléfono: el bot suelta el hilo.
+    expect(convUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "HUMAN" }) }));
+    expect(captureLead).not.toHaveBeenCalled();
+  });
+});
