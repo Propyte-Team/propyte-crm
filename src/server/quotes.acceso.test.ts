@@ -59,6 +59,7 @@ import {
   deleteDocument,
 } from "./quotes";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
+import { SOLO_LECTURA_COTIZACIONES } from "@/lib/rbac/quote-scope";
 
 const DEAL_AJENO = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -182,6 +183,8 @@ describe("el dueño del negocio sigue trabajando igual (#711)", () => {
     sesion.user = { id: "mkt-1", role: "MARKETING", plaza: "PDC" };
 
     await expect(getQuotesByDeal(DEAL_AJENO)).resolves.toEqual([]);
-    expect(await updateQuote("q1", { discountPct: 10 })).toEqual({ error: FUERA_DE_ALCANCE });
+    // #867: antes salía FUERA_DE_ALCANCE (404); ahora que el módulo distingue ver de
+    // modificar, el rechazo dice «solo lectura» (403) — MARKETING sí ve la cotización.
+    expect(await updateQuote("q1", { discountPct: 10 })).toEqual({ error: SOLO_LECTURA_COTIZACIONES });
   });
 });

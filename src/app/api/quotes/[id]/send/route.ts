@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { sendQuote } from "@/server/quotes";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
+import { SOLO_LECTURA_COTIZACIONES } from "@/lib/rbac/quote-scope";
 
 export async function POST(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -24,7 +25,12 @@ export async function POST(_request: NextRequest, props: { params: Promise<{ id:
     if ("error" in result) {
       const noEncontrada =
         result.error === FUERA_DE_ALCANCE || result.error === "Cotización no encontrada";
-      return NextResponse.json({ error: result.error }, { status: noEncontrada ? 404 : 400 });
+      // #867: rol de solo lectura (DIRECTOR, MARKETING): ve la cotización, no la envía.
+      const soloLectura = result.error === SOLO_LECTURA_COTIZACIONES;
+      return NextResponse.json(
+        { error: result.error },
+        { status: noEncontrada ? 404 : soloLectura ? 403 : 400 },
+      );
     }
 
     return NextResponse.json({ data: result.quote });

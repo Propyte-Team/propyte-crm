@@ -6,9 +6,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
-import { updateQuote } from "@/server/quotes";
-import prisma from "@/lib/db";
+import { updateQuote, deleteQuote } from "@/server/quotes";
 import { FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
+import { SOLO_LECTURA_COTIZACIONES } from "@/lib/rbac/quote-scope";
 
 export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -25,7 +25,13 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       return NextResponse.json(
         { error: result.error },
         // #711: fuera de alcance es 404, no 403: un 403 confirma que el id existe.
-        { status: result.error === FUERA_DE_ALCANCE ? 404 : 400 },
+        {
+          status:
+            result.error === FUERA_DE_ALCANCE ? 404
+            // #867: rol de solo lectura (DIRECTOR, MARKETING): ve la cotización, no la modifica.
+            : result.error === SOLO_LECTURA_COTIZACIONES ? 403
+            : 400,
+        },
       );
     }
 
@@ -47,17 +53,15 @@ export async function DELETE(_request: NextRequest, props: { params: Promise<{ i
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const existing = await prisma.quote.findFirst({
-      where: { id: params.id, deletedAt: null },
-    });
-    if (!existing) {
-      return NextResponse.json({ error: "Cotización no encontrada" }, { status: 404 });
+    // #867: antes borraba con solo tener sesión, sin mirar de quién era la cotización.
+    const result = await deleteQuote(params.id);
+    if ("error" in result) {
+      const status =
+        result.error === FUERA_DE_ALCANCE || result.error === "Cotización no encontrada" ? 404
+        : result.error === SOLO_LECTURA_COTIZACIONES ? 403
+        : 400;
+      return NextResponse.json({ error: result.error }, { status });
     }
-
-    await prisma.quote.update({
-      where: { id: params.id },
-      data: { deletedAt: new Date() },
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

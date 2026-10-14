@@ -17,6 +17,7 @@ import {
 } from "@/lib/validations/quote";
 import { buildInstallmentPlan, computeFinalPrice } from "@/lib/quotes/pricing";
 import { verificarAccesoANegocio, FUERA_DE_ALCANCE } from "@/lib/rbac/deal-access";
+import { puedeModificarCotizaciones, SOLO_LECTURA_COTIZACIONES } from "@/lib/rbac/quote-scope";
 
 // #711: todo lo de este archivo cuelga de un negocio, y hasta ahora ninguna de estas
 // funciones comprobaba de QUIÉN es ese negocio: bastaba con tener sesión y adivinar un
@@ -31,6 +32,23 @@ async function accesoAlNegocio(
 ) {
   const acceso = await verificarAccesoANegocio(dealId, user, modo);
   return acceso.ok ? null : { error: FUERA_DE_ALCANCE };
+}
+
+/**
+ * #867: para escribir sobre una COTIZACIÓN (crear, editar, enviar, borrar, plan, pagos) no
+ * basta con poder editar el negocio: DIRECTOR y MARKETING ven cotizaciones pero no las
+ * modifican. Los documentos del negocio no pasan por aquí: esa decisión es otra.
+ *
+ * El rol se mira ANTES que el negocio a propósito: a quien no puede escribir se le dice
+ * «solo lectura» (403) sin consultar nada, en vez de un 404 que lo haría pensar que el
+ * negocio no existe.
+ */
+async function accesoParaModificarCotizacion(
+  dealId: string,
+  user: { id: string; role: string; plaza: string }
+) {
+  if (!puedeModificarCotizaciones(user.role)) return { error: SOLO_LECTURA_COTIZACIONES };
+  return accesoAlNegocio(dealId, user, "editar");
 }
 
 
@@ -97,7 +115,7 @@ export async function createQuote(input: unknown) {
   if (!parsed.success) return { error: primerMensaje(parsed.error) };
   const data = parsed.data;
 
-  const sinAcceso = await accesoAlNegocio(data.dealId, session.user);
+  const sinAcceso = await accesoParaModificarCotizacion(data.dealId, session.user);
   if (sinAcceso) return sinAcceso;
 
   const finalPrice = computeFinalPrice(data.listPrice, data.discountPct);
@@ -147,7 +165,7 @@ export async function updateQuote(id: string, input: unknown) {
   const existing = await prisma.quote.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Cotización no encontrada" };
 
-  const sinAcceso = await accesoAlNegocio(existing.dealId, session.user);
+  const sinAcceso = await accesoParaModificarCotizacion(existing.dealId, session.user);
   if (sinAcceso) return sinAcceso;
 
   const updateData: Prisma.QuoteUpdateInput = {};
@@ -205,7 +223,7 @@ export async function sendQuote(id: string) {
   const existing = await prisma.quote.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Cotización no encontrada" };
 
-  const sinAcceso = await accesoAlNegocio(existing.dealId, session.user);
+  const sinAcceso = await accesoParaModificarCotizacion(existing.dealId, session.user);
   if (sinAcceso) return sinAcceso;
 
   const quote = await prisma.quote.update({
@@ -240,7 +258,7 @@ export async function createPaymentPlan(quoteId: string, input: unknown) {
   });
   if (!quote) return { error: "Cotización no encontrada" };
 
-  const sinAcceso = await accesoAlNegocio(quote.dealId, session.user);
+  const sinAcceso = await accesoParaModificarCotizacion(quote.dealId, session.user);
   if (sinAcceso) return sinAcceso;
 
   if (quote.paymentPlan) return { error: "Esta cotización ya tiene un plan de pago" };
@@ -332,7 +350,7 @@ export async function updateInstallment(id: string, input: unknown) {
   });
   if (!existing) return { error: "Parcialidad no encontrada" };
 
-  const sinAcceso = await accesoAlNegocio(existing.plan.quote.dealId, session.user);
+  const sinAcceso = await accesoParaModificarCotizacion(existing.plan.quote.dealId, session.user);
   if (sinAcceso) return sinAcceso;
 
   const updateData: Prisma.PaymentScheduleUpdateInput = {};
@@ -358,6 +376,27 @@ export async function updateInstallment(id: string, input: unknown) {
       paidAmount: schedule.paidAmount ? Number(schedule.paidAmount) : null,
     },
   };
+}
+
+// --------------- deleteQuote ---------------
+
+/**
+ * #867: el DELETE de /api/quotes/[id] borraba (soft delete) cualquier cotización con solo
+ * tener sesión: la #711 protegió crear, editar y enviar, pero el borrado vivía en la ruta y
+ * nunca pasó por el control de acceso. Ahora pasa por el mismo que las demás escrituras.
+ */
+export async function deleteQuote(id: string) {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const existing = await prisma.quote.findFirst({ where: { id, deletedAt: null } });
+  if (!existing) return { error: "Cotización no encontrada" };
+
+  const sinAcceso = await accesoParaModificarCotizacion(existing.dealId, session.user);
+  if (sinAcceso) return sinAcceso;
+
+  await prisma.quote.update({ where: { id }, data: { deletedAt: new Date() } });
+  return { success: true as const };
 }
 
 // --------------- getDocumentsByDeal ---------------
