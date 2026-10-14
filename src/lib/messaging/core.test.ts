@@ -1753,3 +1753,138 @@ describe("handleInboundMessage — createContact:false", () => {
     expect(botRespond).not.toHaveBeenCalled();
   });
 });
+
+// WhatsApp propio de un asesor (decisión del dueño 2026-10-14): el hilo nace en HUMAN en manos del
+// dueño del número, así que la rama HUMAN le mandaba un aviso del CRM por CADA mensaje que ya le
+// había sonado en su teléfono. Para el dueño de la línea ya no se crea; el mensaje, el no leído y
+// todo lo demás siguen igual, y las líneas de marca no cambian.
+describe("handleInboundMessage — sin aviso por mensaje en la línea propia del asesor", () => {
+  const waIn = {
+    channel: "WHATSAPP" as const,
+    senderId: "+525550001111",
+    senderIdIsPhone: true,
+    externalMessageId: "wamid.IN1",
+    text: "¿Sigue disponible el depa?",
+  };
+  const cuentas: Record<string, { scope: "ADVISOR" | "BRAND"; ownerUserId: string | null }> = {
+    "conn-ana": { scope: "ADVISOR", ownerUserId: "u-ana" },
+    "conn-yax": { scope: "BRAND", ownerUserId: null },
+  };
+  const hiloDe = (connectorId: string, controlledById: string | null) => ({
+    id: "conv-wa",
+    status: "HUMAN",
+    botEnabled: false,
+    controlledById,
+    connectorId,
+  });
+  /** Llamadas que preguntaron por el alcance de la cuenta (la de la marca pide `brandId`). */
+  const consultasDeAlcance = () =>
+    leadConnectorFindUnique.mock.calls.filter((c) => (c[0] as { select?: { scope?: boolean } }).select?.scope);
+
+  beforeEach(() => {
+    leadConnectorFindUnique.mockImplementation(
+      async ({ where, select }: { where: { id: string }; select?: { scope?: boolean } }) =>
+        select?.scope ? cuentas[where.id] ?? null : { brandId: null },
+    );
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u-ana", firstName: "Ana", lastName: "Cliente", whatsappOptOut: false });
+  });
+
+  it("🚨 línea de asesor, hilo en manos de su dueño → SIN aviso, pero el mensaje se guarda y cuenta como no leído", async () => {
+    convFindFirst.mockResolvedValue(hiloDe("conn-ana", "u-ana"));
+    convUpdate.mockResolvedValue(hiloDe("conn-ana", "u-ana"));
+
+    const r = await handleInboundMessage({ ...waIn, connectorId: "conn-ana" }, { triggerBot: false, route: false, createContact: false });
+
+    expect(r).toEqual({ id: "m1" });
+    expect(notifCreate).not.toHaveBeenCalled();
+    expect(msgCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ direction: "INBOUND", conversationId: "conv-wa" }) }),
+    );
+    expect(convUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ unreadCount: { increment: 1 } }) }),
+    );
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("línea de marca, hilo HUMAN → aviso de siempre (no cambia)", async () => {
+    convFindFirst.mockResolvedValue(hiloDe("conn-yax", "u-ana"));
+    convUpdate.mockResolvedValue(hiloDe("conn-yax", "u-ana"));
+
+    await handleInboundMessage({ ...waIn, connectorId: "conn-yax" });
+
+    expect(notifCreate).toHaveBeenCalledTimes(1);
+    expect(notifCreate).toHaveBeenCalledWith({
+      data: {
+        userId: "u-ana",
+        title: "WHATSAPP recibido (controlas el hilo)",
+        message: "Ana Cliente: ¿Sigue disponible el depa?",
+        type: "social_inbound",
+        link: "/inbox?c=conv-wa",
+      },
+    });
+  });
+
+  it("número global (sin cuenta), hilo HUMAN → aviso de siempre y sin consultar la cuenta", async () => {
+    convFindFirst.mockResolvedValue({ id: "conv-wa", status: "HUMAN", botEnabled: true, controlledById: "u-ana", connectorId: null });
+    convUpdate.mockResolvedValue({ id: "conv-wa", status: "HUMAN", botEnabled: true, controlledById: "u-ana", connectorId: null });
+
+    await handleInboundMessage(waIn);
+
+    expect(notifCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "u-ana" }) }));
+    expect(consultasDeAlcance()).toHaveLength(0);
+  });
+
+  // Quien recibe el aviso no es el dueño del teléfono: el contacto se reasignó (assign.ts suelta el
+  // control del hilo) o alguien lo tomó desde el Inbox. Para esa persona el aviso es lo único que hay.
+  it("línea de asesor, pero el aviso es para OTRA persona → sí se avisa", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u-beto", firstName: "Ana", lastName: "Cliente", whatsappOptOut: false });
+    convFindFirst.mockResolvedValue(hiloDe("conn-ana", null));
+    convUpdate.mockResolvedValue(hiloDe("conn-ana", null));
+
+    await handleInboundMessage({ ...waIn, connectorId: "conn-ana" }, { triggerBot: false, route: false, createContact: false });
+
+    expect(notifCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "u-beto" }) }));
+  });
+
+  it("si la cuenta no se puede leer → se avisa como siempre (falla abierto) y la ingesta sigue", async () => {
+    leadConnectorFindUnique.mockImplementation(async ({ select }: { select?: { scope?: boolean } }) => {
+      if (select?.scope) throw new Error("db caída");
+      return { brandId: null };
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    convFindFirst.mockResolvedValue(hiloDe("conn-ana", "u-ana"));
+    convUpdate.mockResolvedValue(hiloDe("conn-ana", "u-ana"));
+
+    const r = await handleInboundMessage({ ...waIn, connectorId: "conn-ana" });
+
+    expect(r).toEqual({ id: "m1" });
+    expect(notifCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "u-ana" }) }));
+    error.mockRestore();
+  });
+
+  it("línea de asesor con el hilo HUMAN sin dueño → el aviso de hilo sin dueño (#858) sale igual", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: null, firstName: "Ana", lastName: "Cliente", whatsappOptOut: false, targetPlaza: "PDC" });
+    convFindFirst.mockResolvedValue(hiloDe("conn-ana", null));
+    convUpdate.mockResolvedValue(hiloDe("conn-ana", null));
+
+    await handleInboundMessage({ ...waIn, connectorId: "conn-ana" }, { triggerBot: false, route: false, createContact: false });
+
+    expect(notifCreate).not.toHaveBeenCalled();
+    expect(avisarHiloSinDueno).toHaveBeenCalledTimes(1);
+    expect(avisarHiloSinDueno.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ conversationId: "conv-wa", connectorId: "conn-ana", type: "social_inbound" }),
+    );
+  });
+
+  it("Instagram en un hilo HUMAN → aviso de siempre, sin preguntar por el alcance de la cuenta", async () => {
+    contactFindFirst.mockResolvedValue({ id: "c1", assignedToId: "u-ana", firstName: "Ana", lastName: "Cliente" });
+    convFindFirst.mockResolvedValue({ id: "conv-ig", status: "HUMAN", botEnabled: true, controlledById: "u-ana", connectorId: "conn_ig" });
+    convUpdate.mockResolvedValue({ id: "conv-ig", status: "HUMAN", botEnabled: true, controlledById: "u-ana", connectorId: "conn_ig" });
+
+    await handleInboundMessage({ ...base, connectorId: "conn_ig" });
+
+    expect(notifCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "u-ana" }) }));
+    expect(consultasDeAlcance()).toHaveLength(0);
+  });
+});
