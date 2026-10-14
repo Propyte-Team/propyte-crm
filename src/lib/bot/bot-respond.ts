@@ -354,10 +354,24 @@ export async function botRespond(
   // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente
   // (identidad + playbook + tono propios). Solo gasta clasificación si hay agentes activos.
   // Best-effort: cualquier fallo deja el flujo global de siempre intacto.
-  // Con marca NO hay agentes por segmento ni clasificador: la marca es la identidad
-  // (agentProfile queda en null).
+  // Con marca NO hay agentes por segmento: la marca es la identidad (agentProfile queda en
+  // null). Pero SÍ se clasifica el tipo de contacto (#864): desde el #863 los contactos nacen
+  // sin tipo, y sin esto los de una marca se quedaban en «—» aunque dijeran claramente que
+  // son brokers o inversionistas. El resultado NO se usa para elegir agente — solo deja el
+  // tipo en el CRM —, así que la voz de la marca no cambia. Mismo interruptor
+  // (classifyContacts) y mismas reglas que sin marca: solo intención explícita, nunca pisa lo
+  // que puso un humano. Usa el historial de ESTA conversación (lo de otra marca no entra).
   let agentProfile: import("./agent-profiles").AgentProfileWithPlaybook | null = null;
-  if (!brand) {
+  if (brand) {
+    if (config.classifyContacts) {
+      try {
+        const { maybeClassifyContact } = await import("./classify");
+        await maybeClassifyContact(prisma, contact, history, config.model);
+      } catch {
+        // defensivo: maybeClassifyContact ya no lanza; un fallo aquí no debe impedir contestar
+      }
+    }
+  } else {
     try {
       const hasAgents = (await prisma.botAgentProfile.count({ where: { isActive: true, deletedAt: null } })) > 0;
       if (hasAgents) {

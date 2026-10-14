@@ -109,7 +109,8 @@ vi.mock("@/lib/brands/resolve", () => ({
   isBrandScoped: (r: { kind: string }) => r.kind === "brand",
 }));
 
-vi.mock("./classify", () => ({ maybeClassifyContact: vi.fn(async () => null) }));
+const maybeClassifyMock = vi.fn();
+vi.mock("./classify", () => ({ maybeClassifyContact: (...a: unknown[]) => maybeClassifyMock(...a) }));
 const runPlaybookStepMock = vi.fn();
 vi.mock("./playbook/run", () => ({ runPlaybookStep: (...a: unknown[]) => runPlaybookStepMock(...a) }));
 
@@ -157,6 +158,8 @@ function escalations() {
 beforeEach(() => {
   vi.resetAllMocks();
   botConfig.activePlaybookId = null;
+  botConfig.classifyContacts = false;
+  maybeClassifyMock.mockResolvedValue(null);
   contactFindUnique.mockResolvedValue(CONTACT);
   convFindFirst.mockResolvedValue(CONV_YAX);
   convFindUnique.mockResolvedValue({ id: "conv-y", contact: CONTACT });
@@ -194,12 +197,50 @@ describe("botRespond — cuenta con marca", () => {
     );
   });
 
-  it("2. sin agentes por segmento ni clasificador", async () => {
+  it("2. sin agentes por segmento", async () => {
     withBrand();
 
     await botRespond("c1", { connectorId: "c-yax" });
 
     expect(botAgentCountMock).not.toHaveBeenCalled();
+  });
+
+  // #864: antes con marca no se clasificaba nada y sus contactos se quedaban en «—».
+  it("2b. SÍ clasifica el tipo de contacto, con el historial de ESTA conversación, sin elegir agente", async () => {
+    withBrand();
+    botConfig.classifyContacts = true;
+    maybeClassifyMock.mockResolvedValue("BROKER_EXTERNO");
+
+    const ok = await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(ok).toBe(true);
+    expect(maybeClassifyMock).toHaveBeenCalledTimes(1);
+    const [, contacto, historial] = maybeClassifyMock.mock.calls[0];
+    expect(contacto).toMatchObject({ id: "c1" });
+    expect(historial).toEqual([{ role: "user", content: "Hola, me interesa un departamento" }]);
+    // La voz sigue siendo la de la marca: ni agentes por segmento ni su tono.
+    expect(botAgentCountMock).not.toHaveBeenCalled();
+    expect(buildSystemPromptMock.mock.calls[0][0].brand).toMatchObject({ name: "Yaxnáh Caucel" });
+  });
+
+  it("2c. con el clasificador apagado en la configuración, con marca tampoco clasifica", async () => {
+    withBrand();
+    botConfig.classifyContacts = false;
+
+    await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(maybeClassifyMock).not.toHaveBeenCalled();
+  });
+
+  it("2d. si el clasificador falla, la marca contesta igual", async () => {
+    withBrand();
+    botConfig.classifyContacts = true;
+    maybeClassifyMock.mockRejectedValue(new Error("boom"));
+
+    const ok = await botRespond("c1", { connectorId: "c-yax" });
+
+    expect(ok).toBe(true);
+    expect(sendChannelMessage).toHaveBeenCalled();
   });
 
   it("3. el catálogo sale de developmentIds de la marca, sin presupuesto ni zona del contacto", async () => {
