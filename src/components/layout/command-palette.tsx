@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, User, Kanban, Sun, Users, DollarSign, FileText, Building2, Settings } from "lucide-react";
+import { Search, User, Kanban, Sun, Users, DollarSign, FileText, Building2, Handshake, Settings } from "lucide-react";
 
 interface Hit { id: string; name: string; meta?: string; kind: "contact" | "deal" }
 
@@ -15,6 +15,7 @@ const NAV = [
   { label: "Cotizaciones", href: "/cotizaciones", icon: FileText },
   { label: "Cobranza", href: "/cobranza", icon: DollarSign },
   { label: "Desarrollos y Propiedades", href: "/developments", icon: Building2 },
+  { label: "Desarrolladores", href: "/desarrolladores", icon: Handshake },
   { label: "Configuración", href: "/configuracion", icon: Settings },
 ];
 

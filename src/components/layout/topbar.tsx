@@ -28,6 +28,7 @@ const MODULE_LABELS: Record<string, string> = {
   "/cotizaciones": "Cotizaciones",
   "/cobranza": "Cobranza",
   "/developments": "Desarrollos y Propiedades",
+  "/desarrolladores": "Desarrolladores",
   "/commissions": "Comisiones",
   "/metas": "Metas",
   "/reports": "Reportes",
