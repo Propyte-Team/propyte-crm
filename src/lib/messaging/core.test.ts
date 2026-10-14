@@ -111,6 +111,13 @@ vi.mock("@/lib/users/actor-sistema", () => ({
   resolveActorUserId: (...a: unknown[]) => resolveActorUserId(...a),
 }));
 
+// #858 (2026-10-14): a quién se avisa de un hilo HUMAN sin dueño y el dedup se prueban en
+// aviso-sin-dueno.test.ts; aquí solo importa que core.ts lo pida cuando toca y no cuando no.
+const avisarHiloSinDueno = vi.fn();
+vi.mock("./aviso-sin-dueno", () => ({
+  avisarHiloSinDueno: (...a: unknown[]) => avisarHiloSinDueno(...a),
+}));
+
 import { handleInboundMessage } from "./core";
 
 beforeEach(() => {
@@ -121,8 +128,9 @@ beforeEach(() => {
     fetchProfileForMessage, contactTxUpdate, withChangeSourceSpy,
     commentRuleLogFindFirst, commentRuleLogUpdateMany, linkCommentOrigin, autoRouteLead,
     slaTimerFindFirst, leadConnectorUpdate, leadConnectorFindUnique, attachBrand, getDefaultBrandId,
-    resolveActorUserId,
+    resolveActorUserId, avisarHiloSinDueno,
   ].forEach((m) => m.mockReset());
+  avisarHiloSinDueno.mockResolvedValue([]);
   // Por defecto el asesor asignado es una persona: el helper lo devuelve tal cual.
   resolveActorUserId.mockImplementation(async ({ assignedToId }: { assignedToId?: string | null }) => assignedToId ?? null);
   autoRouteLead.mockResolvedValue("u-nuevo");
@@ -1470,5 +1478,79 @@ describe("handleInboundMessage — resumen de formulario de anuncio", () => {
     expect(msgCreate).toHaveBeenCalled();
     expect(botRespond).toHaveBeenCalledWith("c1", { channel: "MESSENGER" });
     warnSpy.mockRestore();
+  });
+});
+
+// #858 (2026-10-14): la rama HUMAN solo avisaba a `controlledById ?? assignedToId`. Con los dos
+// en null (el bot escaló un contacto sin asesor, o alguien contestó desde Business Suite y el
+// eco dejó el hilo en HUMAN sin dueño) cada mensaje nuevo del cliente caía en el vacío. Caso
+// real: conversación 9c1379d8, dos mensajes del valuador de BBVA después del escalamiento y
+// cero avisos.
+describe("handleInboundMessage — inbound en un hilo HUMAN sin dueño (#858)", () => {
+  const sinDueno = { id: "c1", assignedToId: null, firstName: "Valuador", lastName: "BBVA", targetPlaza: "PDC" };
+  const hiloHumanSinDueno = { id: "conv1", status: "HUMAN", botEnabled: true, controlledById: null, connectorId: "conn_ms" };
+
+  beforeEach(() => {
+    convFindFirst.mockResolvedValue(hiloHumanSinDueno);
+    convUpdate.mockResolvedValue(hiloHumanSinDueno);
+    // El reparto (si corre) no encuentra a nadie: el contacto sigue sin dueño.
+    autoRouteLead.mockResolvedValue(null);
+  });
+
+  it("sin controlledById ni asesor → avisa por el camino de hilo sin dueño, con la cuenta del hilo y la plaza", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    await handleInboundMessage({ ...base, text: "¿Me confirman la visita del valuador?" });
+
+    expect(notifCreate).not.toHaveBeenCalled();
+    expect(avisarHiloSinDueno).toHaveBeenCalledTimes(1);
+    const arg = avisarHiloSinDueno.mock.calls[0][0];
+    expect(arg).toEqual(
+      expect.objectContaining({ conversationId: "conv1", connectorId: "conn_ms", plaza: "PDC", type: "social_inbound" }),
+    );
+    expect(arg.message).toContain("Valuador BBVA");
+    expect(arg.message).toContain("valuador");
+  });
+
+  it("el bot no contesta en un hilo HUMAN (no cambia)", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    await handleInboundMessage(base);
+    expect(botRespond).not.toHaveBeenCalled();
+  });
+
+  it("si el aviso truena, la ingesta sigue", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    avisarHiloSinDueno.mockRejectedValue(new Error("boom"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(handleInboundMessage(base)).resolves.toEqual({ id: "m1" });
+    error.mockRestore();
+  });
+
+  it("con controlledById → aviso de siempre a quien controla el hilo, sin camino nuevo", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    convUpdate.mockResolvedValue({ ...hiloHumanSinDueno, controlledById: "u-control" });
+    await handleInboundMessage(base);
+    expect(notifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ userId: "u-control", title: "INSTAGRAM recibido (controlas el hilo)", link: "/inbox?c=conv1" }),
+      }),
+    );
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+  });
+
+  it("con asesor (sin controlledById) → aviso de siempre al asesor, sin camino nuevo", async () => {
+    contactFindFirst.mockResolvedValue({ ...sinDueno, assignedToId: "u-asesor" });
+    await handleInboundMessage(base);
+    expect(notifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: "u-asesor" }) }),
+    );
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+  });
+
+  it("hilo en BOT → ni aviso nuevo ni de siempre (contesta el bot)", async () => {
+    contactFindFirst.mockResolvedValue(sinDueno);
+    convUpdate.mockResolvedValue({ ...hiloHumanSinDueno, status: "BOT" });
+    await handleInboundMessage(base);
+    expect(avisarHiloSinDueno).not.toHaveBeenCalled();
+    expect(botRespond).toHaveBeenCalled();
   });
 });

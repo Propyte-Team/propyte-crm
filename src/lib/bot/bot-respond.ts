@@ -19,6 +19,7 @@ import { runPlaybookStep } from "./playbook/run";
 import type { MessagingChannel } from "@/lib/messaging/types";
 import { sendChannelMessage } from "@/lib/messaging/dispatcher";
 import { recordBotSendFailure, recordBotSilence } from "@/lib/messaging/send-failure";
+import { avisarHiloSinDueno } from "@/lib/messaging/aviso-sin-dueno";
 import { applyAgentTone, composeObjective, agentPlaybookOf } from "./agent-profiles";
 import { resolveBrandForConnector, isBrandScoped, type BrandResolution } from "@/lib/brands/resolve";
 import { brandEnabledChannels } from "@/lib/brands/settings";
@@ -103,6 +104,27 @@ export async function escalateToHuman(
         link: `/inbox?c=${conversationId}`,
       },
     });
+    return;
+  }
+
+  // #858 (2026-10-14): sin asesor no había a quién avisar y aquí terminaba todo — el bot ya
+  // le había dicho al cliente que pasaba su mensaje a la persona responsable, y esa persona
+  // no existía (caso real: el valuador de BBVA de la conversación 9c1379d8, dos días sin
+  // respuesta). Ahora avisa a quien corresponda según la marca de la cuenta y la plaza del
+  // contacto (ver lib/messaging/aviso-sin-dueno.ts). `controlledById` se queda en null a
+  // propósito: con varios destinatarios no hay uno que elegir, lo toma quien conteste.
+  // El escalamiento ya quedó escrito arriba; un fallo del aviso no lo deshace.
+  try {
+    await avisarHiloSinDueno({
+      conversationId,
+      connectorId: conv.connectorId ?? null,
+      plaza: conv.contact.targetPlaza ?? null,
+      title: "El bot pasó una conversación sin asesor",
+      message: `${conv.contact.firstName} ${conv.contact.lastName}: ${summary.slice(0, 180)}`,
+      type: "bot_escalation",
+    });
+  } catch (err) {
+    console.error(`[bot-respond] aviso del escalamiento sin dueño falló (${conversationId}):`, err);
   }
 }
 

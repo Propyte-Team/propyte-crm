@@ -623,6 +623,26 @@ export async function handleInboundMessage(msg: IncomingMessage, opts: { trigger
           link: `/inbox?c=${conversation.id}`,
         },
       });
+    } else {
+      // #858 (2026-10-14): hilo en manos de un humano que no existe — el bot escaló un
+      // contacto sin asesor, o alguien contestó desde Business Suite y el eco lo dejó en
+      // HUMAN sin dueño. Aquí no se avisaba a nadie y cada mensaje del cliente caía en el
+      // vacío (conversación 9c1379d8: dos mensajes del valuador de BBVA, cero avisos). Se
+      // avisa por el mismo camino que el escalamiento, que deduplica por hilo: un aviso sin
+      // leer de las últimas horas basta, no uno por mensaje. Side-effect: jamás mata la ingesta.
+      try {
+        const { avisarHiloSinDueno } = await import("./aviso-sin-dueno");
+        await avisarHiloSinDueno({
+          conversationId: conversation.id,
+          connectorId: conversation.connectorId ?? msg.connectorId ?? null,
+          plaza: contact.targetPlaza ?? null,
+          title: `${msg.channel} recibido en un hilo sin dueño`,
+          message: `${contact.firstName} ${contact.lastName}: ${msg.text.slice(0, 80)}`,
+          type: "social_inbound",
+        });
+      } catch (err) {
+        console.error(`[messaging] aviso de hilo HUMAN sin dueño falló (${conversation.id}):`, err);
+      }
     }
   } else if (
     conversation.status === "BOT" &&

@@ -3,7 +3,8 @@
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
 import { createSlaTimer, cumplirOrphan } from "./sla";
-import { ROLES_RUTEABLES, usuarioRuteableWhere, mandoWhere } from "./ruteables";
+import { ROLES_RUTEABLES, usuarioRuteableWhere } from "./ruteables";
+import { gerenciaDeLaPlaza } from "./gerencia";
 import {
   motivoSinAsignar,
   explicacion,
@@ -122,20 +123,17 @@ async function sendToPond(
   );
   // #756: estas cuatro condiciones salieron a `./ruteables` sin cambiar de valor, porque el
   // aviso de vencimiento necesita EL MISMO mando y una segunda copia habría divergido —
-  // el defecto de la #715 A-03, la #730 y la #682.
-  const managerWhere = mandoWhere();
-  let managers = await prisma.user.findMany({
-    where: { ...managerWhere, ...(contact.targetPlaza ? { plaza: contact.targetPlaza as never } : {}) },
-    select: { id: true },
-  });
+  // el defecto de la #715 A-03, la #730 y la #682. #858 (2026-10-14): la consulta en sí
+  // salió a `./gerencia`, porque el aviso de un hilo sin dueño necesita a la misma gente.
+  let managers = await gerenciaDeLaPlaza(contact.targetPlaza);
   if (managers.length === 0) {
     // Sin gerencia en la plaza del lead: avisar a toda la gerencia para que no quede ciego.
-    managers = await prisma.user.findMany({ where: managerWhere, select: { id: true } });
+    managers = await gerenciaDeLaPlaza(null);
   }
   if (managers.length > 0) {
     await prisma.notification.createMany({
-      data: managers.map((m) => ({
-        userId: m.id,
+      data: managers.map((id) => ({
+        userId: id,
         title: "Lead sin asignar (Pond)",
         message: `${contact.firstName} ${contact.lastName} (${contact.leadSource})${contact.targetPlaza ? ` · ${contact.targetPlaza}` : ""} — nadie disponible para tomarlo`,
         type: "lead_pond",
