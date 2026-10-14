@@ -29,6 +29,8 @@ interface PaymentScheduleTableProps {
   schedules: Schedule[];
   currency: "MXN" | "USD";
   onUpdate: (updated: Schedule) => void;
+  /** #867: rol que ve cotizaciones pero no las modifica (DIRECTOR, MARKETING): sin acciones. */
+  soloLectura?: boolean;
 }
 
 const STATUS_BADGE: Record<InstallmentStatus, { label: string; className: string }> = {
@@ -43,6 +45,7 @@ export function PaymentScheduleTable({
   schedules,
   currency,
   onUpdate,
+  soloLectura = false,
 }: PaymentScheduleTableProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -150,6 +153,7 @@ export function PaymentScheduleTable({
                     {s.paidAt ? fmtDate(s.paidAt) : "—"}
                   </td>
                   <td className="py-3 px-4 text-right">
+                    {!soloLectura && (
                     <div className="flex items-center justify-end gap-1">
                       {s.status !== "PAGADA" && (
                         <Button
@@ -202,6 +206,7 @@ export function PaymentScheduleTable({
                         </Button>
                       )}
                     </div>
+                    )}
                   </td>
                 </tr>
               );

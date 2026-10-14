@@ -30,6 +30,7 @@ import { ContactTimeline } from "@/components/contacts/contact-timeline";
 import { CallButton } from "@/components/voice/call-button";
 import { useVoice } from "@/components/voice/voice-device-provider";
 import { QuoteList } from "@/components/quotes/quote-list";
+import { puedeModificarCotizaciones } from "@/lib/rbac/quote-scope";
 import { DealDocumentsSection } from "@/components/quotes/deal-documents-section";
 import { CustomFieldsSection } from "@/components/metadata/custom-fields-section";
 import { ActivityLog } from "@/components/activities/activity-log";
@@ -568,7 +569,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             ) : undefined
           }
         >
-          <QuoteList dealId={selectedDealId} />
+          <QuoteList dealId={selectedDealId} soloLectura={!puedeModificarCotizaciones(userRole)} />
           <div className="mt-6 border-t pt-6" style={{ borderColor: "var(--border-subtle)" }}>
             <DealDocumentsSection dealId={selectedDealId} />
           </div>

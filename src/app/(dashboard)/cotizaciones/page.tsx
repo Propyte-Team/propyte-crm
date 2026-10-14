@@ -1,12 +1,15 @@
 // ============================================================
 // Página: /cotizaciones — Vista global de cotizaciones
-// Server component con filtros por status y búsqueda
+// Server component con filtros por status y búsqueda.
+// Alcance por rol (#867): src/lib/rbac/quote-scope.ts
 // ============================================================
 
 import { getServerSession } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { QuotesGlobalView } from "@/components/quotes/quotes-global-view";
 import prisma from "@/lib/db";
+import { getVisibleBrands } from "@/lib/brands/user-access";
+import { alcanceCotizaciones } from "@/lib/rbac/quote-scope";
 
 export const metadata = {
   title: "Cotizaciones | Propyte CRM",
@@ -16,9 +19,10 @@ export default async function CotizacionesPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  // Cargar cotizaciones con relaciones para la vista inicial
+  // #867: ADMIN ve todas; TEAM_LEADER las de su plaza; los demás solo las suyas.
+  const marcas = await getVisibleBrands(session.user);
   const quotes = await prisma.quote.findMany({
-    where: { deletedAt: null },
+    where: { AND: [{ deletedAt: null }, alcanceCotizaciones(session.user, marcas)] },
     include: {
       deal: {
         select: {

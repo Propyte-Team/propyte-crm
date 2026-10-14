@@ -42,9 +42,14 @@ const SCHEME_LABEL: Record<string, string> = {
 
 interface QuoteListProps {
   dealId: string;
+  /**
+   * #867: el rol ve cotizaciones pero no las modifica (DIRECTOR, MARKETING). Esconde los
+   * botones; el servidor lo rechaza igual con 403 si alguien llama a la ruta a mano.
+   */
+  soloLectura?: boolean;
 }
 
-export function QuoteList({ dealId }: QuoteListProps) {
+export function QuoteList({ dealId, soloLectura = false }: QuoteListProps) {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -110,10 +115,12 @@ export function QuoteList({ dealId }: QuoteListProps) {
           <p className="text-xs uppercase tracking-widest text-zinc-400">Cotizaciones</p>
           <h2 className="text-lg font-semibold text-zinc-900">{quotes.length} cotización{quotes.length !== 1 ? "es" : ""}</h2>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Nueva cotización
-        </Button>
+        {!soloLectura && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Nueva cotización
+          </Button>
+        )}
       </div>
 
       {/* Tabla */}
@@ -199,6 +206,7 @@ export function QuoteList({ dealId }: QuoteListProps) {
                         {fmtDate(q.createdAt)}
                       </td>
                       <td className="py-3 px-4 text-right">
+                        {!soloLectura && (
                         <div className="flex items-center justify-end gap-1">
                           {q.status === "DRAFT" && (
                             <Button
@@ -242,6 +250,7 @@ export function QuoteList({ dealId }: QuoteListProps) {
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
+                        )}
                       </td>
                     </tr>
 
@@ -254,6 +263,7 @@ export function QuoteList({ dealId }: QuoteListProps) {
                             schedules={q.paymentPlan.schedules}
                             currency={q.currency}
                             onUpdate={(updated) => handleInstallmentUpdate(q.id, updated)}
+                            soloLectura={soloLectura}
                           />
                         </td>
                       </tr>
@@ -266,15 +276,17 @@ export function QuoteList({ dealId }: QuoteListProps) {
                             <span className="text-sm text-zinc-400">
                               Esta cotización no tiene plan de pago.
                             </span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="rounded-none"
-                              onClick={() => setPlanQuote(q)}
-                            >
-                              <Plus className="mr-1.5 h-3.5 w-3.5" />
-                              Crear plan
-                            </Button>
+                            {!soloLectura && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="rounded-none"
+                                onClick={() => setPlanQuote(q)}
+                              >
+                                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                                Crear plan
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>

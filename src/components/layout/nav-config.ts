@@ -58,7 +58,8 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       // "Negocios" (antes "Pipeline"): la ruta /pipeline NO cambia — renombrar la URL
       // rompería enlaces guardados y notificaciones ya emitidas.
       { label: "Negocios", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MANTENIMIENTO"] },
-      { label: "Cotizaciones", href: "/cotizaciones", icon: FileText, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "BROKER", ...ASESORES] },
+      // #867: MARKETING entra de solo lectura (ve, no modifica) — src/lib/rbac/quote-scope.ts
+      { label: "Cotizaciones", href: "/cotizaciones", icon: FileText, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "BROKER", "MARKETING", ...ASESORES] },
       { label: "Desarrollos", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING", "MANTENIMIENTO", "DEVELOPER_EXT"] },
       { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS", "MANTENIMIENTO"] },
     ],
