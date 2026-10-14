@@ -334,6 +334,8 @@ export async function POST(req: NextRequest) {
           const entrada = entradaDelRemitente(value.contacts, msg.from);
           const bsuid = entrada?.user_id ?? null;
           const realPhone = entrada?.wa_id ?? null;
+          // #748 (2026-10-14): `unknownNumber` también apaga el reparto. Un número que no es de
+          // ninguna cuenta ni el general podría ser el de otra marca sin registrar.
           const saved = await handleInboundWhatsApp({
             From: realPhone ? `whatsapp:+${realPhone}` : null,
             WhatsAppUserId: bsuid,
@@ -349,7 +351,7 @@ export async function POST(req: NextRequest) {
                   MediaFilename: mediaRef?.filename ?? null,
                 }
               : {}),
-          }, { triggerBot: false });
+          }, { triggerBot: false, ...(unknownNumber ? { route: false } : {}) });
           if (saved?.contactId) {
             if (!unknownNumber) {
               botTargets.set(`${saved.contactId}:${connectorId ?? ""}`, { contactId: saved.contactId, connectorId });

@@ -295,3 +295,26 @@ describe("captureLead — atribución fuera del candado", () => {
     expect(lock.openAtAttach).toEqual([false, false]);
   });
 });
+
+// #748 (2026-10-14): el reparto decide con la marca de la cuenta (plaza de la marca y, sin
+// asesor, su responsable de marketing), así que el alta tiene que decirle por qué cuenta
+// entró. Sin cuenta, la llamada es exactamente la de siempre.
+describe("captureLead — el reparto recibe la cuenta", () => {
+  it("alta nueva por una cuenta → autoRouteLead con el connectorId", async () => {
+    const { autoRouteLead } = await import("@/lib/workflows/routing");
+    vi.mocked(autoRouteLead).mockClear();
+    findFirst.mockResolvedValue(null);
+    connectorFindUnique.mockResolvedValue(CUENTA_YAX);
+    await captureLead({ source: "MESSENGER", firstName: "Ana", email: "ana@x.com" }, { connectorId: "conn-yax" });
+    expect(autoRouteLead).toHaveBeenCalledWith("c-new", { reason: "intake MESSENGER", connectorId: "conn-yax" });
+  });
+
+  it("contacto que ya existía → no se reparte aquí (no cambia de dueño por llegar por otra cuenta)", async () => {
+    const { autoRouteLead } = await import("@/lib/workflows/routing");
+    vi.mocked(autoRouteLead).mockClear();
+    findFirst.mockResolvedValue({ id: "c-viejo", assignedToId: null });
+    connectorFindUnique.mockResolvedValue(CUENTA_YAX);
+    await captureLead({ source: "MESSENGER", firstName: "Ana", email: "ana@x.com" }, { connectorId: "conn-yax" });
+    expect(autoRouteLead).not.toHaveBeenCalled();
+  });
+});

@@ -61,8 +61,10 @@ function buildAttributionData(lead: IncomingLead) {
  * SÍ se emite: el contacto existe de verdad.
  *
  * Qué pasa cuando la persona responde (lib/messaging/core.ts):
- *  - SÍ se le enruta —dueño, SLA de primer toque y notificación— gracias a la
- *    marca de origen que el llamador deja en `sourceDetail`.
+ *  - SÍ se le enruta —dueño, SLA de primer toque y notificación—: desde la #748
+ *    (2026-10-14) core.ts reparte a todo contacto sin dueño que escribe, venga o no
+ *    de un comentario; la marca de origen que el llamador deja en `sourceDetail`
+ *    solo cambia el `reason` con el que se reparte.
  *  - SÍ sube a MQL, por el evento `social.replied` del intake.
  *  - **NUNCA se manda el evento `Lead` a Meta CAPI**, ni al comentar ni al
  *    responder. Es una decisión de producto, no un olvido: hay una medición de
@@ -305,7 +307,13 @@ export async function captureLead(
   let assignedToId: string | null = null;
   if (!skipRouting) {
     const { autoRouteLead } = await import("@/lib/workflows/routing");
-    assignedToId = await autoRouteLead(contact.id, { reason: `intake ${lead.source}` });
+    // #748 (2026-10-14): la cuenta va al reparto porque ahí se decide con su marca (plaza
+    // predeterminada y, si no hay asesor, el responsable de marketing de la marca). Sin
+    // cuenta, la llamada es la de siempre.
+    assignedToId = await autoRouteLead(contact.id, {
+      reason: `intake ${lead.source}`,
+      ...(opts.connectorId ? { connectorId: opts.connectorId } : {}),
+    });
   }
 
   return { contactId: contact.id, isNew: true, assignedToId };

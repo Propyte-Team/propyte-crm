@@ -43,7 +43,9 @@ const DEFAULT_FIRST_NAME: Record<Platform, string> = {
 // contacto provisional. Es el único rastro propio del contacto que dice "esto
 // nació de un comentario, todavía no ha hablado": sin ella, un provisional es
 // indistinguible de cualquier otro contacto sin dueño. Sirve para dos cosas:
-//   1) el intake sabe a quién enrutar en su primer reply (lib/messaging/core.ts);
+//   1) el intake dice por qué lo reparte en su primer reply (lib/messaging/core.ts;
+//      desde la #748, 2026-10-14, se reparte a todo contacto sin dueño que escribe, y la
+//      marca solo cambia el `reason`);
 //   2) queda filtrable y reportable en el CRM.
 // NO se limpia al enrutar: es dato de procedencia, no un flag de estado. El
 // candado contra el re-enrutado es tener dueño, no la marca.
