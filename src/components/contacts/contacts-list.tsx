@@ -534,13 +534,14 @@ export function ContactsList({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
+                  {/* #865: todos los encabezados centrados; las celdas, según `align` del catálogo. */}
+                  <tr className="border-b text-center text-muted-foreground">
                     {columnas.map((c) => (
-                      <th key={c.key} className="whitespace-nowrap pb-3 pr-3 font-medium">
+                      <th key={c.key} className="whitespace-nowrap px-2 pb-3 text-center font-medium">
                         {c.label}
                       </th>
                     ))}
-                    <th className="pb-3 font-medium">Acciones</th>
+                    <th className="px-2 pb-3 text-center font-medium">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -554,13 +555,14 @@ export function ContactsList({
                         <CeldaContacto
                           key={c.key}
                           col={c.key}
+                          align={c.align ?? "center"}
                           contact={contact}
                           onStatus={updateStatus}
                           onType={updateType}
                         />
                       ))}
                       {/* Menú de acciones */}
-                      <td className="py-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -731,22 +733,26 @@ const TYPE_OPTIONS = [
 
 function CeldaContacto({
   col,
+  align,
   contact,
   onStatus,
   onType,
 }: {
   col: string;
+  align: "left" | "center";
   contact: ContactData;
   onStatus: (id: string, v: string) => void;
   onType: (id: string, v: string | null) => void;
 }) {
   const vacio = <span className="text-muted-foreground">-</span>;
+  // Clase base de toda celda (#865): padding simétrico para que el centrado sea real.
+  const base = `px-2 py-3 ${align === "left" ? "text-left" : "text-center"}`;
   const fecha = (iso: string | null | undefined) => (iso ? formatDate(iso, FECHA_CORTA) : null);
 
   switch (col) {
     case "nombre":
       return (
-        <td className="py-3 pr-3 font-medium">
+        <td className={`${base} font-medium`}>
           <span className="inline-flex flex-wrap items-center gap-1.5">
             <span>
               {contact.firstName} {contact.lastName}
@@ -758,7 +764,7 @@ function CeldaContacto({
     case "estado":
       // Estado de contacto — edición rápida inline, con la etapa del ciclo debajo.
       return (
-        <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
+        <td className={`${base}`} onClick={(e) => e.stopPropagation()}>
           <PastillaEditable
             label={CONTACT_STATUS_LABELS[contact.contactStatus] ?? "Nuevo"}
             color={CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF"}
@@ -769,7 +775,7 @@ function CeldaContacto({
           />
           {contact.lifecycleStage && (
             <span
-              className="mt-1 flex items-center gap-1 text-[11px] font-medium"
+              className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${align === "left" ? "" : "justify-center"}`}
               style={{ color: LIFECYCLE_COLORS[contact.lifecycleStage] }}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: LIFECYCLE_COLORS[contact.lifecycleStage] }} />
@@ -781,7 +787,7 @@ function CeldaContacto({
     case "tipo":
       // Tipo de contacto — antes solo se veía (y cambiaba) entrando a cada contacto.
       return (
-        <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
+        <td className={`${base}`} onClick={(e) => e.stopPropagation()}>
           <PastillaEditable
             label={
               contact.contactType
@@ -796,18 +802,18 @@ function CeldaContacto({
         </td>
       );
     case "telefono":
-      return <td className="whitespace-nowrap py-3 pr-3">{contact.phone || vacio}</td>;
+      return <td className={`whitespace-nowrap ${base}`}>{contact.phone || vacio}</td>;
     case "email":
-      return <td className="py-3 pr-3 text-muted-foreground">{contact.email || "-"}</td>;
+      return <td className={`${base} text-muted-foreground`}>{contact.email || "-"}</td>;
     case "fuente":
       return (
-        <td className="py-3 pr-3">
+        <td className={`${base}`}>
           <Badge variant="outline">{SOURCE_LABEL[contact.leadSource] || contact.leadSource}</Badge>
         </td>
       );
     case "temperatura":
       return (
-        <td className="py-3 pr-3">
+        <td className={`${base}`}>
           <Badge variant={TEMP_VARIANT[contact.temperature] || "cold"}>
             {TEMP_LABEL[contact.temperature] || contact.temperature}
           </Badge>
@@ -815,27 +821,27 @@ function CeldaContacto({
       );
     case "asesor":
       return (
-        <td className="py-3 pr-3">
+        <td className={`${base}`}>
           {contact.assignedTo?.name || <span className="text-muted-foreground">Sin asignar</span>}
         </td>
       );
     case "registro":
-      return <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">{fecha(contact.createdAt)}</td>;
+      return <td className={`whitespace-nowrap ${base} text-muted-foreground`}>{fecha(contact.createdAt)}</td>;
     case "telefono2":
-      return <td className="whitespace-nowrap py-3 pr-3">{contact.secondaryPhone || vacio}</td>;
+      return <td className={`whitespace-nowrap ${base}`}>{contact.secondaryPhone || vacio}</td>;
     case "ciudad":
-      return <td className="py-3 pr-3">{contact.residenceCity || vacio}</td>;
+      return <td className={`${base}`}>{contact.residenceCity || vacio}</td>;
     case "ultimaActividad":
       return (
-        <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">{fecha(contact.lastActivityAt) ?? "-"}</td>
+        <td className={`whitespace-nowrap ${base} text-muted-foreground`}>{fecha(contact.lastActivityAt) ?? "-"}</td>
       );
     case "negocios":
-      return <td className="num py-3 pr-3">{contact._count?.deals ?? 0}</td>;
+      return <td className={`num ${base}`}>{contact._count?.deals ?? 0}</td>;
     case "actividades":
-      return <td className="num py-3 pr-3">{contact._count?.activities ?? 0}</td>;
+      return <td className={`num ${base}`}>{contact._count?.activities ?? 0}</td>;
     case "modificado":
-      return <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">{fecha(contact.updatedAt) ?? "-"}</td>;
+      return <td className={`whitespace-nowrap ${base} text-muted-foreground`}>{fecha(contact.updatedAt) ?? "-"}</td>;
     default:
-      return <td className="py-3 pr-3">{vacio}</td>;
+      return <td className={`${base}`}>{vacio}</td>;
   }
 }
