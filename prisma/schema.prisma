@@ -2908,3 +2908,24 @@ model UserPermissionOverride {
   @@map("user_permission_overrides")
   @@schema("propyte_crm")
 }
+
+// #872 (2026-10-14) — Desarrolladores: empresas inmobiliarias y otros aliados. Tabla propia del
+// CRM que arranca VACÍA y se llena a mano desde el módulo /desarrolladores; NO es un espejo de
+// real_estate_hub."Propyte_desarrolladores". `createdById` va sin relación a propósito: así el
+// modelo User (compartido con el Hub) no cambia. Migración: prisma/migrations-manual/
+// 2026-10-14-developer-partners.sql, aplicada ANTES de desplegar.
+model DeveloperPartner {
+  id          String    @id @default(uuid())
+  name        String
+  website     String?
+  email       String?
+  phone       String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([name])
+  @@map("developer_partners")
+  @@schema("propyte_crm")
+}
