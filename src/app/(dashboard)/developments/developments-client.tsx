@@ -57,7 +57,7 @@ export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) 
   if (loadError) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Desarrollos</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Desarrollos y Propiedades</h1>
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <AlertCircle className="h-8 w-8 text-destructive" />
@@ -78,7 +78,7 @@ export function DevelopmentsClient({ developments, loadError, isAdmin }: Props) 
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Desarrollos</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Desarrollos y Propiedades</h1>
           <p className="text-muted-foreground">
             Espejo de lo publicado en propyte.com ({filtered.length})
           </p>

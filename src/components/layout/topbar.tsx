@@ -27,7 +27,7 @@ const MODULE_LABELS: Record<string, string> = {
   "/pipeline": "Negocios",
   "/cotizaciones": "Cotizaciones",
   "/cobranza": "Cobranza",
-  "/developments": "Desarrollos",
+  "/developments": "Desarrollos y Propiedades",
   "/commissions": "Comisiones",
   "/metas": "Metas",
   "/reports": "Reportes",

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 // La pestaña "Captura" se retiró: el intake público vive en el Hub (hub.propyte.com/captura)
-const baseTabs = [{ label: "Desarrollos", href: "/developments" }];
+const baseTabs = [{ label: "Desarrollos y Propiedades", href: "/developments" }];
 
 export default function DevelopmentsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

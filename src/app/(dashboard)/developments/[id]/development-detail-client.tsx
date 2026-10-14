@@ -32,7 +32,7 @@ export function DevelopmentDetailClient({ development, units, devError, unitsErr
     return (
       <div className="space-y-6">
         <Button variant="ghost" size="sm" onClick={() => router.push("/developments")}>
-          <ArrowLeft className="mr-1 h-4 w-4" /> Desarrollos
+          <ArrowLeft className="mr-1 h-4 w-4" /> Desarrollos y Propiedades
         </Button>
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -59,7 +59,7 @@ export function DevelopmentDetailClient({ development, units, devError, unitsErr
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <Button variant="ghost" size="sm" className="mb-2 -ml-2" onClick={() => router.push("/developments")}>
-            <ArrowLeft className="mr-1 h-4 w-4" /> Desarrollos
+            <ArrowLeft className="mr-1 h-4 w-4" /> Desarrollos y Propiedades
           </Button>
           <h1 className="truncate text-2xl font-bold tracking-tight">{d.name}</h1>
           <p className="text-sm text-muted-foreground">
