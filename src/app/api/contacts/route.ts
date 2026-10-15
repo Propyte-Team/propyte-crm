@@ -16,6 +16,7 @@ import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fie
 import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, CONTACT_TYPE_SIN_TIPO } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
+import { sumarAlAnd } from "@/lib/api/where-and";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
@@ -222,8 +223,11 @@ export async function GET(request: NextRequest) {
     if (lifecycleStage && (LIFECYCLE_ORDER as readonly string[]).includes(lifecycleStage)) {
       where.lifecycleStage = lifecycleStage as never;
     }
+    // #881: el asesor pedido se SUMA al alcance del rol, no lo reemplaza. Antes se asignaba a
+    // `where.assignedToId` y pisaba el `= userId` del asesor o el `{ in: equipo }` del líder:
+    // cambiando la URL se veían los contactos de cualquiera. Fuera del alcance → lista vacía.
     if (assignedToId) {
-      where.assignedToId = assignedToId;
+      sumarAlAnd(where, { assignedToId });
     }
 
     // Marcas (2026-10-12): se agrega al FINAL y con AND, para que ningún filtro de arriba la
@@ -241,10 +245,7 @@ export async function GET(request: NextRequest) {
       ...(porMarca ? [porMarca] : []),
       ...(filtroMarca.kind === "brand" ? [contactBrandFilterWhere(filtroMarca.filter)] : []),
     ];
-    if (recortes.length > 0) {
-      const previos = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
-      where.AND = [...previos, ...recortes];
-    }
+    sumarAlAnd(where, ...recortes);
 
     // Ejecutar consulta con paginación
     const [contacts, total] = await Promise.all([

@@ -13,6 +13,7 @@ import { Prisma } from "@prisma/client";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
 import { dueDateSchema } from "@/lib/due-date";
 import { ordenValidado } from "@/lib/api/orden";
+import { sumarAlAnd } from "@/lib/api/where-and";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, dealBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
@@ -129,7 +130,9 @@ export async function GET(request: NextRequest) {
     // Filtros específicos
     if (stage) where.stage = stage as any;
     if (dealType) where.dealType = dealType as any;
-    if (advisorId) where.assignedToId = advisorId;
+    // #881: el asesor pedido se SUMA al alcance del rol (AND), no lo reemplaza. Antes pisaba el
+    // `= userId` de asesores / solo lectura y el `{ in: equipo }` del líder de equipo.
+    if (advisorId) sumarAlAnd(where, { assignedToId: advisorId });
     if (developmentId) where.developmentId = developmentId;
 
     // Marcas (2026-10-12): al FINAL y con AND, para que ningún filtro de arriba la pise. El
@@ -147,7 +150,8 @@ export async function GET(request: NextRequest) {
       ...(porMarca ? [porMarca] : []),
       ...(filtroMarca.kind === "brand" ? [dealBrandFilterWhere(filtroMarca.filter)] : []),
     ];
-    if (recortes.length > 0) where.AND = recortes;
+    // Se suman al AND (el de ?advisorId= puede estar ya ahí): asignarlo pisaría el filtro.
+    sumarAlAnd(where, ...recortes);
 
     // Ejecutar consulta con relaciones
     const [deals, total] = await Promise.all([

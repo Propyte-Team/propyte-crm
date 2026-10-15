@@ -97,8 +97,10 @@ describe("GET /api/deals — selector «Marca»", () => {
     session = { user: { id: "dir-1", role: "DIRECTOR", plaza: "CANCUN" } };
     brandFindFirst.mockResolvedValue(YAXNAH);
     await get("?advisorId=ase-9&marca=b-yax");
-    expect(whereUsed().assignedToId).toBe("ase-9");
-    expect(whereUsed().AND).toHaveLength(2);
+    // #881: el asesor pedido va en el AND (sumado al rol), seguido de visibilidad y selector.
+    expect(whereUsed().assignedToId).toBeUndefined();
+    expect(whereUsed().AND).toHaveLength(3);
+    expect(whereUsed().AND[0]).toEqual({ assignedToId: "ase-9" });
   });
 
   it("trae las marcas del contacto para el badge de la tarjeta", async () => {
