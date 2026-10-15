@@ -26,7 +26,8 @@ export type ActivityScope = "ALL" | "TEAM" | "OWN" | "DENIED"
  * `getOverdueTasks`, y por lo tanto el dashboard).
  *
  * Orden canónico = FULL → TEAM → OWN → denegado. Es el mismo que ya usaban
- * `buildRbacFilter` (server/contacts.ts), server/deals.ts y server/walk-ins.ts;
+ * `buildRbacFilter` (server/contacts.ts) y server/deals.ts (también el ya
+ * retirado server/walk-ins.ts, #886);
  * activities.ts era el único módulo que lo tenía invertido.
  */
 export function resolveActivityScope(userRole: string): ActivityScope {

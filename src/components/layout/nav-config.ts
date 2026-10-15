@@ -64,7 +64,6 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       { label: "Desarrollos y Propiedades", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING", "MANTENIMIENTO", "DEVELOPER_EXT"] },
       // #872: todos consultan; ADMIN y DIRECTOR editan (src/lib/developer-partners/shared.ts)
       { label: "Desarrolladores", href: "/desarrolladores", icon: Handshake, roles: TODOS },
-      { label: "Walk-ins", href: "/walk-ins", icon: UserCheck, roles: ["DIRECTOR", "GERENTE", "HOSTESS", "MANTENIMIENTO"] },
     ],
   },
   {
