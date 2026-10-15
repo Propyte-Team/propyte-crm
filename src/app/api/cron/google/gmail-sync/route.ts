@@ -1,11 +1,12 @@
 // src/app/api/cron/google/gmail-sync/route.ts
 // Respaldo de inbound cuando Pub/Sub no está disponible (p.ej. local) o como red de seguridad.
+// #889: el tick /api/cron/workflows ya hace esta misma revisión cada minuto (misma función,
+// lib/google/gmail-sync.ts). Esta ruta se conserva para correrla a mano o como respaldo.
 // Agendar en Hostinger (x-cron-secret), p.ej. cada 15 min:
 //   curl -s -H "x-cron-secret: $CRON_SECRET" https://crm.propyte.com/api/cron/google/gmail-sync
 import { NextRequest, NextResponse } from "next/server"
 import { rechazoCron } from "@/lib/cron/auth"
-import prisma from "@/lib/db"
-import { processGmailHistory } from "@/lib/google/gmail"
+import { sincronizarCorreoEntrante } from "@/lib/google/gmail-sync"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -16,33 +17,21 @@ export async function GET(req: NextRequest) {
   if (rechazo) return rechazo
 
   const startedAt = Date.now()
-  let tokens: { userId: string }[] = []
+  let r
   try {
-    tokens = await prisma.googleOAuthToken.findMany({ where: { isValid: true }, select: { userId: true } })
+    r = await sincronizarCorreoEntrante()
   } catch {
     // tabla aún no migrada → no-op
     return NextResponse.json({ ok: true, note: "google_oauth_tokens no disponible", accounts: 0 })
   }
 
-  let logged = 0
-  let skipped = 0
-  const errors: string[] = []
-  for (const t of tokens) {
-    try {
-      const r = await processGmailHistory(t.userId)
-      logged += r.logged
-      skipped += r.skipped
-    } catch (e) {
-      errors.push(`${t.userId}: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
   return NextResponse.json({
     ok: true,
-    accounts: tokens.length,
-    logged,
-    skipped,
-    errors: errors.slice(0, 10),
+    accounts: r.cuentas,
+    logged: r.registrados,
+    skipped: r.omitidos,
+    disconnected: r.desconectadas,
+    errors: r.errores.slice(0, 10),
     ms: Date.now() - startedAt,
   })
 }

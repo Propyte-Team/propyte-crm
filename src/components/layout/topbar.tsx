@@ -17,6 +17,13 @@ import {
 // Las opciones de sistema salieron del sidebar y viven aquí (pedido de Luis, ago-2026).
 // Se importan de nav-config para que sidebar y menú compartan UNA sola definición de roles.
 import { visibleUserMenuItems } from "./nav-config"
+import { useToast } from "@/components/ui/use-toast"
+import { ToastAction } from "@/components/ui/toast"
+import { TIPO_AVISO_CORREO, contactoDelAviso } from "@/lib/google/aviso-correo"
+import { avisosNuevos, EVENTO_CORREO_ENTRANTE } from "@/lib/notificaciones/avisos-nuevos"
+
+/** Cada cuánto la campana vuelve a preguntar (#889). Además pregunta al volver a la pestaña. */
+const REVISAR_CADA_MS = 30_000
 
 const MODULE_LABELS: Record<string, string> = {
   "/hoy": "Hoy",
@@ -61,16 +68,64 @@ export function Topbar() {
   const [notifications, setNotifications] = React.useState<NotificationItem[]>([])
   const [loadingNotifications, setLoadingNotifications] = React.useState(false)
 
-  // Conteo real de notificaciones no leídas
+  const { toast } = useToast()
+  // Fecha de la notificación de correo más reciente ya vista; null = aún no se revisa.
+  const correoVistoHasta = React.useRef<string | null>(null)
+
+  // Conteo real de notificaciones no leídas + aviso de correos nuevos (#889).
+  //
+  // Antes el conteo se pedía UNA vez al montar la barra, que en la navegación interna no se
+  // vuelve a montar: una notificación nueva no aparecía hasta recargar la página. Ahora se
+  // pregunta cada 30 s (solo con la pestaña visible) y al volver a ella. En la misma llamada
+  // vienen las últimas no leídas de correo, para el aviso emergente y para que la ficha del
+  // contacto, si está abierta, relea su historial.
   React.useEffect(() => {
     if (!session?.user) return
-    fetch("/api/notifications?unreadOnly=true&pageSize=1")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (typeof data?.unreadCount === "number") setUnreadCount(data.unreadCount)
-      })
-      .catch(() => {})
-  }, [session?.user])
+    let alive = true
+
+    const revisar = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return
+      fetch(`/api/notifications?unreadOnly=true&type=${TIPO_AVISO_CORREO}&pageSize=5`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!alive || !data) return
+          if (typeof data.unreadCount === "number") setUnreadCount(data.unreadCount)
+          const items = (Array.isArray(data.data) ? data.data : []) as NotificationItem[]
+          const { nuevos, vistoHasta } = avisosNuevos(items, correoVistoHasta.current)
+          correoVistoHasta.current = vistoHasta
+          if (nuevos.length === 0) return
+
+          for (const n of nuevos) {
+            const contactId = contactoDelAviso(n.link)
+            if (contactId) window.dispatchEvent(new CustomEvent(EVENTO_CORREO_ENTRANTE, { detail: { contactId } }))
+          }
+          // El Toaster muestra uno a la vez: el más reciente, con cuántos más llegaron.
+          const ultimo = nuevos[nuevos.length - 1]
+          const extra = nuevos.length > 1 ? ` (y ${nuevos.length - 1} más)` : ""
+          toast({
+            title: `${ultimo.title}${extra}`,
+            description: ultimo.message,
+            action: ultimo.link ? (
+              <ToastAction altText="Ver contacto" onClick={() => handleNotificationClick(ultimo)}>
+                Ver
+              </ToastAction>
+            ) : undefined,
+          })
+        })
+        .catch(() => {})
+    }
+
+    revisar()
+    const intervalo = setInterval(revisar, REVISAR_CADA_MS)
+    const alVolver = () => { if (document.visibilityState === "visible") revisar() }
+    document.addEventListener("visibilitychange", alVolver)
+    return () => {
+      alive = false
+      clearInterval(intervalo)
+      document.removeEventListener("visibilitychange", alVolver)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleNotificationClick se lee al hacer clic; no debe reiniciar el intervalo
+  }, [session?.user, toast])
 
   // Antes el botón de la campana no tenía ningún manejador de click, así que
   // no pasaba nada al darle clic. Ahora abre un panel con las notificaciones

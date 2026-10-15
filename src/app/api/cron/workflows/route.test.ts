@@ -8,6 +8,7 @@ const runEnrollments = vi.fn();
 const runInactivityRules = vi.fn();
 const emitEvent = vi.fn();
 const limpiarOtpVencidos = vi.fn();
+const sincronizarCorreoEntranteTick = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
 /** Ejecuta el callback de `$transaction` con un `tx` mínimo. */
@@ -45,6 +46,11 @@ vi.mock("@/lib/workflows/sla", () => ({ checkSlaBreaches: (...a: unknown[]) => c
 vi.mock("@/lib/auth/otp-limpieza", () => ({
   limpiarOtpVencidos: (...a: unknown[]) => limpiarOtpVencidos(...a),
 }));
+// #889: etapa del correo entrante. Se dobla para probar su aislamiento en el tick; la
+// lógica por cuenta tiene sus pruebas en lib/google/gmail-sync.test.ts.
+vi.mock("@/lib/google/gmail-sync", () => ({
+  sincronizarCorreoEntranteTick: (...a: unknown[]) => sincronizarCorreoEntranteTick(...a),
+}));
 vi.mock("@/lib/workflows/scheduler", () => ({
   runEnrollments: (...a: unknown[]) => runEnrollments(...a),
   runInactivityRules: (...a: unknown[]) => runInactivityRules(...a),
@@ -73,6 +79,7 @@ beforeEach(() => {
   paymentFindMany.mockResolvedValue([]);
   paymentUpdate.mockResolvedValue({});
   limpiarOtpVencidos.mockResolvedValue(0);
+  sincronizarCorreoEntranteTick.mockResolvedValue({ cuentas: 1, registrados: 0, omitidos: 0, desconectadas: 0, errores: [] });
 });
 
 /** Una parcialidad vencida tal como la selecciona `checkOverduePayments`. */
@@ -142,6 +149,28 @@ describe("GET /api/cron/workflows — aislamiento por etapa", () => {
     expect(body.fallos.map((f: { etapa: string }) => f.etapa)).toContain("otpVencidos");
     // Y no se lleva por delante a las demás: eso es el #664.
     expect(body).toMatchObject({ events: { procesados: 3 }, queue: { corridas: 2 } });
+  });
+
+  it("#889: el correo entrante se revisa en cada tick y reporta lo que registró", async () => {
+    sincronizarCorreoEntranteTick.mockResolvedValue({ cuentas: 1, registrados: 2, omitidos: 0, desconectadas: 0, errores: [] });
+
+    const r = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await r.json();
+
+    expect(sincronizarCorreoEntranteTick).toHaveBeenCalledTimes(1);
+    expect(body.correoEntrante).toMatchObject({ registrados: 2 });
+    expect(r.status).toBe(200);
+  });
+
+  it("#889: si la revisión de correo revienta, sale con su nombre y no tumba a las demás", async () => {
+    sincronizarCorreoEntranteTick.mockRejectedValue(new Error("correo entrante: 1 cuenta(s) con error"));
+
+    const r = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await r.json();
+
+    expect(r.status).toBe(500);
+    expect(body.fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["correoEntrante"]);
+    expect(body).toMatchObject({ events: { procesados: 3 }, queue: { corridas: 2 }, otpVencidos: 0 });
   });
 
   it("el rescate de encalladas corre ANTES de la cola, para que entren en la misma pasada", async () => {

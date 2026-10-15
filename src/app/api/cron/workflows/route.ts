@@ -1,6 +1,7 @@
 // Tick del motor de workflows (Anexo §D.1) — agendar en Hostinger CADA MINUTO:
 //   curl -s -H "x-cron-secret: $CRON_SECRET" https://crm.propyte.com/api/cron/workflows
-// Hace: eventos pendientes → cola de acciones → SLA breaches → enrollments → reglas INACTIVITY.
+// Hace: eventos pendientes → cola de acciones → SLA breaches → enrollments → reglas INACTIVITY
+// → … → correo entrante de Gmail (#889).
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { processPendingEvents, emitEvent } from "@/lib/workflows/events";
@@ -128,6 +129,15 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto
   // falla, es un fallo de verdad y tiene que subir a la lista de fallos y sacar el 500.
   { nombre: "otpVencidos", correr: () => limpiarOtpVencidos() },
+  // #889: correo entrante de los buzones Gmail conectados → historial del contacto + aviso
+  // al asesor. Va al final porque no alimenta a ninguna otra etapa y es la única que sale a
+  // la red (API de Gmail). Import dinámico para no cargar googleapis si nadie lo usa. Una
+  // cuenta desconectada NO es fallo (queda marcada para reconectar); cualquier otro error
+  // sí, después de intentar todas las cuentas. Ver lib/google/gmail-sync.ts.
+  {
+    nombre: "correoEntrante",
+    correr: async () => (await import("@/lib/google/gmail-sync")).sincronizarCorreoEntranteTick(),
+  },
 ];
 
 export async function GET(req: NextRequest) {
