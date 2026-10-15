@@ -28,6 +28,7 @@ import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { ContactTimeline } from "@/components/contacts/contact-timeline";
 import { CallButton } from "@/components/voice/call-button";
+import { BotonCorreo } from "@/components/contacts/boton-correo";
 import { useVoice } from "@/components/voice/voice-device-provider";
 import { QuoteList } from "@/components/quotes/quote-list";
 import { puedeModificarCotizaciones } from "@/lib/rbac/quote-scope";
@@ -140,6 +141,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [showConv, setShowConv] = useState(false);
+  // #885: al enviar un correo desde el encabezado, el historial (ActivityLog) se relee.
+  const [historialKey, setHistorialKey] = useState(0);
 
   const canDelete = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT"].includes(userRole);
 
@@ -376,6 +379,19 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               <Phone className="h-4 w-4" /> Llamar
             </button>
           )}
+          {/* #885: correo desde la cuenta del asesor (hoy Gmail). Explica al hacer clic si no se puede. */}
+          <BotonCorreo
+            contactId={contact.id}
+            contactName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+            contactEmail={contact.email}
+            contactFirstName={contact.firstName ?? undefined}
+            contactLastName={contact.lastName ?? undefined}
+            doNotContact={contact.doNotContact ?? false}
+            onSent={() => {
+              setHistorialKey((k) => k + 1);
+              router.refresh();
+            }}
+          />
           <button
             className="btn-secondary text-[13px]"
             onClick={() => setDealOpen(true)}
@@ -496,6 +512,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               doNotContact={contact.doNotContact ?? false}
               currentUserId={currentUserId}
               onChanged={() => router.refresh()}
+              refreshKey={historialKey}
             />
           </div>
           <ShortlistPanel contactId={contact.id} />

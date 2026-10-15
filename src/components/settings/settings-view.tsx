@@ -75,6 +75,16 @@ export function SettingsView() {
 
   useEffect(() => { loadGw() }, [loadGw])
 
+  // #885: el botón «Correo» de la ficha manda aquí con ?tab=google, y el regreso de Google
+  // tras conectar llega con ?google=<estado>: en los dos casos se abre la pestaña de la cuenta.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search)
+      const pedido = q.get("tab") ?? (q.has("google") ? "google" : null)
+      if (pedido && TABS.some((t) => t.key === pedido)) setTab(pedido)
+    } catch { /* sin window (no debería pasar en un componente cliente) */ }
+  }, [])
+
   async function disconnectGoogle() {
     await fetch("/api/google/oauth/disconnect", { method: "DELETE" })
     await loadGw()
