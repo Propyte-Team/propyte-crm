@@ -110,17 +110,6 @@ describe("metas — CAPTACIONES", () => {
   });
 });
 
-describe("tablero — leads nuevos del mes", () => {
-  it("ninguno de los dos conteos del mes cuenta provisionales", async () => {
-    const { getDashboardStats } = await import("./dashboard");
-    await getDashboardStats("u1", "ADMIN");
-    expect(contactCount.mock.calls.length).toBeGreaterThanOrEqual(2);
-    for (const call of contactCount.mock.calls) {
-      expect(excluyeProvisionales(call[0].where)).toBe(true);
-    }
-  });
-});
-
 describe("Vista Hoy — leads nuevos sin tocar", () => {
   it("no lista ni cuenta provisionales", async () => {
     const { getTodayView } = await import("./today");

@@ -11,7 +11,7 @@ const ALLOWED = ["ADMIN", "DIRECTOR", "GERENTE"];
 export default async function ConfiguracionPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
-  if (!ALLOWED.includes(session.user.role)) redirect("/dashboard");
+  if (!ALLOWED.includes(session.user.role)) redirect("/hoy");
 
   return <ConfigCenter userRole={session.user.role} />;
 }

@@ -5,8 +5,8 @@
 //
 // ORDEN (pedido de Luis, ago-2026): el sidebar sigue el flujo del día del asesor —
 // primero lo operativo (Hoy → Inbox → Agenda), luego el embudo en su orden real
-// (Contactos → Negocios → Cotizaciones), y al final los números. Dashboard baja al
-// cuarto lugar: es panorámica, no acción diaria.
+// (Contactos → Negocios → Cotizaciones), y al final los números. El Dashboard se
+// retiró (#890, 2026-10-15): la página de inicio es «Hoy».
 // Las opciones de sistema YA NO viven aquí: salen en el menú del nombre (Topbar),
 // ver `userMenuItems` abajo.
 import {
@@ -32,7 +32,7 @@ import { COMMENT_RULES_ROLES } from "@/lib/comments/roles"
 
 const ASESORES = ["ASESOR", "ASESOR_SR", "ASESOR_JR"]
 // MANTENIMIENTO/DEVELOPER_EXT entran a los básicos (Hoy/Dashboard/Contactos/Mi Config):
-// las APIs ya les dan acceso (FULL_ACCESS_ROLES en /api/contacts, /api/dashboard, etc.).
+// las APIs ya les dan acceso (FULL_ACCESS_ROLES en /api/contacts, etc.).
 const TODOS = ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "HOSTESS", "MARKETING", "MANTENIMIENTO", "DEVELOPER_EXT"]
 
 export interface NavItem {
@@ -49,7 +49,6 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       { label: "Hoy", href: "/hoy", icon: Sun, roles: TODOS },
       { label: "Inbox", href: "/inbox", icon: MessageSquare, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "MARKETING"] },
       { label: "Agenda", href: "/agenda", icon: CalendarCheck, roles: TODOS },
-      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: TODOS },
     ],
   },
   {

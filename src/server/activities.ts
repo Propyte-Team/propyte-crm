@@ -424,10 +424,10 @@ export async function getOverdueTasks(userId?: string) {
   const currentUserId = session.user.id
 
   if (userId) {
-    // El llamador pide explícitamente las tareas de un usuario. Hoy el único
-    // call site (server/dashboard.ts) pasa el id de la propia sesión para
-    // ASESOR_SR/ASESOR_JR, así que no hay fuga; pero el parámetro NO valida que
-    // quien pregunta pueda ver a ese usuario. Ver nota al cierre de la sesión.
+    // El llamador pide explícitamente las tareas de un usuario. El único call site
+    // que lo usaba (server/dashboard.ts) se retiró en #890; el parámetro NO valida
+    // que quien pregunta pueda ver a ese usuario, así que un call site nuevo debe
+    // pasar solo el id de la propia sesión.
     where.userId = userId
   } else {
     const scope = resolveActivityScope(userRole)

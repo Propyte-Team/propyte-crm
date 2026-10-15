@@ -19,7 +19,7 @@ export default async function PortalDevelopmentPage(props: Props) {
   }
 
   if (session.user.role !== "DEVELOPER_EXT") {
-    redirect("/dashboard");
+    redirect("/hoy");
   }
 
   // Obtener detalle del desarrollo (sin datos de contacto)

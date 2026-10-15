@@ -9,6 +9,6 @@ const ALLOWED = ["ADMIN", "DIRECTOR"];
 export default async function JourneyPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
-  if (!ALLOWED.includes(session.user.role)) redirect("/dashboard");
+  if (!ALLOWED.includes(session.user.role)) redirect("/hoy");
   return <JourneyMapView />;
 }

@@ -1,4 +1,4 @@
-// Reportes y dashboard por marca (2026-10-12, entrega 3, decisión 4 del dueño): sin selector,
+// Reportes por marca (el dashboard se retiró en #890) (2026-10-12, entrega 3, decisión 4 del dueño): sin selector,
 // pero quien no es ADMIN solo ve cifras de sus marcas. Se prueba el `where` que cada consulta le
 // pasa a Prisma: con un no-ADMIN el recorte va en AND; con ADMIN no aparece.
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -51,7 +51,6 @@ import {
   getForecastReport,
   getLostDealsReport,
 } from "./reports";
-import { getDashboardStats } from "./dashboard";
 
 const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
 const contacto = (u: string) => ({
@@ -137,51 +136,6 @@ describe("reportes — ADMIN: sin recorte", () => {
     await getForecastReport({});
     await getLostDealsReport({});
     for (const name of ["deal.groupBy", "deal.findMany", "deal.count", "deal.aggregate", "activity.findMany", "contact.groupBy"]) {
-      for (const w of allWheres(name)) expect(w.AND, name).toBeUndefined();
-    }
-  });
-});
-
-describe("dashboard — no-ADMIN", () => {
-  it("todas las consultas de negocios, leads y actividades llevan el recorte", async () => {
-    await getDashboardStats("ger-1", "GERENTE", "CANCUN");
-    expect(getVisibleBrands).toHaveBeenCalledWith({ id: "ger-1", role: "GERENTE" });
-
-    for (const name of ["deal.findMany", "deal.count", "deal.aggregate", "deal.groupBy"]) {
-      const ws = allWheres(name);
-      expect(ws.length, name).toBeGreaterThan(0);
-      for (const w of ws) {
-        expect(w.AND, name).toEqual([negocio("ger-1")]);
-        // el alcance por rol del GERENTE sigue ahí
-        expect(w.assignedTo, name).toEqual({ plaza: "CANCUN" });
-      }
-    }
-    // leads nuevos del mes y del anterior
-    const leads = allWheres("contact.count");
-    expect(leads).toHaveLength(2);
-    for (const w of leads) expect(w.AND).toEqual([contacto("ger-1")]);
-    // actividades recientes y tareas vencidas (getOverdueTasks)
-    for (const w of allWheres("activity.findMany")) expect(w.AND).toEqual([actividad("ger-1")]);
-    expect(allWheres("activity.findMany")).toHaveLength(2);
-    // por asesor: los usuarios no tienen marca, lo que se cuenta de ellos sí
-    const advisorSelect = calls["user.findMany"].find((c) => c.select)!.select as {
-      _count: { select: { deals: { where: Record<string, unknown> } } };
-      deals: { where: Record<string, unknown> };
-      activities: { where: Record<string, unknown> };
-    };
-    expect(advisorSelect._count.select.deals.where.AND).toEqual([negocio("ger-1")]);
-    expect(advisorSelect.deals.where.AND).toEqual([negocio("ger-1")]);
-    expect(advisorSelect.activities.where.AND).toEqual([actividad("ger-1")]);
-    expect(whereOf("activity.groupBy")?.AND).toEqual([actividad("ger-1")]);
-  });
-});
-
-describe("dashboard — ADMIN", () => {
-  it("sin recorte de marca en ninguna consulta", async () => {
-    sesion = { user: { id: "adm-1", role: "ADMIN", plaza: "CANCUN" } };
-    getVisibleBrands.mockResolvedValue("ALL");
-    await getDashboardStats("adm-1", "ADMIN");
-    for (const name of ["deal.findMany", "deal.count", "deal.aggregate", "deal.groupBy", "contact.count", "activity.findMany"]) {
       for (const w of allWheres(name)) expect(w.AND, name).toBeUndefined();
     }
   });

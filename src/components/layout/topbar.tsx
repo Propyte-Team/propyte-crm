@@ -19,7 +19,6 @@ import {
 import { visibleUserMenuItems } from "./nav-config"
 
 const MODULE_LABELS: Record<string, string> = {
-  "/dashboard": "Dashboard",
   "/hoy": "Hoy",
   "/agenda": "Agenda",
   "/contacts": "Contactos",
