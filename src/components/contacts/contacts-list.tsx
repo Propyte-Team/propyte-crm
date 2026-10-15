@@ -821,12 +821,13 @@ function CeldaContacto({
     case "email":
       // #896: un correo largo se recorta con «…» en una sola línea y el `title` lo muestra
       // completo al pasar el cursor (antes, #894, se partía en cualquier letra con break-all).
+      // #897: máximo 10rem (~160 px, ~22 caracteres con la fuente del CRM).
       // El recorte va en un bloque interior: en una tabla con layout automático el max-width
       // del propio <td> no basta para que `truncate` corte.
       return (
         <td className={`${base} text-muted-foreground`}>
           {contact.email ? (
-            <span className="block max-w-[14rem] truncate" title={contact.email}>
+            <span className="block max-w-[10rem] truncate" title={contact.email}>
               {contact.email}
             </span>
           ) : (
