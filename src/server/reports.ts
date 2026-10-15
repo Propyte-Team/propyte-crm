@@ -8,7 +8,7 @@
 
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import { STAGNATION_LIMITS } from "@/lib/constants";
+import { PLAZA_LABELS, STAGNATION_LIMITS } from "@/lib/constants";
 import type { Prisma } from "@prisma/client";
 import { realLeadWhere } from "@/lib/leads/real-leads";
 import { getVisibleBrands } from "@/lib/brands/user-access";
@@ -17,21 +17,53 @@ import {
   contactBrandVisibilityWhere,
   dealBrandVisibilityWhere,
 } from "@/lib/brands/visibility";
+import {
+  SIN_ACCESO_REPORTES,
+  alcanceActividadesReporte,
+  alcanceComisionesReporte,
+  alcanceContactosReporte,
+  alcanceNegociosReporte,
+  puedeVerReportes,
+  type UsuarioParaReportes,
+} from "@/lib/rbac/report-scope";
+import { rangoDeFechas } from "@/lib/reports/rango-fechas";
+import { inventarioParaReporte } from "@/lib/hub/catalog";
 
-// Marcas (2026-10-12, entrega 3, decisión 4 del dueño): los reportes NO tienen selector de marca,
-// pero quien no es ADMIN solo ve cifras de las marcas que tiene prendidas, con la misma regla que
-// Contactos, Bandeja y Negocios (visibility.ts: lo asignado a uno siempre cuenta). ADMIN ve todo.
-// Estos reportes no tenían alcance por rol: el recorte por marca es el único que se agrega, y va en
-// `AND` para que ningún filtro suelto (plaza, asesor, fechas) lo pise.
-// Fuera: getAbsorptionReport. Lee los contadores de la tabla de desarrollos (soldUnits, etc.) y no
-// pasa por contactos ni negocios, así que no hay de dónde sacar la marca.
+// Quién entra y qué ve (#893). Antes cada consulta solo pedía sesión: cualquier rol, aunque el
+// menú le ocultara Reportes, veía las cifras de toda la empresa, comisiones incluidas.
+//   · Puerta: los roles del menú (`puedeVerReportes`). El resto recibe «No autorizado».
+//   · Alcance por rol: la matriz de la #869 (`lib/rbac/report-scope.ts`). Comisiones usa los
+//     conjuntos del módulo Comisiones.
+//   · Marca (2026-10-12, entrega 3, decisión 4 del dueño): sin selector, pero quien no es ADMIN
+//     solo ve las marcas que tiene prendidas (visibility.ts: lo asignado a uno siempre cuenta).
+// Rol y marca van juntos en `AND`, para que ningún filtro suelto (plaza, asesor, fechas) los pise:
+// el filtro que pide la pantalla se INTERSECTA con el alcance, nunca lo reemplaza.
+// Fuera: getAbsorptionReport. Es inventario del Hub, sin contactos ni negocios de por medio: no
+// hay de dónde sacar ni la marca ni el dueño. Solo pasa por la puerta.
 
-async function brandScope(user: { id: string; role: string }) {
+/** Sesión + puerta de entrada. Mismo mensaje que ya daban las consultas sin sesión. */
+async function usuarioDeReportes(): Promise<UsuarioParaReportes> {
+  const session = await getServerSession();
+  if (!session?.user || !puedeVerReportes(session.user.role)) {
+    throw new Error(SIN_ACCESO_REPORTES);
+  }
+  return session.user;
+}
+
+/** Junta las condiciones que existan para ponerlas en `AND`. `undefined` si no hay ninguna. */
+function todas<T>(...condiciones: Array<T | undefined>): T[] | undefined {
+  const presentes = condiciones.filter((c): c is T => c !== undefined);
+  return presentes.length > 0 ? presentes : undefined;
+}
+
+/** Lo que cada consulta suma en `AND`: alcance por rol + marca. */
+async function alcance(user: UsuarioParaReportes) {
   const visible = await getVisibleBrands(user);
   return {
-    deal: dealBrandVisibilityWhere(user, visible),
-    contact: contactBrandVisibilityWhere(user, visible),
-    activity: activityBrandVisibilityWhere(user, visible),
+    deal: todas(alcanceNegociosReporte(user), dealBrandVisibilityWhere(user, visible)),
+    commission: todas(alcanceComisionesReporte(user), dealBrandVisibilityWhere(user, visible)),
+    contact: todas(alcanceContactosReporte(user), contactBrandVisibilityWhere(user, visible)),
+    activity: todas(alcanceActividadesReporte(user), activityBrandVisibilityWhere(user, visible)),
   };
 }
 
@@ -41,6 +73,7 @@ export interface ReportFilters {
   dateTo?: string;
   plaza?: string;
   advisorId?: string;
+  /** En Absorción es el id del desarrollo en el Hub. */
   developmentId?: string;
   teamLeaderId?: string;
   status?: string;
@@ -65,25 +98,21 @@ export interface PipelineReportRow {
 export async function getPipelineReport(
   filters: ReportFilters = {}
 ): Promise<PipelineReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  const user = await usuarioDeReportes();
 
   const where: Prisma.DealWhereInput = { deletedAt: null };
 
   // Filtros opcionales
-  if (filters.dateFrom || filters.dateTo) {
-    where.createdAt = {};
-    if (filters.dateFrom) (where.createdAt as any).gte = new Date(filters.dateFrom);
-    if (filters.dateTo) (where.createdAt as any).lte = new Date(filters.dateTo);
-  }
+  const fechas = rangoDeFechas(filters.dateFrom, filters.dateTo);
+  if (fechas) where.createdAt = fechas;
   if (filters.plaza) {
     where.assignedTo = { plaza: filters.plaza as any };
   }
   if (filters.advisorId) {
     where.assignedToId = filters.advisorId;
   }
-  const porMarca = (await brandScope(session.user)).deal;
-  if (porMarca) where.AND = [porMarca];
+  const acotado = (await alcance(user)).deal;
+  if (acotado) where.AND = acotado;
 
   // Agrupar por etapa
   const aggregations = await prisma.deal.groupBy({
@@ -162,78 +191,91 @@ export async function getPipelineReport(
 export interface AbsorptionReportRow {
   developmentId: string;
   developmentName: string;
-  totalUnits: number;
-  soldUnits: number;
-  reservedUnits: number;
+  plaza: string;
+  /** Contador de la ficha del desarrollo en el Hub; puede no coincidir con lo publicado. */
+  totalUnits: number | null;
+  publishedUnits: number;
   availableUnits: number;
-  absorptionRate: number;
-  avgPrice: number;
+  reservedUnits: number;
+  soldUnits: number;
+  /** Vendidas ÷ publicadas, en %. `null` sin unidades publicadas. */
+  soldPct: number | null;
+  /** Ventas por mes en la ventana. `null` si el desarrollo no tiene ninguna fecha de venta. */
+  absorptionRate: number | null;
+  avgPrice: number | null;
+}
+
+const DIA_MS = 86_400_000;
+const DIAS_POR_MES = 365.25 / 12;
+
+function normalizarPlaza(texto: string): string {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+/** Cómo puede venir escrita en el Hub (texto libre) una plaza del CRM: su código o su etiqueta. */
+function plazaEnElHub(codigo: string): string[] {
+  const nombres = [codigo, PLAZA_LABELS[codigo]].filter((n): n is string => !!n);
+  return Array.from(new Set(nombres.map(normalizarPlaza)));
+}
+
+/** Etiqueta del CRM para la plaza que trae el Hub; si no corresponde a ninguna, el texto tal cual. */
+function etiquetaDePlaza(textoHub: string | null): string {
+  if (!textoHub) return "Sin plaza";
+  const n = normalizarPlaza(textoHub);
+  const codigo = Object.keys(PLAZA_LABELS).find((c) => plazaEnElHub(c).includes(n));
+  return codigo ? PLAZA_LABELS[codigo] : textoHub;
 }
 
 /**
- * Reporte de absorción por desarrollo: unidades totales, vendidas,
- * reservadas, disponibles y tasa de absorción mensual.
+ * Reporte de absorción por desarrollo, desde el inventario PUBLICADO del Hub (#893).
  *
- * Sin recorte por marca (2026-10-12): son los contadores de inventario de cada desarrollo, sin
- * contactos ni negocios de por medio (ver el comentario de brandScope arriba).
+ * Antes leía `propyte_crm.developments`, que está vacía y deprecada (ver
+ * `server/developments.ts`): el reporte salía siempre sin datos. Ahora cuenta las unidades
+ * publicadas de cada desarrollo por estado.
+ *
+ * Absorción/mes = unidades con fecha de venta (`sold_at`) dentro de la ventana ÷ meses de la
+ * ventana. La ventana es la del filtro de fechas; sin filtro, los últimos 12 meses. Si el
+ * desarrollo no tiene NINGUNA fecha de venta registrada, la absorción es `null` («-»): un 0
+ * diría «no se vendió nada», y lo cierto es «no se sabe cuándo se vendió». Medido el
+ * 2026-10-15: ninguna unidad del Hub tiene `sold_at`, así que hoy la columna sale vacía.
+ *
+ * Sin alcance por rol ni marca: es inventario, sin contactos ni negocios de por medio.
+ * Con filtro de plaza, los desarrollos sin plaza en el Hub no aparecen.
  */
 export async function getAbsorptionReport(
   filters: ReportFilters = {}
 ): Promise<AbsorptionReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  await usuarioDeReportes();
 
-  const where: Prisma.DevelopmentWhereInput = { deletedAt: null, isActive: true };
-  if (filters.plaza) where.plaza = filters.plaza as any;
-  if (filters.developmentId) where.id = filters.developmentId;
+  const fechas = rangoDeFechas(filters.dateFrom, filters.dateTo);
+  const antesDe = fechas?.lt ?? new Date();
+  const desde = fechas?.gte ?? new Date(antesDe.getTime() - 365 * DIA_MS);
+  const meses = (antesDe.getTime() - desde.getTime()) / DIA_MS / DIAS_POR_MES;
 
-  const developments = await prisma.development.findMany({
-    where,
-    select: {
-      id: true,
-      name: true,
-      totalUnits: true,
-      soldUnits: true,
-      reservedUnits: true,
-      availableUnits: true,
-      priceMin: true,
-      priceMax: true,
-      createdAt: true,
-    },
-    orderBy: { name: "asc" },
+  const { data, error } = await inventarioParaReporte({
+    plazas: filters.plaza ? plazaEnElHub(filters.plaza) : null,
+    developmentId: filters.developmentId ?? null,
+    vendidasDesde: desde,
+    vendidasAntesDe: antesDe,
   });
+  // Un fallo del Hub no se disfraza de «sin datos».
+  if (error) throw new Error(error);
 
-  const now = new Date();
-
-  return developments.map((dev) => {
-    // Calcular meses desde el primer registro (aprox primera venta)
-    const monthsSinceStart = Math.max(
-      1,
-      Math.floor(
-        (now.getTime() - new Date(dev.createdAt).getTime()) /
-          (1000 * 60 * 60 * 24 * 30)
-      )
-    );
-
-    // Tasa de absorción: unidades vendidas / meses desde inicio
-    const absorptionRate =
-      monthsSinceStart > 0
-        ? Math.round((dev.soldUnits / monthsSinceStart) * 10) / 10
-        : 0;
-
-    const avgPrice = (Number(dev.priceMin) + Number(dev.priceMax)) / 2;
-
-    return {
-      developmentId: dev.id,
-      developmentName: dev.name,
-      totalUnits: dev.totalUnits,
-      soldUnits: dev.soldUnits,
-      reservedUnits: dev.reservedUnits,
-      availableUnits: dev.availableUnits,
-      absorptionRate,
-      avgPrice: Math.round(avgPrice),
-    };
-  });
+  return data.map((d) => ({
+    developmentId: d.id,
+    developmentName: d.name,
+    plaza: etiquetaDePlaza(d.plaza),
+    totalUnits: d.totalUnits,
+    publishedUnits: d.publishedUnits,
+    availableUnits: d.availableUnits,
+    reservedUnits: d.reservedUnits,
+    soldUnits: d.soldUnits,
+    soldPct:
+      d.publishedUnits > 0 ? Math.round((d.soldUnits / d.publishedUnits) * 1000) / 10 : null,
+    absorptionRate:
+      d.soldWithDate > 0 && meses > 0 ? Math.round((d.soldInWindow / meses) * 10) / 10 : null,
+    avgPrice: d.avgPriceMxn === null ? null : Math.round(d.avgPriceMxn),
+  }));
 }
 
 // ============================================================
@@ -255,8 +297,7 @@ export interface CommissionsReportRow {
 export async function getCommissionsReport(
   filters: ReportFilters = {}
 ): Promise<CommissionsReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  const user = await usuarioDeReportes();
 
   const where: Prisma.DealWhereInput = {
     deletedAt: null,
@@ -264,16 +305,13 @@ export async function getCommissionsReport(
     commissionAdvisor: { not: null },
   };
 
-  if (filters.dateFrom || filters.dateTo) {
-    where.actualCloseDate = {};
-    if (filters.dateFrom) (where.actualCloseDate as any).gte = new Date(filters.dateFrom);
-    if (filters.dateTo) (where.actualCloseDate as any).lte = new Date(filters.dateTo);
-  }
+  const fechas = rangoDeFechas(filters.dateFrom, filters.dateTo);
+  if (fechas) where.actualCloseDate = fechas;
   if (filters.status) {
     where.commissionStatus = filters.status as any;
   }
-  const porMarca = (await brandScope(session.user)).deal;
-  if (porMarca) where.AND = [porMarca];
+  const acotado = (await alcance(user)).commission;
+  if (acotado) where.AND = acotado;
 
   const deals = await prisma.deal.findMany({
     where,
@@ -346,16 +384,12 @@ export interface ActivitiesReportRow {
 export async function getActivitiesReport(
   filters: ReportFilters = {}
 ): Promise<ActivitiesReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  const user = await usuarioDeReportes();
 
   const where: Prisma.ActivityWhereInput = { deletedAt: null };
 
-  if (filters.dateFrom || filters.dateTo) {
-    where.createdAt = {};
-    if (filters.dateFrom) (where.createdAt as any).gte = new Date(filters.dateFrom);
-    if (filters.dateTo) (where.createdAt as any).lte = new Date(filters.dateTo);
-  }
+  const fechas = rangoDeFechas(filters.dateFrom, filters.dateTo);
+  if (fechas) where.createdAt = fechas;
   if (filters.advisorId) where.userId = filters.advisorId;
   if (filters.teamLeaderId) {
     // Filtrar por miembros del equipo
@@ -368,8 +402,8 @@ export async function getActivitiesReport(
     };
   }
   // La actividad no tiene marca: cuenta si se ve su contacto (o su negocio, si no tiene contacto).
-  const porMarca = (await brandScope(session.user)).activity;
-  if (porMarca) where.AND = [porMarca];
+  const acotado = (await alcance(user)).activity;
+  if (acotado) where.AND = acotado;
 
   const activities = await prisma.activity.findMany({
     where,
@@ -465,19 +499,15 @@ export interface LeadSourcesReportRow {
 export async function getLeadSourcesReport(
   filters: ReportFilters = {}
 ): Promise<LeadSourcesReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  const user = await usuarioDeReportes();
 
   const contactWhere: Prisma.ContactWhereInput = { deletedAt: null };
-  if (filters.dateFrom || filters.dateTo) {
-    contactWhere.createdAt = {};
-    if (filters.dateFrom) (contactWhere.createdAt as any).gte = new Date(filters.dateFrom);
-    if (filters.dateTo) (contactWhere.createdAt as any).lte = new Date(filters.dateTo);
-  }
-  // Contactos y negocios con la misma regla de marca: si no, la conversión mezclaría contactos de
-  // las marcas propias con negocios de todas.
-  const marcas = await brandScope(session.user);
-  if (marcas.contact) contactWhere.AND = [marcas.contact];
+  const fechas = rangoDeFechas(filters.dateFrom, filters.dateTo);
+  if (fechas) contactWhere.createdAt = fechas;
+  // Contactos y negocios con el mismo alcance (rol y marca): si no, la conversión mezclaría
+  // contactos de lo propio con negocios de todos.
+  const acotado = await alcance(user);
+  if (acotado.contact) contactWhere.AND = acotado.contact;
 
   // Agrupar contactos por fuente
   const contactsBySource = await prisma.contact.groupBy({
@@ -495,12 +525,8 @@ export async function getLeadSourcesReport(
       deletedAt: null,
       leadSourceAtDeal: group.leadSource,
     };
-    if (filters.dateFrom || filters.dateTo) {
-      dealWhere.createdAt = {};
-      if (filters.dateFrom) (dealWhere.createdAt as any).gte = new Date(filters.dateFrom);
-      if (filters.dateTo) (dealWhere.createdAt as any).lte = new Date(filters.dateTo);
-    }
-    if (marcas.deal) dealWhere.AND = [marcas.deal];
+    if (fechas) dealWhere.createdAt = fechas;
+    if (acotado.deal) dealWhere.AND = acotado.deal;
 
     const [totalDeals, wonDeals, avgValue] = await Promise.all([
       prisma.deal.count({ where: dealWhere }),
@@ -545,8 +571,7 @@ export interface ForecastReportRow {
 export async function getForecastReport(
   filters: ReportFilters = {}
 ): Promise<ForecastReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  const user = await usuarioDeReportes();
 
   const where: Prisma.DealWhereInput = {
     deletedAt: null,
@@ -557,8 +582,8 @@ export async function getForecastReport(
     where.assignedTo = { plaza: filters.plaza as any };
   }
   if (filters.advisorId) where.assignedToId = filters.advisorId;
-  const porMarca = (await brandScope(session.user)).deal;
-  if (porMarca) where.AND = [porMarca];
+  const acotado = (await alcance(user)).deal;
+  if (acotado) where.AND = acotado;
 
   const deals = await prisma.deal.findMany({
     where,
@@ -616,8 +641,7 @@ export interface LostDealsReportRow {
 export async function getLostDealsReport(
   filters: ReportFilters = {}
 ): Promise<LostDealsReportRow[]> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error("No autorizado");
+  const user = await usuarioDeReportes();
 
   const where: Prisma.DealWhereInput = {
     deletedAt: null,
@@ -625,17 +649,14 @@ export async function getLostDealsReport(
     lostReason: { not: null },
   };
 
-  if (filters.dateFrom || filters.dateTo) {
-    where.updatedAt = {};
-    if (filters.dateFrom) (where.updatedAt as any).gte = new Date(filters.dateFrom);
-    if (filters.dateTo) (where.updatedAt as any).lte = new Date(filters.dateTo);
-  }
+  const fechas = rangoDeFechas(filters.dateFrom, filters.dateTo);
+  if (fechas) where.updatedAt = fechas;
   if (filters.plaza) {
     where.assignedTo = { plaza: filters.plaza as any };
   }
   if (filters.advisorId) where.assignedToId = filters.advisorId;
-  const porMarca = (await brandScope(session.user)).deal;
-  if (porMarca) where.AND = [porMarca];
+  const acotado = (await alcance(user)).deal;
+  if (acotado) where.AND = acotado;
 
   const deals = await prisma.deal.findMany({
     where,

@@ -10,6 +10,8 @@ export interface ReportColumn {
   key: string;
   isCurrency?: boolean;
   isPercentage?: boolean;
+  /** No sumar en la fila TOTAL (promedios, porcentajes, tasas: su suma no significa nada). */
+  sinTotal?: boolean;
 }
 
 interface ReportTableProps {
@@ -24,6 +26,7 @@ export function ReportTable({ columns, data, title, showTotals = true }: ReportT
   const totals: Record<string, number> = {};
   if (showTotals && data.length > 0) {
     for (const col of columns) {
+      if (col.sinTotal) continue;
       const firstValue = data[0]?.[col.key];
       if (typeof firstValue === "number") {
         totals[col.key] = data.reduce((sum, row) => {

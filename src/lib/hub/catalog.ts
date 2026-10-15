@@ -18,6 +18,8 @@ import type {
   CatalogResult,
   CatalogSearchFilters,
   DevelopmentCatalogFilters,
+  InventarioDesarrollo,
+  InventarioReporteFiltros,
   PublishedDevelopment,
   PublishedDevelopmentDetail,
   PublishedUnit,
@@ -317,5 +319,71 @@ export async function searchCatalog(
     return { data: rows, error: null };
   } catch (err) {
     return fail("searchCatalog", err, []);
+  }
+}
+
+/**
+ * Inventario por desarrollo para el reporte de Absorción (#893).
+ *
+ * Antes el reporte leía `propyte_crm.developments`, que está vacía y deprecada: el reporte salía
+ * siempre sin datos. Aquí se cuenta desde las unidades PUBLICADAS del Hub (mismo gate que el
+ * sitio), no desde los contadores `sold_units`/`reserved_units` de la ficha, que en prod están
+ * vacíos (medido 2026-10-15: NULL en los 27 desarrollos publicados).
+ *
+ * El gate se aplica en dos CTE y no en un JOIN: `PUBLIC_GATE` no lleva alias de tabla y las
+ * dos vistas tienen `approved_at`/`deleted_at`, así que en un JOIN la condición sería ambigua.
+ *
+ * Clasificación del `status` (texto libre, se compara en minúsculas):
+ *   vendida   → "vendid…"
+ *   apartada  → "apartad…" | "reservad…"
+ *   disponible→ "disponible" | "preventa" | "entrega inmediata"
+ *   lo demás (Renta, sin estado…) cuenta como publicada pero en ninguna de las tres.
+ *
+ * `plaza` también es texto libre ("Playa del Carmen", "TULUM", NULL…): se compara sin acentos y
+ * en minúsculas contra la lista que manda quien llama.
+ *
+ * El nombre es `name` (el del desarrollo, «Nativa Tulum»), no `publication_title` («Departamentos
+ * de lujo en la selva en Tulum»): el reporte es interno y el título de publicación no identifica.
+ */
+export async function inventarioParaReporte(
+  filtros: InventarioReporteFiltros
+): Promise<CatalogResult<InventarioDesarrollo[]>> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<InventarioDesarrollo[]>(
+      `WITH devs AS (
+          SELECT * FROM real_estate_hub.v_developments WHERE ${PUBLIC_GATE}
+        ), units AS (
+          SELECT development_id, lower(coalesce(status, '')) AS st, sold_at, price_mxn
+            FROM real_estate_hub.v_units WHERE ${PUBLIC_GATE}
+        )
+        SELECT d.id::text                                        AS id,
+               d.name::text                                      AS name,
+               d.plaza::text                                     AS plaza,
+               d.total_units::int                                AS "totalUnits",
+               count(u.development_id)::int                      AS "publishedUnits",
+               count(*) FILTER (WHERE u.st IN ('disponible', 'preventa', 'entrega inmediata'))::int
+                                                                 AS "availableUnits",
+               count(*) FILTER (WHERE u.st LIKE 'apartad%' OR u.st LIKE 'reservad%')::int
+                                                                 AS "reservedUnits",
+               count(*) FILTER (WHERE u.st LIKE 'vendid%')::int  AS "soldUnits",
+               count(u.sold_at)::int                             AS "soldWithDate",
+               count(*) FILTER (WHERE u.sold_at >= $3 AND u.sold_at < $4)::int
+                                                                 AS "soldInWindow",
+               avg(u.price_mxn)::float8                          AS "avgPriceMxn"
+          FROM devs d
+          LEFT JOIN units u ON u.development_id = d.id
+         WHERE ($1::text[] IS NULL
+                OR lower(translate(coalesce(d.plaza, ''), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')) = ANY($1::text[]))
+           AND ($2::text IS NULL OR d.id::text = $2)
+         GROUP BY d.id, d.name, d.plaza, d.total_units
+         ORDER BY d.name ASC`,
+      filtros.plazas ?? null,
+      filtros.developmentId ?? null,
+      filtros.vendidasDesde,
+      filtros.vendidasAntesDe
+    );
+    return { data: rows, error: null };
+  } catch (err) {
+    return fail("inventarioParaReporte", err, []);
   }
 }

@@ -1,6 +1,8 @@
 // Reportes por marca (el dashboard se retiró en #890) (2026-10-12, entrega 3, decisión 4 del dueño): sin selector,
 // pero quien no es ADMIN solo ve cifras de sus marcas. Se prueba el `where` que cada consulta le
 // pasa a Prisma: con un no-ADMIN el recorte va en AND; con ADMIN no aparece.
+// #893: aquí se usa DIRECTOR, que ve toda la empresa por rol, para que en el AND quede SOLO el
+// recorte de marca. El alcance por rol (GERENTE, TEAM_LEADER…) se prueba en reportes.alcance-rol.test.ts.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const calls: Record<string, Array<Record<string, unknown>>> = {};
@@ -28,7 +30,6 @@ vi.mock("@/lib/db", () => ({
       findMany: (a: Record<string, unknown>) => spy("activity.findMany", [])(a),
       groupBy: (a: Record<string, unknown>) => spy("activity.groupBy", [])(a),
     },
-    development: { findMany: (a: Record<string, unknown>) => spy("development.findMany", [])(a) },
     user: {
       findMany: (a: Record<string, unknown>) =>
         spy("user.findMany", [{ id: "ase-1", name: "Ana", _count: { deals: 0 }, deals: [], activities: [] }])(a),
@@ -36,10 +37,12 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-let sesion = { user: { id: "ger-1", role: "GERENTE", plaza: "CANCUN" } };
+let sesion = { user: { id: "ger-1", role: "DIRECTOR", plaza: "PDC" } };
 vi.mock("@/lib/auth/session", () => ({ getServerSession: async () => sesion }));
 
 const getVisibleBrands = vi.fn();
+const inventario = vi.fn();
+vi.mock("@/lib/hub/catalog", () => ({ inventarioParaReporte: (...a: unknown[]) => inventario(...a) }));
 vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
 
 import {
@@ -71,16 +74,18 @@ const allWheres = (name: string) => (calls[name] ?? []).map((c) => c.where as Re
 beforeEach(() => {
   for (const k of Object.keys(calls)) delete calls[k];
   getVisibleBrands.mockReset();
+  inventario.mockReset();
+  inventario.mockResolvedValue({ data: [], error: null });
   getVisibleBrands.mockResolvedValue(SOLO_PROPYTE);
-  sesion = { user: { id: "ger-1", role: "GERENTE", plaza: "CANCUN" } };
+  sesion = { user: { id: "ger-1", role: "DIRECTOR", plaza: "PDC" } };
 });
 
 describe("reportes — no-ADMIN: recorte por marca en AND", () => {
   it("pipeline: groupBy y findMany con el recorte; el filtro de plaza sigue suelto", async () => {
-    await getPipelineReport({ plaza: "CANCUN" });
+    await getPipelineReport({ plaza: "PDC" });
     for (const w of [whereOf("deal.groupBy"), whereOf("deal.findMany")]) {
       expect(w?.AND).toEqual([negocio("ger-1")]);
-      expect(w?.assignedTo).toEqual({ plaza: "CANCUN" });
+      expect(w?.assignedTo).toEqual({ plaza: "PDC" });
     }
     expect(getVisibleBrands).toHaveBeenCalledWith(sesion.user);
   });
@@ -115,9 +120,9 @@ describe("reportes — no-ADMIN: recorte por marca en AND", () => {
     expect(whereOf("deal.findMany")?.AND).toEqual([negocio("ger-1")]);
   });
 
-  it("absorción: sin recorte (inventario de desarrollos, sin contactos ni negocios)", async () => {
+  it("absorción: sin recorte (inventario del Hub, sin contactos ni negocios)", async () => {
     await getAbsorptionReport({});
-    expect(whereOf("development.findMany")).toEqual({ deletedAt: null, isActive: true });
+    expect(inventario).toHaveBeenCalledTimes(1);
     expect(getVisibleBrands).not.toHaveBeenCalled();
   });
 });

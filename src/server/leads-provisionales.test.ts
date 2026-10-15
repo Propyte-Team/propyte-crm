@@ -90,7 +90,8 @@ describe("/reportes — fuentes de leads", () => {
     const { getLeadSourcesReport } = await import("./reports");
     await getLeadSourcesReport({ dateFrom: "2026-08-01" });
     const where = contactGroupBy.mock.calls[0][0].where;
-    expect(where.createdAt.gte).toEqual(new Date("2026-08-01"));
+    // #893: "2026-08-01" es medianoche de Cancún (UTC−5), no medianoche UTC.
+    expect(where.createdAt.gte).toEqual(new Date("2026-08-01T05:00:00.000Z"));
     expect(excluyeProvisionales(where)).toBe(true);
   });
 });

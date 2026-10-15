@@ -14,6 +14,7 @@ import {
   getUnitByIdUngated,
   getDevelopmentByIdUngated,
   searchCatalog,
+  inventarioParaReporte,
 } from "./catalog";
 
 /** SQL de la última llamada a $queryRawUnsafe. */
@@ -268,5 +269,46 @@ describe("searchCatalog (agente IA)", () => {
     await searchCatalog({});
     const params = queryRaw.mock.calls[queryRaw.mock.calls.length - 1].slice(1);
     expect(params[5]).toBeNull();
+  });
+});
+
+describe("inventarioParaReporte (#893, reporte de Absorción)", () => {
+  const ventana = {
+    vendidasDesde: new Date("2025-10-15T05:00:00.000Z"),
+    vendidasAntesDe: new Date("2026-10-16T05:00:00.000Z"),
+  };
+
+  it("aplica el gate a los desarrollos Y a las unidades que cuenta", async () => {
+    await inventarioParaReporte(ventana);
+    const sql = lastSql();
+    expect(sql).toContain(`FROM real_estate_hub.v_developments WHERE ${PUBLIC_GATE}`);
+    expect(sql).toContain(`FROM real_estate_hub.v_units WHERE ${PUBLIC_GATE}`);
+  });
+
+  it("no lee los contadores de venta de la ficha (vacíos en prod): cuenta por estado de unidad", async () => {
+    await inventarioParaReporte(ventana);
+    const sql = lastSql();
+    expect(sql).not.toContain("sold_units");
+    expect(sql).not.toContain("reserved_units");
+    expect(sql).toContain("LIKE 'vendid%'");
+  });
+
+  it("pasa plazas, desarrollo y ventana como parámetros, no interpolados", async () => {
+    await inventarioParaReporte({ ...ventana, plazas: ["tulum"], developmentId: "dev-1" });
+    const args = queryRaw.mock.calls[0].slice(1);
+    expect(args).toEqual([["tulum"], "dev-1", ventana.vendidasDesde, ventana.vendidasAntesDe]);
+    expect(lastSql()).not.toContain("tulum");
+  });
+
+  it("sin filtros manda null (todas las plazas, todos los desarrollos)", async () => {
+    await inventarioParaReporte(ventana);
+    expect(queryRaw.mock.calls[0].slice(1, 3)).toEqual([null, null]);
+  });
+
+  it("un fallo de la base vuelve como error, no como lista vacía muda", async () => {
+    queryRaw.mockRejectedValueOnce(new Error("boom"));
+    const r = await inventarioParaReporte(ventana);
+    expect(r.data).toEqual([]);
+    expect(r.error).toBeTruthy();
   });
 });

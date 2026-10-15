@@ -8,15 +8,14 @@
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma, CommissionStatus } from "@prisma/client";
+import {
+  COMISIONES_VEN_TODAS as FULL_ACCESS_ROLES,
+  COMISIONES_VEN_SU_PLAZA as PLAZA_ACCESS_ROLES,
+  COMISIONES_VEN_SU_EQUIPO as TEAM_ACCESS_ROLES,
+} from "@/lib/rbac/commission-scope";
 
-// Roles con acceso completo a todas las comisiones
-const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
-// Roles con acceso a comisiones de su plaza
-const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
-// Roles con acceso a comisiones de su equipo
-const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
-// Roles con acceso solo a sus propias comisiones
-const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
+// Los conjuntos de rol de quién ve qué comisiones viven en `lib/rbac/commission-scope.ts` (#893):
+// el reporte de comisiones de /reports aplica la misma regla y no debe tener su propia copia.
 
 // Roles que pueden cambiar estado de comisión
 const STATUS_CHANGE_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
