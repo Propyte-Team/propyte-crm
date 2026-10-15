@@ -16,7 +16,7 @@ export default withAuth(
     if (pathname.startsWith("/portal")) {
       // Solo DEVELOPER_EXT puede acceder al portal
       if (token.role !== "DEVELOPER_EXT" && token.role !== "ADMIN") {
-        return NextResponse.redirect(new URL("/dashboard", req.url));
+        return NextResponse.redirect(new URL("/hoy", req.url));
       }
     }
 
@@ -24,7 +24,7 @@ export default withAuth(
     if (pathname.startsWith("/dashboard/admin")) {
       const adminRoles = ["ADMIN", "DIRECTOR"];
       if (!adminRoles.includes(token.role as string)) {
-        return NextResponse.redirect(new URL("/dashboard", req.url));
+        return NextResponse.redirect(new URL("/hoy", req.url));
       }
     }
 
@@ -32,7 +32,7 @@ export default withAuth(
     if (pathname.startsWith("/dashboard/plazas")) {
       const plazaRoles = ["ADMIN", "GERENTE", "DIRECTOR"];
       if (!plazaRoles.includes(token.role as string)) {
-        return NextResponse.redirect(new URL("/dashboard", req.url));
+        return NextResponse.redirect(new URL("/hoy", req.url));
       }
     }
 

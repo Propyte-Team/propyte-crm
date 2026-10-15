@@ -139,7 +139,7 @@ export default function LoginPage() {
     try {
       const result = await signIn("credentials", { email, password, loginMethod: "password", redirect: false })
       if (result?.error) { setError(l.errInvalid); setLoading(false) }
-      else window.location.href = "/dashboard"
+      else window.location.href = "/hoy"
     } catch { setError(l.errConnection); setLoading(false) }
   }
 
@@ -164,7 +164,7 @@ export default function LoginPage() {
     try {
       const result = await signIn("credentials", { email, password: code, loginMethod: "otp", redirect: false })
       if (result?.error) { setError(l.errCodeInvalid); setLoading(false) }
-      else window.location.href = "/dashboard"
+      else window.location.href = "/hoy"
     } catch { setError(l.errConnection); setLoading(false) }
   }
 

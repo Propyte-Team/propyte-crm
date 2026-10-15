@@ -14,7 +14,7 @@ export default async function PortalPage() {
   }
 
   if (session.user.role !== "DEVELOPER_EXT") {
-    redirect("/dashboard");
+    redirect("/hoy");
   }
 
   // Obtener datos del dashboard

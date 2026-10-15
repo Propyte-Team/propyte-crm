@@ -23,7 +23,7 @@ export default async function PortalLayout({
 
   if (session.user.role !== "DEVELOPER_EXT") {
     // Usuarios con otro rol no pueden acceder al portal
-    redirect("/dashboard");
+    redirect("/hoy");
   }
 
   return (

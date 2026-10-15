@@ -10,7 +10,7 @@ const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 export default async function ConexionesPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
-  if (!ALLOWED_ROLES.includes(session.user.role)) redirect("/dashboard");
+  if (!ALLOWED_ROLES.includes(session.user.role)) redirect("/hoy");
 
   const [connectors, orphanCount] = await Promise.all([
     prisma.leadConnector.findMany({

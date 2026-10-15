@@ -9,6 +9,6 @@ const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"
 export default async function DuplicadosPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
-  if (!FULL_ACCESS_ROLES.includes(session.user.role as string)) redirect("/dashboard");
+  if (!FULL_ACCESS_ROLES.includes(session.user.role as string)) redirect("/hoy");
   return <DuplicadosClient />;
 }

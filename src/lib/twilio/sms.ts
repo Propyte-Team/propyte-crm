@@ -139,7 +139,7 @@ export async function handleInboundSMS(payload: {
         title: "SMS recibido",
         message: `${contact.firstName} ${contact.lastName}: ${payload.Body.substring(0, 80)}`,
         type: "sms_inbound",
-        link: `/dashboard/contacts/${contact.id}`,
+        link: `/contacts/${contact.id}`,
       },
     });
   }

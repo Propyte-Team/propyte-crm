@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function LeadsHuerfanosPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
-  if (!canSeeOrphanLeads(session.user.role)) redirect("/dashboard");
+  if (!canSeeOrphanLeads(session.user.role)) redirect("/hoy");
 
   // #883 (2026-10-14): se listan hasta el tope de la asignación masiva (antes 50 por sección) para
   // que «Seleccionar todos» abarque a todos: hoy son 90 con dueño técnico, y con 50 quedaban 40 sin
@@ -24,7 +24,7 @@ export default async function LeadsHuerfanosPage() {
     getBrandViewContext(session.user),
     getOrphanAssignees(),
   ]);
-  if (!data) redirect("/dashboard");
+  if (!data) redirect("/hoy");
 
   return (
     <BrandViewProvider value={brandView}>

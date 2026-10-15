@@ -26,7 +26,7 @@ export default async function ConectarRevisionPage() {
   // No es "esconder un botón": abajo se imprime una credencial en claro. El guardia de
   // verdad está además en la acción de servidor, que es un endpoint invocable sin pasar
   // por aquí.
-  if (!puedeVerTokenRevision(session.user.role)) redirect("/dashboard");
+  if (!puedeVerTokenRevision(session.user.role)) redirect("/hoy");
 
   const { token, origen, rotadoEn } = await leerTokenEsperado(prisma);
   const host = (await headers()).get("host") ?? "crm.propyte.com";
@@ -41,7 +41,7 @@ export default async function ConectarRevisionPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <Link
-        href="/dashboard"
+        href="/hoy"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />

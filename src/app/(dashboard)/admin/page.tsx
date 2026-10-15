@@ -21,7 +21,7 @@ export default async function AdminPage(
 
   // Solo ADMIN, DIRECTOR y GERENTE pueden acceder
   if (!["ADMIN", "DIRECTOR", "GERENTE"].includes(session.user.role)) {
-    redirect("/dashboard");
+    redirect("/hoy");
   }
 
   // Custom fields del objeto "contact" disponibles como targetField del bot

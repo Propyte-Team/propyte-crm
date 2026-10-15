@@ -7,7 +7,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
-import { ACTIVITY_CONFIG } from "@/components/dashboard/recent-activities";
+import { ACTIVITY_CONFIG } from "@/components/activities/activity-config";
 
 interface ActivityItem {
   id: string;

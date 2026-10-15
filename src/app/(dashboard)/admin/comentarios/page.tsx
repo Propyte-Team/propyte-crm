@@ -24,14 +24,14 @@ export default async function AdminComentariosPage() {
   // El guard real de los datos vive en las rutas /api/*; esto solo evita
   // renderizar una pantalla que de todas formas no cargaría.
   if (!canManageCommentRules(session.user.role)) {
-    redirect("/dashboard");
+    redirect("/hoy");
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Link
-          href="/dashboard"
+          href="/hoy"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← Dashboard
