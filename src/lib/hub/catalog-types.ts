@@ -139,3 +139,38 @@ export interface CatalogSearchFilters {
   developmentIds?: string[] | null;
   limit?: number;
 }
+
+/**
+ * Inventario de un desarrollo publicado, contado desde sus unidades publicadas (reporte de
+ * Absorción, #893). `status` de la unidad es texto libre en el Hub; la clasificación vive en el
+ * SQL de `inventarioParaReporte`.
+ */
+export interface InventarioDesarrollo {
+  id: string;
+  name: string;
+  /** Texto libre del Hub ("Playa del Carmen", "TULUM", null…). */
+  plaza: string | null;
+  /** Contador de la ficha del desarrollo. Puede no coincidir con las unidades publicadas. */
+  totalUnits: number | null;
+  publishedUnits: number;
+  /** Disponible + Preventa + Entrega inmediata. */
+  availableUnits: number;
+  /** Apartada / Reservada. */
+  reservedUnits: number;
+  /** Vendida. */
+  soldUnits: number;
+  /** Unidades con fecha de venta (`sold_at`) registrada, de cualquier periodo. */
+  soldWithDate: number;
+  /** Unidades con `sold_at` dentro de la ventana pedida. */
+  soldInWindow: number;
+  avgPriceMxn: number | null;
+}
+
+export interface InventarioReporteFiltros {
+  /** Plazas aceptadas, ya normalizadas (minúsculas, sin acentos). null = todas. */
+  plazas?: string[] | null;
+  developmentId?: string | null;
+  /** Ventana para contar ventas con fecha. */
+  vendidasDesde: Date;
+  vendidasAntesDe: Date;
+}

@@ -59,14 +59,19 @@ const REPORT_COLUMNS: Record<ReportType, ReportColumn[]> = {
     { header: "Días Promedio", key: "avgDaysInStage" },
     { header: "Estancados", key: "stagnantCount" },
   ],
+  // #893: inventario publicado del Hub. «Unidades (ficha)» es el total que declara el
+  // desarrollo; «Publicadas» son las que de verdad están cargadas y aprobadas.
   absorption: [
     { header: "Desarrollo", key: "developmentName" },
-    { header: "Total Unidades", key: "totalUnits" },
-    { header: "Vendidas", key: "soldUnits" },
-    { header: "Reservadas", key: "reservedUnits" },
+    { header: "Plaza", key: "plaza" },
+    { header: "Unidades (ficha)", key: "totalUnits" },
+    { header: "Publicadas", key: "publishedUnits" },
     { header: "Disponibles", key: "availableUnits" },
-    { header: "Absorción/Mes", key: "absorptionRate" },
-    { header: "Precio Promedio", key: "avgPrice", isCurrency: true },
+    { header: "Apartadas", key: "reservedUnits" },
+    { header: "Vendidas", key: "soldUnits" },
+    { header: "% Vendido", key: "soldPct", isPercentage: true, sinTotal: true },
+    { header: "Ventas/Mes", key: "absorptionRate", sinTotal: true },
+    { header: "Precio Promedio", key: "avgPrice", isCurrency: true, sinTotal: true },
   ],
   commissions: [
     { header: "Asesor", key: "advisorName" },
@@ -120,9 +125,13 @@ export function ReportViewer({ reportType, onClose }: ReportViewerProps) {
   const [dateTo, setDateTo] = useState("");
   const [plaza, setPlaza] = useState("ALL");
   const [reportData, setReportData] = useState<Record<string, unknown>[] | null>(null);
+  // #893: un error ya no se muestra como «No hay datos». En producción Next no deja pasar el
+  // mensaje de la excepción al navegador, por eso el texto es genérico.
+  const [error, setError] = useState<string | null>(null);
 
   // Generar reporte llamando al server action correspondiente
   function handleGenerate() {
+    setError(null);
     startTransition(async () => {
       const filters = {
         dateFrom: dateFrom || undefined,
@@ -184,9 +193,10 @@ export function ReportViewer({ reportType, onClose }: ReportViewerProps) {
         }
 
         setReportData(data);
-      } catch (error: any) {
-        console.error("Error generando reporte:", error);
-        setReportData([]);
+      } catch (err: unknown) {
+        console.error("Error generando reporte:", err);
+        setReportData(null);
+        setError("No se pudo generar el reporte. Intenta de nuevo; si sigue fallando, avisa a sistemas.");
       }
     });
   }
@@ -298,6 +308,12 @@ export function ReportViewer({ reportType, onClose }: ReportViewerProps) {
             )}
           </div>
         </div>
+
+        {error && (
+          <p role="alert" className="mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </p>
+        )}
 
         {/* Resultados */}
         {reportData !== null && (

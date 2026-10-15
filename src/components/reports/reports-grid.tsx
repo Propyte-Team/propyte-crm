@@ -45,7 +45,7 @@ const REPORTS: Array<{
   {
     id: "absorption",
     title: "Absorción",
-    description: "Velocidad de absorción por desarrollo, unidades vendidas por período",
+    description: "Inventario publicado por desarrollo: disponibles, apartadas, vendidas y ventas por mes",
     icon: TrendingUp,
     iconColor: "text-green-500",
     iconBg: "bg-green-100",
