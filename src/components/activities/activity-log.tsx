@@ -59,13 +59,15 @@ interface ActivityLogProps {
   currentUserId?: string
   dealId?: string
   onChanged?: () => void
+  /** Cambiarlo hace que el historial se vuelva a leer. */
+  refreshKey?: number
 }
 
 function fmt(d: string): string {
   return format(new Date(d), "d MMM yyyy, HH:mm", { locale: es })
 }
 
-export function ActivityLog({ contactId, contactName, contactEmail, contactFirstName, contactLastName, contactPhone, doNotContact, currentUserId, dealId, onChanged }: ActivityLogProps) {
+export function ActivityLog({ contactId, contactName, contactEmail, contactFirstName, contactLastName, contactPhone, doNotContact, currentUserId, dealId, onChanged, refreshKey }: ActivityLogProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState("")
@@ -79,14 +81,15 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
   const [openThread, setOpenThread] = useState<string | null>(null)
   const [showAllNotes, setShowAllNotes] = useState(false)
 
-  // ¿El asesor tiene Gmail conectado? (degradación suave: si no, no mostramos "Enviar email")
+  // ¿El asesor tiene su correo conectado? (degradación suave: si no, no mostramos "Enviar email";
+  // en la ficha de contacto el botón «Correo» del encabezado sí explica por qué, #885)
   useEffect(() => {
     let alive = true
-    fetch("/api/google/oauth/status")
+    fetch("/api/email/estado")
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         const s = json?.data
-        if (alive && s?.connected && s?.isValid !== false) setGmailConnected(true)
+        if (alive && s?.conectado && !s?.requiereReconexion) setGmailConnected(true)
       })
       .catch(() => {})
     return () => { alive = false }
@@ -107,7 +110,8 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
     }
   }, [scopeQuery])
 
-  useEffect(() => { refetch() }, [refetch])
+  // refreshKey: el padre pide releer (p. ej. tras enviar un correo desde el encabezado, #885)
+  useEffect(() => { refetch() }, [refetch, refreshKey])
 
   function afterMutation() {
     refetch()

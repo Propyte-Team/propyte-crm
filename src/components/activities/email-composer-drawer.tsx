@@ -1,7 +1,7 @@
 // ============================================================
 // EmailComposerDrawer — slide-over para redactar y enviar un correo
-// desde la cuenta Gmail del asesor. Remitente (send-as verificado),
-// plantillas (con variables), firma y destinatario prellenados.
+// desde la cuenta de correo del asesor (hoy Gmail; ver lib/email/providers, #885).
+// Remitente (alias verificado), plantillas (con variables), firma y destinatario prellenados.
 // ============================================================
 "use client"
 
@@ -72,7 +72,7 @@ export function EmailComposerDrawer({
     let alive = true
     Promise.all([
       fetch("/api/profile").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch("/api/google/gmail/send-as").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/email/remitentes").then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch("/api/profile/templates").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]).then(([profile, sendAsRes, tplRes]) => {
       if (!alive) return
@@ -115,7 +115,7 @@ export function EmailComposerDrawer({
       return
     }
     setSending(true)
-    const res = await fetch("/api/google/gmail/send", {
+    const res = await fetch("/api/email/enviar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -150,7 +150,7 @@ export function EmailComposerDrawer({
         {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-3" style={{ borderColor: "var(--border-subtle)" }}>
           <div>
-            <h3 className="text-[15px] font-medium text-[color:var(--text-primary)]">Enviar email</h3>
+            <h3 className="text-[15px] font-medium text-[color:var(--text-primary)]">Enviar correo</h3>
             <p className="text-[11px] text-[color:var(--text-tertiary)]">Para {contactName || "el contacto"}</p>
           </div>
           <button className="text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]" onClick={onClose}>
