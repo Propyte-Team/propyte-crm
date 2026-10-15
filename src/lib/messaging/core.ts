@@ -212,6 +212,34 @@ async function yaTuvoDueno(contactId: string): Promise<boolean> {
 }
 
 /**
+ * WhatsApp propio de un asesor (decisión del dueño 2026-10-14): ¿`userId` es el dueño de la línea
+ * por la que entró este hilo? Si lo es, el mensaje ya le sonó en su teléfono —es su propio número
+ * en coexistencia— y el aviso del CRM por cada mensaje solo le duplica la campana.
+ *
+ * Se compara con el dueño, no solo con el alcance de la cuenta: si el contacto se reasignó a otra
+ * persona (lib/inbox/assign.ts suelta el control) o alguien tomó el hilo desde el Inbox, quien recibe
+ * el aviso NO tiene ese teléfono, y para él el aviso es la única forma de enterarse.
+ *
+ * Falla ABIERTO, al revés que isAdvisorLine (lib/whatsapp/coex/advisor-line.ts): allá la pregunta es
+ * si el bot puede hablar por el teléfono de una persona y callar es lo seguro; aquí callar de más
+ * dejaría sin aviso un hilo de marca. Un aviso de más es una molestia; uno de menos, un cliente sin
+ * contestar.
+ */
+async function esLineaPropiaDe(connectorId: string | null, userId: string): Promise<boolean> {
+  if (!connectorId) return false; // número global: nunca es de asesor, y no cuesta consulta
+  try {
+    const cuenta = await prisma.leadConnector.findUnique({
+      where: { id: connectorId },
+      select: { scope: true, ownerUserId: true },
+    });
+    return cuenta?.scope === "ADVISOR" && cuenta.ownerUserId === userId;
+  } catch (err) {
+    console.error(`[messaging] no se pudo leer la cuenta del hilo (${connectorId}); se avisa como siempre:`, err);
+    return false;
+  }
+}
+
+/**
  * Echo (Caso 4): envío hecho por la Página desde OTRA superficie (Meta Business
  * Suite / app de la Página / el propio CRM), recibido con `message.is_echo`.
  * - Dedup contra envíos propios: el dispatcher persiste el `message_id` de la
@@ -697,15 +725,24 @@ export async function handleInboundMessage(
   if (conversation.status === "HUMAN") {
     const notifyUserId = (conversation as { controlledById?: string | null }).controlledById ?? contact.assignedToId;
     if (notifyUserId) {
-      await prisma.notification.create({
-        data: {
-          userId: notifyUserId,
-          title: `${msg.channel} recibido (controlas el hilo)`,
-          message: `${contact.firstName} ${contact.lastName}: ${msg.text.slice(0, 80)}`,
-          type: "social_inbound",
-          link: `/inbox?c=${conversation.id}`,
-        },
-      });
+      // Línea propia del asesor (2026-10-14): sin aviso por mensaje para su dueño — ver
+      // esLineaPropiaDe. Todo lo demás de arriba ya pasó: el mensaje quedó en el hilo y cuenta
+      // como no leído. Solo WhatsApp tiene líneas de asesor, así que los demás canales no pagan
+      // la consulta.
+      const yaLeSonoEnSuTelefono =
+        msg.channel === "WHATSAPP" &&
+        (await esLineaPropiaDe(conversation.connectorId ?? msg.connectorId ?? null, notifyUserId));
+      if (!yaLeSonoEnSuTelefono) {
+        await prisma.notification.create({
+          data: {
+            userId: notifyUserId,
+            title: `${msg.channel} recibido (controlas el hilo)`,
+            message: `${contact.firstName} ${contact.lastName}: ${msg.text.slice(0, 80)}`,
+            type: "social_inbound",
+            link: `/inbox?c=${conversation.id}`,
+          },
+        });
+      }
     } else {
       // #858 (2026-10-14): hilo en manos de un humano que no existe — el bot escaló un
       // contacto sin asesor, o alguien contestó desde Business Suite y el eco lo dejó en
