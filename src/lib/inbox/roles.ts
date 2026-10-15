@@ -15,6 +15,11 @@ export const INBOX_MANAGERS = ["ADMIN", "DIRECTOR", "GERENTE", "TEAM_LEADER"] as
 // quedan fuera a propósito: pueden ver el inbox, no adueñarse de un lead.
 export const INBOX_CLAIMERS = ["ASESOR", "ASESOR_SR", "ASESOR_JR"] as const;
 
+// Los dos juntos = quién puede ser dueño de un contacto (canOwnInboxContact). Publicado como lista
+// (2026-10-14, #883) para que el selector de la asignación masiva de huérfanos ofrezca exactamente
+// a quien assignContact va a aceptar, sin una tercera copia de los roles.
+export const INBOX_OWNER_ROLES = [...INBOX_MANAGERS, ...INBOX_CLAIMERS] as const;
+
 export function hasInboxFullView(role: string): boolean {
   return (INBOX_FULL_VIEW as readonly string[]).includes(role);
 }
@@ -24,5 +29,5 @@ export function isInboxManager(role: string): boolean {
 }
 
 export function canOwnInboxContact(role: string): boolean {
-  return isInboxManager(role) || (INBOX_CLAIMERS as readonly string[]).includes(role);
+  return (INBOX_OWNER_ROLES as readonly string[]).includes(role);
 }

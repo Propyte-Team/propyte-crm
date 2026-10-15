@@ -4,7 +4,10 @@
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { getVisibleBrands } from "@/lib/brands/user-access";
-import { CONTACT_BRAND_SELECT } from "@/lib/brands/visibility";
+import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { assignContact, type AssignResult } from "@/lib/inbox/assign";
+import { canOwnInboxContact, INBOX_OWNER_ROLES } from "@/lib/inbox/roles";
+import { esCuentaTecnica, usuarioRuteableWhere } from "@/lib/workflows/ruteables";
 import {
   canSeeOrphanLeads,
   latestNotesOnly,
@@ -186,4 +189,153 @@ export async function countOrphanLeads(viewer: { id: string; role: string }): Pr
     console.error("[leads-huerfanos] no se pudo contar", err);
     return null;
   }
+}
+
+// ─────────────────────────── asignación masiva (#883, 2026-10-14) ───────────────────────────
+//
+// «Seleccionar todos → Asignar a…» del panel. No escribe nada por su cuenta: cada contacto pasa
+// por assignContact (lib/inbox/assign.ts) en su modo panel, así que se lleva los mismos permisos
+// sobre el asignado, la misma cronología con quien asignó como actor, el mismo cierre del ORPHAN,
+// la misma liberación del hilo y la misma actividad que una asignación de uno en uno. Lo único
+// que el lote hace distinto es el aviso: UNO por asignado con el total, no uno por contacto
+// (con los 111 huérfanos de hoy serían 111 avisos seguidos).
+
+/**
+ * Tope de contactos por petición. Los 111 huérfanos medidos el 2026-10-14 caben en una sola (un
+ * solo aviso); con más, el panel parte la selección en varias peticiones.
+ */
+export const MAX_ASIGNACION_POR_LOTE = 200;
+
+/**
+ * Asignaciones a la vez. Cada una es una transacción corta sobre un contacto distinto, así que no
+ * se pisan; en serie, 200 contactos a ~8 viajes a la base cada uno tardarían de más.
+ */
+const CONCURRENCIA_LOTE = 5;
+
+/** Mismo `type` que el aviso del reparto automático (routing.ts): para quien lo recibe es lo mismo. */
+export const BULK_ASSIGN_NOTIFICATION_TYPE = "lead_assigned";
+
+type AssignFailCode = Extract<AssignResult, { ok: false }>["code"];
+
+export type FalloAsignacion = { contactId: string; code: AssignFailCode | "error" };
+
+export type ResultadoLote =
+  | {
+      ok: true;
+      /** Cambiaron de dueño en esta petición. */
+      asignados: number;
+      /** Ya eran del destino (repetir el lote no escribe ni avisa otra vez). */
+      yaEranSuyos: number;
+      fallidos: FalloAsignacion[];
+      assignee: { id: string; name: string };
+    }
+  | { ok: false; code: "sin-permiso" | "usuario-invalido" | "demasiados" | "vacio" };
+
+export type OrphanAssignee = { id: string; name: string };
+
+/**
+ * A quién se puede asignar desde el panel: personas (la regla única de ruteables.ts: activas, no
+ * borradas, sin correo técnico) con un rol que puede ser dueño de un contacto — exactamente lo que
+ * assignContact va a aceptar, para que el selector no ofrezca a nadie que luego se rechace.
+ */
+export async function getOrphanAssignees(): Promise<OrphanAssignee[]> {
+  return prisma.user.findMany({
+    where: { ...usuarioRuteableWhere(), role: { in: [...INBOX_OWNER_ROLES] } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+}
+
+/**
+ * Asigna `contactIds` a `assigneeId` en nombre de `actor`.
+ *  - Quién: los roles que ven el panel (canSeeOrphanLeads). Falla cerrado.
+ *  - A quién: una persona (usuarioRuteableWhere) con rol de dueño. Se valida UNA vez antes de tocar
+ *    ningún contacto: un destino inválido no deja el lote a medias.
+ *  - Qué: solo contactos que quien asigna ve por marca —los mismos que le lista el panel—. Uno de
+ *    otra marca da el mismo «no-existe» que uno borrado: distinguirlos confirmaría que existe. Y
+ *    assignContact rechaza ("ya-asignado") el que ya tiene un dueño de verdad.
+ *  - Fallas por contacto: se reportan y el resto sigue. Idempotente: repetirlo no reescribe nada.
+ */
+export async function asignarHuerfanosEnLote(opts: {
+  actor: { id: string; role: string };
+  contactIds: readonly string[];
+  assigneeId: string;
+}): Promise<ResultadoLote> {
+  const { actor, assigneeId } = opts;
+  if (!canSeeOrphanLeads(actor.role)) return { ok: false, code: "sin-permiso" };
+
+  const ids = [...new Set(opts.contactIds)];
+  if (ids.length === 0) return { ok: false, code: "vacio" };
+  if (ids.length > MAX_ASIGNACION_POR_LOTE) return { ok: false, code: "demasiados" };
+
+  const assignee = await prisma.user.findFirst({
+    where: { id: assigneeId, ...usuarioRuteableWhere() },
+    select: { id: true, name: true, email: true, role: true },
+  });
+  if (!assignee || esCuentaTecnica(assignee.email) || !canOwnInboxContact(assignee.role)) {
+    return { ok: false, code: "usuario-invalido" };
+  }
+
+  const visible = await getVisibleBrands(actor);
+  const porMarca = contactBrandVisibilityWhere(actor, visible);
+  const visibles = await prisma.contact.findMany({
+    where: { id: { in: ids }, deletedAt: null, mergedIntoId: null, ...(porMarca ? { AND: [porMarca] } : {}) },
+    select: { id: true },
+  });
+  const loVe = new Set(visibles.map((c) => c.id));
+
+  const fallidos: FalloAsignacion[] = [];
+  let asignados = 0;
+  let yaEranSuyos = 0;
+  const pendientes = ids.filter((id) => {
+    if (loVe.has(id)) return true;
+    fallidos.push({ contactId: id, code: "no-existe" });
+    return false;
+  });
+
+  for (let i = 0; i < pendientes.length; i += CONCURRENCIA_LOTE) {
+    const tanda = pendientes.slice(i, i + CONCURRENCIA_LOTE);
+    const resultados = await Promise.allSettled(
+      tanda.map((contactId) =>
+        assignContact({ contactId, assigneeId, actor, source: "orphan_bulk_assign", panelHuerfanos: true }),
+      ),
+    );
+    resultados.forEach((r, j) => {
+      const contactId = tanda[j];
+      if (r.status === "rejected") {
+        // Una base caída en un contacto no tumba a los demás; queda en el reporte y en el log.
+        console.error(`[leads-huerfanos] no se pudo asignar ${contactId}:`, r.reason);
+        fallidos.push({ contactId, code: "error" });
+      } else if (!r.value.ok) {
+        fallidos.push({ contactId, code: r.value.code });
+      } else if (r.value.sinCambio) {
+        yaEranSuyos++;
+      } else {
+        asignados++;
+      }
+    });
+  }
+
+  // Un aviso por asignado por lote, con lo que de verdad cambió. Asignarse a sí mismo no avisa
+  // (igual que assignContact). Best-effort: las asignaciones ya quedaron.
+  if (asignados > 0 && assignee.id !== actor.id) {
+    try {
+      await prisma.notification.create({
+        data: {
+          userId: assignee.id,
+          type: BULK_ASSIGN_NOTIFICATION_TYPE,
+          title: "Prospectos asignados",
+          message:
+            asignados === 1
+              ? "Se te asignó 1 prospecto desde Leads huérfanos"
+              : `Se te asignaron ${asignados} prospectos desde Leads huérfanos`,
+          link: "/contacts",
+        },
+      });
+    } catch (err) {
+      console.error("[leads-huerfanos] no se pudo avisar al asignado del lote", err);
+    }
+  }
+
+  return { ok: true, asignados, yaEranSuyos, fallidos, assignee: { id: assignee.id, name: assignee.name } };
 }

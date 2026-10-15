@@ -24,6 +24,8 @@ const SOURCE_LABELS: Record<string, string> = {
   // asesor en la plaza, su responsable de marketing). Distinto de "routing" a propósito.
   routing_marca: "Ruteo automático (marca de la cuenta)",
   merge: "Fusión de duplicados",
+  // #883 (2026-10-14): «Seleccionar todos → Asignar a…» del panel de leads huérfanos.
+  orphan_bulk_assign: "Asignación masiva (leads huérfanos)",
   zapier: "Zapier",
   lifecycle_auto: "Ciclo de vida (auto)",
   lifecycle_manual: "Ciclo de vida (manual)",
