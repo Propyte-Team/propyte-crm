@@ -35,7 +35,6 @@ const WEBHOOK_EVENTS = [
   { value: "deal.lost", label: "Deal perdido" },
   { value: "deal.updated", label: "Deal actualizado" },
   { value: "activity.created", label: "Actividad creada" },
-  { value: "walk_in.created", label: "Walk-in registrado" },
 ];
 
 interface WebhookData {
