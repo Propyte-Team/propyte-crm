@@ -110,6 +110,10 @@ const TEMP_VARIANT: Record<string, "hot" | "warm" | "cold" | "dead"> = {
 // copia a mano con 6 de los 9 tipos, sin COMPRADOR —el default del modelo y lo que escribe el
 // intake—, así que el filtro no podía encontrar al tipo más común.
 
+// Los dos <select> nativos de la barra (etapa, marca) con la misma altura y borde que los
+// selectores de Radix de al lado (#894: antes eran más bajos, py-1).
+const SELECT_NATIVO = "h-10 shrink-0 rounded-md border border-input bg-background px-3 text-sm";
+
 const FECHA_CORTA: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short", year: "numeric" };
 
 // Tamaño de página
@@ -383,10 +387,13 @@ export function ContactsList({
 
       <Card>
         <CardContent className="p-6">
-          {/* Barra de búsqueda y filtros */}
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
+          {/* Barra de búsqueda y filtros. #894: con flex-wrap — sin él, el buscador (flex-1) se
+              quedaba con el sobrante de los filtros de ancho fijo (~54 px, no se leía lo escrito)
+              y en ventanas angostas la barra desbordaba la tarjeta. Ahora el buscador pide al
+              menos 16rem y crece; los filtros bajan de línea cuando no caben. */}
+          <div className="mb-6 flex flex-wrap items-center gap-3">
             {/* Campo de búsqueda */}
-            <div className="relative flex-1">
+            <div className="relative w-full sm:w-auto sm:min-w-[16rem] sm:flex-[1_1_16rem]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nombre, email o teléfono..."
@@ -401,7 +408,7 @@ export function ContactsList({
               value={filterSource}
               onValueChange={(v) => handleFilterChange("source", v)}
             >
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-44 shrink-0">
                 <SelectValue placeholder="Fuente" />
               </SelectTrigger>
               <SelectContent>
@@ -419,7 +426,7 @@ export function ContactsList({
               value={filterStatus}
               onValueChange={(v) => handleFilterChange("status", v)}
             >
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-44 shrink-0">
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
               <SelectContent>
@@ -435,7 +442,7 @@ export function ContactsList({
               value={filterTemp}
               onValueChange={(v) => handleFilterChange("temp", v)}
             >
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="w-36 shrink-0">
                 <SelectValue placeholder="Temperatura" />
               </SelectTrigger>
               <SelectContent>
@@ -452,7 +459,7 @@ export function ContactsList({
               value={filterType}
               onValueChange={(v) => handleFilterChange("type", v)}
             >
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-44 shrink-0">
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
               <SelectContent>
@@ -468,7 +475,8 @@ export function ContactsList({
             <select
               value={lifecycleFilter}
               onChange={(e) => { setLifecycleFilter(e.target.value); fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, e.target.value); }}
-              className="rounded-md border px-2 py-1 text-sm"
+              className={SELECT_NATIVO}
+              aria-label="Filtrar por etapa"
             >
               <option value="">Todas las etapas</option>
               {LIFECYCLE_ORDER.map((s) => <option key={s} value={s}>{LIFECYCLE_LABELS[s]}</option>)}
@@ -478,7 +486,7 @@ export function ContactsList({
             <BrandFilterSelect
               value={brandFilter}
               onChange={handleBrandChange}
-              className="rounded-md border px-2 py-1 text-sm"
+              className={SELECT_NATIVO}
             />
 
             {/* Botón para limpiar filtros */}
@@ -489,7 +497,7 @@ export function ContactsList({
               </Button>
             )}
 
-            <div className="sm:ml-auto">
+            <div className="ml-auto">
               <BotonColumnas onClick={() => setColumnasOpen(true)} titulo="Contactos" />
             </div>
           </div>
@@ -530,18 +538,24 @@ export function ContactsList({
               )}
             </div>
           ) : (
-            /* Tabla de contactos */
-            <div className="overflow-x-auto">
+            /* Tabla de contactos. #894: el contenedor tiene alto acotado a la ventana para que
+               su barra de scroll horizontal quede SIEMPRE a la vista (antes vivía al fondo de 20
+               filas y la tabla parecía cortada). Encabezado fijo arriba y columna Nombre fija a
+               la izquierda: al desplazarse a los lados se sigue sabiendo de quién es la fila. */
+            <div className="tabla-contactos max-h-[max(24rem,calc(100vh-26rem))] overflow-auto rounded-md">
               <table className="w-full text-sm">
                 <thead>
                   {/* #865: todos los encabezados centrados; las celdas, según `align` del catálogo. */}
                   <tr className="border-b text-center text-muted-foreground">
                     {columnas.map((c) => (
-                      <th key={c.key} className="whitespace-nowrap px-2 pb-3 text-center font-medium">
+                      <th
+                        key={c.key}
+                        className={`px-2 py-3 text-center font-medium ${c.key === "nombre" ? "celda-fija" : ""}`}
+                      >
                         {c.label}
                       </th>
                     ))}
-                    <th className="px-2 pb-3 text-center font-medium">Acciones</th>
+                    <th className="px-2 py-3 text-center font-medium">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -751,8 +765,9 @@ function CeldaContacto({
 
   switch (col) {
     case "nombre":
+      // `celda-fija` (#894): se queda pegada a la izquierda al desplazar la tabla a los lados.
       return (
-        <td className={`${base} font-medium`}>
+        <td className={`${base} celda-fija min-w-[9rem] font-medium`}>
           <span className="inline-flex flex-wrap items-center gap-1.5">
             <span>
               {contact.firstName} {contact.lastName}
@@ -804,7 +819,8 @@ function CeldaContacto({
     case "telefono":
       return <td className={`whitespace-nowrap ${base}`}>{contact.phone || vacio}</td>;
     case "email":
-      return <td className={`${base} text-muted-foreground`}>{contact.email || "-"}</td>;
+      // break-all (#894): un correo largo se parte en vez de ensanchar toda la tabla.
+      return <td className={`${base} min-w-[10rem] max-w-[16rem] break-all text-muted-foreground`}>{contact.email || "-"}</td>;
     case "fuente":
       return (
         <td className={`${base}`}>
