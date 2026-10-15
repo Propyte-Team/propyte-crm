@@ -7,6 +7,7 @@
 import prisma from "@/lib/db"
 import { getGmailClient } from "./workspace.service"
 import { sanitizeEmailHtml } from "@/lib/email/sanitize"
+import { armarAvisoCorreo } from "./aviso-correo"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Gmail = any
@@ -182,7 +183,7 @@ async function resolveContact(parsed: ParsedEmail) {
     if (!email) continue
     const contact = await prisma.contact.findFirst({
       where: { email: { equals: email, mode: "insensitive" }, deletedAt: null },
-      select: { id: true, doNotContact: true },
+      select: { id: true, doNotContact: true, firstName: true, lastName: true },
     })
     if (contact) return contact
   }
@@ -218,6 +219,26 @@ async function persistEmail(userId: string, parsed: ParsedEmail): Promise<boolea
   })
 
   await upsertThread(userId, contact.id, parsed)
+
+  // #889: la respuesta de un cliente avisa al dueño del buzón (campana + aviso emergente).
+  // Va DESPUÉS del create a propósito: si dos revisiones procesan el mismo correo a la vez,
+  // la segunda choca con el índice único de gmailMessageId arriba y nunca llega aquí, así
+  // que no hay aviso doble. Un fallo del aviso no deshace el registro, pero tampoco se calla.
+  if (parsed.direction === "INBOUND") {
+    const aviso = armarAvisoCorreo({
+      userId,
+      contacto: contact,
+      fromEmail: parsed.fromEmail,
+      subject: parsed.subject,
+      snippet: parsed.snippet,
+      fecha: parsed.date,
+    })
+    if (aviso) {
+      await prisma.notification.create({ data: aviso }).catch((e: unknown) => {
+        console.warn("[gmail] no se pudo crear el aviso de correo entrante:", e instanceof Error ? e.message : e)
+      })
+    }
+  }
   return true
 }
 

@@ -20,6 +20,7 @@ import { ActivityLogForm, type ActivityForEdit } from "./activity-log-form"
 import { EmailComposerDrawer } from "./email-composer-drawer"
 import { EmailThread } from "./email-thread"
 import { CallButton } from "@/components/voice/call-button"
+import { EVENTO_CORREO_ENTRANTE } from "@/lib/notificaciones/avisos-nuevos"
 
 const TYPE_ICON: Record<string, LucideIcon> = {
   CALL_OUTBOUND: Phone, CALL_INBOUND: Phone,
@@ -112,6 +113,20 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
 
   // refreshKey: el padre pide releer (p. ej. tras enviar un correo desde el encabezado, #885)
   useEffect(() => { refetch() }, [refetch, refreshKey])
+
+  // #889: la campana avisa cuando llega un correo de un contacto. Si es este, se relee el
+  // historial (y se avisa al padre para que refresque el resumen de arriba) sin recargar.
+  useEffect(() => {
+    const alLlegar = (e: Event) => {
+      const id = (e as CustomEvent<{ contactId?: string }>).detail?.contactId
+      if (id && id === contactId) {
+        refetch()
+        onChanged?.()
+      }
+    }
+    window.addEventListener(EVENTO_CORREO_ENTRANTE, alLlegar)
+    return () => window.removeEventListener(EVENTO_CORREO_ENTRANTE, alLlegar)
+  }, [contactId, refetch, onChanged])
 
   function afterMutation() {
     refetch()
