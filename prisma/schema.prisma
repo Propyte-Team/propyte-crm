@@ -747,6 +747,10 @@ model User {
   // Moderador de permisos — fase 0
   permissionOverrides UserPermissionOverride[]
 
+  // Fichas técnicas compartibles (#887). Relación solo de Prisma: la columna vive en
+  // fichas_compartidas."createdById"; users NO cambia (el Hub la comparte).
+  fichasCompartidas FichaCompartida[] @relation("FichasCompartidas")
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -2992,5 +2996,42 @@ model DeveloperPartner {
 
   @@index([name])
   @@map("developer_partners")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// FICHAS TÉCNICAS COMPARTIBLES — #887
+// =====================================================================
+
+enum FichaTipo {
+  DESARROLLO
+  UNIDAD
+
+  @@schema("propyte_crm")
+}
+
+// Enlace público /f/{token} de la ficha técnica de un desarrollo o una unidad del Hub, ligado
+// al asesor que la compartió. El enlace se reenvía tal cual, así que quien lo abra —cliente,
+// broker o el reenvío del reenvío— ve siempre el contacto de `createdBy`.
+// No guarda copia de los datos: la ficha se arma al abrirla desde el catálogo publicado, para
+// que precio y disponibilidad no se queden viejos.
+model FichaCompartida {
+  id               String    @id @default(uuid())
+  token            String    @unique
+  // Una ficha por asesor y por desarrollo/unidad: "<userId>:<developmentId>:<unitId|->".
+  // Compartir dos veces lo mismo devuelve el MISMO enlace.
+  clave            String    @unique
+  tipo             FichaTipo
+  hubDevelopmentId String
+  hubUnitId        String?
+  createdById      String
+  createdBy        User      @relation("FichasCompartidas", fields: [createdById], references: [id])
+  aperturas        Int       @default(0)
+  ultimaApertura   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([createdById])
+  @@map("fichas_compartidas")
   @@schema("propyte_crm")
 }
