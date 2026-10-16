@@ -40,60 +40,7 @@ vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: () => Promise.res
 
 import { GET as getContacts } from "./contacts/route";
 import { GET as getDeals } from "./deals/route";
-
-// ── Evaluador mínimo de un `where` de Prisma sobre una fila en memoria ─────────────────────
-type Fila = Record<string, unknown>;
-const OPERADORES = new Set(["in", "equals", "contains", "mode", "not"]);
-
-function esOperador(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v) && Object.keys(v).some((k) => OPERADORES.has(k));
-}
-
-function cumpleCampo(valor: unknown, filtro: unknown): boolean {
-  if (filtro === undefined) return true; // Prisma ignora las claves undefined
-  if (filtro === null) return valor === null || valor === undefined;
-  if (esOperador(filtro)) {
-    for (const [op, arg] of Object.entries(filtro)) {
-      if (op === "mode") continue;
-      if (op === "in" && !(arg as unknown[]).includes(valor)) return false;
-      if (op === "equals" && valor !== arg) return false;
-      if (op === "not" && !(arg === null ? valor !== null && valor !== undefined : valor !== arg)) return false;
-      if (op === "contains") {
-        if (typeof valor !== "string") return false;
-        const insensible = (filtro as { mode?: string }).mode === "insensitive";
-        const a = insensible ? valor.toLowerCase() : valor;
-        const b = insensible ? String(arg).toLowerCase() : String(arg);
-        if (!a.includes(b)) return false;
-      }
-    }
-    return true;
-  }
-  if (typeof filtro === "object") {
-    // Filtro de relación 1-1 (p. ej. `assignedTo: { plaza }`).
-    if (typeof valor !== "object" || valor === null) return false;
-    return cumple(valor as Fila, filtro as Fila);
-  }
-  return valor === filtro;
-}
-
-function cumple(fila: Fila, where: Fila): boolean {
-  for (const [clave, filtro] of Object.entries(where)) {
-    if (filtro === undefined) continue;
-    const lista = (f: unknown) => (Array.isArray(f) ? f : [f]) as Fila[];
-    if (clave === "AND") {
-      if (!lista(filtro).every((w) => cumple(fila, w))) return false;
-    } else if (clave === "OR") {
-      if (!(filtro as Fila[]).some((w) => cumple(fila, w))) return false;
-    } else if (clave === "NOT") {
-      if (lista(filtro).some((w) => cumple(fila, w))) return false;
-    } else if (!(clave in fila)) {
-      throw new Error(`El evaluador de la prueba no conoce el campo «${clave}»: amplía las filas`);
-    } else if (!cumpleCampo(fila[clave], filtro)) {
-      return false;
-    }
-  }
-  return true;
-}
+import { cumple, type Fila } from "@/lib/testing/cumple-where";
 
 // ── Escenario ──────────────────────────────────────────────────────────────────────────────
 // ase-1 y ase-2 son de Cancún y del equipo de tl-1. ase-9 es de Playa, de otro equipo.

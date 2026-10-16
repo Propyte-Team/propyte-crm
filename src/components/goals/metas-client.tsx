@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
+import type { AdvisorOptionUser } from "@/components/shared/advisor-options";
 import {
   Dialog,
   DialogContent,
@@ -47,51 +48,162 @@ const STATUS_COLOR: Record<string, string> = {
   behind: "var(--color-error, #DC2626)",
 };
 
+async function fetchRows(qs: URLSearchParams): Promise<Row[]> {
+  try {
+    const res = await fetch(`/api/goals/scorecard?${qs.toString()}`);
+    const json = await res.json();
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function GoalsTable({
+  rows,
+  loading,
+  empty,
+  canDelete,
+  onDelete,
+}: {
+  rows: Row[];
+  loading: boolean;
+  empty: string;
+  canDelete: boolean;
+  onDelete: (id: string) => void;
+}) {
+  if (loading)
+    return (
+      <p className="p-4 text-[13px] text-[color:var(--text-tertiary)]">
+        Cargando…
+      </p>
+    );
+  if (rows.length === 0)
+    return (
+      <p className="p-4 text-[13px] text-[color:var(--text-tertiary)]">
+        {empty}
+      </p>
+    );
+  return (
+    <table className="w-full text-[13px]">
+      <thead>
+        <tr
+          className="border-b text-left text-[color:var(--text-tertiary)]"
+          style={{ borderColor: "var(--border-subtle)" }}
+        >
+          <th className="px-4 py-2">Métrica</th>
+          <th className="px-4 py-2 text-right">Real</th>
+          <th className="px-4 py-2 text-right">Meta</th>
+          <th className="px-4 py-2">Avance</th>
+          {canDelete && <th className="px-4 py-2"></th>}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr
+            key={r.goal.id}
+            className="border-b"
+            style={{ borderColor: "var(--border-subtle)" }}
+          >
+            <td className="px-4 py-2">
+              {METRIC_LABEL[r.goal.metric] ?? r.goal.metric}
+              {r.goal.currency ? ` (${r.goal.currency})` : ""}
+            </td>
+            <td className="px-4 py-2 text-right">
+              {fmt(r.actual, r.goal.metric === "MONTO_VENTA" ? r.goal.currency : null)}
+            </td>
+            <td className="px-4 py-2 text-right">
+              {fmt(r.goal.target, r.goal.metric === "MONTO_VENTA" ? r.goal.currency : null)}
+            </td>
+            <td className="px-4 py-2">
+              <div className="flex items-center gap-2">
+                <div
+                  className="h-1.5 w-24 rounded"
+                  style={{ background: "var(--border-subtle)" }}
+                >
+                  <div
+                    className="h-1.5 rounded"
+                    style={{
+                      width: `${Math.min(r.pct, 100)}%`,
+                      background: STATUS_COLOR[r.status],
+                    }}
+                  />
+                </div>
+                <span style={{ color: STATUS_COLOR[r.status] }}>{r.pct}%</span>
+              </div>
+            </td>
+            {canDelete && (
+              <td className="px-4 py-2 text-right">
+                <button
+                  className="text-xs text-[color:var(--text-tertiary)] hover:underline"
+                  onClick={() => onDelete(r.goal.id)}
+                >
+                  Borrar
+                </button>
+              </td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * Metas (#895). Dos bloques:
+ *  · Empresa: todos los ven; solo ADMIN y DIRECTOR (`canEditCompany`) crean y borran.
+ *  · Por persona: arranca en uno mismo. Quien fija metas (`canEdit`) elige a otra persona de su
+ *    alcance; el resto solo ve las suyas. El servidor recorta igual aunque se cambie la URL.
+ */
 export function MetasClient({
   canEdit,
-  selfUserId,
+  canEditCompany,
+  selfUser,
+  advisorPlaza,
 }: {
   canEdit: boolean;
-  selfUserId: string;
-  role: string;
+  canEditCompany: boolean;
+  selfUser: AdvisorOptionUser;
+  advisorPlaza: string | null;
 }) {
   const [period, setPeriod] = useState(currentMonth());
-  const [userId, setUserId] = useState<string | null>(
-    canEdit ? null : selfUserId
-  );
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState<string>(selfUser.id);
+  const [companyRows, setCompanyRows] = useState<Row[]>([]);
+  const [personRows, setPersonRows] = useState<Row[]>([]);
+  const [loadingCompany, setLoadingCompany] = useState(true);
+  const [loadingPerson, setLoadingPerson] = useState(true);
+  const [dialogScope, setDialogScope] = useState<"COMPANY" | "USER" | null>(null);
   const [fMetric, setFMetric] = useState("NEGOCIOS_CREADOS");
   const [fTarget, setFTarget] = useState("");
   const [fCurrency, setFCurrency] = useState("MXN");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const qs = new URLSearchParams({ period });
-    const uid = canEdit ? userId : selfUserId;
-    if (uid) qs.set("userId", uid);
-    const res = await fetch(`/api/goals/scorecard?${qs.toString()}`);
-    const json = await res.json();
-    setRows(json.data ?? []);
-    setLoading(false);
-  }, [period, userId, canEdit, selfUserId]);
+  const loadCompany = useCallback(async () => {
+    setLoadingCompany(true);
+    setCompanyRows(await fetchRows(new URLSearchParams({ period, scope: "COMPANY" })));
+    setLoadingCompany(false);
+  }, [period]);
+
+  const loadPerson = useCallback(async () => {
+    setLoadingPerson(true);
+    const uid = canEdit ? userId : selfUser.id;
+    setPersonRows(await fetchRows(new URLSearchParams({ period, userId: uid })));
+    setLoadingPerson(false);
+  }, [period, userId, canEdit, selfUser.id]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadCompany();
+  }, [loadCompany]);
+  useEffect(() => {
+    loadPerson();
+  }, [loadPerson]);
 
   async function createGoal() {
-    if (!userId) {
-      alert("Selecciona un asesor");
-      return;
-    }
+    if (!dialogScope) return;
     const res = await fetch("/api/goals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        scope: "USER",
-        userId,
+        scope: dialogScope,
+        ...(dialogScope === "USER" ? { userId } : {}),
         period,
         metric: fMetric,
         target: Number(fTarget),
@@ -99,19 +211,26 @@ export function MetasClient({
       }),
     });
     if (res.ok) {
-      setOpen(false);
+      const scope = dialogScope;
+      setDialogScope(null);
       setFTarget("");
-      await load();
+      await (scope === "COMPANY" ? loadCompany() : loadPerson());
     } else {
-      const j = await res.json();
+      const j = await res.json().catch(() => ({}));
       alert(j.error ?? "Error");
     }
   }
 
-  async function removeGoal(id: string) {
+  async function removeGoal(id: string, scope: "COMPANY" | "USER") {
     const res = await fetch(`/api/goals/${id}`, { method: "DELETE" });
-    if (res.ok) await load();
+    if (res.ok) await (scope === "COMPANY" ? loadCompany() : loadPerson());
+    else {
+      const j = await res.json().catch(() => ({}));
+      alert(j.error ?? "Error");
+    }
   }
+
+  const viendoAOtro = canEdit && userId !== selfUser.id;
 
   return (
     <div className="space-y-5 p-6">
@@ -125,125 +244,89 @@ export function MetasClient({
             Avance del mes contra meta
           </p>
         </div>
-        <div className="flex items-end gap-2">
-          <label className="text-[13px]">
-            <span className="block text-[color:var(--text-tertiary)]">Mes</span>
-            <input
-              type="month"
-              className="form-input text-[13px]"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-            />
-          </label>
-          {canEdit && (
-            <label className="text-[13px]">
-              <span className="block text-[color:var(--text-tertiary)]">
-                Asesor
-              </span>
-              <AdvisorSelect value={userId} onChange={(v) => setUserId(v)} />
-            </label>
-          )}
-          {canEdit && (
+        <label className="text-[13px]">
+          <span className="block text-[color:var(--text-tertiary)]">Mes</span>
+          <input
+            type="month"
+            className="form-input text-[13px]"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+          />
+        </label>
+      </div>
+
+      {/* Empresa */}
+      <section className="space-y-2">
+        <div className="flex items-end justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--text-tertiary)]">
+            Metas de la empresa
+          </h2>
+          {canEditCompany && (
             <button
               className="btn-primary text-xs"
-              onClick={() => setOpen(true)}
+              onClick={() => setDialogScope("COMPANY")}
             >
-              Nueva meta
+              Nueva meta de empresa
             </button>
           )}
         </div>
-      </div>
+        <div className="crm-card p-0 overflow-hidden">
+          <GoalsTable
+            rows={companyRows}
+            loading={loadingCompany}
+            empty="Sin metas de la empresa este mes."
+            canDelete={canEditCompany}
+            onDelete={(id) => removeGoal(id, "COMPANY")}
+          />
+        </div>
+      </section>
 
-      {/* Scorecard table */}
-      <div className="crm-card p-0 overflow-hidden">
-        {loading ? (
-          <p className="p-4 text-[13px] text-[color:var(--text-tertiary)]">
-            Cargando…
-          </p>
-        ) : rows.length === 0 ? (
-          <p className="p-4 text-[13px] text-[color:var(--text-tertiary)]">
-            {canEdit && !userId
-              ? "Selecciona un asesor para ver/fijar sus metas."
-              : "Sin metas este mes."}
-          </p>
-        ) : (
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr
-                className="border-b text-left text-[color:var(--text-tertiary)]"
-                style={{ borderColor: "var(--border-subtle)" }}
+      {/* Por persona */}
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--text-tertiary)]">
+            {viendoAOtro ? "Metas del asesor" : "Mis metas"}
+          </h2>
+          {canEdit && (
+            <div className="flex items-end gap-2">
+              <label className="text-[13px]">
+                <span className="block text-[color:var(--text-tertiary)]">
+                  Asesor
+                </span>
+                <AdvisorSelect
+                  value={userId}
+                  onChange={(v) => setUserId(v ?? selfUser.id)}
+                  self={selfUser}
+                  plaza={advisorPlaza}
+                />
+              </label>
+              <button
+                className="btn-primary text-xs"
+                onClick={() => setDialogScope("USER")}
               >
-                <th className="px-4 py-2">Métrica</th>
-                <th className="px-4 py-2 text-right">Real</th>
-                <th className="px-4 py-2 text-right">Meta</th>
-                <th className="px-4 py-2">Avance</th>
-                {canEdit && <th className="px-4 py-2"></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.goal.id}
-                  className="border-b"
-                  style={{ borderColor: "var(--border-subtle)" }}
-                >
-                  <td className="px-4 py-2">
-                    {METRIC_LABEL[r.goal.metric] ?? r.goal.metric}
-                    {r.goal.currency ? ` (${r.goal.currency})` : ""}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {fmt(
-                      r.actual,
-                      r.goal.metric === "MONTO_VENTA" ? r.goal.currency : null
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {fmt(
-                      r.goal.target,
-                      r.goal.metric === "MONTO_VENTA" ? r.goal.currency : null
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-1.5 w-24 rounded"
-                        style={{ background: "var(--border-subtle)" }}
-                      >
-                        <div
-                          className="h-1.5 rounded"
-                          style={{
-                            width: `${Math.min(r.pct, 100)}%`,
-                            background: STATUS_COLOR[r.status],
-                          }}
-                        />
-                      </div>
-                      <span style={{ color: STATUS_COLOR[r.status] }}>
-                        {r.pct}%
-                      </span>
-                    </div>
-                  </td>
-                  {canEdit && (
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        className="text-xs text-[color:var(--text-tertiary)] hover:underline"
-                        onClick={() => removeGoal(r.goal.id)}
-                      >
-                        Borrar
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                Nueva meta
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="crm-card p-0 overflow-hidden">
+          <GoalsTable
+            rows={personRows}
+            loading={loadingPerson}
+            empty="Sin metas este mes."
+            canDelete={canEdit}
+            onDelete={(id) => removeGoal(id, "USER")}
+          />
+        </div>
+      </section>
 
       {/* New goal dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={dialogScope !== null} onOpenChange={(o) => !o && setDialogScope(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Nueva meta</DialogTitle>
+            <DialogTitle>
+              {dialogScope === "COMPANY" ? "Nueva meta de la empresa" : "Nueva meta"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <label className="block text-[13px]">

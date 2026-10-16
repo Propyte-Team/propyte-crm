@@ -2,6 +2,8 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { monthRange, computeGoalProgress, type GoalStatus } from "@/lib/goals/progress";
 import { realLeadWhere } from "@/lib/leads/real-leads";
+import { sumarAlAnd } from "@/lib/api/where-and";
+import { personasDeMetas, equiposDeMetas, metasVisiblesWhere, type UsuarioParaMetas } from "@/lib/rbac/goal-scope";
 
 type Scope = "USER" | "TEAM" | "COMPANY";
 type Metric =
@@ -108,17 +110,60 @@ export async function upsertGoal(input: {
   return { goal: { id: goal.id } };
 }
 
+/**
+ * #895: ¿este usuario puede fijar o borrar esta meta? Solo mira el alcance; el rol (quién fija
+ * metas, quién fija las de la empresa) lo revisa la ruta con `goal-scope.ts`. Una persona o un
+ * equipo que no existe o queda fuera de alcance dan lo mismo: así no se confirma que existe.
+ */
+export async function metaDentroDeAlcance(
+  user: UsuarioParaMetas,
+  meta: { scope: Scope; userId?: string | null; teamId?: string | null },
+): Promise<boolean> {
+  if (meta.scope === "COMPANY") return true;
+  if (meta.scope === "USER") {
+    if (!meta.userId) return false;
+    const personas = personasDeMetas(user);
+    const n = await prisma.user.count({
+      where: { id: meta.userId, deletedAt: null, ...(personas ? { AND: [personas] } : {}) },
+    });
+    return n > 0;
+  }
+  if (!meta.teamId) return false;
+  const equipos = equiposDeMetas(user);
+  if (equipos === null) return false;
+  const n = await prisma.team.count({
+    where: { id: meta.teamId, deletedAt: null, ...(equipos ? { AND: [equipos] } : {}) },
+  });
+  return n > 0;
+}
+
+/** #895: la meta, si existe y el usuario la ve. `null` si no (borrada, ajena o inexistente). */
+export async function metaVisible(
+  user: UsuarioParaMetas,
+  id: string,
+): Promise<{ id: string; scope: Scope } | null> {
+  const visibles = metasVisiblesWhere(user);
+  const g = await prisma.goal.findFirst({
+    where: { id, deletedAt: null, ...(visibles ? { AND: [visibles] } : {}) },
+    select: { id: true, scope: true },
+  });
+  return g ? { id: g.id, scope: g.scope as Scope } : null;
+}
+
 export async function deleteGoal(id: string) {
   await prisma.goal.update({ where: { id }, data: { deletedAt: new Date() } });
   return { ok: true as const };
 }
 
+/**
+ * #895: el alcance del rol y lo que pide la URL llegan ya armados (`lib/rbac/goal-scope.ts`) y
+ * se suman con AND. Antes recibía `userId`/`teamId` sueltos y los asignaba tal cual.
+ */
 export async function getScorecard(filter: {
-  period: Date; userId?: string | null; teamId?: string | null;
+  period: Date; filtros: (Prisma.GoalWhereInput | undefined)[];
 }): Promise<ScorecardRow[]> {
   const where: Prisma.GoalWhereInput = { deletedAt: null, period: filter.period };
-  if (filter.userId) where.userId = filter.userId;
-  if (filter.teamId) where.teamId = filter.teamId;
+  sumarAlAnd(where, ...filter.filtros.filter((f): f is Prisma.GoalWhereInput => !!f));
   const goals = await prisma.goal.findMany({ where, orderBy: { metric: "asc" } });
   return Promise.all(
     goals.map(async (g) => {
