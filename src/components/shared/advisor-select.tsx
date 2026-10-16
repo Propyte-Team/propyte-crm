@@ -9,6 +9,7 @@ export function AdvisorSelect({
   allowUnassigned = false,
   disabled = false,
   self = null,
+  plaza = null,
 }: {
   value: string | null;
   onChange: (id: string | null) => void | Promise<void>;
@@ -16,16 +17,19 @@ export function AdvisorSelect({
   disabled?: boolean;
   /** Usuario en sesión: siempre seleccionable aunque su rol no sea de asesor (ver advisor-options.ts). */
   self?: AdvisorOptionUser | null;
+  /** Solo asesores de esta plaza (Metas del gerente, #895). Sin plaza, la lista de siempre. */
+  plaza?: string | null;
 }) {
   const [advisors, setAdvisors] = useState<AdvisorOptionUser[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    fetch("/api/users?role=ASESOR,ASESOR_SR,ASESOR_JR,TEAM_LEADER&isActive=true&basic=true")
+    const qs = plaza ? `&plaza=${encodeURIComponent(plaza)}` : "";
+    fetch(`/api/users?role=ASESOR,ASESOR_SR,ASESOR_JR,TEAM_LEADER&isActive=true&basic=true${qs}`)
       .then((r) => r.json())
       .then((j) => setAdvisors(j.data ?? []))
       .catch(() => setAdvisors([]));
-  }, []);
+  }, [plaza]);
 
   return (
     <select

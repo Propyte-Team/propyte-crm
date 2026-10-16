@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { getScorecard } from "@/server/goals";
-
-const OWN_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER", "HOSTESS"];
+import { filtroScorecard, metasVisiblesWhere } from "@/lib/rbac/goal-scope";
 
 function parsePeriod(s: string | null): Date | null {
   if (!s) return null;
@@ -11,20 +10,29 @@ function parsePeriod(s: string | null): Date | null {
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
 }
 
+/**
+ * GET /api/goals/scorecard?period=YYYY-MM[&scope=COMPANY|USER|TEAM][&userId=][&teamId=]
+ *
+ * #895: lo que pide la URL se SUMA al alcance del rol (`lib/rbac/goal-scope.ts`), no lo
+ * reemplaza. Pedir a alguien fuera de alcance da lista vacía. Sin filtros = «mi avance»: mis
+ * metas + las de la empresa.
+ */
 export async function GET(request: NextRequest) {
   const session = await getServerSession();
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  const period = parsePeriod(request.nextUrl.searchParams.get("period"));
+  const sp = request.nextUrl.searchParams;
+  const period = parsePeriod(sp.get("period"));
   if (!period) return NextResponse.json({ error: "period requerido (YYYY-MM)" }, { status: 400 });
 
-  let userId = request.nextUrl.searchParams.get("userId") ?? undefined;
-  const teamId = request.nextUrl.searchParams.get("teamId") ?? undefined;
+  const user = { id: session.user.id, role: session.user.role as string, plaza: session.user.plaza };
+  const pedido = filtroScorecard(user, {
+    scope: sp.get("scope"),
+    userId: sp.get("userId"),
+    teamId: sp.get("teamId"),
+  });
+  if ("error" in pedido) return NextResponse.json({ error: pedido.error }, { status: 400 });
 
-  if (OWN_ROLES.includes(session.user.role as string)) {
-    userId = session.user.id;
-  }
-
-  const data = await getScorecard({ period, userId, teamId });
+  const data = await getScorecard({ period, filtros: [metasVisiblesWhere(user), pedido.where] });
   return NextResponse.json({ data });
 }

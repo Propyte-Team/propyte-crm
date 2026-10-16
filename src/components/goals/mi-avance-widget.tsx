@@ -14,7 +14,7 @@ const STATUS_COLOR: Record<string, string> = {
   met: "var(--text-primary)", on_track: "var(--text-secondary)", behind: "var(--color-error, #DC2626)",
 };
 
-interface Row { goal: { id: string; metric: string; target: number }; actual: number; pct: number; status: string }
+interface Row { goal: { id: string; metric: string; target: number; scope?: string }; actual: number; pct: number; status: string }
 
 export function MiAvanceWidget() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -25,7 +25,12 @@ export function MiAvanceWidget() {
     const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     fetch(`/api/goals/scorecard?period=${period}`)
       .then((r) => r.json())
-      .then((j) => setRows((j.data ?? []).slice(0, 3)))
+      // #895: el scorecard sin filtros trae mis metas + las de la empresa. Las mías primero.
+      .then((j) => {
+        const data: Row[] = j.data ?? [];
+        const orden = (r: Row) => (r.goal.scope === "COMPANY" ? 1 : 0);
+        setRows([...data].sort((a, b) => orden(a) - orden(b)).slice(0, 3));
+      })
       .catch(() => setRows([]))
       .finally(() => setLoaded(true));
   }, []);
@@ -38,7 +43,10 @@ export function MiAvanceWidget() {
       <div className="mt-3 space-y-2">
         {rows.map((r) => (
           <div key={r.goal.id} className="flex items-center justify-between gap-3 text-[13px]">
-            <span className="text-[color:var(--text-secondary)]">{METRIC_LABEL[r.goal.metric] ?? r.goal.metric}</span>
+            <span className="text-[color:var(--text-secondary)]">
+              {METRIC_LABEL[r.goal.metric] ?? r.goal.metric}
+              {r.goal.scope === "COMPANY" && <span className="text-[color:var(--text-tertiary)]"> · empresa</span>}
+            </span>
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-20 rounded" style={{ background: "var(--border-subtle)" }}>
                 <div className="h-1.5 rounded" style={{ width: `${Math.min(r.pct, 100)}%`, background: STATUS_COLOR[r.status] }} />
