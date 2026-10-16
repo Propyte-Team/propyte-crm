@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { userProfileSchema } from "@/lib/validations/rebuild-f1";
-import { normalizePhoneE164 } from "@/lib/phone";
+import { normalizePhoneE164, telefonoSinEspacios } from "@/lib/phone";
 
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
 
@@ -48,9 +48,10 @@ export async function PATCH(req: NextRequest) {
   }
   const data = { ...parsed.data };
 
-  // Normalizar teléfonos
-  if (data.phoneDirect) data.phoneDirect = normalizePhoneE164(data.phoneDirect) ?? data.phoneDirect;
-  if (data.whatsappNumber) data.whatsappNumber = normalizePhoneE164(data.whatsappNumber) ?? data.whatsappNumber;
+  // Normalizar teléfonos. Si no se puede llevar a E.164 (muy corto, muy largo), al menos se guarda
+  // sin espacios ni guiones (#900): la misma regla que el campo de Mi perfil aplica al teclear.
+  if (data.phoneDirect) data.phoneDirect = normalizePhoneE164(data.phoneDirect) ?? telefonoSinEspacios(data.phoneDirect);
+  if (data.whatsappNumber) data.whatsappNumber = normalizePhoneE164(data.whatsappNumber) ?? telefonoSinEspacios(data.whatsappNumber);
 
   // cardSlug inmutable tras publicar (§J.6: los QR impresos no se rompen)
   const existing = await prisma.userProfile.findUnique({ where: { userId: target.userId } });

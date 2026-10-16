@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { QrCode, Save, Trash2, Plus, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { telefonoSinEspacios } from "@/lib/phone";
 
 const TABS = [
   { key: "perfil", label: "Perfil" },
@@ -189,11 +190,11 @@ export function SettingsView() {
             <textarea className="form-input" rows={3} value={profile.bioEn ?? ""} onChange={(e) => set("bioEn", e.target.value)} />
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Teléfono directo">
-              <input className="form-input" value={profile.phoneDirect ?? ""} onChange={(e) => set("phoneDirect", e.target.value)} placeholder="+52 984 ..." />
+            <Field label="Teléfono directo" hint="Se guarda sin espacios; en tus fichas se muestra separado.">
+              <input className="form-input" type="tel" inputMode="tel" autoComplete="tel" value={profile.phoneDirect ?? ""} onChange={(e) => set("phoneDirect", telefonoSinEspacios(e.target.value))} placeholder="+529841234567" />
             </Field>
             <Field label="WhatsApp">
-              <input className="form-input" value={profile.whatsappNumber ?? ""} onChange={(e) => set("whatsappNumber", e.target.value)} placeholder="+52 984 ..." />
+              <input className="form-input" type="tel" inputMode="tel" value={profile.whatsappNumber ?? ""} onChange={(e) => set("whatsappNumber", telefonoSinEspacios(e.target.value))} placeholder="+529841234567" />
             </Field>
           </div>
           <Field label="Link de agenda" hint="Google Appointment Schedules / Calendly">

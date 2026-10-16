@@ -17,6 +17,7 @@ import {
   type ContactoAsesor,
 } from "@/lib/fichas/ficha";
 import { AccionesFicha } from "@/components/fichas/acciones-ficha";
+import { telefonoLegible } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   const v = ficha.vista;
   const base = await origen();
   const titulo = v.tipo === "UNIDAD" && v.subtitulo ? `${v.titulo} · ${v.subtitulo}` : v.titulo;
-  const descripcion = [precioDestacado(v), v.ubicacion]
+  const descripcion = [v.lema, precioDestacado(v), v.ubicacion]
     .filter(Boolean)
     .join(" · ");
   const asesor = ficha.contacto ? ` Tu asesor: ${ficha.contacto.nombre}.` : "";
@@ -101,7 +102,7 @@ function TarjetaAsesor({ c, waHref }: { c: ContactoAsesor | null; waHref: string
             href={`tel:${c.telefono}`}
             className="block w-full rounded-lg border border-white/25 px-4 py-3 text-center text-sm font-semibold hover:bg-white/10"
           >
-            Llamar · {c.telefono}
+            Llamar · {telefonoLegible(c.telefono)}
           </a>
         )}
         <a
@@ -203,6 +204,7 @@ export default async function FichaPublicaPage(props: Props) {
             <section>
               {v.subtitulo && <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#999]">{v.subtitulo}</p>}
               <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">{v.titulo}</h1>
+              {v.lema && <p className="mt-1 text-lg text-[#333]">{v.lema}</p>}
               {v.ubicacion && <p className="mt-1 text-[#555]">{v.ubicacion}</p>}
               {precio && (
                 <p className="mt-4 flex flex-wrap items-baseline gap-3">

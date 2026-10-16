@@ -61,6 +61,14 @@ export interface PublishedDevelopmentDetail extends PublishedDevelopment {
   crmRelationship: string | null;
   contactName: string | null;
   contactPhone: string | null;
+  /**
+   * Nombre del desarrollo tal cual (`d.name`). `name` es `COALESCE(publication_title, name)`, como en
+   * propyte.com, y en los 27 publicados ese título es una frase comercial («Casas 3 y 4 Recámaras en
+   * Preventa»), no el nombre. La ficha técnica (#898) necesita el nombre.
+   */
+  realName: string | null;
+  /** `publication_title` sin espacios sobrantes; null si está vacío. */
+  publicationTitle: string | null;
 }
 
 export interface PublishedUnit {

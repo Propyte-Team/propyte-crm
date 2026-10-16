@@ -6,6 +6,8 @@ import {
   enlaceParaReenviar,
   faltantesDelPerfil,
   generarTokenFicha,
+  lemaDe,
+  nombreDesarrollo,
   precioDestacado,
   vistaDeDesarrollo,
   vistaDeUnidad,
@@ -69,6 +71,8 @@ function desarrollo(extra: Partial<PublishedDevelopmentDetail> = {}): PublishedD
     crmRelationship: "Exclusiva con condiciones especiales",
     contactName: "Juan del Desarrollador",
     contactPhone: "+52 984 000 0000",
+    realName: "Torre Alba",
+    publicationTitle: "Departamentos con rooftop en Tulum",
     ...extra,
   };
 }
@@ -300,5 +304,40 @@ describe("compartir", () => {
     expect(decodeURIComponent(href.split("text=")[1])).toBe(
       "Te comparto la ficha técnica de Torre Alba: https://crm.propyte.com/f/abc"
     );
+  });
+});
+
+describe("nombre y lema del desarrollo (#898)", () => {
+  // En los 27 desarrollos publicados, `name` del catálogo es la frase comercial
+  // (`COALESCE(publication_title, name)`). La ficha tiene que decir CUÁL desarrollo es.
+  it("el título es el nombre real, no la frase comercial", () => {
+    const d = desarrollo({ name: "Casas 3 y 4 Recámaras en Preventa", realName: "Nubba", publicationTitle: "Casas 3 y 4 Recámaras en Preventa" });
+    const v = vistaDeDesarrollo(d);
+    expect(v.titulo).toBe("Nubba");
+    expect(v.lema).toBe("Casas 3 y 4 Recámaras en Preventa");
+  });
+
+  it("la unidad lleva el nombre real del desarrollo como subtítulo", () => {
+    const d = desarrollo({ name: "Naturaleza Ancestral", realName: "Lavanda (Saumeria)" });
+    expect(vistaDeUnidad(unidad(), d, []).subtitulo).toBe("Lavanda (Saumeria)");
+  });
+
+  it("sin realName (catálogo viejo) cae a name", () => {
+    expect(nombreDesarrollo({ realName: null, name: " Torre Alba " })).toBe("Torre Alba");
+  });
+
+  it("el lema quita lo que ya dice la ficha", () => {
+    expect(lemaDe("Villalta Laguna Cancún | Departamentos frente a la laguna | Onix Living", "Villalta Laguna", "Onix Living")).toBe(
+      "Departamentos frente a la laguna"
+    );
+    expect(lemaDe("The Landmark Playa del Carmen | Torre frente a la Quinta", "The Landmark Playa del Carmen")).toBe(
+      "Torre frente a la Quinta"
+    );
+    expect(lemaDe(" Naturaleza Ancestral Encuentra el Lujo Contemporáneo", "Lavanda (Saumeria)")).toBe(
+      "Naturaleza Ancestral Encuentra el Lujo Contemporáneo"
+    );
+    // Sin acentos ni mayúsculas de por medio.
+    expect(lemaDe("CENTRAL PARK CANCÚN TOWERS", "Central Park Cancun Towers")).toBeNull();
+    expect(lemaDe(null, "Nubba")).toBeNull();
   });
 });

@@ -136,7 +136,9 @@ export async function getPublishedDevelopment(
               d.commission_rate::float8                 AS "commissionRate",
               d.crm_relationship::text                  AS "crmRelationship",
               d.contact_name::text                      AS "contactName",
-              d.contact_phone::text                     AS "contactPhone"
+              d.contact_phone::text                     AS "contactPhone",
+              NULLIF(btrim(d.name), '')::text           AS "realName",
+              NULLIF(btrim(d.publication_title), '')::text AS "publicationTitle"
          FROM real_estate_hub.v_developments d
         WHERE ${PUBLIC_GATE}
           AND (d.id::text = $1 OR d.slug = $1)
