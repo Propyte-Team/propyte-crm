@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
 import { ContactImport } from "@/components/contacts/contact-import";
+import { ExportarContactos } from "@/components/contacts/exportar-contactos";
+import { puedeExportarContactos } from "@/lib/contacts/exportar";
 import { SavedViewsBar } from "@/components/views/saved-views-bar";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } from "@/components/brands/brand-view";
 import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
@@ -358,24 +360,29 @@ export function ContactsList({
           </DialogContent>
         </Dialog>
 
-        {/* Botón de importación CSV */}
-        <Dialog open={importOpen} onOpenChange={setImportOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline">
-              <FileUp className="mr-2 h-4 w-4" />
-              Importar CSV
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Importar Contactos</DialogTitle>
-            </DialogHeader>
-            <ContactImport onSuccess={() => {
-              setImportOpen(false);
-              fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
-            }} />
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          {/* Descarga de contactos (#901): solo ADMIN y DIRECTOR, a la izquierda de Importar. */}
+          {puedeExportarContactos(userRole) && <ExportarContactos />}
+
+          {/* Botón de importación CSV */}
+          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <FileUp className="mr-2 h-4 w-4" />
+                Importar CSV
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Importar Contactos</DialogTitle>
+              </DialogHeader>
+              <ContactImport onSuccess={() => {
+                setImportOpen(false);
+                fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, page);
+              }} />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Vistas guardadas (Fase 5) */}
