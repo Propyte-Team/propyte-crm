@@ -52,6 +52,14 @@ import {
   LEAD_SOURCE_ORDER,
   LEAD_SOURCE_LABELS,
 } from "@/lib/constants";
+import {
+  INVESTMENT_LABEL,
+  PROPERTY_LABEL,
+  TIMELINE_LABEL,
+  PAYMENT_LABEL,
+  MODALITY_LABEL,
+  RENTAL_LABEL,
+} from "@/lib/contacts/perfil-labels";
 
 // --- Etiquetas locales (no en constants) ---
 const TEMP_COLORS: Record<string, string> = {
@@ -59,45 +67,6 @@ const TEMP_COLORS: Record<string, string> = {
   WARM: "#D97706",
   COLD: "#3B82F6",
   DEAD: "#9CA3AF",
-};
-const INVESTMENT_LABEL: Record<string, string> = {
-  END_USER: "Usuario final",
-  INVESTOR_RENTAL: "Inversionista (renta)",
-  INVESTOR_FLIP: "Inversionista (flip)",
-  INVESTOR_LAND: "Inversionista (terreno)",
-  MIXED: "Mixto",
-};
-const PROPERTY_LABEL: Record<string, string> = {
-  DEPARTAMENTO: "Departamento",
-  CASA: "Casa",
-  TERRENO: "Terreno",
-  MACROLOTE: "Macrolote",
-  LOCAL_COMERCIAL: "Local comercial",
-  OTRO: "Otro",
-};
-const TIMELINE_LABEL: Record<string, string> = {
-  IMMEDIATE: "Inmediato",
-  ONE_TO_THREE_MONTHS: "1-3 meses",
-  THREE_TO_SIX_MONTHS: "3-6 meses",
-  SIX_PLUS_MONTHS: "6+ meses",
-};
-const PAYMENT_LABEL: Record<string, string> = {
-  CONTADO: "Contado",
-  CREDITO_HIPOTECARIO: "Crédito hipotecario",
-  FINANCIAMIENTO_DIRECTO: "Financiamiento directo",
-  MIXTO: "Mixto",
-};
-const MODALITY_LABEL: Record<string, string> = {
-  PREVENTA: "Preventa",
-  ENTREGA_INMEDIATA: "Entrega inmediata",
-  REVENTA: "Reventa",
-  ABIERTO: "Abierto",
-};
-const RENTAL_LABEL: Record<string, string> = {
-  LONG_TERM: "Largo plazo",
-  AIRBNB: "Airbnb / corto plazo",
-  BOTH: "Ambos",
-  NA: "No aplica",
 };
 const DEAL_STAGE_LABEL: Record<string, string> = {
   NEW_LEAD: "Nuevo lead",
