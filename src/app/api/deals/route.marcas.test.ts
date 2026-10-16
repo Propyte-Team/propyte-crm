@@ -68,8 +68,8 @@ describe("GET /api/deals — marcas", () => {
     session = { user: { id: "ger-1", role: "GERENTE", plaza: "CANCUN" } };
     await get("?advisorId=ase-3");
     expect(whereUsed().assignedTo).toEqual({ plaza: "CANCUN" });
-    expect(whereUsed().assignedToId).toBe("ase-3");
-    expect(whereUsed().AND).toEqual([marcaNegocio("ger-1")]);
+    // #881: el asesor pedido va en el AND, sumado a la plaza; la marca, detrás.
+    expect(whereUsed().AND).toEqual([{ assignedToId: "ase-3" }, marcaNegocio("ger-1")]);
   });
 
   it("asesor: lo suyo + marca (lo suyo siempre pasa la marca: el término assignedToId está en el OR)", async () => {
