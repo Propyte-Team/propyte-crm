@@ -83,6 +83,8 @@ const DEV = {
   crmRelationship: null,
   contactName: "Contacto del desarrollador",
   contactPhone: "+529840000000",
+  realName: "Torre Alba",
+  publicationTitle: "Departamentos en Tulum",
 };
 
 const UNIDAD = {

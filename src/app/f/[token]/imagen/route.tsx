@@ -8,6 +8,7 @@ import { ImageResponse } from "next/og";
 import { NextRequest, NextResponse } from "next/server";
 import { cargarFichaPublica } from "@/server/fichas";
 import { origenPublico, precioDestacado, rutaFicha, type ContactoAsesor, type VistaFicha } from "@/lib/fichas/ficha";
+import { telefonoLegible } from "@/lib/phone";
 import { cabe, cargarFuentes, cargarSharp, fotoComoDataUri, qrComoDataUri, tituloCorto } from "@/lib/fichas/imagen";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,9 @@ const NEGRO = "#111111";
 const GRIS = "#6B6B6B";
 const FONDO = "#FAFAFA";
 
-function telefonoLegible(c: ContactoAsesor): string | null {
-  const n = c.telefono ?? (c.whatsapp ? `+${c.whatsapp}` : null);
-  if (!n) return null;
-  const m = n.match(/^\+52(\d{3})(\d{3})(\d{4})$/);
-  return m ? `+52 ${m[1]} ${m[2]} ${m[3]}` : n;
+/** El número que se imprime: el directo o, si no hay, el de WhatsApp. Formato en lib/phone (#898). */
+function telefonoDelAsesor(c: ContactoAsesor): string | null {
+  return telefonoLegible(c.telefono ?? (c.whatsapp ? `+${c.whatsapp}` : null));
 }
 
 function Marca({ claro }: { claro?: boolean }) {
@@ -51,7 +50,7 @@ function BloqueAsesor({ c, foto, grande }: { c: ContactoAsesor | null; foto: str
       </div>
     );
   }
-  const tel = telefonoLegible(c);
+  const tel = telefonoDelAsesor(c);
   const lado = grande ? 132 : 96;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: grande ? 32 : 22 }}>
@@ -104,12 +103,12 @@ function Precio({ v, tam }: { v: VistaFicha; tam: number }) {
 
 async function flyer(v: VistaFicha, c: ContactoAsesor | null, url: string) {
   const conMiniaturas = v.fotos.length >= 4;
-  const altoPortada = conMiniaturas ? 520 : 700;
+  const altoPortada = conMiniaturas ? 490 : 660;
   const [portada, m1, m2, m3, fotoAsesor, qr] = await Promise.all([
     v.fotos[0] ? fotoComoDataUri(v.fotos[0], 1080, altoPortada) : null,
-    conMiniaturas ? fotoComoDataUri(v.fotos[1], 348, 160) : null,
-    conMiniaturas ? fotoComoDataUri(v.fotos[2], 348, 160) : null,
-    conMiniaturas ? fotoComoDataUri(v.fotos[3], 348, 160) : null,
+    conMiniaturas ? fotoComoDataUri(v.fotos[1], 348, 150) : null,
+    conMiniaturas ? fotoComoDataUri(v.fotos[2], 348, 150) : null,
+    conMiniaturas ? fotoComoDataUri(v.fotos[3], 348, 150) : null,
     c?.foto ? fotoComoDataUri(c.foto, 264, 264) : null,
     qrComoDataUri(url),
   ]);
@@ -150,28 +149,34 @@ async function flyer(v: VistaFicha, c: ContactoAsesor | null, url: string) {
         <div style={{ display: "flex", gap: 9, marginTop: 9, paddingLeft: 9, paddingRight: 9 }}>
           {miniaturas.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-            <img key={i} src={src} width={348} height={160} style={{ objectFit: "cover" }} />
+            <img key={i} src={src} width={348} height={150} style={{ objectFit: "cover" }} />
           ))}
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, overflow: "hidden", padding: "30px 56px 0 56px" }}>
+      <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, overflow: "hidden", padding: "26px 56px 0 56px" }}>
         <div style={{ fontSize: 22, color: GRIS, letterSpacing: 4 }}>
           {cabe(`FICHA TÉCNICA${v.subtitulo ? ` · ${tituloCorto(v.subtitulo).toUpperCase()}` : ""}`, 60)}
         </div>
-        <div style={{ fontSize: 54, fontWeight: 700, color: NEGRO, marginTop: 4 }}>{cabe(tituloCorto(v.titulo), 32)}</div>
-        {v.ubicacion && <div style={{ fontSize: 26, color: GRIS }}>{cabe(v.ubicacion, 62)}</div>}
-        <div style={{ display: "flex", marginTop: 14 }}>
+        <div style={{ fontSize: 54, fontWeight: 700, color: NEGRO, marginTop: 2 }}>{cabe(tituloCorto(v.titulo), 32)}</div>
+        {v.lema && <div style={{ fontSize: 28, color: "#333333" }}>{cabe(v.lema, 56)}</div>}
+        {v.ubicacion && <div style={{ fontSize: 24, color: GRIS, marginTop: 2 }}>{cabe(v.ubicacion, 66)}</div>}
+        <div style={{ display: "flex", marginTop: 10 }}>
           <Precio v={v} tam={48} />
         </div>
         {datos.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", marginTop: 18, borderTop: `2px solid ${NEGRO}` }}>
-            {datos.map((d) => (
-              <div key={d.etiqueta} style={{ display: "flex", flexDirection: "column", width: 322, paddingTop: 14 }}>
-                <div style={{ fontSize: 19, color: GRIS }}>{d.etiqueta}</div>
-                <div style={{ fontSize: 27, fontWeight: 700, color: NEGRO }}>{cabe(d.valor, 20)}</div>
-              </div>
-            ))}
+          <div style={{ display: "flex", flexWrap: "wrap", marginTop: 14, borderTop: `2px solid ${NEGRO}` }}>
+            {datos.map((d) => {
+              // Hasta dos renglones por dato (#898). Un dato que no cabe en dos renglones de una
+              // columna («Fase 1: Diciembre 2027 · Villas Palo Santo: Junio 2028») toma dos columnas.
+              const ancho = d.valor.length > 40 ? 644 : 322;
+              return (
+                <div key={d.etiqueta} style={{ display: "flex", flexDirection: "column", width: ancho, paddingTop: 12, paddingRight: 18 }}>
+                  <div style={{ fontSize: 18, color: GRIS }}>{d.etiqueta}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: NEGRO, lineHeight: 1.15 }}>{cabe(d.valor, ancho > 322 ? 84 : 40)}</div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -222,7 +227,8 @@ async function vistaPrevia(v: VistaFicha, c: ContactoAsesor | null) {
             {cabe(`FICHA TÉCNICA${v.subtitulo ? ` · ${tituloCorto(v.subtitulo).toUpperCase()}` : ""}`, 34)}
           </div>
           <div style={{ fontSize: 40, fontWeight: 700, color: NEGRO, marginTop: 4, lineHeight: 1.1 }}>{cabe(tituloCorto(v.titulo), 40)}</div>
-          {v.ubicacion && <div style={{ fontSize: 22, color: GRIS, marginTop: 6 }}>{cabe(v.ubicacion, 40)}</div>}
+          {v.lema && <div style={{ fontSize: 22, color: "#333333", marginTop: 6, lineHeight: 1.2 }}>{cabe(v.lema, 70)}</div>}
+          {v.ubicacion && <div style={{ fontSize: 20, color: GRIS, marginTop: 6 }}>{cabe(v.ubicacion, 44)}</div>}
           <div style={{ display: "flex", marginTop: 16 }}>
             <Precio v={v} tam={38} />
           </div>

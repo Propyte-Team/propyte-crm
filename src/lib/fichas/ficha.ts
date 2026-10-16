@@ -107,6 +107,11 @@ export interface VistaFicha {
   titulo: string;
   /** Para la unidad, el desarrollo; para el desarrollo, el desarrollador. */
   subtitulo: string | null;
+  /**
+   * La frase comercial del Hub (`publication_title`) sin el nombre repetido: «Casas 3 y 4 Recámaras
+   * en Preventa», «Torre frente a la Quinta». Va bajo el título; nunca EN LUGAR del nombre (#898).
+   */
+  lema: string | null;
   ubicacion: string | null;
   /** Precio o rango ya formateado. */
   precio: string | null;
@@ -173,6 +178,38 @@ function agregar(datos: DatoFicha[], etiqueta: string, valor: string | number | 
   if (v) datos.push({ etiqueta, valor: v });
 }
 
+/**
+ * El nombre del desarrollo. `d.name` del catálogo es `COALESCE(publication_title, name)` —la frase
+ * comercial de propyte.com—, así que la ficha toma `realName` (#898). Sin él (catálogo viejo),
+ * cae a `name` para no quedarse sin título.
+ */
+export function nombreDesarrollo(d: Pick<PublishedDevelopmentDetail, "realName" | "name">): string {
+  return d.realName?.trim() || d.name.trim();
+}
+
+const SEPARADOR_LEMA = /\s+[|·–—]\s+/;
+
+/**
+ * La frase comercial sin lo que ya dice la ficha. Se parte por « | » y se quitan los trozos que
+ * contienen el nombre del desarrollo o el del desarrollador:
+ *   «Villalta Laguna Cancún | Departamentos frente a la laguna | Onix Living»
+ *     → «Departamentos frente a la laguna»
+ */
+export function lemaDe(
+  publicationTitle: string | null | undefined,
+  nombre: string,
+  desarrollador?: string | null
+): string | null {
+  const base = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const n = base(nombre);
+  const dev = desarrollador ? base(desarrollador) : null;
+  const trozos = (publicationTitle ?? "")
+    .split(SEPARADOR_LEMA)
+    .map((t) => t.trim())
+    .filter((t) => t && !base(t).includes(n) && (!dev || base(t) !== dev));
+  return trozos.length ? trozos.join(" · ") : null;
+}
+
 export function vistaDeDesarrollo(d: PublishedDevelopmentDetail): VistaFicha {
   const datos: DatoFicha[] = [];
   agregar(datos, "Tipo", d.propertyTypes.length ? d.propertyTypes.join(", ") : d.developmentType);
@@ -184,8 +221,9 @@ export function vistaDeDesarrollo(d: PublishedDevelopmentDetail): VistaFicha {
 
   return {
     tipo: "DESARROLLO",
-    titulo: d.name,
+    titulo: nombreDesarrollo(d),
     subtitulo: d.developerName,
+    lema: lemaDe(d.publicationTitle, nombreDesarrollo(d), d.developerName),
     ubicacion: ubicacionDe(d),
     precio: formatPriceRange(d.priceMinMxn, d.priceMaxMxn),
     precioAntes: null,
@@ -245,7 +283,8 @@ export function vistaDeUnidad(
   return {
     tipo: "UNIDAD",
     titulo: u.title?.trim() || (u.unitNumber ? `Unidad ${u.unitNumber}` : "Unidad"),
-    subtitulo: d.name,
+    subtitulo: nombreDesarrollo(d),
+    lema: lemaDe(d.publicationTitle, nombreDesarrollo(d), d.developerName),
     ubicacion: ubicacionDe(d),
     precio,
     precioAntes,
