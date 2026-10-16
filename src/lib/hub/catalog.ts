@@ -232,6 +232,27 @@ export async function getPublishedUnit(id: string): Promise<CatalogResult<Publis
   }
 }
 
+/**
+ * Galería completa de una unidad publicada (ficha técnica compartible, #887). `UNIT_COLS` solo
+ * trae la portada porque los listados no necesitan más; esta lectura aparte evita cargar la
+ * galería en cada fila de cada listado.
+ */
+export async function getPublishedUnitImages(id: string): Promise<CatalogResult<string[]>> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ images: string[] | null }[]>(
+      `SELECT COALESCE(u.images, '{}')::text[] AS images
+         FROM real_estate_hub.v_units u
+        WHERE ${PUBLIC_GATE}
+          AND u.id::text = $1
+        LIMIT 1`,
+      id
+    );
+    return { data: rows[0]?.images ?? [], error: null };
+  } catch (err) {
+    return fail("getPublishedUnitImages", err, []);
+  }
+}
+
 // ─────────────────── Resolución operativa por ID (SIN gate) ───────────────────
 // getUnitByIdUngated / getDevelopmentByIdUngated resuelven CUALQUIER unidad o
 // desarrollo por ID, esté o no publicado. Existen para el cotizador, shortlists y

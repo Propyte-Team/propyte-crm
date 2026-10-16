@@ -18,6 +18,7 @@ const RUTAS_PUBLICAS = [
   { dir: "p", que: "la propuesta de unidades" },
   { dir: "t", que: "la ficha pública del asesor" },
   { dir: "portal", que: "el portal de desarrolladores" },
+  { dir: "f", que: "la ficha técnica compartible (#887)" },
 ];
 
 describe("fronteras de error en las rutas públicas (#716)", () => {
@@ -57,6 +58,7 @@ describe("las páginas públicas no confunden 'falló la base' con 'no existe' (
   const casos = [
     { archivo: join(APP, "q", "[id]", "page.tsx"), busqueda: "prisma.quote.findFirst" },
     { archivo: join(APP, "p", "[token]", "page.tsx"), busqueda: "getShortlistByToken(params.token)" },
+    { archivo: join(APP, "f", "[token]", "page.tsx"), busqueda: "await cargarFicha(token);" },
   ];
 
   for (const { archivo, busqueda } of casos) {

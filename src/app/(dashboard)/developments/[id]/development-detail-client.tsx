@@ -11,6 +11,7 @@ import { formatCurrency } from "@/lib/constants";
 import { formatFinancingMonths } from "@/lib/format-financing";
 import { formatPriceRange } from "@/lib/format-price";
 import type { PublishedDevelopmentDetail, PublishedUnit } from "@/lib/hub/catalog-types";
+import { CompartirFicha } from "@/components/fichas/compartir-ficha";
 
 interface Props {
   development: PublishedDevelopmentDetail | null;
@@ -73,6 +74,7 @@ export function DevelopmentDetailClient({ development, units, devError, unitsErr
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
+          <CompartirFicha developmentId={d.id} />
           {d.slug && (
             <Button asChild variant="outline" size="sm">
               <a href={`${SITE}/desarrollos/${d.slug}`} target="_blank" rel="noreferrer">
@@ -230,7 +232,8 @@ export function DevelopmentDetailClient({ development, units, devError, unitsErr
                         )}
                       </td>
                       <td className="px-4 py-2 text-muted-foreground">{u.status ?? "—"}</td>
-                      <td className="px-4 py-2 text-right">
+                      <td className="space-x-3 whitespace-nowrap px-4 py-2 text-right">
+                        <CompartirFicha developmentId={d.id} unitId={u.id} variante="enlace" />
                         {u.slug && (
                           <a
                             href={`${SITE}/propiedades/${u.slug}`}
