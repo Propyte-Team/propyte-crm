@@ -10,6 +10,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
+import { andWhere } from "@/lib/rbac/query-scope";
 
 // Roles que pueden ver todos los walk-ins
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO", "TEAM_LEADER"];
@@ -79,9 +80,11 @@ export async function GET(request: NextRequest) {
       if (dateTo) (where.arrivalTime as any).lte = new Date(dateTo);
     }
 
-    // Filtros adicionales
-    if (hostessId) where.hostessId = hostessId;
-    if (advisorId) where.assignedAdvisorId = advisorId;
+    // Filtros adicionales — en el AND, no en lugar del alcance (#881, 2026-10-14). Antes pisaban el
+    // `hostessId = yo` de la HOSTESS y el `assignedAdvisorId = yo` del asesor: una hostess veía las
+    // visitas de otra y un asesor las de otro con solo cambiar la URL.
+    if (hostessId) andWhere(where, { hostessId });
+    if (advisorId) andWhere(where, { assignedAdvisorId: advisorId });
 
     // Ejecutar consulta
     const walkIns = await prisma.walkIn.findMany({

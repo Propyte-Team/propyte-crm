@@ -11,6 +11,7 @@ import { canModifyActivity } from "@/lib/activities/permissions"
 import { resolveActivityScope } from "@/lib/activities/scope"
 import { getVisibleBrands } from "@/lib/brands/user-access"
 import { activityBrandVisibilityWhere } from "@/lib/brands/visibility"
+import { andWhere } from "@/lib/rbac/query-scope"
 
 /** Los userId que un rol TEAM puede ver: él mismo + quienes le reportan. */
 async function teamMemberIds(currentUserId: string): Promise<string[]> {
@@ -126,7 +127,9 @@ export async function getActivities(filters: ActivityFilters = {}) {
   // Aplicar filtros específicos
   if (contactId) where.contactId = contactId
   if (dealId) where.dealId = dealId
-  if (userId) where.userId = userId
+  // #881 (2026-10-14): en el AND, no en lugar del alcance de arriba (el `= yo` de OWN y el
+  // `in: equipo` de TEAM). Es el mismo arreglo que ya tenía GET /api/activities.
+  if (userId) andWhere(where, { userId })
   if (type) where.activityType = type
   if (status) where.status = status
 
@@ -423,30 +426,27 @@ export async function getOverdueTasks(userId?: string) {
   const userRole = session.user.role
   const currentUserId = session.user.id
 
-  if (userId) {
-    // El llamador pide explícitamente las tareas de un usuario. Hoy el único
-    // call site (server/dashboard.ts) pasa el id de la propia sesión para
-    // ASESOR_SR/ASESOR_JR, así que no hay fuga; pero el parámetro NO valida que
-    // quien pregunta pueda ver a ese usuario. Ver nota al cierre de la sesión.
-    where.userId = userId
-  } else {
-    const scope = resolveActivityScope(userRole)
-    if (scope === "TEAM") {
-      where.userId = { in: await teamMemberIds(currentUserId) }
-    } else if (scope === "OWN" || scope === "DENIED") {
-      // DENIED cae a "solo lo propio" en vez de a "todo": esta función nunca
-      // lanzó y no se le va a cambiar el contrato aquí, pero un rol futuro sin
-      // set asignado no debe heredar visibilidad total por omisión.
-      where.userId = currentUserId
-    }
-    // ALL: sin restricción de userId
+  const scope = resolveActivityScope(userRole)
+  if (scope === "TEAM") {
+    where.userId = { in: await teamMemberIds(currentUserId) }
+  } else if (scope === "OWN" || scope === "DENIED") {
+    // DENIED cae a "solo lo propio" en vez de a "todo": esta función nunca
+    // lanzó y no se le va a cambiar el contrato aquí, pero un rol futuro sin
+    // set asignado no debe heredar visibilidad total por omisión.
+    where.userId = currentUserId
   }
+  // ALL: sin restricción de userId
+
+  // El llamador puede pedir las tareas de un usuario (server/dashboard.ts pasa el id de la propia
+  // sesión a ASESOR_SR/ASESOR_JR). #881 (2026-10-14): antes ese id REEMPLAZABA el alcance de arriba
+  // —estaba anotado como deuda—; ahora se suma en el AND, así que nunca amplía lo que el rol ve.
+  if (userId) andWhere(where, { userId })
 
   // Marcas (2026-10-12, entrega 3): el único llamador es el dashboard, cuyas cifras ya solo cuentan
   // las marcas del usuario (decisión 4). La tarea cuenta si se ve su contacto (o su negocio); las
   // que no cuelgan de nada se quedan. ADMIN no se recorta.
   const porMarca = activityBrandVisibilityWhere(session.user, await getVisibleBrands(session.user))
-  if (porMarca) where.AND = [porMarca]
+  if (porMarca) andWhere(where, porMarca)
 
   const tasks = await prisma.activity.findMany({
     where,

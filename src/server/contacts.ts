@@ -168,6 +168,11 @@ export async function getContacts(filters: ContactFilters = {}) {
       ],
     });
   }
+  // #881 (2026-10-14): el filtro por asesor también va en el AND. Antes se asignaba a
+  // where.assignedToId, encima del alcance por rol que dejó el Object.assign de arriba: el `= yo` del
+  // asesor y el `in: equipo` del líder. Esta función es una acción de servidor, así que el filtro lo
+  // puede mandar cualquiera.
+  if (filters.assignedTo) and.push({ assignedToId: filters.assignedTo });
   if (and.length > 0) where.AND = and;
 
   // Filtros específicos
@@ -179,9 +184,6 @@ export async function getContacts(filters: ContactFilters = {}) {
   }
   if (filters.type) {
     where.contactType = filters.type === CONTACT_TYPE_SIN_TIPO ? null : (filters.type as any);
-  }
-  if (filters.assignedTo) {
-    where.assignedToId = filters.assignedTo;
   }
 
   // Ejecutar consulta paginada

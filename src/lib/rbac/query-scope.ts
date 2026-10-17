@@ -51,3 +51,22 @@ export function canReadUserScope(
   if (bucket === "DENIED") return false;
   return allowedIds.includes(requestedUserId);
 }
+
+/**
+ * Suma `extra` como una condición MÁS en el `AND` de `where`, sin tocar las claves que ya puso el
+ * alcance por rol (#881, 2026-10-14). Es la forma de aplicar un filtro que llega del query string
+ * —`?assignedTo=`, `?advisorId=`, `?hostessId=`— cuando el alcance no se puede expresar como una
+ * lista de ids (la plaza del gerente, la relación `assignedTo.plaza`, la hostess):
+ *
+ *   where.assignedToId = pedido;          // MAL: pisa el `= yo` del asesor y el `in: equipo` del líder
+ *   andWhere(where, { assignedToId: pedido }); // bien: alcance Y filtro
+ *
+ * Con AND, pedir a alguien fuera del alcance da una lista vacía y nunca amplía nada; dentro del
+ * alcance filtra igual que antes. Muta y devuelve `where`; el arreglo es nuevo, así que un `AND`
+ * compartido con otro `where` (p. ej. el de los agregados) no se toca.
+ */
+export function andWhere<W extends { AND?: W | W[] }>(where: W, extra: W): W {
+  const previos = where.AND === undefined ? [] : Array.isArray(where.AND) ? where.AND : [where.AND];
+  where.AND = [...previos, extra];
+  return where;
+}

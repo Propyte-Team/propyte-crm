@@ -20,6 +20,7 @@ import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter";
+import { andWhere } from "@/lib/rbac/query-scope";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -222,9 +223,11 @@ export async function GET(request: NextRequest) {
     if (lifecycleStage && (LIFECYCLE_ORDER as readonly string[]).includes(lifecycleStage)) {
       where.lifecycleStage = lifecycleStage as never;
     }
-    if (assignedToId) {
-      where.assignedToId = assignedToId;
-    }
+    // #881 (2026-10-14): ?assignedTo= es una condición MÁS en el AND, nunca en lugar del alcance por
+    // rol. Antes se asignaba a where.assignedToId y pisaba el `= userId` del ASESOR y el `in: equipo`
+    // del TEAM_LEADER: un asesor listaba los contactos de otro cambiando la URL. Ahora pedir a alguien
+    // fuera del alcance da la lista vacía; un mando, o un líder dentro de su equipo, filtra como antes.
+    if (assignedToId) andWhere(where, { assignedToId });
 
     // Marcas (2026-10-12): se agrega al FINAL y con AND, para que ningún filtro de arriba la
     // pise (los de arriba asignan claves sueltas de `where`). Es la misma ruta que usan los

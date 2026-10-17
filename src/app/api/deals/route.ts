@@ -17,6 +17,7 @@ import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, dealBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, dealBrandFilterWhere } from "@/lib/brands/filter";
+import { andWhere } from "@/lib/rbac/query-scope";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -129,7 +130,10 @@ export async function GET(request: NextRequest) {
     // Filtros específicos
     if (stage) where.stage = stage as any;
     if (dealType) where.dealType = dealType as any;
-    if (advisorId) where.assignedToId = advisorId;
+    // #881 (2026-10-14): en el AND, no en lugar del alcance. Antes pisaba el `= userId` de OWN y de
+    // READ_ONLY y el `in: equipo` de TEAM, y cualquiera listaba los negocios de otro asesor pasando su
+    // id. (La rama PLAZA filtra por la relación `assignedTo`, otra clave, y no se fugaba.)
+    if (advisorId) andWhere(where, { assignedToId: advisorId });
     if (developmentId) where.developmentId = developmentId;
 
     // Marcas (2026-10-12): al FINAL y con AND, para que ningún filtro de arriba la pise. El
@@ -147,7 +151,8 @@ export async function GET(request: NextRequest) {
       ...(porMarca ? [porMarca] : []),
       ...(filtroMarca.kind === "brand" ? [dealBrandFilterWhere(filtroMarca.filter)] : []),
     ];
-    if (recortes.length > 0) where.AND = recortes;
+    // Se SUMAN al AND (#881): asignarlo tal cual tiraría el filtro por asesor de arriba.
+    for (const recorte of recortes) andWhere(where, recorte);
 
     // Ejecutar consulta con relaciones
     const [deals, total] = await Promise.all([

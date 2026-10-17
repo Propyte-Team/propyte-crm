@@ -25,6 +25,7 @@ import {
 } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { dealBrandFilterWhere } from "@/lib/brands/filter";
+import { andWhere } from "@/lib/rbac/query-scope";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -177,7 +178,10 @@ export async function getDeals(filters: DealFilters = {}): Promise<DealsResult> 
     }
   }
   if (dealType) where.dealType = dealType;
-  if (assignedToId) where.assignedToId = assignedToId;
+  // #881 (2026-10-14): en el AND, no en lugar del alcance por rol de baseWhere (el `= yo` del asesor,
+  // el `in: equipo` del líder). andWhere crea un arreglo nuevo: el AND de baseWhere, que reusan los
+  // agregados de abajo, queda intacto.
+  if (assignedToId) andWhere(where, { assignedToId });
   if (developmentId) where.developmentId = developmentId;
 
   // Filtro de rango de fechas

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveScopeBucket, canReadUserScope, type RoleSets } from "./query-scope";
+import { resolveScopeBucket, canReadUserScope, type RoleSets, andWhere } from "./query-scope";
 
 // Sets reales de /api/commissions y /api/activities (ADMIN aparece en full Y en team).
 const SETS: RoleSets = {
@@ -56,5 +56,31 @@ describe("canReadUserScope — el ?userId= no puede ampliar el alcance", () => {
 
   it("DENIED no puede leer a nadie, ni a sí mismo", () => {
     expect(canReadUserScope("DENIED", ["yo"], "yo")).toBe(false);
+  });
+});
+
+describe("andWhere (#881)", () => {
+  it("suma la condición al AND sin tocar las claves del alcance", () => {
+    const where: { assignedToId?: unknown; AND?: unknown } = { assignedToId: "yo" };
+    andWhere(where as never, { assignedToId: "otro" } as never);
+    expect(where).toEqual({ assignedToId: "yo", AND: [{ assignedToId: "otro" }] });
+  });
+
+  it("conserva un AND previo, sea objeto o arreglo", () => {
+    const conObjeto = { AND: { a: 1 } };
+    andWhere(conObjeto as never, { b: 2 } as never);
+    expect(conObjeto.AND).toEqual([{ a: 1 }, { b: 2 }]);
+    const conArreglo = { AND: [{ a: 1 }] };
+    andWhere(conArreglo as never, { b: 2 } as never);
+    expect(conArreglo.AND).toEqual([{ a: 1 }, { b: 2 }]);
+  });
+
+  it("no muta un AND compartido con otro where", () => {
+    const compartido = [{ marca: "x" }];
+    const base = { AND: compartido };
+    const copia = { ...base };
+    andWhere(copia as never, { assignedToId: "a" } as never);
+    expect(base.AND).toEqual([{ marca: "x" }]);
+    expect(copia.AND).toEqual([{ marca: "x" }, { assignedToId: "a" }]);
   });
 });

@@ -68,8 +68,10 @@ describe("listas del pipeline", () => {
   it("getDeals: la marca sobrevive a los filtros sueltos y alcanza a los agregados por etapa", async () => {
     await getDeals({ assignedToId: "ase-9", stage: "CONTACTED" });
     const where = dealFindMany.mock.calls[0][0].where;
-    expect(where.assignedToId).toBe("ase-9");
-    expect(where.AND).toEqual([marcaNegocio("ger-1")]);
+    // #881: el filtro por asesor se suma al AND del alcance (no pisa assignedTo/assignedToId del rol).
+    expect(where.assignedToId).toBeUndefined();
+    expect(where.AND).toEqual([marcaNegocio("ger-1"), { assignedToId: "ase-9" }]);
+    // Los agregados siguen con el alcance sin el filtro (andWhere no muta el AND compartido).
     expect(dealGroupBy.mock.calls[0][0].where.AND).toEqual([marcaNegocio("ger-1")]);
   });
 

@@ -8,6 +8,7 @@
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma, CommissionStatus } from "@prisma/client";
+import { andWhere } from "@/lib/rbac/query-scope";
 
 // Roles con acceso completo a todas las comisiones
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -149,10 +150,9 @@ export async function getCommissions(
     where.commissionStatus = status;
   }
 
-  // Filtro por usuario asignado
-  if (userId) {
-    where.assignedToId = userId;
-  }
+  // Filtro por usuario asignado — en el AND, no en lugar del alcance por rol (#881, 2026-10-14):
+  // antes pisaba el `= yo` del asesor y el `in: equipo` del líder que trae rbacFilter.
+  if (userId) andWhere(where, { assignedToId: userId });
 
   // Filtro por rango de fechas
   if (dateFrom || dateTo) {

@@ -76,8 +76,9 @@ describe("GET /api/contacts — marcas", () => {
   it("los filtros sueltos (assignedTo) no pisan la marca", async () => {
     getServerSession.mockResolvedValue({ user: { id: "dir-1", role: "DIRECTOR", plaza: "CANCUN" } });
     await get("?assignedTo=ase-9");
-    expect(whereUsed().assignedToId).toBe("ase-9");
-    expect(whereUsed().AND).toEqual([marcaDe("dir-1")]);
+    // #881: el filtro por asesor va en el mismo AND que la marca (antes pisaba el alcance por rol).
+    expect(whereUsed().assignedToId).toBeUndefined();
+    expect(whereUsed().AND).toEqual([{ assignedToId: "ase-9" }, marcaDe("dir-1")]);
   });
 
   it("ADMIN (ALL): sin término de marca", async () => {
