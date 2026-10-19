@@ -66,7 +66,13 @@ enum ContactType {
   REFERIDO
   EMPLEO
   COMPRADOR
+  // Retirado (#907, 2026-10-19): ya no se ofrece ni se acepta como entrada — el que refiere
+  // es el broker (BROKER_EXTERNO). Se queda en el enum porque Postgres no deja quitar un
+  // valor sin recrear el tipo. Ver CONTACT_TYPE_RETIRADOS en src/lib/constants.ts.
   REFERIDOR
+  // #907: tipos nuevos. Migración: prisma/migrations-manual/2026-10-19-broker-referidos.sql.
+  PROVEEDOR
+  OTRO
 
   @@schema("propyte_crm")
 }
@@ -827,6 +833,13 @@ model Contact {
   mergedInto   Contact?  @relation("MergedContacts", fields: [mergedIntoId], references: [id])
   mergedFrom   Contact[] @relation("MergedContacts")
 
+  // Broker que trajo a este contacto (#907). Solo puede apuntar a un contacto de tipo
+  // BROKER_EXTERNO (lo valida /api/contacts); si el broker se borra de verdad, la liga se
+  // suelta (SET NULL) y el referido se queda. La ficha del broker lista sus `referrals`.
+  referredById String?
+  referredBy   Contact?  @relation("ContactReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    Contact[] @relation("ContactReferrals")
+
   // Relaciones
   deals       Deal[]
   activities  Activity[]
@@ -851,6 +864,7 @@ model Contact {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([referredById])
   @@map("contacts")
   @@schema("propyte_crm")
 }

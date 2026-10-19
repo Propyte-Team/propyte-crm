@@ -35,6 +35,20 @@ describe("classifyContactType", () => {
     expect(body.output_config.format.schema.properties.contactType.enum).toContain("EMPLEO");
   });
 
+  it("#907: ya no ofrece REFERIDOR — quien refiere a alguien se clasifica como broker", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okClassify("BROKER_EXTERNO"));
+    vi.stubGlobal("fetch", fetchMock);
+    await classifyContactType({ messages: msgs, model: "m" });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.output_config.format.schema.properties.contactType.enum).not.toContain("REFERIDOR");
+    expect(body.system).not.toContain("REFERIDOR");
+    expect(body.system).toMatch(/BROKER_EXTERNO:[^\n]*referir/);
+
+    // Y si el modelo respondiera REFERIDOR de todos modos, no se escribe.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("REFERIDOR")));
+    expect(await classifyContactType({ messages: msgs, model: "m" })).toBeNull();
+  });
+
   it("UNKNOWN, valor fuera del enum, HTTP !ok, sin API key o timeout → null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("UNKNOWN")));
     expect(await classifyContactType({ messages: msgs, model: "m" })).toBeNull();

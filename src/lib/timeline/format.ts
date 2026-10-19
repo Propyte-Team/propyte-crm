@@ -39,6 +39,7 @@ const FIELD_LABELS: Record<string, string> = {
   score: "Puntuación",
   tags: "Etiquetas",
   custom: "Campos personalizados",
+  referredById: "Referido por", // #907: la ruta resuelve el id al nombre del broker
 };
 
 // Mapas de valor→label de constants.ts, por campo. assignedToId NO tiene mapa aquí a

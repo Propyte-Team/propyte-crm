@@ -1,4 +1,5 @@
 import type { CaptureType } from "@prisma/client";
+import { CONTACT_TYPE_ORDER } from "@/lib/constants";
 
 export interface TargetFieldSpec { captureType: CaptureType; enumValues?: string[]; }
 
@@ -20,7 +21,7 @@ export const NATIVE_TARGET_FIELDS: Record<string, TargetFieldSpec> = {
   purchaseModality: { captureType: "ENUM", enumValues: ["PREVENTA","ENTREGA_INMEDIATA","REVENTA","ABIERTO"] },
   rentalStrategy: { captureType: "ENUM", enumValues: ["LONG_TERM","AIRBNB","BOTH","NA"] },
   investmentProfile: { captureType: "ENUM", enumValues: ["END_USER","INVESTOR_RENTAL","INVESTOR_FLIP","INVESTOR_LAND","MIXED"] },
-  contactType: { captureType: "ENUM", enumValues: ["LEAD","PROSPECTO","CLIENTE","INVERSIONISTA","BROKER_EXTERNO","REFERIDO","EMPLEO","COMPRADOR","REFERIDOR"] },
+  contactType: { captureType: "ENUM", enumValues: [...CONTACT_TYPE_ORDER] }, // #907
 };
 
 export function isCustomTarget(f: string): boolean { return f.startsWith("custom."); }

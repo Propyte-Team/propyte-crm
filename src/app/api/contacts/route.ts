@@ -13,7 +13,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
-import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, CONTACT_TYPE_SIN_TIPO } from "@/lib/constants";
+import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_ORDER } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
 import { sumarAlAnd } from "@/lib/api/where-and";
@@ -21,6 +21,8 @@ import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter";
+import { getContactAccessInfo } from "@/server/contacts";
+import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -66,7 +68,8 @@ const contactCoreFields = z.object({
   whatsappUserId: optionalWhatsappUserId,
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
   // null = «sin tipo» (#863): permite al asesor dejarlo en «—».
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).nullable().optional(),
+  // #907: única fuente = CONTACT_TYPE_ORDER (sin REFERIDOR, con PROVEEDOR y OTRO).
+  contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(),
   // Única fuente de verdad = CONTACT_STATUS_ORDER (constants.ts) — evita el bug clásico
   // "enum Prisma ≠ enum zod" (un valor válido en BD pero ausente aquí se rechaza en silencio).
   contactStatus: z.enum(CONTACT_STATUS_ORDER).optional(),
@@ -92,7 +95,33 @@ const contactCoreFields = z.object({
   paymentMethod: z.enum(["CONTADO", "CREDITO_HIPOTECARIO", "FINANCIAMIENTO_DIRECTO", "MIXTO"]).optional().nullable(),
   purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional().nullable(),
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional().nullable(),
+  // #907: el broker que trajo a este contacto. null = quitar la liga.
+  referredById: z.string().uuid().nullable().optional(),
 });
+
+/**
+ * #907: ¿se puede ligar este contacto al broker `referredById`? El broker tiene que existir,
+ * ser de tipo Broker, no ser el mismo contacto y estar al alcance de quien edita (la misma
+ * puerta que abrir su ficha: rol + marca). Devuelve el mensaje de error o null si es válido.
+ */
+async function errorDeReferidoPor(
+  referredById: string,
+  contactId: string | null,
+  session: { user: { id: string; role: string; plaza: string } },
+): Promise<string | null> {
+  if (contactId && referredById === contactId) {
+    return MENSAJE_REFERIDO_INVALIDO.mismo_contacto;
+  }
+  const acceso = await getContactAccessInfo(referredById, session);
+  const broker = acceso.ok
+    ? await prisma.contact.findFirst({
+        where: { id: referredById, deletedAt: null },
+        select: { id: true, contactType: true },
+      })
+    : null;
+  const motivo = validarReferidoPor({ contactId, referredById, broker });
+  return motivo ? MENSAJE_REFERIDO_INVALIDO[motivo] : null;
+}
 
 // Usado tal cual por POST (exige al menos un identificador de contacto). PUT usa
 // `contactCoreFields.partial()` en vez de este — un ZodEffects (lo que deja `.refine`)
@@ -367,6 +396,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // #907: el broker que lo trajo, si se eligió uno.
+    if (data.referredById) {
+      const error = await errorDeReferidoPor(data.referredById, null, session as any);
+      if (error) {
+        return NextResponse.json({ error, fields: ["referredById"] }, { status: 400 });
+      }
+    }
+
     // Si no se asignó a nadie, asignar al usuario actual (si es asesor/TL)
     const assignedToId =
       data.assignedToId ||
@@ -402,6 +439,7 @@ export async function POST(request: NextRequest) {
         paymentMethod: data.paymentMethod || undefined,
         purchaseModality: data.purchaseModality || undefined,
         rentalStrategy: data.rentalStrategy || undefined,
+        referredById: data.referredById || null, // #907
       },
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
@@ -526,6 +564,14 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // #907: ligar a un broker (quitar la liga, null, no necesita comprobación).
+    if (data.referredById) {
+      const error = await errorDeReferidoPor(data.referredById, id, session as any);
+      if (error) {
+        return NextResponse.json({ error, fields: ["referredById"] }, { status: 400 });
+      }
+    }
+
     // Construir objeto de actualización
     const updateData: Prisma.ContactUpdateInput = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
@@ -560,6 +606,11 @@ export async function PUT(request: NextRequest) {
     if (data.assignedToId !== undefined) {
       updateData.assignedTo = data.assignedToId
         ? { connect: { id: data.assignedToId } }
+        : { disconnect: true };
+    }
+    if (data.referredById !== undefined) {
+      updateData.referredBy = data.referredById
+        ? { connect: { id: data.referredById } }
         : { disconnect: true };
     }
 

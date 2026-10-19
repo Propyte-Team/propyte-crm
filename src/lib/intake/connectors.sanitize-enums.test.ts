@@ -58,3 +58,24 @@ describe("sanitizeEnumFields", () => {
     );
   });
 });
+
+describe("sanitizeEnumFields — tipos retirados (#907)", () => {
+  it("un REFERIDOR de una integración vieja entra como Broker, no se descarta", () => {
+    const fields: Record<string, unknown> = { contactType: "REFERIDOR" };
+    const dropped = sanitizeEnumFields(fields);
+    expect(fields).toEqual({ contactType: "BROKER_EXTERNO" });
+    expect(dropped).toEqual([]);
+  });
+
+  it("Proveedor y Otro son válidos", () => {
+    for (const t of ["PROVEEDOR", "OTRO"]) {
+      const fields: Record<string, unknown> = { contactType: t };
+      expect(sanitizeEnumFields(fields)).toEqual([]);
+      expect(fields.contactType).toBe(t);
+    }
+  });
+
+  it("VALID_ENUMS.contactType ya no incluye REFERIDOR", () => {
+    expect(VALID_ENUMS.contactType).not.toContain("REFERIDOR");
+  });
+});

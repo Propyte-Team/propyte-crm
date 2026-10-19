@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { getContactAccessInfo } from "@/server/contacts";
+import { nombreDeContacto } from "@/lib/contacts/referidos";
 import { mergeTimeline } from "@/lib/timeline/merge";
 import { fieldChangeTitle } from "@/lib/timeline/format";
 import { ACTIVITY_TYPE_LABELS, LEAD_SOURCE_LABELS } from "@/lib/constants";
@@ -102,6 +103,21 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
           : [];
         const nameById = new Map(users.map((u) => [u.id, u.name]));
 
+        // #907: «Referido por» guarda el id de un CONTACTO (el broker), no de un usuario.
+        const brokerIds = new Set<string>();
+        for (const c of changes) {
+          if (c.field !== "referredById") continue;
+          if (typeof c.oldValue === "string") brokerIds.add(c.oldValue);
+          if (typeof c.newValue === "string") brokerIds.add(c.newValue);
+        }
+        const brokers = brokerIds.size
+          ? await prisma.contact.findMany({
+              where: { id: { in: [...brokerIds] } },
+              select: { id: true, firstName: true, lastName: true },
+            })
+          : [];
+        const brokerById = new Map(brokers.map((b) => [b.id, nombreDeContacto(b)]));
+
         sources.push(
           changes.map((c) => {
             let oldForTitle: unknown = c.oldValue;
@@ -113,6 +129,14 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
               newForTitle = c.newValue
                 ? nameById.get(c.newValue as string) ?? "Usuario desconocido"
                 : "Sin asignar";
+            }
+            if (c.field === "referredById") {
+              oldForTitle = c.oldValue
+                ? brokerById.get(c.oldValue as string) ?? "Contacto desconocido"
+                : "Nadie";
+              newForTitle = c.newValue
+                ? brokerById.get(c.newValue as string) ?? "Contacto desconocido"
+                : "Nadie";
             }
             return {
               id: `fc_${c.id}`,

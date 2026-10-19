@@ -2,6 +2,7 @@
 // credenciales de conectores (Anexo B §H), perfiles/plantillas (§J), intake (§H.5).
 import { z } from "zod";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // DSL de condiciones (Anexo Técnico §D.4)
@@ -255,9 +256,8 @@ export const incomingLeadSchema = z
     rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional(),
     preferredZone: z.string().max(200).optional(),
     // Overrides opcionales para mapeo configurable por conector (editor Meta→Contact).
-    contactType: z
-      .enum(["COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "REFERIDOR", "LEAD", "PROSPECTO", "CLIENTE", "REFERIDO"])
-      .optional(),
+    // #907: los vigentes; un REFERIDOR de una integración vieja entra como Broker.
+    contactType: z.preprocess(normalizarTipoContacto, z.enum(CONTACT_TYPE_ORDER)).optional(),
     temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   })
   .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {

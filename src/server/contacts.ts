@@ -10,7 +10,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
-import { CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import {
   CONTACT_BRAND_SELECT,
@@ -19,6 +19,12 @@ import {
 } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { contactBrandFilterWhere } from "@/lib/brands/filter";
+import {
+  MAX_REFERIDOS_EN_FICHA,
+  nombreDeContacto,
+  rbacPermiteContacto,
+  separarReferidos,
+} from "@/lib/contacts/referidos";
 
 // Roles con acceso total a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -36,7 +42,7 @@ const contactSchema = z.object({
   email: z.string().email("Email inválido").toLowerCase().trim().optional().or(z.literal("")),
   phone: z.string().min(10, "El teléfono debe tener al menos 10 dígitos").max(15).trim(),
   secondaryPhone: z.string().max(15).trim().optional().or(z.literal("")),
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).nullable().optional(),
+  contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(), // #907: única fuente, sin REFERIDOR
   // Única fuente de verdad = LEAD_SOURCE_ORDER (constants.ts) — AUD-20260710-02.
   leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
@@ -250,6 +256,35 @@ export async function getContact(id: string) {
       },
       // Marcas del contacto: las pide el filtro por marca (2026-10-12).
       brands: CONTACT_BRAND_SELECT,
+      // #907: el broker que lo trajo y, si es broker, los contactos que trajo. Traen dueño y
+      // marcas solo para decidir abajo si quien mira puede abrirlos; eso NO sale de aquí.
+      referredBy: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          deletedAt: true,
+          assignedToId: true,
+          brands: CONTACT_BRAND_SELECT,
+        },
+      },
+      referrals: {
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          contactType: true,
+          contactStatus: true,
+          createdAt: true,
+          assignedToId: true,
+          assignedTo: { select: { id: true, name: true } },
+          brands: CONTACT_BRAND_SELECT,
+        },
+        orderBy: { createdAt: "desc" },
+        take: MAX_REFERIDOS_EN_FICHA,
+      },
+      _count: { select: { referrals: { where: { deletedAt: null } } } },
     },
   });
 
@@ -257,29 +292,54 @@ export async function getContact(id: string) {
     throw new Error("Contacto no encontrado");
   }
 
-  // Verificar acceso RBAC
+  // Verificar acceso RBAC (la regla vive en rbacPermiteContacto desde el #907)
   const rbacFilter = await buildRbacFilter(session as any);
-  if (rbacFilter.assignedToId) {
-    // Verificar que el usuario tiene acceso a este contacto
-    if (typeof rbacFilter.assignedToId === "string") {
-      if (contact.assignedToId !== rbacFilter.assignedToId) {
-        throw new Error("No tienes acceso a este contacto");
-      }
-    } else if (rbacFilter.assignedToId && "in" in rbacFilter.assignedToId) {
-      const allowedIds = rbacFilter.assignedToId.in as string[];
-      if (contact.assignedToId && !allowedIds.includes(contact.assignedToId)) {
-        throw new Error("No tienes acceso a este contacto");
-      }
-    }
+  if (!rbacPermiteContacto(contact.assignedToId, rbacFilter)) {
+    throw new Error("No tienes acceso a este contacto");
   }
 
   // Marcas (2026-10-12): encima del alcance por rol. Un contacto de una marca que el usuario
   // no ve responde igual que uno inexistente (la página lo convierte en 404).
-  if (!canSeeContactBrand(contact, session.user, await getVisibleBrands(session.user))) {
+  const visible = await getVisibleBrands(session.user);
+  if (!canSeeContactBrand(contact, session.user, visible)) {
     throw new Error("Contacto no encontrado");
   }
 
-  return contact;
+  // #907: un ligado se puede abrir con un clic solo si pasaría las MISMAS dos puertas que la
+  // ficha que se acaba de abrir (rol + marca). Si no, el broker se nombra sin enlace y los
+  // referidos ajenos ni se nombran: solo se cuentan.
+  const puedeAbrir = (c: { assignedToId: string | null; brands?: { brandId: string }[] | null }) =>
+    rbacPermiteContacto(c.assignedToId, rbacFilter) && canSeeContactBrand(c, session.user, visible);
+
+  const { referredBy, referrals, _count, ...resto } = contact as typeof contact & {
+    referredBy?: (typeof contact)["referredBy"];
+    referrals?: (typeof contact)["referrals"];
+    _count?: { referrals?: number };
+  };
+  const ligaBroker = referredBy
+    ? {
+        id: referredBy.id,
+        nombre: nombreDeContacto(referredBy),
+        puedeAbrir: !referredBy.deletedAt && puedeAbrir(referredBy),
+      }
+    : null;
+  const { visibles, ocultos } = separarReferidos(referrals ?? [], puedeAbrir);
+  const totalReferidos = Math.max(_count?.referrals ?? 0, referrals?.length ?? 0);
+
+  return {
+    ...resto,
+    referredBy: ligaBroker,
+    referidos: visibles.map((r) => ({
+      id: r.id,
+      nombre: nombreDeContacto(r),
+      contactType: r.contactType,
+      contactStatus: r.contactStatus,
+      createdAt: r.createdAt,
+      asesor: r.assignedTo?.name ?? null,
+    })),
+    // Los que no se listan: ajenos a quien mira (por rol o marca) o más allá del tope.
+    referidosNoListados: ocultos + Math.max(0, totalReferidos - (referrals?.length ?? 0)),
+  };
 }
 
 // Resultado de la verificación de acceso — discriminado para que el caller (API route)
@@ -302,7 +362,7 @@ type ContactAccessResult =
  * (deals/activities/walkIns) — pensado para endpoints ligeros (cronología, status-periods)
  * que solo necesitan confirmar acceso + un puñado de campos escalares.
  * Replica exactamente el mismo gate que usa getContact(): mismo buildRbacFilter() + misma
- * comparación de assignedToId (string exacto o `in` de un array de ids permitidos) + el
+ * comparación de assignedToId (`rbacPermiteContacto`, #907: string exacto o `in` de ids) + el
  * filtro por marca (2026-10-12).
  *
  * Fuera de marca responde "not_found", no "forbidden": antes de las marcas todo el equipo
@@ -328,17 +388,8 @@ export async function getContactAccessInfo(
   if (!contact) return { ok: false, reason: "not_found" };
 
   const rbacFilter = await buildRbacFilter(session as any);
-  if (rbacFilter.assignedToId) {
-    if (typeof rbacFilter.assignedToId === "string") {
-      if (contact.assignedToId !== rbacFilter.assignedToId) {
-        return { ok: false, reason: "forbidden" };
-      }
-    } else if (rbacFilter.assignedToId && "in" in rbacFilter.assignedToId) {
-      const allowedIds = rbacFilter.assignedToId.in as string[];
-      if (contact.assignedToId && !allowedIds.includes(contact.assignedToId)) {
-        return { ok: false, reason: "forbidden" };
-      }
-    }
+  if (!rbacPermiteContacto(contact.assignedToId, rbacFilter)) {
+    return { ok: false, reason: "forbidden" };
   }
 
   if (!canSeeContactBrand(contact, session.user, await getVisibleBrands(session.user))) {

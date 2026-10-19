@@ -14,7 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import {
+  LEAD_SOURCE_ORDER,
+  LEAD_SOURCE_LABELS,
+  CONTACT_TYPE_ORDER,
+  CONTACT_TYPE_LABELS,
+  CONTACT_TYPE_BROKER,
+} from "@/lib/constants";
+import { ContactPicker, type PickedContact } from "@/components/agenda/contact-picker";
 
 // --- Esquema de validación Zod ---
 // El teléfono se normaliza (sin espacios/guiones/paréntesis) antes de validar,
@@ -54,7 +61,7 @@ export const contactFormSchema = z
     whatsappUserId: whatsappUserIdField.optional().or(z.literal("")),
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
   // null = sin tipo (#863): el contacto nace en «—» salvo que se elija uno.
-  contactType: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO", "COMPRADOR", "REFERIDOR", "EMPLEO"]).nullable().optional(),
+  contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(),
   leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
   residenceCity: z.string().max(100).optional(),
@@ -72,6 +79,8 @@ export const contactFormSchema = z
   assignedToId: z.string().uuid().optional().nullable(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
+  // #907: el broker que trajo a este contacto; null = sin broker.
+  referredById: z.string().uuid().nullable().optional(),
   })
   .refine((data) => Boolean(data.phone) || Boolean(data.whatsappUserId), {
     message: "Captura un teléfono o un Usuario de WhatsApp",
@@ -106,9 +115,11 @@ const SIN_TIPO = "__SIN_TIPO__";
 const CONTACT_TYPE_OPTIONS = [
   { value: "COMPRADOR", label: "Comprador" },
   { value: "INVERSIONISTA", label: "Inversionista" },
-  { value: "BROKER_EXTERNO", label: "Broker externo" },
-  { value: "REFERIDOR", label: "Referidor" },
+  { value: "BROKER_EXTERNO", label: CONTACT_TYPE_LABELS.BROKER_EXTERNO },
   { value: "EMPLEO", label: "Empleo" },
+  // #907: «Referidor» sale (el que refiere es el broker); entran Proveedor y Otro.
+  { value: "PROVEEDOR", label: CONTACT_TYPE_LABELS.PROVEEDOR },
+  { value: "OTRO", label: CONTACT_TYPE_LABELS.OTRO },
 ];
 
 // AUD-20260710-02: derivado de LEAD_SOURCE_ORDER/LABELS (constants.ts) para que el alta
@@ -209,6 +220,21 @@ export function buildSubmitData(formData: Partial<ContactFormData>, tags: string
   };
 }
 
+/**
+ * #907: qué mandar de «Referido por». Al crear, solo si se eligió un broker. Al editar, solo
+ * si CAMBIÓ (incluido quitarlo → null): así un rol que tiene ese campo en solo lectura puede
+ * seguir guardando lo demás —el servidor responde 403 a cualquier campo bloqueado que llegue
+ * en el cuerpo, aunque traiga el mismo valor—.
+ */
+export function campoReferidoPor(
+  mode: "create" | "edit",
+  inicialId: string | null,
+  actualId: string | null,
+): { referredById?: string | null } {
+  if (mode === "create") return actualId ? { referredById: actualId } : {};
+  return actualId === inicialId ? {} : { referredById: actualId };
+}
+
 export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) {
   // Estado del formulario
   const [formData, setFormData] = useState<Partial<ContactFormData>>({
@@ -238,6 +264,16 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
     temperature: initialData?.temperature || "COLD",
     tags: initialData?.tags || [],
   });
+
+  // #907: la ficha trae el broker ya resuelto ({ id, nombre, puedeAbrir }); la lista solo trae
+  // el id. En ese caso se muestra que hay uno ligado sin inventarle nombre, y no se toca
+  // mientras el asesor no elija otro (campoReferidoPor solo manda cambios).
+  const brokerInicial: PickedContact | null = initialData?.referredBy?.id
+    ? { id: initialData.referredBy.id, name: initialData.referredBy.nombre ?? "" }
+    : initialData?.referredById
+      ? { id: initialData.referredById, name: "Broker ligado (ver ficha)" }
+      : null;
+  const [broker, setBroker] = useState<PickedContact | null>(brokerInicial);
 
   const [tagsInput, setTagsInput] = useState(
     (initialData?.tags || []).join(", ")
@@ -282,7 +318,10 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
       .map((t: string) => t.trim())
       .filter((t: string) => t.length > 0);
 
-    const submitData = buildSubmitData(formData, tags);
+    const submitData = {
+      ...buildSubmitData(formData, tags),
+      ...campoReferidoPor(mode, brokerInicial?.id ?? null, broker?.id ?? null),
+    };
 
     // Validar con Zod
     const validation = contactFormSchema.safeParse(submitData);
@@ -489,6 +528,22 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
             </Select>
             {errors.leadSource && (
               <p className="text-xs text-destructive">{errors.leadSource}</p>
+            )}
+          </div>
+          {/* #907: el broker que lo trajo. Solo ofrece contactos de tipo Broker. */}
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Referido por (broker)</Label>
+            <ContactPicker
+              value={broker}
+              onChange={setBroker}
+              disabled={submitting}
+              tipo={CONTACT_TYPE_BROKER}
+              excluirId={initialData?.id}
+              listarSinTexto
+              placeholder="Buscar broker (opcional)"
+            />
+            {errors.referredById && (
+              <p className="text-xs text-destructive">{errors.referredById}</p>
             )}
           </div>
           <div className="space-y-2 sm:col-span-2">

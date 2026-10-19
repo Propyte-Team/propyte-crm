@@ -34,6 +34,12 @@ export default async function ContactDetailPage(props: ContactPageProps) {
   // Field-level security: resolver acceso por rol, ocultar campos HIDDEN (server-side).
   const fieldAccess = await resolveCoreFieldAccess("contact", session.user.role);
   const visibleContact = stripHiddenCoreFields("contact", fieldAccess, contact as Record<string, unknown>);
+  // #907: «Referido por» oculto para el rol → tampoco la liga ya resuelta ni los referidos.
+  if (fieldAccess.referredById === "HIDDEN") {
+    delete visibleContact.referredBy;
+    delete visibleContact.referidos;
+    delete visibleContact.referidosNoListados;
+  }
   // Badge de marca en el encabezado (entrega 3, 2026-10-12). getContact ya trae contact.brands.
   const brandView = await getBrandViewContext(session.user);
 

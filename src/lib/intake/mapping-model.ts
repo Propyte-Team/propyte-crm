@@ -13,7 +13,7 @@ export const METADATA_KEYS = [
 
 // Opciones de enum por destino (para el value-map en la UI).
 export const ENUM_OPTIONS: Record<string, string[]> = {
-  contactType: ["COMPRADOR","INVERSIONISTA","BROKER_EXTERNO","EMPLEO","REFERIDOR"],
+  contactType: ["COMPRADOR","INVERSIONISTA","BROKER_EXTERNO","EMPLEO","PROVEEDOR","OTRO"], // #907: sin REFERIDOR
   temperature: ["HOT","WARM","COLD","DEAD"],
   source: ["WALK_IN","FACEBOOK_ADS","GOOGLE_ADS","INSTAGRAM","TIKTOK_ADS","LINKEDIN","PORTAL_INMOBILIARIO","REFERIDO_CLIENTE","REFERIDO_BROKER","LLAMADA_FRIA","EVENTO","WEBSITE","WHATSAPP","MESSENGER","OTRO"],
   investmentProfile: ["END_USER","INVESTOR_RENTAL","INVESTOR_FLIP","INVESTOR_LAND","MIXED"],
