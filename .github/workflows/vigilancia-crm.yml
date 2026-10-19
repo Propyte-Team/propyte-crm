@@ -1,0 +1,70 @@
+# Vigilancia del CRM en producción (#905, seguimiento de la #771).
+#
+# Por qué existe: en septiembre el CRM estuvo ~3 días caído y nadie se enteró hasta que una
+# persona abrió la página. `/login` seguía cargando (no toca la base), así que «¿responde la
+# página?» habría dicho que todo iba bien. Este workflow llama a `/api/health` —que hace un
+# `SELECT 1` real— y, si falla dos veces seguidas, abre un issue asignado a quien tiene que
+# actuar. Cuando el CRM vuelve, el issue se cierra solo.
+#
+# Externo a propósito: corre en servidores de GitHub, no en Hostinger. Un monitor que vive
+# en el mismo servidor se cae junto con lo que vigila.
+#
+# Cuándo corre:
+#   - cada 30 min (en los minutos 7 y 37, lejos de la hora en punto, que es cuando GitHub
+#     más retrasa los cron);
+#   - después de cada push a main, esperando 10 min a que Hostinger termine de compilar
+#     (apartado (a) de la #771 — ver en el script lo que esta comprobación NO cubre);
+#   - a mano, desde la pestaña Actions («Run workflow»), para probarlo.
+#
+# Ajustes sin tocar código (Settings → Secrets and variables → Actions → Variables):
+#   CRM_HEALTH_URL       por defecto https://crm.propyte.com/api/health
+#   VIGILANCIA_AVISAR_A  usuario de GitHub que recibe el aviso; por defecto Propyte-Luis
+#
+# Costo: si el repo es privado, cada corrida gasta ~1 minuto de Actions (≈1,450 min/mes
+# con el cron) más ~11 min por push a main. Revisar contra la cuota del plan antes de bajar
+# el intervalo.
+
+name: Vigilancia CRM
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Una sola comprobación a la vez: si un push y el cron coinciden, la segunda espera en vez
+# de abrir dos issues por la misma caída.
+concurrency:
+  group: vigilancia-crm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  vigilar:
+    name: /api/health responde y la base contesta
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Esperar a que Hostinger termine de publicar
+        if: github.event_name == 'push'
+        run: sleep 600
+
+      - name: Comprobar y avisar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEALTH_URL: ${{ vars.CRM_HEALTH_URL || 'https://crm.propyte.com/api/health' }}
+          AVISAR_A: ${{ vars.VIGILANCIA_AVISAR_A || 'Propyte-Luis' }}
+          MOTIVO: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/vigilar-health.sh
