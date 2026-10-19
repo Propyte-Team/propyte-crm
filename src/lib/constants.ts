@@ -367,6 +367,10 @@ export const URGENCY_COLORS: Record<string, string> = {
 // avise. Faltaba sobre todo COMPRADOR, que es el DEFAULT del modelo (schema.prisma) y el
 // valor que escribe el intake, así que el valor por defecto del sistema no era elegible.
 // La paridad con el enum la vigila src/lib/constants.contact-type.test.ts.
+//
+// #907 (2026-10-19, pedido de sistemas@): «Broker externo» se muestra como «Broker» (el valor
+// interno BROKER_EXTERNO no cambia: lo usan los perfiles del bot, las reglas y el clasificador),
+// «Referidor» deja de ofrecerse —el que refiere ES el broker— y entran PROVEEDOR y OTRO.
 export const CONTACT_TYPE_ORDER = [
   "LEAD",
   "PROSPECTO",
@@ -374,10 +378,37 @@ export const CONTACT_TYPE_ORDER = [
   "CLIENTE",
   "INVERSIONISTA",
   "BROKER_EXTERNO",
-  "REFERIDOR",
   "REFERIDO",
   "EMPLEO",
+  "PROVEEDOR",
+  "OTRO",
 ] as const;
+
+/**
+ * Tipos que siguen existiendo en el enum ContactType de la base pero YA NO se ofrecen ni se
+ * aceptan como entrada (#907), con el tipo vigente que los reemplaza. Se quedan en el enum
+ * porque Postgres no deja quitar un valor sin recrear el tipo, y porque la cronología guarda
+ * cambios viejos con ese valor (5 filas de record_field_changes al 19-oct; 0 contactos vivos).
+ */
+export const CONTACT_TYPE_RETIRADOS = {
+  REFERIDOR: "BROKER_EXTERNO",
+} as const;
+
+/**
+ * Traduce un tipo retirado a su reemplazo y deja pasar todo lo demás tal cual. Para las
+ * entradas EXTERNAS (Zapier, conectores de leads), donde una integración configurada antes
+ * del #907 puede seguir mandando REFERIDOR: se acepta y se guarda como Broker en vez de
+ * rechazar el lead. Las entradas de la propia UI validan contra CONTACT_TYPE_ORDER a secas.
+ */
+export function normalizarTipoContacto(valor: unknown): unknown {
+  if (typeof valor === "string" && Object.prototype.hasOwnProperty.call(CONTACT_TYPE_RETIRADOS, valor)) {
+    return CONTACT_TYPE_RETIRADOS[valor as keyof typeof CONTACT_TYPE_RETIRADOS];
+  }
+  return valor;
+}
+
+/** El tipo que define a un broker (#907): solo estos contactos pueden tener referidos. */
+export const CONTACT_TYPE_BROKER = "BROKER_EXTERNO" as const;
 
 /**
  * Valor del filtro «Sin tipo» (#863): contactos con contactType NULL. No es un valor del
@@ -403,10 +434,13 @@ export const CONTACT_TYPE_LABELS: Record<string, string> = {
   PROSPECTO: "Prospecto",
   CLIENTE: "Cliente",
   INVERSIONISTA: "Inversionista",
-  BROKER_EXTERNO: "Broker externo",
+  BROKER_EXTERNO: "Broker",
   REFERIDO: "Referido",
   EMPLEO: "Empleo",
   COMPRADOR: "Comprador",
+  PROVEEDOR: "Proveedor",
+  OTRO: "Otro",
+  // Retirado (#907): solo para mostrar cambios viejos de la cronología.
   REFERIDOR: "Referidor",
 } as const;
 

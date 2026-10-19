@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowLeft,
   MessageCircle,
@@ -47,6 +48,7 @@ import {
   CONTACT_TYPE_LABELS,
   CONTACT_TYPE_ORDER,
   CONTACT_TYPE_VACIO_LABEL,
+  CONTACT_TYPE_BROKER,
   tieneCicloDeVida,
   LEAD_TEMPERATURE_LABELS,
   LEAD_SOURCE_ORDER,
@@ -236,6 +238,15 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
   };
 
   const statusColor = CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF";
+
+  // #907: referidos del broker. La sección se muestra en todo Broker (aunque aún no tenga) y en
+  // cualquier contacto que ya tenga referidos ligados, para que no queden ligas invisibles si
+  // alguien le cambia el tipo.
+  const referidos: Referido[] = contact.referidos ?? [];
+  const referidosNoListados: number = contact.referidosNoListados ?? 0;
+  const mostrarReferidos =
+    acc("referredById") !== "HIDDEN" &&
+    (contact.contactType === CONTACT_TYPE_BROKER || referidos.length > 0 || referidosNoListados > 0);
 
   return (
     <div className="space-y-5">
@@ -438,6 +449,32 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
           )}
 
           <Section title="Asignación">
+            {/* #907: el broker que lo trajo. Se cambia en «Editar todo». */}
+            {acc("referredById") !== "HIDDEN" && (
+              <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+                <span className="text-[color:var(--text-tertiary)]">Referido por</span>
+                {contact.referredBy ? (
+                  contact.referredBy.puedeAbrir ? (
+                    <Link
+                      href={`/contacts/${contact.referredBy.id}`}
+                      className="text-right font-medium underline-offset-2 hover:underline"
+                      style={{ color: "var(--color-teal, #0D9488)" }}
+                    >
+                      {contact.referredBy.nombre}
+                    </Link>
+                  ) : (
+                    <span
+                      className="text-right font-medium text-[color:var(--text-primary)]"
+                      title="No tienes acceso a la ficha de este broker"
+                    >
+                      {contact.referredBy.nombre}
+                    </span>
+                  )
+                ) : (
+                  <span className="text-right text-[color:var(--text-tertiary)]">—</span>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
               <span className="text-[color:var(--text-tertiary)]">Asesor</span>
               <AdvisorSelect
@@ -591,6 +628,68 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
         <ContactTimeline contactId={contact.id} />
       </Section>
 
+      {/* ── Referidos del broker (#907): hasta abajo, cada uno abre su ficha ── */}
+      {mostrarReferidos && (
+        <Section title={`Referidos (${referidos.length + referidosNoListados})`}>
+          {referidos.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="hairline-b text-left text-[color:var(--text-tertiary)]">
+                    <th className="pb-2 font-medium">Nombre</th>
+                    <th className="pb-2 font-medium">Tipo</th>
+                    <th className="pb-2 font-medium">Estado</th>
+                    <th className="pb-2 font-medium">Asesor</th>
+                    <th className="pb-2 font-medium">Registro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {referidos.map((r) => (
+                    <tr
+                      key={r.id}
+                      className="hairline-b cursor-pointer last:border-0 hover:bg-[color:var(--bg-row-hover)]"
+                      onClick={() => router.push(`/contacts/${r.id}`)}
+                    >
+                      <td className="py-2">
+                        {/* Enlace real (no solo la fila): abre en otra pestaña con clic medio o Ctrl. */}
+                        <Link
+                          href={`/contacts/${r.id}`}
+                          className="font-medium underline-offset-2 hover:underline"
+                          style={{ color: "var(--color-teal, #0D9488)" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {r.nombre}
+                        </Link>
+                      </td>
+                      <td className="py-2">
+                        {r.contactType ? CONTACT_TYPE_LABELS[r.contactType] ?? r.contactType : CONTACT_TYPE_VACIO_LABEL}
+                      </td>
+                      <td className="py-2">{CONTACT_STATUS_LABELS[r.contactStatus] ?? r.contactStatus ?? "—"}</td>
+                      <td className="py-2">{r.asesor ?? "Sin asignar"}</td>
+                      <td className="py-2 text-[color:var(--text-tertiary)]">{formatShort(r.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            referidosNoListados === 0 && (
+              <p className="py-6 text-center text-[13px] text-[color:var(--text-tertiary)]">
+                Este broker aún no tiene referidos. Para ligar uno, abre el contacto y elige a este
+                broker en «Referido por» (Editar todo).
+              </p>
+            )
+          )}
+          {referidosNoListados > 0 && (
+            <p className="pt-3 text-[12px] text-[color:var(--text-tertiary)]">
+              {referidosNoListados === 1
+                ? "1 referido más no aparece aquí: está asignado a otro asesor o fuera de tu alcance."
+                : `${referidosNoListados} referidos más no aparecen aquí: están asignados a otros asesores o fuera de tu alcance.`}
+            </p>
+          )}
+        </Section>
+      )}
+
       {/* Modal de crear deal */}
       <Dialog open={dealOpen} onOpenChange={setDealOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
@@ -622,6 +721,16 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
 }
 
 // ───────────────────────── Sub-componentes ─────────────────────────
+
+/** Un referido del broker tal como lo arma getContact (#907). */
+interface Referido {
+  id: string;
+  nombre: string;
+  contactType: string | null;
+  contactStatus: string;
+  createdAt: string;
+  asesor: string | null;
+}
 
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (

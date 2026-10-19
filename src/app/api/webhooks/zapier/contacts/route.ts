@@ -3,8 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { ContactType, LeadSource, LeadTemperature } from "@prisma/client";
+import { LeadSource, LeadTemperature } from "@prisma/client";
+import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
+
+// #907: antes `z.nativeEnum(ContactType)`, que acepta REFERIDOR (sigue en el enum de la base
+// como valor retirado). Ahora solo los tipos vigentes; un Zap configurado antes del #907 que
+// mande REFERIDOR no se rechaza: se traduce a Broker, que es lo que ese tipo significa hoy.
+const tipoDeContactoExterno = z.preprocess(normalizarTipoContacto, z.enum(CONTACT_TYPE_ORDER)).optional();
 
 // Auditoría 2026-09-10: el PUT de abajo SÍ validaba con zod estricto; el POST metía
 // `body.*` crudo en `prisma.contact.create`. Consecuencias medidas sobre el código:
@@ -25,7 +31,7 @@ const zapierContactCreateSchema = z
     phone: z.string().trim().min(8).max(20),
     email: z.string().email().optional().nullable(),
     secondaryPhone: z.string().trim().min(8).max(20).optional().nullable(),
-    contactType: z.nativeEnum(ContactType).optional(),
+    contactType: tipoDeContactoExterno,
     leadSource: z.nativeEnum(LeadSource).optional(),
     leadSourceDetail: z.string().max(200).optional().nullable(),
     residenceCity: z.string().max(100).optional().nullable(),
@@ -58,7 +64,7 @@ const zapierContactUpdateSchema = z.object({
   //
   // Ahora los tres salen de `z.nativeEnum` sobre el enum de Prisma: si el schema cambia,
   // esto cambia con él y no hay una segunda lista que mantener a mano.
-  contactType: z.nativeEnum(ContactType).optional(),
+  contactType: tipoDeContactoExterno,
   leadSource: z.nativeEnum(LeadSource).optional(),
   leadSourceDetail: z.string().max(200).optional().nullable(),
   residenceCity: z.string().max(100).optional().nullable(),

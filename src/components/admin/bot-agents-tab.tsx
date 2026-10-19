@@ -6,12 +6,10 @@ import { useState } from "react";
 import { Plus, Trash2, Save, Bot } from "lucide-react";
 import { upsertAgentProfile, deleteAgentProfile } from "@/server/bot-agents";
 import { AGENT_CONTACT_TYPES, AGENT_TONE_PRESETS } from "@/server/bot-agents.schema";
+import { CONTACT_TYPE_LABELS } from "@/lib/constants";
 
-const TYPE_LABEL: Record<string, string> = {
-  LEAD: "Lead", PROSPECTO: "Prospecto", CLIENTE: "Cliente", INVERSIONISTA: "Inversionista",
-  BROKER_EXTERNO: "Broker externo", REFERIDO: "Referido", EMPLEO: "Empleo",
-  COMPRADOR: "Comprador", REFERIDOR: "Referidor",
-};
+// #907: mismas etiquetas que el resto del CRM («Broker», «Proveedor», «Otro»…).
+const TYPE_LABEL: Record<string, string> = CONTACT_TYPE_LABELS;
 const TONE_LABEL: Record<string, string> = {
   PROFESIONAL_CALIDO: "Profesional cálido", CALIDO_CERCANO_MX: "Cálido cercano MX",
   EJECUTIVO_SOBRIO: "Ejecutivo sobrio", NEUTRO_DIRECTO: "Neutro directo",

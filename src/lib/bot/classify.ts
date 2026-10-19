@@ -20,15 +20,16 @@ function esPisable(t: ContactType | null): boolean {
   return t === null || OVERRIDABLE_TYPES.includes(t);
 }
 
+// #907: REFERIDOR salió. Quien quiere referir a alguien ES un broker para Propyte y lo atiende
+// el Agente Brokers (su playbook ya cubre «solo refiero / pase de cliente»).
 const CLASSIFIABLE: ContactType[] = [
-  "COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "REFERIDOR", "CLIENTE",
+  "COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "CLIENTE",
 ];
 
 const CLASSIFY_SYSTEM_PROMPT = `Clasifica al remitente de esta conversación con una inmobiliaria (Propyte, Riviera Maya) según su intención EXPLÍCITA:
 - COMPRADOR: quiere comprar/rentar una propiedad para uso propio.
 - INVERSIONISTA: busca invertir, pregunta por ROI, rentas, plusvalía o preventas como inversión.
-- BROKER_EXTERNO: es agente/broker de OTRA inmobiliaria; ofrece propiedades, clientes o alianzas/comisión compartida.
-- REFERIDOR: quiere recomendar/referir a alguien más (no compra él).
+- BROKER_EXTERNO: es agente/broker de OTRA inmobiliaria (ofrece propiedades, clientes o alianzas/comisión compartida) O quiere recomendar/referir a alguien más para que compre (no compra él).
 - EMPLEO: busca trabajo, vacantes o unirse al equipo.
 - CLIENTE: dice explícitamente que YA es cliente de Propyte (compró antes / tiene un trato en curso).
 Si el mensaje no deja clara la intención todavía, usa UNKNOWN. No adivines.`;

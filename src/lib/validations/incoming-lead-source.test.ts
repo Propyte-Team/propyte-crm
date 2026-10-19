@@ -11,3 +11,29 @@ describe("incomingLeadSchema acepta los source de todos los conectores", () => {
     });
   }
 });
+
+// #907: contactType de los leads entrantes (conectores). REFERIDOR se retiró, pero una
+// integración configurada antes puede seguir mandándolo: entra como Broker, no tumba el lead.
+describe("incomingLeadSchema — contactType (#907)", () => {
+  const BASE = { firstName: "Ana", lastName: "L", phone: "+529981234567", source: "WEBSITE" };
+
+  it("REFERIDOR → BROKER_EXTERNO", () => {
+    const r = incomingLeadSchema.safeParse({ ...BASE, contactType: "REFERIDOR" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.contactType).toBe("BROKER_EXTERNO");
+  });
+
+  it("acepta Proveedor y Otro; sin contactType sigue siendo opcional", () => {
+    for (const t of ["PROVEEDOR", "OTRO"]) {
+      const r = incomingLeadSchema.safeParse({ ...BASE, contactType: t });
+      expect(r.success, t).toBe(true);
+    }
+    const sin = incomingLeadSchema.safeParse(BASE);
+    expect(sin.success).toBe(true);
+    if (sin.success) expect(sin.data.contactType).toBeUndefined();
+  });
+
+  it("un valor inventado se sigue rechazando", () => {
+    expect(incomingLeadSchema.safeParse({ ...BASE, contactType: "VENDEDOR" }).success).toBe(false);
+  });
+});

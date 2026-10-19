@@ -4,6 +4,7 @@ import prisma from "@/lib/db";
 import type { ConnectorLeadStatus, LeadConnector, Prisma } from "@prisma/client";
 import { decryptPII, encryptPII } from "@/lib/crypto";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
 import { deriveInvestmentProfile } from "./profile-mapping";
 import { captureLead } from "./capture-lead";
 
@@ -113,7 +114,9 @@ export function mapExternalFields(
 // Enums válidos de Contact (deben coincidir EXACTO con incomingLeadSchema en
 // src/lib/validations/rebuild-f1.ts — `source` es un subconjunto documentado ahí).
 export const VALID_ENUMS: Record<string, readonly string[]> = {
-  contactType: ["COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "REFERIDOR", "LEAD", "PROSPECTO", "CLIENTE", "REFERIDO"],
+  // #907: los vigentes (sin REFERIDOR). Un REFERIDOR que llegue se traduce a Broker antes de
+  // validar (ver sanitizeEnumFields), no se descarta.
+  contactType: CONTACT_TYPE_ORDER,
   temperature: ["HOT", "WARM", "COLD", "DEAD"],
   language: ["ES", "EN"],
   source: [
@@ -134,6 +137,7 @@ export const VALID_ENUMS: Record<string, readonly string[]> = {
 // el valor crudo ya se preserva en Contact.custom.
 export function sanitizeEnumFields(fields: Record<string, unknown>): string[] {
   const dropped: string[] = [];
+  if (fields.contactType !== undefined) fields.contactType = normalizarTipoContacto(fields.contactType);
   for (const [key, valid] of Object.entries(VALID_ENUMS)) {
     const v = fields[key];
     if (typeof v === "string" && v !== "" && !valid.includes(v)) {

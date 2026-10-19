@@ -40,6 +40,9 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     { key: "score", label: "Score", group: "Clasificación" },
     // AUD-20260710-04: fuente editable inline en el detalle — gateable por rol desde aquí
     { key: "leadSource", label: "Fuente del lead", group: "Clasificación" },
+    // #907: el broker que trajo al contacto. Gateable igual que los demás; si se oculta, la
+    // ficha no muestra la liga ni la lista de referidos (ver contacts/[id]/page.tsx).
+    { key: "referredById", label: "Referido por", group: "Clasificación" },
   ],
 };
 

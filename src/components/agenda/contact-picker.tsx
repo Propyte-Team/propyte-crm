@@ -1,5 +1,6 @@
 // Buscador de contacto para la captura de la Agenda (HUB #841). Reusa GET /api/contacts?search=,
 // que ya aplica el alcance por rol, así que el asesor solo encuentra contactos que puede ver.
+// #907: lo usa también «Referido por» en el formulario de contacto, acotado a tipo Broker.
 "use client";
 
 import React from "react";
@@ -20,6 +21,13 @@ interface ContactPickerProps {
   value: PickedContact | null;
   onChange: (contact: PickedContact | null) => void;
   disabled?: boolean;
+  /** Solo contactos de este tipo (`?type=` de la API), p. ej. "BROKER_EXTERNO". */
+  tipo?: string;
+  /** No ofrecer este contacto (el propio, al ligar un referido a su broker). */
+  excluirId?: string;
+  /** Con `tipo`, mostrar los primeros resultados al enfocar, sin escribir nada. */
+  listarSinTexto?: boolean;
+  placeholder?: string;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -28,16 +36,29 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid var(--border-subtle)",
 };
 
-export function ContactPicker({ value, onChange, disabled }: ContactPickerProps) {
+export function ContactPicker({
+  value,
+  onChange,
+  disabled,
+  tipo,
+  excluirId,
+  listarSinTexto = false,
+  placeholder = "Ligar a un contacto (opcional)",
+}: ContactPickerProps) {
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<ContactRow[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [open, setOpen] = React.useState(false);
 
   // Búsqueda con debounce; `cancelled` descarta respuestas de una consulta ya superada.
+  // Con `listarSinTexto` se busca desde 0 letras (al enfocar); si no, desde 2.
+  const minimo = listarSinTexto ? 0 : 2;
+  // Sin texto solo se busca con la lista abierta; en el modo de siempre, `open` no cuenta
+  // (así la Agenda no vuelve a pedir resultados cada vez que el campo pierde el foco).
+  const activo = listarSinTexto ? open : true;
   React.useEffect(() => {
     const term = query.trim();
-    if (term.length < 2) {
+    if (term.length < minimo || !activo) {
       setResults([]);
       setLoading(false);
       return;
@@ -47,10 +68,14 @@ export function ContactPicker({ value, onChange, disabled }: ContactPickerProps)
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/contacts?search=${encodeURIComponent(term)}&pageSize=6`);
+        const params = new URLSearchParams({ pageSize: "8" });
+        if (term) params.set("search", term);
+        if (tipo) params.set("type", tipo);
+        const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("search failed");
         const body = await res.json();
-        if (!cancelled) setResults((body.data ?? []) as ContactRow[]);
+        const filas = ((body.data ?? []) as ContactRow[]).filter((c) => c.id !== excluirId);
+        if (!cancelled) setResults(filas);
       } catch {
         if (!cancelled) setResults([]);
       } finally {
@@ -62,7 +87,7 @@ export function ContactPicker({ value, onChange, disabled }: ContactPickerProps)
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, activo, minimo, tipo, excluirId]);
 
   if (value) {
     return (
@@ -99,14 +124,14 @@ export function ContactPicker({ value, onChange, disabled }: ContactPickerProps)
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           disabled={disabled}
-          placeholder="Ligar a un contacto (opcional)"
+          placeholder={placeholder}
           aria-label="Buscar contacto para ligar"
           className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"
         />
         {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />}
       </div>
 
-      {open && query.trim().length >= 2 && !loading && (
+      {open && query.trim().length >= minimo && !loading && (
         <ul
           role="listbox"
           className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md py-1 shadow-md"
