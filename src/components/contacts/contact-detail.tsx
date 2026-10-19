@@ -39,6 +39,7 @@ import { ActivityLog } from "@/components/activities/activity-log";
 import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { BrandBadges } from "@/components/brands/brand-view";
+import { ReferidoPorEncabezado } from "@/components/contacts/referido-por";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -268,6 +269,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               {/* Marca(s) del contacto (entrega 3, 2026-10-12): solo si aporta, ver brandBadges */}
               <BrandBadges brandIds={contact.brands?.map((b: { brandId: string }) => b.brandId)} />
             </div>
+            {/* #909: solo si es referido; la página ya lo quita si el rol tiene el campo oculto */}
+            {acc("referredById") !== "HIDDEN" && <ReferidoPorEncabezado referredBy={contact.referredBy} />}
             {/* Chips editables inline */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {acc("contactStatus") !== "HIDDEN" && (
