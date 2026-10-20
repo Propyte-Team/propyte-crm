@@ -50,7 +50,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          # La misma versión mayor que corre producción: hPanel → «Versión de Node: 22.x»
+          # (#912). Antes era 20, que llegó a fin de vida en abril de 2026 y además no es lo
+          # que ejecuta el servidor. Si se cambia la versión en hPanel, cambiarla aquí también.
+          node-version: "22"
           cache: npm
 
       # `postinstall` del proyecto corre `prisma generate`, así que el cliente queda
