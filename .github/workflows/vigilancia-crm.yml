@@ -46,6 +46,12 @@ permissions:
 jobs:
   vigilar:
     name: /api/health responde y la base contesta
+    # Solo en el repo de Propyte-Team. Un fork que sincroniza `main` hereda este workflow
+    # —cron incluido— y lo corre con SU token y contra SUS issues: en el fork de Karla los
+    # issues están desactivados, así que cada corrida fallaba y GitHub le mandaba a ella un
+    # «workflow run failed» (8 en una noche, 2026-10-19/20). En un fork el job se marca como
+    # «skipped», no como fallido, y no notifica a nadie.
+    if: github.repository_owner == 'Propyte-Team'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
