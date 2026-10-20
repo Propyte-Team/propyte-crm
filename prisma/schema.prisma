@@ -840,6 +840,22 @@ model Contact {
   referredBy   Contact?  @relation("ContactReferrals", fields: [referredById], references: [id], onDelete: SetNull)
   referrals    Contact[] @relation("ContactReferrals")
 
+  // Información adicional (#914). Nacieron para la migración de los leads de Zoho, pero son
+  // campos normales del contacto: se editan en la ficha y se gatean por rol como los demás.
+  // Lista única con etiquetas y validación: src/lib/contacts/campos-adicionales.ts.
+  // Migración: prisma/migrations-manual/2026-10-20-columnas-migracion-zoho.sql.
+  company         String? // empresa o inmobiliaria (de los brokers, sobre todo)
+  secondaryEmail  String?
+  facebook        String?
+  instagramHandle String? // usuario de Instagram; instagramId es el id de Meta, otra cosa
+  budgetText      String? // presupuesto tal como lo dijo el contacto («$150,000 – $300,000 USD»)
+  brokerInterest  String? // «Interés de Broker» de Zoho
+  initialMessage  String? // el mensaje con el que llegó
+  internalStage   String? // «Etapa interna» de Zoho
+  discardReason   String?
+  appliedPosition String? // puesto solicitado (contactos de Empleo)
+  inSequence      Boolean? // «En secuencia» de la automatización de Zoho (histórico)
+
   // Relaciones
   deals       Deal[]
   activities  Activity[]
@@ -1335,6 +1351,12 @@ model AdAttribution {
   campaignName String?
   adName       String?
   adsetName    String?
+  // #914: ids de Meta y formulario (los trae la migración de Zoho; Lead Ads también los da).
+  metaCampaignId String?
+  metaAdsetId    String?
+  metaAdId       String?
+  metaFormId     String?
+  formName       String?
   network      String?
   device       String?
   keyword      String?

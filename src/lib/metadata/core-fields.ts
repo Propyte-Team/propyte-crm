@@ -2,6 +2,7 @@
 // Sirve al panel admin de visibilidad y al enforcement en API/server.
 // Default (sin fila en core_field_permissions) = EDIT, para no romper el flujo actual.
 import prisma from "@/lib/db";
+import { CAMPOS_ADICIONALES, GRUPO_CAMPOS_ADICIONALES } from "@/lib/contacts/campos-adicionales";
 
 export type FieldAccess = "HIDDEN" | "READ" | "EDIT";
 
@@ -43,6 +44,8 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     // #907: el broker que trajo al contacto. Gateable igual que los demás; si se oculta, la
     // ficha no muestra la liga ni la lista de referidos (ver contacts/[id]/page.tsx).
     { key: "referredById", label: "Referido por", group: "Clasificación" },
+    // #914: «Información adicional» — de la lista única, sin copiarla.
+    ...CAMPOS_ADICIONALES.map((c) => ({ key: c.key, label: c.label, group: GRUPO_CAMPOS_ADICIONALES })),
   ],
 };
 
