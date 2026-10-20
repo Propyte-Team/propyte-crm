@@ -6,6 +6,7 @@ import {
   LEAD_SOURCE_LABELS,
   URGENCY_LABELS,
 } from "@/lib/constants";
+import { ETIQUETAS_CAMPOS_ADICIONALES } from "@/lib/contacts/campos-adicionales";
 
 // "3d 4h", "2h 15m", "45m", "<1m" — a la escala de días no se muestran minutos, a la
 // escala de horas no se muestran segundos. Unidad con valor 0 se omite (p.ej. "2h" sin " 0m").
@@ -40,6 +41,7 @@ const FIELD_LABELS: Record<string, string> = {
   tags: "Etiquetas",
   custom: "Campos personalizados",
   referredById: "Referido por", // #907: la ruta resuelve el id al nombre del broker
+  ...ETIQUETAS_CAMPOS_ADICIONALES, // #914
 };
 
 // Mapas de valor→label de constants.ts, por campo. assignedToId NO tiene mapa aquí a

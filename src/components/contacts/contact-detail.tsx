@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
 import { LifecycleStepper } from "@/components/contacts/lifecycle-stepper";
+import { InfoAdicionalSection, AnuncioOrigenSection } from "@/components/contacts/info-adicional";
 import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { ContactTimeline } from "@/components/contacts/contact-timeline";
@@ -436,6 +437,10 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             {gSelect("purchaseModality", "Modalidad", [{ value: "", label: "—" }, ...Object.entries(MODALITY_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
             {gSelect("rentalStrategy", "Estrategia de renta", [{ value: "", label: "—" }, ...Object.entries(RENTAL_LABEL).map(([value, label]) => ({ value, label }))], { nullable: true })}
           </Section>
+
+          {/* #914: datos que llegaron de Zoho (y que se pueden capturar a mano) + anuncio de origen. */}
+          <InfoAdicionalSection contact={contact} acc={acc} save={save} />
+          <AnuncioOrigenSection adAttribution={contact.adAttribution} />
 
           {tieneCicloDeVida(contact.contactType) && (
             <Section title="Ciclo de vida">

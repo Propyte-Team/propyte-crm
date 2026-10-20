@@ -256,6 +256,11 @@ export async function getContact(id: string) {
       },
       // Marcas del contacto: las pide el filtro por marca (2026-10-12).
       brands: CONTACT_BRAND_SELECT,
+      // #914: anuncio de origen, para la sección de la ficha. Solo nombres: los ids de Meta
+      // sirven para cruzar con Ads Manager, no para leerlos en pantalla.
+      adAttribution: {
+        select: { campaignName: true, adsetName: true, adName: true, formName: true, network: true },
+      },
       // #907: el broker que lo trajo y, si es broker, los contactos que trajo. Traen dueño y
       // marcas solo para decidir abajo si quien mira puede abrirlos; eso NO sale de aquí.
       referredBy: {

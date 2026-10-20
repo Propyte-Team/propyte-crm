@@ -23,6 +23,7 @@ import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter";
 import { getContactAccessInfo } from "@/server/contacts";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
+import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -97,6 +98,9 @@ const contactCoreFields = z.object({
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional().nullable(),
   // #907: el broker que trajo a este contacto. null = quitar la liga.
   referredById: z.string().uuid().nullable().optional(),
+  // #914: «Información adicional» (empresa, Email 2, Facebook…). Lista única en
+  // lib/contacts/campos-adicionales.ts; aquí solo se mezcla.
+  ...CAMPOS_ADICIONALES_SHAPE,
 });
 
 /**
@@ -440,6 +444,7 @@ export async function POST(request: NextRequest) {
         purchaseModality: data.purchaseModality || undefined,
         rentalStrategy: data.rentalStrategy || undefined,
         referredById: data.referredById || null, // #907
+        ...datosCamposAdicionales(data), // #914
       },
       include: {
         assignedTo: { select: { id: true, name: true, email: true } },
@@ -608,6 +613,8 @@ export async function PUT(request: NextRequest) {
         ? { connect: { id: data.assignedToId } }
         : { disconnect: true };
     }
+    // #914: solo las claves que vinieron; vacío → null.
+    Object.assign(updateData, datosCamposAdicionales(data));
     if (data.referredById !== undefined) {
       updateData.referredBy = data.referredById
         ? { connect: { id: data.referredById } }
