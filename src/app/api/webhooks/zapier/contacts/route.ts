@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import { z } from "zod";
 import { LeadSource, LeadTemperature } from "@prisma/client";
 import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
@@ -110,6 +111,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // #915: el asesor que Zapier eligió se entera. actorId null = lo asignó una integración.
+    await avisarAsignacion({
+      tipo: "conversacion",
+      contactoId: contact.id,
+      contactoNombre: `${contact.firstName} ${contact.lastName}`,
+      asignadoId: contact.assignedToId,
+      actorId: null,
+    });
+
     // El evento a Meta CAPI se retiró junto con lib/meta (T3.4b); si se
     // necesita atribución server-side, reimplementar en el Hub.
     return NextResponse.json({ id: contact.id, created: true }, { status: 201 });
@@ -149,10 +159,25 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    // #915: para avisar solo si el asesor de verdad cambia.
+    const antes = fields.assignedToId
+      ? await prisma.contact.findUnique({ where: { id }, select: { assignedToId: true } })
+      : null;
+
     const contact = await withChangeSource(
       { source: "zapier" },
       (tx) => tx.contact.update({ where: { id }, data })
     );
+
+    if (fields.assignedToId && fields.assignedToId !== antes?.assignedToId) {
+      await avisarAsignacion({
+        tipo: "conversacion",
+        contactoId: contact.id,
+        contactoNombre: `${contact.firstName} ${contact.lastName}`,
+        asignadoId: fields.assignedToId,
+        actorId: null,
+      });
+    }
 
     return NextResponse.json({ id: contact.id, updated: true });
   } catch (error) {

@@ -19,6 +19,8 @@ export interface AgendaItem {
   dueDate: string | null;
   contactId: string | null;
   contactName: string | null;
+  /** #915: quién te la asignó, si no la creaste tú. */
+  assignedByName?: string | null;
 }
 
 export type AgendaBuckets = Record<AgendaBucket, AgendaItem[]>;

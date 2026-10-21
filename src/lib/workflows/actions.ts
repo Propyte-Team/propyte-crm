@@ -12,6 +12,7 @@ import { sendGmail } from "@/lib/google/gmail";
 import { getConnectionStatus } from "@/lib/google/workspace.service";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { resolveActorUserId, type ActorCache } from "@/lib/users/actor-sistema";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 
 export interface ActionResult {
   skipped?: boolean;
@@ -81,7 +82,7 @@ export async function executeAction(item: ActionQueue, ctx: { actorCache?: Actor
       const userId = await ownerUserId(contact);
       if (!userId) return { skipped: true, note: "Sin usuario destino" };
       const dueInMinutes = typeof config.dueInMinutes === "number" ? config.dueInMinutes : 1440;
-      await prisma.activity.create({
+      const tarea = await prisma.activity.create({
         data: {
           contactId: contact.id,
           dealId: item.entityType === "deal" ? item.entityId : undefined,
@@ -92,6 +93,17 @@ export async function executeAction(item: ActionQueue, ctx: { actorCache?: Actor
           dueDate: new Date(Date.now() + dueInMinutes * 60_000),
           status: "PENDIENTE",
         },
+      });
+      // #915: la tarea le cae a un asesor que no la pidió; sin aviso solo la ve si abre su Agenda.
+      // actorId null = la asignó el sistema (no hay «Te la asignó …»).
+      await avisarAsignacion({
+        tipo: "tarea",
+        tareaId: tarea.id,
+        asunto: tarea.subject,
+        vence: tarea.dueDate,
+        contactoNombre: `${contact.firstName} ${contact.lastName}`,
+        asignadoId: userId,
+        actorId: null,
       });
       return {};
     }

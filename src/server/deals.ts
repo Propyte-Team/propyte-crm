@@ -13,6 +13,7 @@ import { parseDueDate } from "@/lib/due-date";
 import type { Prisma, DealStage, DealType } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
 import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 import { computeDealCommissions } from "@/lib/commission-engine/deal-commissions";
@@ -422,6 +423,17 @@ export async function createDeal(data: {
   // Disparar webhook de deal creado (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("deal.created", { deal });
 
+  // #915: un negocio creado a nombre de otro asesor le avisa (igual que POST /api/deals).
+  await avisarAsignacion({
+    tipo: "negocio",
+    negocioId: deal.id,
+    contactoNombre: deal.contact ? `${deal.contact.firstName} ${deal.contact.lastName}` : null,
+    desarrollo: deal.development?.name ?? null,
+    asignadoId: deal.assignedToId,
+    actorId: session.user.id,
+    actorNombre: session.user.name,
+  });
+
   return deal;
 }
 
@@ -485,6 +497,19 @@ export async function updateDeal(
 
   // Disparar webhook de deal actualizado (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("deal.updated", { deal });
+
+  // #915: cambiar el asesor avisa al nuevo (igual que PATCH /api/deals/[id]).
+  if (data.assignedToId && data.assignedToId !== existing.assignedToId) {
+    await avisarAsignacion({
+      tipo: "negocio",
+      negocioId: deal.id,
+      contactoNombre: deal.contact ? `${deal.contact.firstName} ${deal.contact.lastName}` : null,
+      desarrollo: deal.development?.name ?? null,
+      asignadoId: data.assignedToId,
+      actorId: session.user.id,
+      actorNombre: session.user.name,
+    });
+  }
 
   return deal;
 }

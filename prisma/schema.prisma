@@ -1051,6 +1051,11 @@ model Activity {
   // la migración SQL, sin Prisma relations para no expandir User). "Eliminar todo" en la Agenda
   // archiva (archivedAt) en vez de borrar: el asesor deja de verlas, los reportes de admin no.
   completedById    String?
+  // #915: quién creó la actividad cuando no es su dueño (una tarea que un líder, gerente,
+  // director o admin le asigna a un asesor). `userId` es el asignado. NULL en todas las filas
+  // anteriores y cuando el creador es el mismo dueño. FK lógica a users, como completedById
+  // (constraint en prisma/migrations-manual/2026-10-21-activities-created-by.sql).
+  createdById      String?
   archivedAt       DateTime?
   archivedById     String?
   status           ActivityStatus @default(PENDIENTE)

@@ -18,6 +18,7 @@ import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, dealBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, dealBrandFilterWhere } from "@/lib/brands/filter";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -342,6 +343,17 @@ export async function POST(request: NextRequest) {
         status: "COMPLETADA",
         completedAt: new Date(),
       },
+    });
+
+    // #915: un negocio que se crea a nombre de OTRO asesor le avisa a ese asesor.
+    await avisarAsignacion({
+      tipo: "negocio",
+      negocioId: deal.id,
+      contactoNombre: deal.contact ? `${deal.contact.firstName} ${deal.contact.lastName}` : null,
+      desarrollo: deal.development?.name ?? null,
+      asignadoId: deal.assignedToId,
+      actorId: session.user.id,
+      actorNombre: session.user.name,
     });
 
     return NextResponse.json({ data: deal }, { status: 201 });

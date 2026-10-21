@@ -28,6 +28,8 @@ const AGENDA_SELECT = {
   dueDate: true,
   contactId: true,
   contact: { select: { id: true, firstName: true, lastName: true } },
+  // #915: quién la asignó, cuando no es su dueño.
+  createdById: true,
 } satisfies Prisma.ActivitySelect;
 
 export interface MyAgenda {
@@ -66,6 +68,19 @@ export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
 
   const rows = [...conFecha, ...sinFecha];
 
+  // #915: «Te la asignó …». createdById es FK lógica sin relación de Prisma (no se expande
+  // User), así que los nombres se leen en una sola consulta aparte.
+  const creadores = [
+    ...new Set(rows.map((r) => r.createdById).filter((id): id is string => !!id && id !== session.user.id)),
+  ];
+  const nombres = new Map(
+    creadores.length
+      ? (
+          await prisma.user.findMany({ where: { id: { in: creadores } }, select: { id: true, name: true } })
+        ).map((u) => [u.id, u.name])
+      : [],
+  );
+
   const items: AgendaItem[] = rows.map((r) => ({
     id: r.id,
     subject: r.subject,
@@ -74,6 +89,7 @@ export async function getMyAgenda(now: Date = new Date()): Promise<MyAgenda> {
     dueDate: r.dueDate ? r.dueDate.toISOString() : null,
     contactId: r.contactId,
     contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
+    assignedByName: r.createdById ? (nombres.get(r.createdById) ?? null) : null,
   }));
 
   return {
@@ -312,5 +328,56 @@ export async function getMyRecentNotes(): Promise<AgendaNote[]> {
     createdAt: r.createdAt.toISOString(),
     contactId: r.contactId,
     contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
+  }));
+}
+
+// ------------------------------------------------------------
+// Tareas que asignaste (#915): las que dejaste a otra persona y siguen pendientes.
+// ------------------------------------------------------------
+
+export interface TareaAsignadaPorMi {
+  id: string;
+  subject: string;
+  dueDate: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  assigneeName: string | null;
+}
+
+/**
+ * Para el líder, gerente, director o admin que asigna: lo que dejó a otros y todavía no está
+ * hecho. Lee por creador (`createdById` = sesión) y excluye las suyas, así que un asesor, que no
+ * puede asignar, siempre recibe una lista vacía.
+ */
+export async function getMyAssignedTasks(): Promise<TareaAsignadaPorMi[]> {
+  const session = await getServerSession();
+  if (!session?.user) throw new Error("No autorizado");
+
+  const rows = await prisma.activity.findMany({
+    where: {
+      createdById: session.user.id,
+      userId: { not: session.user.id },
+      deletedAt: null,
+      status: { in: ["PENDIENTE", "VENCIDA"] },
+    },
+    select: {
+      id: true,
+      subject: true,
+      dueDate: true,
+      contactId: true,
+      contact: { select: { firstName: true, lastName: true } },
+      user: { select: { name: true } },
+    },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    take: TABLE_TAKE,
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    dueDate: r.dueDate ? r.dueDate.toISOString() : null,
+    contactId: r.contactId,
+    contactName: r.contact ? `${r.contact.firstName} ${r.contact.lastName}` : null,
+    assigneeName: r.user?.name ?? null,
   }));
 }

@@ -13,6 +13,12 @@ import { Prisma } from "@prisma/client";
 import { resolveScopeBucket, canReadUserScope } from "@/lib/rbac/query-scope";
 import { dueDateSchema } from "@/lib/due-date";
 import { ordenValidado } from "@/lib/api/orden";
+import {
+  resolverAsignadoTarea,
+  ERROR_ASIGNADO_NO_EXISTE,
+  ERROR_SIN_PERMISO_ASIGNAR,
+} from "@/server/activities";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 
 // Roles con acceso completo a actividades
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -37,6 +43,8 @@ const createActivitySchema = z.object({
   status: z.enum(["PENDIENTE", "COMPLETADA", "VENCIDA", "CANCELADA"]).optional(),
   outcome: z.string().max(1000).optional(),
   duration_minutes: z.number().int().min(0).max(480).optional(),
+  // #915: a quién queda. Sin él, a quien la crea. El alcance se valida en resolverAsignadoTarea.
+  assigneeId: z.string().uuid("ID de usuario inválido").optional(),
 });
 
 /**
@@ -232,12 +240,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Crear la actividad (siempre asociada al usuario actual)
+    // #915: el dueño puede ser otra persona si el rol de quien crea lo permite. Antes era
+    // siempre el usuario actual y no había forma de dejarle una tarea a un asesor.
+    let ownerId: string;
+    try {
+      ownerId = await resolverAsignadoTarea(session.user, data.assigneeId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === ERROR_ASIGNADO_NO_EXISTE) return NextResponse.json({ error: msg }, { status: 400 });
+      if (msg === ERROR_SIN_PERMISO_ASIGNAR) return NextResponse.json({ error: msg }, { status: 403 });
+      throw e;
+    }
+    const asignadaAOtro = ownerId !== session.user.id;
+
     const activity = await prisma.activity.create({
       data: {
         contactId: data.contactId,
         dealId: data.dealId || null,
-        userId: session.user.id,
+        userId: ownerId,
+        ...(asignadaAOtro ? { createdById: session.user.id } : {}),
         activityType: data.activityType,
         subject: data.subject,
         description: data.description || null,
@@ -254,6 +275,21 @@ export async function POST(request: NextRequest) {
         user: { select: { id: true, name: true } },
       },
     });
+
+    if (asignadaAOtro) {
+      await avisarAsignacion({
+        tipo: "tarea",
+        tareaId: activity.id,
+        asunto: activity.subject,
+        vence: activity.dueDate,
+        contactoNombre: activity.contact
+          ? `${activity.contact.firstName} ${activity.contact.lastName}`
+          : null,
+        asignadoId: ownerId,
+        actorId: session.user.id,
+        actorNombre: session.user.name,
+      });
+    }
 
     return NextResponse.json({ data: activity }, { status: 201 });
   } catch (error) {

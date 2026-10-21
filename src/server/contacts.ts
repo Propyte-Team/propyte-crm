@@ -10,6 +10,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import { CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import {
@@ -495,6 +496,16 @@ export async function createContact(data: z.infer<typeof contactSchema>) {
     await emitEvent("lead.assigned", "contact", contact.id, { assigneeId: assignedToId });
   }
 
+  // #915: si el asesor es otro, se entera (igual que POST /api/contacts).
+  await avisarAsignacion({
+    tipo: "conversacion",
+    contactoId: contact.id,
+    contactoNombre: `${contact.firstName} ${contact.lastName}`,
+    asignadoId: assignedToId,
+    actorId: session.user.id,
+    actorNombre: session.user.name,
+  });
+
   return { contact };
 }
 
@@ -574,6 +585,18 @@ export async function updateContact(id: string, data: Partial<z.infer<typeof con
 
   // Disparar webhook de contacto actualizado (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("contact.updated", { contact });
+
+  // #915: reasignar avisa al nuevo asesor (igual que PUT /api/contacts).
+  if (validData.assignedToId && validData.assignedToId !== existing.assignedToId) {
+    await avisarAsignacion({
+      tipo: "conversacion",
+      contactoId: contact.id,
+      contactoNombre: `${contact.firstName} ${contact.lastName}`,
+      asignadoId: validData.assignedToId,
+      actorId: session.user.id,
+      actorNombre: session.user.name,
+    });
+  }
 
   return { contact };
 }

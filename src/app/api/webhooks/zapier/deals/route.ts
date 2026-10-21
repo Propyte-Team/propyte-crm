@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import { parseDueDate } from "@/lib/due-date";
 
 // Auditoría 2026-09-10: este POST validaba la PRESENCIA de cuatro campos y nada más; el
@@ -112,6 +113,14 @@ export async function POST(req: NextRequest) {
         expectedCloseDate,
         leadSourceAtDeal: d.leadSourceAtDeal || "OTRO",
       },
+    });
+
+    // #915: el asesor del negocio se entera. actorId null = lo asignó una integración.
+    await avisarAsignacion({
+      tipo: "negocio",
+      negocioId: deal.id,
+      asignadoId: deal.assignedToId,
+      actorId: null,
     });
 
     return NextResponse.json({ id: deal.id, created: true }, { status: 201 });
