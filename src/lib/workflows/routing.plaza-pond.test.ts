@@ -69,22 +69,59 @@ describe("autoRouteLead — ruteo por plaza", () => {
     expect(userFindMany.mock.calls[0][0].where.plaza).toBe("TULUM");
   });
 
-  // #729: antes, un lead sin plaza no agregaba filtro y se le entregaba a CUALQUIER
-  // asesor de cualquier plaza. La migración declara lo contrario: sin plaza, al Pond.
-  it("sin plaza resoluble no se fuerza asesor: cae al Pond (#729)", async () => {
+  // #918 (2026-10-21): la #729 mandaba al Pond todo lead sin plaza. sistemas@ decidió que
+  // ningún contacto se quede sin asesor si hay alguno: sin plaza, la regla sigue sin asignar
+  // (no inventa plaza), pero el lead entra al turno GENERAL, entre todos los asesores
+  // ruteables de cualquier plaza. Caso real: un WhatsApp sin plaza del 19-oct que el bot
+  // contestó y quedó «Sin asignar».
+  it("sin plaza resoluble: turno general entre todos los asesores, sin filtro de plaza (#918)", async () => {
     contactFindUnique.mockResolvedValue(contact({ targetPlaza: null }));
-    userFindMany.mockResolvedValue([{ id: "gerente" }]);
+    userFindMany.mockResolvedValue([{ id: "asesor-pdc" }, { id: "asesor-tulum" }]);
     const r = await autoRouteLead("c1");
-    expect(r).toBeNull();
-    expect(createSlaTimer).toHaveBeenCalledWith("c1", "ORPHAN");
-    expect(contactUpdate).not.toHaveBeenCalled();
+    expect(r).toBe("asesor-pdc");
+    // La única consulta de candidatos es la del turno general: sin plaza y con los roles de asesor.
+    const where = userFindMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty("plaza");
+    expect(where.role).toEqual({ in: ["ASESOR", "ASESOR_SR", "ASESOR_JR"] });
+    expect(contactUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ assignedToId: "asesor-pdc" }) }),
+    );
+    expect(createSlaTimer).toHaveBeenCalledWith("c1", "FIRST_TOUCH");
+    expect(createSlaTimer).not.toHaveBeenCalledWith("c1", "ORPHAN");
+    expect(notificationCreate.mock.calls[0][0].data.message).toContain("te tocó por turno general");
+    expect(emitEvent).toHaveBeenCalledWith(
+      "lead.assigned",
+      "contact",
+      "c1",
+      expect.objectContaining({ via: "reparto_general", motivoSinAsesor: "sin_plaza_resoluble" }),
+    );
+  });
+
+  it("plaza sin asesores (Mérida): turno general con asesores de otras plazas (#918)", async () => {
+    contactFindUnique.mockResolvedValue(contact({ targetPlaza: "MERIDA" }));
+    userFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "asesor-tulum" }]);
+    const r = await autoRouteLead("c1");
+    expect(r).toBe("asesor-tulum");
+    expect(userFindMany.mock.calls[0][0].where.plaza).toBe("MERIDA");
+    expect(userFindMany.mock.calls[1][0].where).not.toHaveProperty("plaza");
+    expect(notificationCreate.mock.calls[0][0].data.message).toContain("No hay asesores en MERIDA");
+    expect(createSlaTimer).not.toHaveBeenCalledWith("c1", "ORPHAN");
+  });
+
+  it("el turno general tiene su propio contador: no mueve el de la regla", async () => {
+    contactFindUnique.mockResolvedValue(contact({ targetPlaza: null }));
+    userFindMany.mockResolvedValue([{ id: "a" }, { id: "b" }]);
+    await autoRouteLead("c1");
+    const clave = queryRaw.mock.calls[0][1] as string;
+    expect(clave).toContain(":reparto_general:");
   });
 });
 
-describe("autoRouteLead — Pond (#678)", () => {
+describe("autoRouteLead — Pond (#678): solo si no hay NINGÚN asesor ruteable (#918)", () => {
   it("sin candidato: crea ORPHAN, notifica a gerencia de la plaza y emite lead.orphaned; devuelve null", async () => {
     contactFindUnique.mockResolvedValue(contact({ targetPlaza: "MERIDA" }));
-    userFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "gerente-mid" }]);
+    // regla (MERIDA) → nadie; turno general → nadie; gerencia de MERIDA → gerente-mid
+    userFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "gerente-mid" }]);
     const r = await autoRouteLead("c1");
     expect(r).toBeNull();
     expect(createSlaTimer).toHaveBeenCalledWith("c1", "ORPHAN");
@@ -96,10 +133,15 @@ describe("autoRouteLead — Pond (#678)", () => {
 
   it("Pond sin gerencia en la plaza: reintenta con toda la gerencia", async () => {
     contactFindUnique.mockResolvedValue(contact({ targetPlaza: "MERIDA" }));
-    userFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "dir" }]);
+    // regla → nadie; turno general → nadie; gerencia de la plaza → nadie; toda la gerencia → dir
+    userFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "dir" }]);
     const r = await autoRouteLead("c1");
     expect(r).toBeNull();
-    expect(userFindMany).toHaveBeenCalledTimes(3);
+    expect(userFindMany).toHaveBeenCalledTimes(4);
     expect(notificationCreateMany.mock.calls[0][0].data[0].userId).toBe("dir");
   });
 });
