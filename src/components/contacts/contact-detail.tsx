@@ -26,6 +26,7 @@ import {
 import { ContactForm } from "@/components/contacts/contact-form";
 import { LifecycleStepper } from "@/components/contacts/lifecycle-stepper";
 import { InfoAdicionalSection, AnuncioOrigenSection } from "@/components/contacts/info-adicional";
+import { CvContacto } from "@/components/contacts/cv-contacto";
 import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { ContactTimeline } from "@/components/contacts/contact-timeline";
@@ -392,6 +393,9 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
           )}
         </div>
       </div>
+
+      {/* #917: CV del contacto — botón opcional «Subir CV» o la tarjeta con los que ya hay. */}
+      <CvContacto contactId={contact.id} />
 
       {/* ── Barra de resumen ── */}
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border md:grid-cols-5" style={{ borderColor: "var(--border-default)", background: "var(--border-subtle)" }}>
