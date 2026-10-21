@@ -40,7 +40,8 @@ export async function findDuplicateGroups(): Promise<DupGroupResult[]> {
     });
 }
 
-const N_RELATIONS = ["deal", "activity", "walkIn", "message", "slaTimer", "connectorLeadLog", "conversionEvent", "shortlist"] as const;
+// #917: contactFile — los CV del contacto fusionado pasan al que queda.
+const N_RELATIONS = ["deal", "activity", "walkIn", "message", "slaTimer", "connectorLeadLog", "conversionEvent", "shortlist", "contactFile"] as const;
 const ONE_TO_ONE = ["contactDossier", "adAttribution", "webBehavior", "conversation"] as const;
 
 export async function mergeContacts(input: { survivorId: string; loserId: string; actorId?: string | null }):

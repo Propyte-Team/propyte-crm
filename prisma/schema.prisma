@@ -756,6 +756,7 @@ model User {
   // Fichas técnicas compartibles (#887). Relación solo de Prisma: la columna vive en
   // fichas_compartidas."createdById"; users NO cambia (el Hub la comparte).
   fichasCompartidas FichaCompartida[] @relation("FichasCompartidas")
+  contactFilesUploaded ContactFile[] @relation("ContactFilesUploaded")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -839,6 +840,8 @@ model Contact {
   referredById String?
   referredBy   Contact?  @relation("ContactReferrals", fields: [referredById], references: [id], onDelete: SetNull)
   referrals    Contact[] @relation("ContactReferrals")
+  // #917: archivos subidos a la ficha (CV).
+  files        ContactFile[]
 
   // Información adicional (#914). Nacieron para la migración de los leads de Zoho, pero son
   // campos normales del contacto: se editan en la ficha y se gatean por rol como los demás.
@@ -3074,5 +3077,28 @@ model FichaCompartida {
 
   @@index([createdById])
   @@map("fichas_compartidas")
+  @@schema("propyte_crm")
+}
+
+// #917 — Archivos subidos a la ficha del contacto (hoy solo CV). El archivo vive en el bucket
+// privado `crm-attachments` (storagePath); aquí, el nombre original y quién lo subió.
+// Borrado lógico: deletedAt/deletedById (el objeto del bucket sí se borra).
+model ContactFile {
+  id           String    @id @default(uuid())
+  contactId    String
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  kind         String    @default("CV")
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String    @unique
+  uploadedById String
+  uploadedBy   User      @relation("ContactFilesUploaded", fields: [uploadedById], references: [id])
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+  deletedById  String?
+
+  @@index([contactId, kind])
+  @@map("contact_files")
   @@schema("propyte_crm")
 }
