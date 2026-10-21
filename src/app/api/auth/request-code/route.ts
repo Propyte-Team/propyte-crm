@@ -4,7 +4,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { sendLoginCode } from "@/lib/email/mailer";
+import { sendLoginCode, CorreoNoEnviadoError } from "@/lib/email/mailer";
+import { anularCodigoNoEnviado, respuestaCorreoNoEnviado } from "@/lib/auth/codigo-no-enviado";
 import { z } from "zod";
 import { registrarIntento, olvidarIntentos, ipDe } from "@/lib/security/rate-limit";
 import crypto from "crypto";
@@ -72,8 +73,16 @@ export async function POST(req: NextRequest) {
       data: { otpHash, otpExpiresAt },
     });
 
-    // Enviar código por email
-    await sendLoginCode(user.email, code);
+    // #839: si el correo no sale, el código no le sirve a nadie. Se anula y la persona ve
+    // «no pudimos enviar el correo, avisa al administrador» en vez de un error genérico. El
+    // aviso a los administradores ya lo dejó el mailer.
+    try {
+      await sendLoginCode(user.email, code);
+    } catch (err) {
+      if (!(err instanceof CorreoNoEnviadoError)) throw err;
+      await anularCodigoNoEnviado(user.id, otpHash);
+      return respuestaCorreoNoEnviado();
+    }
 
     return NextResponse.json({
       message: "Si el correo está registrado, recibirás un código de acceso.",

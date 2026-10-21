@@ -1,6 +1,7 @@
-// Servicio de email transaccional via Nodemailer + Hostinger SMTP
+// Servicio de email transaccional via Nodemailer + el SMTP de SMTP_HOST (hoy Gmail, ver #839)
 import nodemailer from "nodemailer";
-import type { Transporter } from "nodemailer";
+import type { SendMailOptions, Transporter } from "nodemailer";
+import { MENSAJE_SMTP_NO_CONFIGURADO, type CorreoQueFallo } from "./fallo-smtp";
 
 // Transporter lazy — no truena en build/import
 let _transporter: Transporter | null = null;
@@ -13,7 +14,7 @@ function getTransporter(): Transporter {
   const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
-    throw new Error("SMTP no configurado (SMTP_HOST/USER/PASS)");
+    throw new Error(MENSAJE_SMTP_NO_CONFIGURADO);
   }
 
   const port = Number(process.env.SMTP_PORT ?? 465);
@@ -35,6 +36,49 @@ function from(): string {
   );
 }
 
+/**
+ * Lo que lanza el mailer cuando un correo no salió (#839). Las rutas lo distinguen de
+ * cualquier otro error para decirle a la persona «no pudimos enviar el correo» en vez de un
+ * «Error al procesar la solicitud» genérico. `message` es el mismo texto de antes.
+ */
+export class CorreoNoEnviadoError extends Error {
+  constructor(message: string, readonly causaOriginal: unknown) {
+    super(message);
+    this.name = "CorreoNoEnviadoError";
+  }
+}
+
+/**
+ * Manda el correo y, si no sale, avisa a los administradores antes de relanzar (#839).
+ * `getTransporter()` va DENTRO del try: un SMTP sin configurar también es un correo que no
+ * salió, y antes se escapaba sin el aviso ni el mensaje propio.
+ *
+ * El aviso se importa al fallar y no arriba: así el camino normal no carga la base de datos,
+ * y el mailer se sigue pudiendo probar sin ella.
+ */
+async function enviar(
+  que: CorreoQueFallo,
+  opciones: SendMailOptions & { to: string },
+  fallo: { log: string; mensaje: string } | null,
+): Promise<void> {
+  try {
+    await getTransporter().sendMail(opciones);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[smtp] ${fallo?.log ?? "Error enviando correo"}:`, message);
+    try {
+      const { avisarFalloSmtp } = await import("./avisar-fallo-smtp");
+      await avisarFalloSmtp({ err, que, destinatario: opciones.to });
+    } catch (e) {
+      console.error("[smtp] no se pudo cargar el aviso de fallo", e);
+    }
+    // Las automatizaciones (sendSmtpEmail) siempre recibieron el error original de nodemailer;
+    // se respeta para no cambiar lo que guardan en su historial.
+    if (!fallo) throw err;
+    throw new CorreoNoEnviadoError(fallo.mensaje, err);
+  }
+}
+
 // Escapa HTML de inputs de usuario antes de interpolarlos en el correo
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -49,11 +93,11 @@ export async function sendAccessRequest(input: {
   company?: string;
   message?: string;
 }) {
-  const transporter = getTransporter();
   const to = process.env.ACCESS_REQUEST_TO ?? "marketing@propyte.com";
 
-  try {
-    await transporter.sendMail({
+  await enviar(
+    "solicitud_acceso",
+    {
       from: from(),
       to,
       replyTo: input.email,
@@ -71,22 +115,18 @@ export async function sendAccessRequest(input: {
   </div>
 </body>
 </html>`,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Error enviando solicitud de acceso:", message);
-    throw new Error("No se pudo enviar la solicitud de acceso");
-  }
+    },
+    { log: "Error enviando solicitud de acceso", mensaje: "No se pudo enviar la solicitud de acceso" },
+  );
 }
 
 /**
  * Envía un código de acceso temporal al correo del usuario.
  */
 export async function sendLoginCode(email: string, code: string) {
-  const transporter = getTransporter();
-
-  try {
-    await transporter.sendMail({
+  await enviar(
+    "codigo_acceso",
+    {
       from: from(),
       to: email,
       subject: `Tu código de acceso: ${code}`,
@@ -106,22 +146,18 @@ export async function sendLoginCode(email: string, code: string) {
   </div>
 </body>
 </html>`,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Error enviando código de acceso:", message);
-    throw new Error("No se pudo enviar el código de acceso");
-  }
+    },
+    { log: "Error enviando código de acceso", mensaje: "No se pudo enviar el código de acceso" },
+  );
 }
 
 /**
  * Envía un código para restablecer la contraseña.
  */
 export async function sendPasswordResetCode(email: string, code: string) {
-  const transporter = getTransporter();
-
-  try {
-    await transporter.sendMail({
+  await enviar(
+    "restablecer_contrasena",
+    {
       from: from(),
       to: email,
       subject: `Restablecer contraseña — código: ${code}`,
@@ -141,12 +177,9 @@ export async function sendPasswordResetCode(email: string, code: string) {
   </div>
 </body>
 </html>`,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Error enviando código de restablecimiento:", message);
-    throw new Error("No se pudo enviar el código de restablecimiento");
-  }
+    },
+    { log: "Error enviando código de restablecimiento", mensaje: "No se pudo enviar el código de restablecimiento" },
+  );
 }
 
 /**
@@ -159,8 +192,7 @@ export async function sendSmtpEmail(input: {
   html: string;
   fromName?: string;
 }): Promise<void> {
-  const transporter = getTransporter();
   const addr = process.env.SMTP_USER ?? "";
   const fromHeader = input.fromName ? `${input.fromName} <${addr}>` : from();
-  await transporter.sendMail({ from: fromHeader, to: input.to, subject: input.subject, html: input.html });
+  await enviar("automatizacion", { from: fromHeader, to: input.to, subject: input.subject, html: input.html }, null);
 }
