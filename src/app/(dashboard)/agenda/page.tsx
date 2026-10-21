@@ -7,6 +7,7 @@ import {
   getMyDoneTasks,
   getMyPendingMeetings,
   getMyPendingCalls,
+  getMyAssignedTasks,
 } from "@/server/agenda";
 import { AgendaView } from "@/components/agenda/agenda-view";
 
@@ -16,12 +17,13 @@ export default async function AgendaPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  const [agenda, notes, done, meetings, calls] = await Promise.all([
+  const [agenda, notes, done, meetings, calls, asignadas] = await Promise.all([
     getMyAgenda(),
     getMyRecentNotes(),
     getMyDoneTasks(),
     getMyPendingMeetings(),
     getMyPendingCalls(),
+    getMyAssignedTasks(),
   ]);
   const firstName = (session.user.name ?? "").split(" ")[0] || "asesor";
 
@@ -35,6 +37,7 @@ export default async function AgendaPage() {
       doneTotal={done.total}
       meetings={meetings}
       calls={calls}
+      asignadas={asignadas}
       firstName={firstName}
     />
   );

@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { updateActivity, deleteActivity } from "@/server/activities";
+import { updateActivity, deleteActivity, ERROR_ASIGNADO_NO_EXISTE } from "@/server/activities";
 import { dueDateSchema } from "@/lib/due-date";
 
 const updateActivitySchema = z.object({
@@ -16,6 +16,8 @@ const updateActivitySchema = z.object({
   status: z.enum(["PENDIENTE", "COMPLETADA", "VENCIDA", "CANCELADA"]).optional(),
   outcome: z.string().max(1000).nullable().optional(),
   duration_minutes: z.number().int().min(0).max(480).nullable().optional(),
+  // #915: reasignar a otra persona, con el mismo alcance que al crear.
+  assigneeId: z.string().uuid().optional(),
 });
 
 function errToResponse(error: unknown) {
@@ -23,6 +25,7 @@ function errToResponse(error: unknown) {
   if (msg.includes("No autorizado")) return NextResponse.json({ error: msg }, { status: 401 });
   if (msg.includes("permiso")) return NextResponse.json({ error: msg }, { status: 403 });
   if (msg.includes("no encontrada")) return NextResponse.json({ error: msg }, { status: 404 });
+  if (msg === ERROR_ASIGNADO_NO_EXISTE) return NextResponse.json({ error: msg }, { status: 400 });
   console.error("Error en /api/activities/[id]:", error);
   return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
 }

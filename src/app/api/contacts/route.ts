@@ -24,6 +24,7 @@ import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter
 import { getContactAccessInfo } from "@/server/contacts";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 
 // Roles que tienen acceso a todos los contactos
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
@@ -451,6 +452,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // #915: si quien da de alta eligió a OTRO asesor, ese asesor se entera. Autoasignado (el
+    // asesor que captura su propio contacto) no avisa: ya lo sabe.
+    await avisarAsignacion({
+      tipo: "conversacion",
+      contactoId: contact.id,
+      contactoNombre: `${contact.firstName} ${contact.lastName}`,
+      asignadoId: contact.assignedToId,
+      actorId: session.user.id,
+      actorNombre: session.user.name,
+    });
+
     return NextResponse.json({ data: contact }, { status: 201 });
   } catch (error) {
     console.error("Error al crear contacto:", error);
@@ -646,6 +658,20 @@ export async function PUT(request: NextRequest) {
           },
         })
     );
+
+    // #915: reasignar desde la ficha avisa al nuevo asesor. Antes este camino cambiaba el dueño
+    // sin ninguna notificación: el asesor se enteraba si por casualidad abría el contacto.
+    // Solo cuando el dueño de verdad cambió (guardar la ficha sin tocar el asesor no avisa).
+    if (data.assignedToId && data.assignedToId !== existing.assignedToId) {
+      await avisarAsignacion({
+        tipo: "conversacion",
+        contactoId: contact.id,
+        contactoNombre: `${contact.firstName} ${contact.lastName}`,
+        asignadoId: data.assignedToId,
+        actorId: session.user.id,
+        actorNombre: session.user.name,
+      });
+    }
 
     return NextResponse.json({ data: contact });
   } catch (error) {

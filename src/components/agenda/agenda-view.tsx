@@ -9,7 +9,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Check, CheckSquare, Loader2, Phone, StickyNote, Trash2, User } from "lucide-react";
+import { CalendarClock, Check, CheckSquare, Loader2, Phone, Send, StickyNote, Trash2, User } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import {
   BUCKET_ORDER,
@@ -20,7 +20,7 @@ import {
   type AgendaItem,
 } from "@/lib/agenda/grouping";
 import { PERIODO_LABEL, PERIODO_ORDER, matchPeriodo, type Periodo } from "@/lib/agenda/periodo";
-import type { AgendaNote, AgendaDoneItem, AgendaActivityRow } from "@/server/agenda";
+import type { AgendaNote, AgendaDoneItem, AgendaActivityRow, TareaAsignadaPorMi } from "@/server/agenda";
 import { QuickCapture } from "./quick-capture";
 import { AgendaTable } from "./agenda-table";
 
@@ -33,6 +33,8 @@ interface AgendaViewProps {
   doneTotal: number;
   /** Reuniones y llamadas pendientes (HUB #842), cada una en su tabla. */
   meetings: AgendaActivityRow[];
+  /** #915: tareas que asignaste a otra persona y siguen pendientes. */
+  asignadas?: TareaAsignadaPorMi[];
   calls: AgendaActivityRow[];
   firstName: string;
 }
@@ -61,6 +63,9 @@ function ItemRow({ item, onDone, busy }: { item: AgendaItem; onDone: (id: string
             <User className="h-3 w-3" />
             {item.contactName}
           </Link>
+        )}
+        {item.assignedByName && (
+          <p className="text-[11px] text-[color:var(--text-tertiary)]">Te la asignó {item.assignedByName}</p>
         )}
       </div>
 
@@ -111,6 +116,7 @@ export function AgendaView({
   doneTotal,
   meetings,
   calls,
+  asignadas = [],
   firstName,
 }: AgendaViewProps) {
   const router = useRouter();
@@ -309,6 +315,47 @@ export function AgendaView({
             ))
           )}
         </div>
+
+        {/* #915: solo para quien asigna; a un asesor nunca le aparece (no puede asignar). */}
+        {asignadas.length > 0 && (
+          <section id="agenda-asignadas" className="crm-card !p-0 scroll-mt-4 overflow-hidden">
+            <div
+              className="flex items-center justify-between px-4 py-3"
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
+            >
+              <span className="flex items-center gap-2 text-[13px] font-semibold text-[color:var(--text-primary)]">
+                <Send className="h-3.5 w-3.5" />
+                Tareas que asignaste
+              </span>
+              <span className="num text-[12px] text-[color:var(--text-tertiary)]">{asignadas.length}</span>
+            </div>
+            <ul className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+              {asignadas.map((t) => (
+                <li key={t.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] text-[color:var(--text-primary)]">{t.subject}</p>
+                    <p className="truncate text-[11px] text-[color:var(--text-tertiary)]">
+                      Para {t.assigneeName ?? "—"}
+                      {t.contactId && t.contactName && (
+                        <>
+                          {" · "}
+                          <Link href={`/contacts/${t.contactId}`} className="hover:underline">
+                            {t.contactName}
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  {t.dueDate && (
+                    <span className="num shrink-0 text-[11px] text-[color:var(--text-tertiary)]">
+                      {formatDate(t.dueDate, { day: "2-digit", month: "short" })}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Siempre visibles, aunque vacías: el atajo del índice debe llevar a algún lado
             y "Columnas" se puede configurar antes de que haya filas. */}

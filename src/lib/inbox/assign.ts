@@ -16,8 +16,9 @@ import { withChangeSource } from "@/lib/audit/change-context";
 import { canSeeOrphanLeads } from "@/lib/leads/orphans";
 import { esCuentaTecnica, usuarioRuteableWhere } from "@/lib/workflows/ruteables";
 import { isInboxManager, canOwnInboxContact } from "./roles";
+import { armarAvisoAsignacion, TIPO_AVISO_CONVERSACION } from "@/lib/notificaciones/asignacion";
 
-export const ASSIGN_NOTIFICATION_TYPE = "conversation_assigned";
+export const ASSIGN_NOTIFICATION_TYPE = TIPO_AVISO_CONVERSACION;
 
 export type AssignResult =
   // sinCambio (2026-10-14): el destino ya era el dueño y no se escribió nada. Lo lee el lote del
@@ -200,17 +201,19 @@ export async function assignContact(opts: {
   // En el panel de huérfanos el aviso es del lote, uno por asignado (ver panelHuerfanos).
   if (assignee && assignee.id !== actor.id && !panel) {
     try {
+      // #915: el texto y el enlace salen de la misma regla que el resto de las asignaciones.
+      // El enlace `/inbox?c=` está acoplado a src/components/inbox/inbox-view.tsx, que lee
+      // useSearchParams().get("c") para abrir el hilo. Aquí no hace falta `motivoSinAviso`: el
+      // asignado ya pasó el filtro de persona atendible de arriba (usuarioRuteableWhere).
       await prisma.notification.create({
-        data: {
-          userId: assignee.id,
-          type: ASSIGN_NOTIFICATION_TYPE,
-          title: "Conversación asignada",
-          message: `Te asignaron la conversación con ${contactName || "un contacto"}`,
-          // Acoplado a src/components/inbox/inbox-view.tsx: lee useSearchParams().get("c")
-          // para preseleccionar el hilo al abrir. Si ese nombre de parámetro cambia ahí,
-          // cambia aquí también (o el deep-link vuelve a quedar muerto).
-          link: opts.conversationId ? `/inbox?c=${opts.conversationId}` : "/inbox",
-        },
+        data: armarAvisoAsignacion({
+          tipo: "conversacion",
+          contactoId: contact.id,
+          contactoNombre: contactName,
+          conversationId: opts.conversationId ?? null,
+          asignadoId: assignee.id,
+          actorId: actor.id,
+        }),
       });
     } catch (e) {
       console.error("[inbox] no se pudo notificar al asignado", e);

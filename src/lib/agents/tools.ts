@@ -2,6 +2,7 @@
 // Cada tool: schema de entrada (formato Claude tool-use), roles permitidos, y handler que
 // valida RBAC del systemUser del agente + opt-out (PA1/PA2). Todo uso → Activity/AuditLog.
 import prisma from "@/lib/db";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import type { User } from "@prisma/client";
 import { normalizePhoneE164 } from "@/lib/phone";
 
@@ -207,7 +208,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       const contact = await prisma.contact.findUnique({ where: { id: String(input.contactId) } });
       if (!contact) return { created: false };
       const userId = contact.assignedToId ?? systemUser.id;
-      await prisma.activity.create({
+      const tarea = await prisma.activity.create({
         data: {
           contactId: contact.id,
           userId,
@@ -216,6 +217,17 @@ export const AGENT_TOOLS: AgentTool[] = [
           dueDate: new Date(Date.now() + (Number(input.dueInHours) || 24) * 3_600_000),
           status: "PENDIENTE",
         },
+      });
+      // #915: el asesor se entera de que el agente le dejó una tarea. Si cayó en el usuario del
+      // sistema (contacto sin asesor), actorId = asignado y no se avisa a nadie.
+      await avisarAsignacion({
+        tipo: "tarea",
+        tareaId: tarea.id,
+        asunto: tarea.subject,
+        vence: tarea.dueDate,
+        contactoNombre: `${contact.firstName} ${contact.lastName}`,
+        asignadoId: userId,
+        actorId: systemUser.id,
       });
       return { created: true, assignedTo: userId };
     },

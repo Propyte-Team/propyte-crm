@@ -8,6 +8,7 @@
 import { useState } from "react"
 import { ACTIVITY_TYPE_LABELS } from "@/lib/constants"
 import { CALL_OUTCOMES } from "@/lib/twilio/call-outcomes"
+import { AsignarA } from "./asignar-a"
 
 const ACTIVITY_TYPE_GROUPS = [
   { label: "Contacto", types: ["CALL_OUTBOUND", "CALL_INBOUND", "WHATSAPP_OUT", "WHATSAPP_IN", "EMAIL_SENT", "EMAIL_RECEIVED"] },
@@ -26,6 +27,8 @@ export interface ActivityForEdit {
   duration_minutes?: number | null
   outcome?: string | null
   status: string
+  /** Dueño actual (#915): para precargar «Asignar a» al editar. */
+  userId?: string | null
 }
 
 interface Props {
@@ -53,6 +56,9 @@ export function ActivityLogForm({ contactId, contactName, dealId, initial, onSav
   const [duration, setDuration] = useState(initial?.duration_minutes ? String(initial.duration_minutes) : "")
   const [outcome, setOutcome] = useState(initial?.outcome ?? "")
   const [status, setStatus] = useState(initial?.status ?? "")
+  // #915: "" = a quien está en sesión. Al editar arranca en el dueño actual; si es uno mismo,
+  // el selector lo muestra como «A mí».
+  const [assigneeId, setAssigneeId] = useState(initial?.userId ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
 
@@ -75,6 +81,8 @@ export function ActivityLogForm({ contactId, contactName, dealId, initial, onSav
         if (showDue) body.dueDate = dueDate ? new Date(dueDate).toISOString() : null
         if (showDur) body.duration_minutes = duration ? parseInt(duration) : null
         if (status) body.status = status
+        // Solo si cambió el dueño (elegir «A mí» manda el id propio: se la regresa a uno).
+        if (showDue && assigneeId && assigneeId !== (initial?.userId ?? "")) body.assigneeId = assigneeId
         res = await fetch(`/api/activities/${initial!.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -88,6 +96,7 @@ export function ActivityLogForm({ contactId, contactName, dealId, initial, onSav
         if (showDur && duration) body.duration_minutes = parseInt(duration)
         if (outcome) body.outcome = outcome
         if (status) body.status = status
+        if (showDue && assigneeId) body.assigneeId = assigneeId
         res = await fetch("/api/activities", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -166,6 +175,16 @@ export function ActivityLogForm({ contactId, contactName, dealId, initial, onSav
           <label className="text-[12px] text-[color:var(--text-secondary)]">Fecha de vencimiento</label>
           <input className="form-input text-[13px]" type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
+      )}
+
+      {showDue && (
+        <AsignarA
+          label="Asignar a"
+          className="form-input text-[13px]"
+          value={assigneeId}
+          onChange={setAssigneeId}
+          disabled={submitting}
+        />
       )}
 
       {showDur && (

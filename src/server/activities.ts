@@ -11,6 +11,8 @@ import { canModifyActivity } from "@/lib/activities/permissions"
 import { resolveActivityScope } from "@/lib/activities/scope"
 import { getVisibleBrands } from "@/lib/brands/user-access"
 import { activityBrandVisibilityWhere } from "@/lib/brands/visibility"
+import { puedeAsignarTareaA } from "@/lib/activities/asignacion"
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion"
 
 /** Los userId que un rol TEAM puede ver: él mismo + quienes le reportan. */
 async function teamMemberIds(currentUserId: string): Promise<string[]> {
@@ -169,7 +171,38 @@ export async function getActivities(filters: ActivityFilters = {}) {
 // createActivity — crear actividad con auto-status
 // ============================================================
 
+// ============================================================
+// resolverAsignadoTarea — a quién queda la tarea (#915)
+// ============================================================
+
+export const ERROR_ASIGNADO_NO_EXISTE = "El usuario asignado no existe"
+export const ERROR_SIN_PERMISO_ASIGNAR = "No tienes permiso para asignar tareas a esa persona"
+
+/**
+ * El dueño final de una actividad que `actor` crea o reasigna. Sin `assigneeId`, o con el propio,
+ * es el actor. Con otro id, ese usuario tiene que existir y caer en el alcance del rol del actor
+ * (ver src/lib/activities/asignacion.ts); si no, LANZA con un mensaje que las rutas mapean a 400
+ * («no existe») o 403 («permiso»). El servidor es la frontera: la UI solo ofrece lo permitido.
+ */
+export async function resolverAsignadoTarea(
+  actor: { id: string; role: string; plaza?: string | null },
+  assigneeId: string | null | undefined,
+): Promise<string> {
+  if (!assigneeId || assigneeId === actor.id) return actor.id
+  const destino = await prisma.user.findUnique({
+    where: { id: assigneeId },
+    select: {
+      id: true, role: true, plaza: true, teamLeaderId: true, isActive: true, deletedAt: true, email: true,
+    },
+  })
+  if (!destino) throw new Error(ERROR_ASIGNADO_NO_EXISTE)
+  if (!puedeAsignarTareaA(actor, destino)) throw new Error(ERROR_SIN_PERMISO_ASIGNAR)
+  return destino.id
+}
+
 export interface CreateActivityInput {
+  /** #915: a quién queda la tarea. Sin él, a quien la crea. */
+  assigneeId?: string
   contactId?: string
   dealId?: string
   activityType: ActivityType
@@ -211,11 +244,17 @@ export async function createActivity(data: CreateActivityInput) {
   }
   const finalStatus = data.status ?? autoStatus
 
+  // #915: el dueño puede ser otra persona si el rol del que crea lo permite.
+  const ownerId = await resolverAsignadoTarea(session.user, data.assigneeId)
+  const asignadaAOtro = ownerId !== session.user.id
+
   const activity = await prisma.activity.create({
     data: {
       contactId: data.contactId ?? null,
       dealId: data.dealId ?? null,
-      userId: session.user.id,
+      userId: ownerId,
+      // Solo cuando la tarea es de otro: así las altas de siempre no cambian lo que escriben.
+      ...(asignadaAOtro ? { createdById: session.user.id } : {}),
       activityType: data.activityType,
       subject: data.subject,
       description: data.description ?? null,
@@ -238,6 +277,19 @@ export async function createActivity(data: CreateActivityInput) {
   // Disparar webhook de actividad creada (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("activity.created", { activity })
 
+  if (asignadaAOtro) {
+    await avisarAsignacion({
+      tipo: "tarea",
+      tareaId: activity.id,
+      asunto: activity.subject,
+      vence: activity.dueDate,
+      contactoNombre: activity.contact ? `${activity.contact.firstName} ${activity.contact.lastName}` : null,
+      asignadoId: ownerId,
+      actorId: session.user.id,
+      actorNombre: session.user.name,
+    })
+  }
+
   return activity
 }
 
@@ -258,6 +310,8 @@ function sameTypeFamily(a: ActivityType, b: ActivityType): boolean {
 }
 
 export interface UpdateActivityInput {
+  /** #915: reasignar la actividad a otra persona (con la misma regla que al crearla). */
+  assigneeId?: string
   subject?: string
   /** Cambiar el contacto ligado (HUB #859). No admite null: quitar el contacto no es una edición. */
   contactId?: string
@@ -297,8 +351,18 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
     if (!contact) throw new Error("Contacto no encontrado")
   }
 
+  // #915: reasignar. El mismo alcance que al crear; quien reasigna queda como creador.
+  let nuevoAsignado: string | null = null
+  if (data.assigneeId !== undefined && data.assigneeId !== existing.userId) {
+    nuevoAsignado = await resolverAsignadoTarea(session.user, data.assigneeId)
+  }
+
   // Si se está completando, registrar fecha de completado
   const updateData: Prisma.ActivityUpdateInput = {}
+  if (nuevoAsignado) {
+    updateData.user = { connect: { id: nuevoAsignado } }
+    updateData.createdById = nuevoAsignado === session.user.id ? null : session.user.id
+  }
   if (data.activityType !== undefined) updateData.activityType = data.activityType
   if (data.contactId !== undefined) updateData.contact = { connect: { id: data.contactId } }
   if (data.subject !== undefined) updateData.subject = data.subject
@@ -334,6 +398,19 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
       user: { select: { id: true, name: true } },
     },
   })
+
+  if (nuevoAsignado && nuevoAsignado !== session.user.id) {
+    await avisarAsignacion({
+      tipo: "tarea",
+      tareaId: activity.id,
+      asunto: activity.subject,
+      vence: activity.dueDate,
+      contactoNombre: activity.contact ? `${activity.contact.firstName} ${activity.contact.lastName}` : null,
+      asignadoId: nuevoAsignado,
+      actorId: session.user.id,
+      actorNombre: session.user.name,
+    })
+  }
 
   return activity
 }

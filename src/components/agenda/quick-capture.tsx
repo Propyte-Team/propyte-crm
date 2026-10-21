@@ -7,6 +7,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { CheckSquare, StickyNote, Loader2, Plus } from "lucide-react";
 import { ContactPicker, type PickedContact } from "./contact-picker";
+import { AsignarA } from "@/components/activities/asignar-a";
 
 type CaptureType = "TASK" | "NOTE";
 
@@ -16,6 +17,8 @@ export function QuickCapture() {
   const [subject, setSubject] = React.useState("");
   const [dueDate, setDueDate] = React.useState("");
   const [contact, setContact] = React.useState<PickedContact | null>(null);
+  // #915: "" = la tarea es de quien la captura. Solo se ofrece a quien puede asignar.
+  const [assigneeId, setAssigneeId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -40,6 +43,8 @@ export function QuickCapture() {
           ...(type === "TASK" && dueDate ? { dueDate } : {}),
           // Igual que dueDate: la clave se omite si no hay contacto (schema .strict()).
           ...(contact ? { contactId: contact.id } : {}),
+          // Igual: se omite si la tarea es para uno mismo.
+          ...(type === "TASK" && assigneeId ? { assigneeId } : {}),
         }),
       });
 
@@ -51,6 +56,7 @@ export function QuickCapture() {
       setSubject("");
       setDueDate("");
       setContact(null);
+      setAssigneeId("");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar");
@@ -134,8 +140,23 @@ export function QuickCapture() {
         </button>
       </div>
 
-      <div className="pt-2">
-        <ContactPicker value={contact} onChange={setContact} disabled={saving} />
+      <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-start">
+        <div className="min-w-0 flex-1">
+          <ContactPicker value={contact} onChange={setContact} disabled={saving} />
+        </div>
+        {type === "TASK" && (
+          <AsignarA
+            value={assigneeId}
+            onChange={setAssigneeId}
+            disabled={saving}
+            className="rounded-md px-3 py-2 text-[13px]"
+            style={{
+              background: "var(--bg-input, transparent)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-subtle)",
+            }}
+          />
+        )}
       </div>
 
       {error && (

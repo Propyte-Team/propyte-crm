@@ -47,6 +47,8 @@ interface Activity {
   gmailThreadId?: string | null
   recordingUrl?: string | null
   user?: { name: string } | null
+  /** Dueño (#915): a quién está asignada. */
+  userId?: string
 }
 
 interface ActivityLogProps {
@@ -198,6 +200,7 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
       id: a.id, activityType: a.activityType, subject: a.subject,
       description: a.description, dueDate: a.dueDate ?? null,
       duration_minutes: a.duration_minutes ?? null, outcome: a.outcome ?? null, status: a.status,
+      userId: a.userId ?? null,
     })
     setShowForm(true)
   }

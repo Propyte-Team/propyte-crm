@@ -68,7 +68,10 @@ export async function GET(request: NextRequest) {
       where.isRead = false;
     }
     if (type) {
-      where.type = type;
+      // #915: varios tipos separados por coma (la campana pide correo + asignaciones en una
+      // sola llamada). Uno solo sigue siendo igualdad, como antes.
+      const tipos = type.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 20);
+      where.type = tipos.length > 1 ? { in: tipos } : tipos[0];
     }
 
     // Ejecutar consulta

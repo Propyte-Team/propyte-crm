@@ -194,6 +194,7 @@ describe("getMyAgenda — forma del resultado", () => {
       dueDate: "2026-07-26T14:00:00.000Z",
       contactId: null,
       contactName: null,
+      assignedByName: null, // #915: la creó su dueño
     });
     expect(result.buckets.vencidas[0].contactName).toBe("Ana Ruiz");
   });

@@ -17,6 +17,7 @@ import { aplicarInventarioDeEtapa } from "@/lib/deals/stage-inventory";
 import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, canSeeDealBrand } from "@/lib/brands/visibility";
+import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 
 // Roles con acceso completo
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -441,6 +442,21 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     if (data.stage === "WON" && existingDeal.hubUnitId) {
       const { confirmUnitHold } = await import("@/lib/hub/client");
       await confirmUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id }).catch(() => null);
+    }
+
+    // #915: cambiar el asesor de un negocio le avisa al nuevo. Solo si de verdad cambió.
+    if (data.assignedToId && data.assignedToId !== existingDeal.assignedToId) {
+      await avisarAsignacion({
+        tipo: "negocio",
+        negocioId: existingDeal.id,
+        contactoNombre: updatedDeal.contact
+          ? `${updatedDeal.contact.firstName} ${updatedDeal.contact.lastName}`
+          : null,
+        desarrollo: updatedDeal.development?.name ?? null,
+        asignadoId: data.assignedToId,
+        actorId: session.user.id,
+        actorNombre: session.user.name,
+      });
     }
 
     return NextResponse.json({ data: updatedDeal });
