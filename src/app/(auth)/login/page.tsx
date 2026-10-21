@@ -33,6 +33,7 @@ const t = {
     errCodeRequired: "Ingresa el código de 6 dígitos",
     errCodeInvalid: "Código inválido o expirado",
     errCodeRequest: "Error al solicitar el código",
+    errMailNotSent: "No pudimos enviar el correo con tu código. Avisa al administrador del CRM e inténtalo más tarde.",
     successCode: "Código enviado a tu correo",
     forgotLink: "Olvidé mi contraseña",
     forgotTitle: "Restablecer contraseña",
@@ -77,6 +78,7 @@ const t = {
     errCodeRequired: "Enter the 6-digit code",
     errCodeInvalid: "Invalid or expired code",
     errCodeRequest: "Error requesting code",
+    errMailNotSent: "We couldn't send the email with your code. Let the CRM administrator know and try again later.",
     successCode: "Code sent to your email",
     forgotLink: "Forgot password",
     forgotTitle: "Reset password",
@@ -151,7 +153,7 @@ export default function LoginPage() {
     try {
       const res = await fetch("/api/auth/request-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) })
       if (res.ok) { setMode("otp-verify"); setSuccess(l.successCode) }
-      else { const data = await res.json(); setError(data.error || l.errCodeRequest) }
+      else { const data = await res.json().catch(() => ({})); setError(data.codigo === "correo_no_enviado" ? l.errMailNotSent : data.error || l.errCodeRequest) }
     } catch { setError(l.errConnection) }
     finally { setLoading(false) }
   }
@@ -176,7 +178,7 @@ export default function LoginPage() {
     try {
       const res = await fetch("/api/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) })
       if (res.ok) { setMode("forgot-code"); setSuccess(l.successCode) }
-      else { const data = await res.json(); setError(data.error || l.errCodeRequest) }
+      else { const data = await res.json().catch(() => ({})); setError(data.codigo === "correo_no_enviado" ? l.errMailNotSent : data.error || l.errCodeRequest) }
     } catch { setError(l.errConnection) }
     finally { setLoading(false) }
   }
