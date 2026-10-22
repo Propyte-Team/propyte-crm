@@ -49,6 +49,7 @@ import { ContactImport } from "@/components/contacts/contact-import";
 import { ExportarContactos } from "@/components/contacts/exportar-contactos";
 import { puedeExportarContactos } from "@/lib/contacts/exportar";
 import { SavedViewsBar } from "@/components/views/saved-views-bar";
+import { FiltroAsesores } from "@/components/contacts/filtro-asesores";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } from "@/components/brands/brand-view";
 import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
 import { COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
@@ -158,6 +159,11 @@ export function ContactsList({
   const [brandFilter, setBrandFilter] = useBrandFilterParam();
   const brandRef = useRef<string | null>(brandFilter);
   brandRef.current = brandFilter;
+  // #919: filtro «Asesores». Igual que la marca, fetchContacts lo lee de un ref para no tener que
+  // pasarlo en cada llamada. "" = todos; un id; o «sin_asignar».
+  const [filterAsesor, setFilterAsesor] = useState("");
+  const asesorRef = useRef(filterAsesor);
+  asesorRef.current = filterAsesor;
 
   // Función para obtener contactos desde la API
   const fetchContacts = useCallback(
@@ -182,6 +188,7 @@ export function ContactsList({
         if (statusVal !== "ALL") params.set("status", statusVal);
         if (lifecycleVal) params.set("lifecycle", lifecycleVal);
         if (brandRef.current) params.set("marca", brandRef.current);
+        if (asesorRef.current) params.set("assignedTo", asesorRef.current);
 
         const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("Error al cargar contactos");
@@ -233,6 +240,13 @@ export function ContactsList({
     fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
   };
 
+  // Cambio de asesor (#919)
+  const handleAsesorChange = (value: string) => {
+    setFilterAsesor(value);
+    asesorRef.current = value;
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
+  };
+
   // Limpiar todos los filtros
   const clearFilters = () => {
     setSearch("");
@@ -243,6 +257,8 @@ export function ContactsList({
     setLifecycleFilter("");
     setBrandFilter(null);
     brandRef.current = null;
+    setFilterAsesor("");
+    asesorRef.current = "";
     fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1, "");
   };
 
@@ -265,6 +281,11 @@ export function ContactsList({
     setSearch(s); setFilterSource(src); setFilterTemp(tmp); setFilterType(typ); setFilterStatus(st); setLifecycleFilter(lc);
     setBrandFilter(mk);
     brandRef.current = mk;
+    // #919: el asesor de la vista. Si ya no está al alcance de quien la abre, la API lo suma al
+    // alcance del rol y devuelve una lista vacía (#881); no se filtra a ciegas.
+    const as = typeof f.assignedTo === "string" ? f.assignedTo : "";
+    setFilterAsesor(as);
+    asesorRef.current = as;
     fetchContacts(s, src, tmp, typ, st, 1, lc);
   };
 
@@ -325,7 +346,7 @@ export function ContactsList({
 
   // Verificar si hay filtros activos
   const hasActiveFilters =
-    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null;
+    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null || filterAsesor !== "";
 
   // Calcular rango visible
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -388,7 +409,7 @@ export function ContactsList({
       {/* Vistas guardadas (Fase 5) */}
       <SavedViewsBar
         module="contacts"
-        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus, marca: brandFilter }}
+        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus, marca: brandFilter, assignedTo: filterAsesor || null }}
         onApply={applyView}
       />
 
@@ -477,6 +498,9 @@ export function ContactsList({
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Filtro por asesor asignado (#919), con buscador */}
+            <FiltroAsesores value={filterAsesor} onChange={handleAsesorChange} />
 
             {/* Filtro por lifecycle */}
             <select
