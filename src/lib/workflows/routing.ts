@@ -22,6 +22,8 @@ const RR_POINTER_KEY = "workflows.routing.rr_cursor";
 // Gate anti-test doble: lista configurable de ids excluidos (SystemConfig) + convención
 // de correos internos/QA (dominio ".local": audit-temp@propyte.local, qa-asesor@propyte.local…).
 const RR_EXCLUDED_KEY = "workflows.routing.excluded_user_ids";
+/** #918: «regla» del turno general (todos los asesores ruteables), para su propio contador. */
+export const REPARTO_GENERAL = "reparto_general";
 
 async function routingExcludedIds(): Promise<string[]> {
   const cfg = await prisma.systemConfig.findUnique({ where: { key: RR_EXCLUDED_KEY } });
@@ -279,6 +281,8 @@ export async function autoRouteLead(
       // aplicaba y el lead se le entregaba a cualquier asesor de cualquier plaza; la
       // migración 2026-09-03-contact-target-plaza.sql declara lo contrario: sin plaza, al
       // Pond. Una regla que nombre su propia plaza (targets.plaza) sí puede tomarlo.
+      // #918: la regla sigue sin asignar, pero el lead ya no va al Pond: lo toma el turno
+      // general de abajo.
       const plazaEfectiva = targets.plaza ?? contact.targetPlaza;
       if (!plazaEfectiva) {
         pasos.push({ reglaId: rule.id, motivo: "sin_plaza_resoluble" });
@@ -338,7 +342,7 @@ export async function autoRouteLead(
   // lead es de su responsable de marketing y no del Pond. Se anota POR QUÉ las reglas no
   // asignaron (el mismo motivo que llevaría `lead.orphaned`) para que en los registros, en
   // la cronología (origen `routing_marca`) y en el evento se distinga de un reparto normal.
-  let via: "regla" | "responsable_marca" = "regla";
+  let via: "regla" | "responsable_marca" | "reparto_general" = "regla";
   let motivoSinAsesor: MotivoSinAsignar | null = null;
   if (!assigneeId && marca) {
     const responsable = await responsableDeLaMarca(marca, excludedIds);
@@ -350,6 +354,40 @@ export async function autoRouteLead(
         `[routing] lead ${contact.id} sin asesor (${motivoSinAsesor}): se asigna al responsable de la marca ` +
           `«${marca.name}» (${responsable}) · fuente=${contact.leadSource} plaza=${contact.targetPlaza ?? "sin plaza"}`,
       );
+    }
+  }
+
+  // #918 (2026-10-21, decisión de sistemas@): ningún contacto se queda sin asesor mientras
+  // haya alguno disponible. Si las reglas no asignaron —el contacto no tiene plaza (#729 lo
+  // mandaba al Pond a propósito) o su plaza no tiene asesores— y tampoco hay responsable de
+  // la marca, el lead entra al turno GENERAL: todos los asesores ruteables de cualquier
+  // plaza, con el mismo criterio de persona atendible y las mismas exclusiones. El caso que
+  // lo motivó: un WhatsApp sin plaza del 19-oct que el bot contestó y quedó «Sin asignar».
+  // El turno tiene su propio contador (clave `reparto_general`), así que no le mueve el turno
+  // a ninguna regla. Al Pond solo se va si no hay NINGÚN asesor ruteable en el CRM.
+  if (!assigneeId) {
+    const todos = await prisma.user.findMany({
+      where: {
+        role: { in: [...ROLES_RUTEABLES] as never },
+        ...routableWhere,
+        ...(excludedIds.length ? { id: { notIn: excludedIds } } : {}),
+      },
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
+    });
+    if (todos.length > 0) {
+      motivoSinAsesor = motivoSinAsignar(pasos, rules.length);
+      assigneeId = await roundRobinPick(
+        todos.map((u) => u.id),
+        REPARTO_GENERAL,
+      );
+      if (assigneeId) {
+        via = "reparto_general";
+        console.info(
+          `[routing] lead ${contact.id} sin asesor por reglas (${motivoSinAsesor}): turno general → ${assigneeId}` +
+            ` · fuente=${contact.leadSource} plaza=${contact.targetPlaza ?? "sin plaza"}`,
+        );
+      }
     }
   }
 
@@ -401,6 +439,11 @@ export async function autoRouteLead(
         (via === "responsable_marca" && marca
           ? ` · No hay asesores disponibles${contact.targetPlaza ? ` en ${contact.targetPlaza}` : ""}: ` +
             `te llega como responsable de la marca «${marca.name}».`
+          : "") +
+        (via === "reparto_general"
+          ? contact.targetPlaza
+            ? ` · No hay asesores en ${contact.targetPlaza}: te tocó por turno general.`
+            : " · El contacto no tiene plaza: te tocó por turno general."
           : ""),
       type: "lead_assigned",
       link: `/contacts/${contactId}`,
