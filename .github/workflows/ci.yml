@@ -6,6 +6,13 @@
 # de llegar a producción — entre ellos un filtro que Prisma descartaba en silencio y un
 # botón que llamaba a una ruta inexistente.
 #
+# Gestor de paquetes (#921): pnpm 10, el MISMO que usa Hostinger para instalar producción, y
+# con `--frozen-lockfile`. Antes la CI corría `npm ci` sobre package-lock.json mientras el
+# servidor instalaba con pnpm sobre pnpm-lock.yaml: la CI daba verde con versiones que
+# producción no usaba (p. ej. @twilio/voice-sdk 2.18.5 en CI, 2.18.0 en prod — #920), y
+# pnpm-lock.yaml pasó de mayo a octubre sin que nadie lo actualizara. Ahora un PR que cambia
+# package.json sin actualizar pnpm-lock.yaml falla aquí con ERR_PNPM_OUTDATED_LOCKFILE.
+#
 # Qué NO incluye todavía, a propósito: `npm run build`. Es la comprobación más completa,
 # pero necesita decidir qué variables de entorno se le dan en CI (hay 18 sin documentar en
 # `.env.example`, según el plan de ejecución). Meterla antes de esa decisión dejaría el CI
@@ -48,36 +55,48 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Va ANTES de setup-node: su `cache: pnpm` necesita el binario de pnpm ya en el PATH.
+      - uses: pnpm/action-setup@v6
+        with:
+          # La versión que corre el servidor (log de despliegue de hPanel, #773/#772). Fija y
+          # no «10» a secas: pnpm 11+ cambia la aprobación de build scripts y rompe el install
+          # (#772). Si Hostinger sube de versión, cambiarla aquí también.
+          version: 10.32.1
+
       - uses: actions/setup-node@v7
         with:
           # La misma versión mayor que corre producción: hPanel → «Versión de Node: 22.x»
           # (#912). Antes era 20, que llegó a fin de vida en abril de 2026 y además no es lo
           # que ejecuta el servidor. Si se cambia la versión en hPanel, cambiarla aquí también.
           node-version: "22"
-          cache: npm
+          cache: pnpm
 
+      # `--frozen-lockfile`: instala EXACTAMENTE pnpm-lock.yaml y falla si no casa con
+      # package.json. Producción instala sin congelar, así que esta es la única barrera.
       # `postinstall` del proyecto corre `prisma generate`, así que el cliente queda
-      # generado aquí. Importa: sin él, 34 archivos de prueba no cargan.
+      # generado aquí. Importa: sin él, 34 archivos de prueba no cargan. pnpm 10 ignora los
+      # build scripts de las dependencias (no el postinstall del proyecto), igual que en el
+      # servidor; con el `node-linker=hoisted` de .npmrc el cliente queda en node_modules/.prisma.
       - name: Instalar dependencias
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # Los tres pasos siguientes llevan `if: '!cancelled()'` para que corran TODOS aunque
       # uno falle. Es el mismo criterio que se aplicó al cron de workflows: enterarse de
       # los tres problemas en una corrida es mejor que descubrirlos de uno en uno. El
       # trabajo igual queda en rojo si cualquiera falla.
-      # `npm run typecheck` y no `npx tsc --noEmit`: el script lleva el límite de memoria
+      # `pnpm run typecheck` y no `npx tsc --noEmit`: el script lleva el límite de memoria
       # dentro (auditoría 2026-09-10). Antes el heap sólo se subía por el NODE_OPTIONS de
       # arriba, que existe en CI y no en la máquina de nadie — así que el comando de la
       # documentación se quedaba sin memoria en local y pasaba en CI. Ahora es el mismo
       # comando en los dos sitios.
       - name: Chequeo de tipos
         if: '!cancelled()'
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Pruebas
         if: '!cancelled()'
-        run: npm test
+        run: pnpm test
 
       - name: Linter
         if: '!cancelled()'
-        run: npm run lint
+        run: pnpm run lint

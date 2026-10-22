@@ -5,6 +5,7 @@
     "allow": [
       "Read",
       "Bash(npm run *)",
+      "Bash(pnpm run *)",
       "Bash(npx *)",
       "Bash(node *)",
       "Bash(python *)",
@@ -71,6 +72,8 @@
       "Bash(git commit *)",
       "Bash(npm publish *)",
       "Bash(npm install *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm add *)",
       "Bash(curl *)",
       "Bash(wget *)",
       "Bash(docker *)",
