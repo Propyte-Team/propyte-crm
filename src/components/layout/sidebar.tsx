@@ -49,21 +49,32 @@ export function Sidebar() {
   React.useEffect(() => {
     if (!session?.user || !hasInboxAccess) return
     let cancelled = false
+    let inFlight = false
     const loadUnreadInbox = () => {
+      // Pestaña oculta: no se sondea (cada pestaña abierta del CRM pegaba al servidor cada
+      // 20 s aunque nadie la viera). Tampoco se encima una petición sobre otra lenta: si el
+      // servidor tarda (el 504 del 2026-10-22), no se le apilan más.
+      if (document.hidden || inFlight) return
+      inFlight = true
       fetch("/api/inbox/unread-count")
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (!cancelled && typeof data?.count === "number") setUnreadInbox(data.count)
         })
         .catch(() => {})
+        .finally(() => { inFlight = false })
     }
     loadUnreadInbox()
     // Polling simple (no hay websockets en este proyecto; el mismo patrón que
     // ya usa el badge de notificaciones del topbar, solo que aquí se repite).
     const interval = setInterval(loadUnreadInbox, 20000)
+    // Al volver a la pestaña se actualiza de inmediato, sin esperar al siguiente tick.
+    const onVisible = () => { if (!document.hidden) loadUnreadInbox() }
+    document.addEventListener("visibilitychange", onVisible)
     return () => {
       cancelled = true
       clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisible)
     }
   }, [session?.user, hasInboxAccess])
 
