@@ -25,17 +25,17 @@ import { getContactAccessInfo } from "@/server/contacts";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
+import {
+  FULL_ACCESS_ROLES,
+  PLAZA_ACCESS_ROLES,
+  OWN_ACCESS_ROLES,
+  TEAM_ACCESS_ROLES,
+  alcanceListaContactos,
+  filtroAsesor,
+} from "@/lib/contacts/alcance-lista";
 
-// Roles que tienen acceso a todos los contactos
-const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR", "DEVELOPER_EXT", "MANTENIMIENTO"];
-// Roles que ven contactos de su plaza
-const PLAZA_ACCESS_ROLES = ["ADMIN", "GERENTE"];
-// Roles que ven contactos de su equipo
-const TEAM_ACCESS_ROLES = ["ADMIN", "TEAM_LEADER"];
-// Roles que solo ven contactos propios
-const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER"];
-// Roles que pueden ver pero no modificar
-const READ_ONLY_ROLES = ["MARKETING", "HOSTESS", "MANTENIMIENTO"];
+// Los sets de roles y el alcance de la lista viven en lib/contacts/alcance-lista.ts (#919):
+// el filtro «Asesores» usa la misma regla.
 
 // #830: el teléfono deja de ser el único identificador para contactar por WhatsApp.
 // Si hay whatsappUserId (BSUID que manda Meta), el teléfono puede faltar — se exige
@@ -183,42 +183,15 @@ export async function GET(request: NextRequest) {
       deletedAt: null,
     };
 
-    // Filtrar por acceso según rol (RBAC)
-    const userRole = session.user.role;
-    const userId = session.user.id;
-
-    // IMPORTANTE: el orden importa. ADMIN pertenece a varios sets (FULL/PLAZA/TEAM),
-    // así que FULL_ACCESS debe evaluarse PRIMERO para no caer en una rama restrictiva.
-    // (Bug previo: ADMIN caía en la rama TEAM y solo veía sus propios contactos →
-    //  el dropdown de "Crear Deal" salía vacío aunque la lista server-side sí mostraba todo.)
-    if (FULL_ACCESS_ROLES.includes(userRole) || READ_ONLY_ROLES.includes(userRole)) {
-      // Acceso total / solo lectura global: sin filtro adicional
-    } else if (PLAZA_ACCESS_ROLES.includes(userRole)) {
-      // Gerente ve contactos de asesores de su plaza
-      const plazaUsers = await prisma.user.findMany({
-        where: { plaza: session.user.plaza as any, isActive: true },
-        select: { id: true },
-      });
-      const plazaUserIds = plazaUsers.map((u) => u.id);
-      where.OR = [
-        { assignedToId: { in: plazaUserIds } },
-        { assignedToId: null },
-      ];
-    } else if (TEAM_ACCESS_ROLES.includes(userRole)) {
-      // Team leaders ven contactos de su equipo
-      const teamMembers = await prisma.user.findMany({
-        where: { teamLeaderId: userId },
-        select: { id: true },
-      });
-      const teamIds = [userId, ...teamMembers.map((m) => m.id)];
-      where.assignedToId = { in: teamIds };
-    } else if (OWN_ACCESS_ROLES.includes(userRole)) {
-      // Asesores solo ven sus contactos asignados
-      where.assignedToId = userId;
-    } else {
+    // Filtrar por acceso según rol (RBAC). La regla vive en lib/contacts/alcance-lista.ts
+    // (#919); se mezcla como claves sueltas, igual que antes, para que la búsqueda de abajo
+    // siga encontrando `where.OR` del gerente.
+    const alcance = await alcanceListaContactos(session.user);
+    if (!alcance) {
       // Roles no reconocidos no ven nada
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
+    Object.assign(where, alcance);
 
     // Filtro de búsqueda por nombre, email o teléfono (insensible a mayúsculas)
     if (search) {
@@ -260,8 +233,9 @@ export async function GET(request: NextRequest) {
     // #881: el asesor pedido se SUMA al alcance del rol, no lo reemplaza. Antes se asignaba a
     // `where.assignedToId` y pisaba el `= userId` del asesor o el `{ in: equipo }` del líder:
     // cambiando la URL se veían los contactos de cualquiera. Fuera del alcance → lista vacía.
+    // #919: `sin_asignar` = los que no tienen dueño, también en el AND.
     if (assignedToId) {
-      sumarAlAnd(where, { assignedToId });
+      sumarAlAnd(where, filtroAsesor(assignedToId));
     }
 
     // Marcas (2026-10-12): se agrega al FINAL y con AND, para que ningún filtro de arriba la
