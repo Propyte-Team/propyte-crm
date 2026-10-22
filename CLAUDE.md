@@ -18,6 +18,12 @@ Este proyecto usa variables de entorno definidas en .env.example
 Los valores reales estan en .env (que NO debes acceder).
 Consulta .env.example para conocer la estructura.
 
+## Dependencias: solo pnpm 10 (#921)
+- Producción (Hostinger) instala con **pnpm 10** a partir de `pnpm-lock.yaml`. La CI usa lo mismo, con `--frozen-lockfile`.
+- **No uses `npm install` ni `npm ci`**: generarían `package-lock.json`, que está en `.gitignore`. Usa `npx pnpm@10 install` (o `pnpm install` si lo tienes instalado), y `npx pnpm@10 add <paquete>` para agregar uno.
+- Si cambias `package.json`, commitea también `pnpm-lock.yaml`. Si no, la CI falla con `ERR_PNPM_OUTDATED_LOCKFILE`, y es a propósito.
+- `npm run <script>` sigue funcionando para correr scripts (`build`, `lint`, `typecheck`, `test`).
+
 ## Estructura del proyecto
 <!-- Describe aqui la estructura de tu proyecto -->
 
