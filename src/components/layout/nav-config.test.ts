@@ -128,4 +128,12 @@ describe("nav-config — orden del sidebar", () => {
     expect(labels[0]).toBe("Metas");
     expect(labels[labels.length - 1]).toBe("Reportes");
   });
+
+  it("#926: Reclutamiento vive en Desempeño y solo lo ven ADMIN, DIRECTOR y GERENTE (datos personales)", () => {
+    expect(navGroups[2].items.map((i) => i.href)).toContain("/reclutamiento");
+    for (const role of Object.values(UserRole)) {
+      const ve = visibleNavItems(role).some((i) => i.href === "/reclutamiento");
+      expect(ve, role).toBe(["ADMIN", "DIRECTOR", "GERENTE"].includes(role));
+    }
+  });
 });

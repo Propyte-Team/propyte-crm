@@ -27,9 +27,11 @@ import {
   Target,
   CopyCheck,
   Plug,
+  BriefcaseBusiness,
 } from "lucide-react"
 import { COMMENT_RULES_ROLES } from "@/lib/comments/roles"
 import { REPORTES_ROLES } from "@/lib/rbac/report-scope"
+import { RECLUTAMIENTO_ROLES } from "@/lib/reclutamiento/roles"
 
 const ASESORES = ["ASESOR", "ASESOR_SR", "ASESOR_JR"]
 // MANTENIMIENTO/DEVELOPER_EXT entran a los básicos (Hoy/Dashboard/Contactos/Mi Config):
@@ -73,6 +75,8 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       { label: "Comisiones", href: "/commissions", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER"] },
       { label: "Cobranza", href: "/cobranza", icon: DollarSign, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES] },
       { label: "Mi Carrera", href: "/career", icon: TrendingUp, roles: ["TEAM_LEADER", ...ASESORES] },
+      // #926: datos personales de candidatos — la lista vive en el módulo de permiso (menú y puerta iguales).
+      { label: "Reclutamiento", href: "/reclutamiento", icon: BriefcaseBusiness, roles: [...RECLUTAMIENTO_ROLES] },
       // #893: la lista vive en el módulo de permiso, para que el menú y la puerta de /reports no se separen.
       { label: "Reportes", href: "/reports", icon: BarChart3, roles: [...REPORTES_ROLES] },
     ],

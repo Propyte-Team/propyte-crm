@@ -3102,3 +3102,62 @@ model ContactFile {
   @@map("contact_files")
   @@schema("propyte_crm")
 }
+
+// =====================================================================
+// RECLUTAMIENTO — #926 (Desempeño)
+// Personas en proceso de contratación. Datos personales (LFPDPPP): solo ADMIN, DIRECTOR y
+// GERENTE (src/lib/reclutamiento/roles.ts). Migración manual 2026-10-23-reclutamiento.sql.
+// createdById/uploadedById sin relación a User a propósito: no se toca propyte_crm.users.
+// =====================================================================
+
+model RecruitCandidate {
+  id             String                 @id @default(uuid())
+  fullName       String
+  age            Int?
+  email          String?
+  phone          String?
+  area           String?
+  plaza          Plaza?
+  portfolioUrl   String?
+  notes          String?
+  /// Código de etapa: ver ETAPAS en src/lib/reclutamiento/shared.ts
+  stage          String                 @default("RECIBIDO")
+  stageChangedAt DateTime               @default(now())
+  /// MANUAL | CHAT — por dónde llegó (CHAT queda listo para la ingesta desde el inbox)
+  source         String                 @default("MANUAL")
+  sourceRef      String?
+  createdById    String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  deletedAt      DateTime?
+  deletedById    String?
+  files          RecruitCandidateFile[]
+
+  @@index([stage])
+  @@index([createdAt])
+  @@map("recruit_candidates")
+  @@schema("propyte_crm")
+}
+
+model RecruitCandidateFile {
+  id           String           @id @default(uuid())
+  candidateId  String
+  candidate    RecruitCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  kind         String           @default("CV")
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String           @unique
+  /// MANUAL | CHAT. Con CHAT, sourceRef = id del mensaje (índice único parcial en SQL).
+  source       String           @default("MANUAL")
+  sourceRef    String?
+  /// null cuando lo registra un proceso automático (ingesta desde chats)
+  uploadedById String?
+  createdAt    DateTime         @default(now())
+  deletedAt    DateTime?
+  deletedById  String?
+
+  @@index([candidateId, kind])
+  @@map("recruit_candidate_files")
+  @@schema("propyte_crm")
+}
