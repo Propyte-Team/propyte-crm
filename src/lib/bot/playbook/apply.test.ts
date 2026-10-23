@@ -51,7 +51,10 @@ describe("applyCapture — a quién se atribuye lo capturado", () => {
   const escribir = (db: unknown) =>
     applyCapture(db as never, "c1", [{ field: "budgetMax", value: 3000000 }], { taskKey: "presupuesto", conversationId: "conv-1" });
 
-  beforeEach(() => setChangeSource.mockReset());
+  // Cuerpo de bloque: una flecha que devuelve el mock lo registra como limpieza (#808).
+  beforeEach(() => {
+    setChangeSource.mockReset();
+  });
 
   it("asesor persona: se atribuye al asesor", async () => {
     const { db, auditCreate } = mkDb("u-ana", ["u-ana"]);

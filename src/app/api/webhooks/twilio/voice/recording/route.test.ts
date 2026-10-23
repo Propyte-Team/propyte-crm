@@ -8,7 +8,10 @@ function formReq(fields: Record<string, string>) {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString(),
   }) as unknown as import("next/server").NextRequest;
 }
-beforeEach(() => handleRecording.mockReset());
+// Cuerpo de bloque: una flecha que devuelve el mock lo registra como limpieza (#808).
+beforeEach(() => {
+  handleRecording.mockReset();
+});
 describe("voice/recording", () => {
   it("pasa CallSid + RecordingUrl al handler", async () => {
     const res = await POST(formReq({ CallSid: "CA1", RecordingUrl: "https://api.twilio.com/rec/abc" }));
