@@ -1,8 +1,10 @@
-// Agenda personal (spec §6) en tres zonas (HUB #841):
-//  - izquierda: índice (como "Mi Actividad abierta" de Zoho) con filtro por periodo y atajos;
-//  - centro: captura arriba, pendientes agrupados por vencimiento, notas recientes (que se
+// Agenda personal (spec §6), HUB #841; desde #925 en dos zonas:
+//  - izquierda (ancha, lo que antes eran las columnas izquierda y centro): captura arriba,
+//    pendientes agrupados por vencimiento, reuniones, llamadas y notas recientes (que se
 //    pueden eliminar una por una, por selección o todas: #924);
-//  - derecha: "Tareas hechas" con "Eliminar todo", que ARCHIVA (no borra).
+//  - derecha (300 px, fija al hacer scroll): el índice "Mi actividad abierta" (como el de Zoho)
+//    con filtro por periodo y atajos, y debajo "Tareas hechas" con "Eliminar todo", que
+//    ARCHIVA (no borra). En móvil el índice va primero y Tareas hechas al final.
 // Reusa las convenciones visuales de /hoy (crm-card, variables CSS del tema, acento solo
 // como señal de prioridad).
 "use client";
@@ -212,56 +214,8 @@ export function AgendaView({
   const filteredCount = BUCKET_ORDER.reduce((sum, b) => sum + filtered[b].length, 0);
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-4 p-4 lg:grid-cols-[220px_minmax(0,1fr)_300px]">
-      {/* ── Izquierda: índice ─────────────────────────────────────────── */}
-      <aside className="flex flex-col gap-3 lg:sticky lg:top-4 lg:self-start" aria-label="Índice de la agenda">
-        <div className="crm-card p-3">
-          <h2 className="px-1 pb-2 text-[13px] font-semibold text-[color:var(--text-primary)]">
-            Mi actividad abierta
-          </h2>
-          <select
-            value={periodo}
-            onChange={(e) => setPeriodo(e.target.value as Periodo)}
-            aria-label="Periodo"
-            className="w-full rounded-md px-3 py-2 text-[13px]"
-            style={{
-              background: "var(--bg-input, transparent)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-subtle)",
-            }}
-          >
-            {PERIODO_ORDER.map((p) => (
-              <option key={p} value={p}>
-                {PERIODO_LABEL[p]}
-              </option>
-            ))}
-          </select>
-          {periodo === "fecha" && (
-            <input
-              type="date"
-              value={fechaKey}
-              onChange={(e) => setFechaKey(e.target.value)}
-              aria-label="Fecha específica"
-              className="mt-2 w-full rounded-md px-3 py-2 text-[13px]"
-              style={{
-                background: "var(--bg-input, transparent)",
-                color: "var(--text-primary)",
-                border: "1px solid var(--border-subtle)",
-              }}
-            />
-          )}
-
-          <nav className="flex flex-col gap-0.5 pt-3">
-            <IndexLink href="#agenda-tareas" icon={CheckSquare} label="Tareas" count={filteredCount} />
-            <IndexLink href="#agenda-reuniones" icon={CalendarClock} label="Reuniones" count={filteredMeetings.length} />
-            <IndexLink href="#agenda-llamadas" icon={Phone} label="Llamadas" count={filteredCalls.length} />
-            <IndexLink href="#agenda-notas" icon={StickyNote} label="Notas" count={notesTotal} />
-            <IndexLink href="#tareas-hechas" icon={Check} label="Tareas hechas" count={doneTotal} />
-          </nav>
-        </div>
-      </aside>
-
-      {/* ── Centro: lo que ya existía ─────────────────────────────────── */}
+    <div className="mx-auto grid max-w-7xl gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+      {/* ── Izquierda (2 columnas): agenda, captura, pendientes, reuniones, llamadas y notas ── */}
       <div className="flex min-w-0 flex-col gap-4">
         <header>
           <h1 className="text-[18px] font-semibold text-[color:var(--text-primary)]">
@@ -390,99 +344,152 @@ export function AgendaView({
         <NotasRecientes notes={notes} total={notesTotal} />
       </div>
 
-      {/* ── Derecha: Tareas hechas ────────────────────────────────────── */}
-      <aside id="tareas-hechas" className="scroll-mt-4 lg:sticky lg:top-4 lg:self-start" aria-label="Tareas hechas">
-        <div className="crm-card !p-0 overflow-hidden">
-          <div
-            className="flex items-center justify-between gap-2 px-4 py-3"
-            style={{ borderBottom: "1px solid var(--border-subtle)" }}
-          >
-            <span className="text-[13px] font-semibold text-[color:var(--text-primary)]">
-              Tareas hechas
-            </span>
-            {doneTotal > 0 && !confirmingArchive && (
-              <button
-                type="button"
-                onClick={() => setConfirmingArchive(true)}
-                className="flex items-center gap-1 text-[12px] font-semibold"
-                style={{ color: "#DC2626" }}
+      {/* ── Derecha: índice arriba y Tareas hechas abajo (#925). En móvil el contenedor es
+          `contents`: sus dos cuadros pasan a ser hijos directos de la grilla, así que el índice
+          sube al principio (order-first) y Tareas hechas queda al final, como antes. ── */}
+      <div className="contents lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-6rem)] lg:flex-col lg:gap-4 lg:self-start">
+        <aside className="order-first flex flex-col gap-3 lg:order-none lg:shrink-0" aria-label="Índice de la agenda">
+          <div className="crm-card p-3">
+            <h2 className="px-1 pb-2 text-[13px] font-semibold text-[color:var(--text-primary)]">
+              Mi actividad abierta
+            </h2>
+            <select
+              value={periodo}
+              onChange={(e) => setPeriodo(e.target.value as Periodo)}
+              aria-label="Periodo"
+              className="w-full rounded-md px-3 py-2 text-[13px]"
+              style={{
+                background: "var(--bg-input, transparent)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-subtle)",
+              }}
+            >
+              {PERIODO_ORDER.map((p) => (
+                <option key={p} value={p}>
+                  {PERIODO_LABEL[p]}
+                </option>
+              ))}
+            </select>
+            {periodo === "fecha" && (
+              <input
+                type="date"
+                value={fechaKey}
+                onChange={(e) => setFechaKey(e.target.value)}
+                aria-label="Fecha específica"
+                className="mt-2 w-full rounded-md px-3 py-2 text-[13px]"
+                style={{
+                  background: "var(--bg-input, transparent)",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-subtle)",
+                }}
+              />
+            )}
+
+            <nav className="flex flex-col gap-0.5 pt-3">
+              <IndexLink href="#agenda-tareas" icon={CheckSquare} label="Tareas" count={filteredCount} />
+              <IndexLink href="#agenda-reuniones" icon={CalendarClock} label="Reuniones" count={filteredMeetings.length} />
+              <IndexLink href="#agenda-llamadas" icon={Phone} label="Llamadas" count={filteredCalls.length} />
+              <IndexLink href="#agenda-notas" icon={StickyNote} label="Notas" count={notesTotal} />
+              <IndexLink href="#tareas-hechas" icon={Check} label="Tareas hechas" count={doneTotal} />
+            </nav>
+          </div>
+        </aside>
+
+        <aside id="tareas-hechas" className="scroll-mt-4 lg:flex lg:min-h-0 lg:flex-col" aria-label="Tareas hechas">
+          {/* Con hasta 50 tareas hechas, la columna no cabe en pantalla: la lista hace scroll
+              por dentro para que el índice y el encabezado sigan a la vista. */}
+          <div className="crm-card !p-0 overflow-hidden lg:flex lg:min-h-0 lg:flex-col">
+            <div
+              className="flex items-center justify-between gap-2 px-4 py-3"
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
+            >
+              <span className="text-[13px] font-semibold text-[color:var(--text-primary)]">
+                Tareas hechas
+              </span>
+              {doneTotal > 0 && !confirmingArchive && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingArchive(true)}
+                  className="flex items-center gap-1 text-[12px] font-semibold"
+                  style={{ color: "#DC2626" }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar todo
+                </button>
+              )}
+            </div>
+
+            {confirmingArchive && (
+              <div
+                className="flex flex-col gap-2 px-4 py-3 text-[12px]"
+                style={{ borderBottom: "1px solid var(--border-subtle)", background: "rgba(220,38,38,0.05)" }}
+                role="alertdialog"
+                aria-label="Confirmar eliminar todo"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Eliminar todo
-              </button>
+                <p className="text-[color:var(--text-primary)]">
+                  Dejarás de ver {doneTotal} tarea{doneTotal === 1 ? "" : "s"} hecha{doneTotal === 1 ? "" : "s"}.
+                  Se archivan: no se pierden y el administrador las conserva en sus reportes.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={archiveDone}
+                    disabled={archiving}
+                    className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold disabled:opacity-40"
+                    style={{ background: "#DC2626", color: "#fff" }}
+                  >
+                    {archiving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Sí, eliminar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingArchive(false)}
+                    disabled={archiving}
+                    className="rounded-md px-3 py-1.5 font-medium disabled:opacity-40"
+                    style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {doneTasks.length === 0 ? (
+              <p className="px-4 py-6 text-center text-[13px] text-[color:var(--text-tertiary)]">
+                Aquí aparecerán las tareas que completes.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2 p-3 lg:min-h-0 lg:overflow-y-auto">
+                {doneTasks.map((t) => (
+                  <li
+                    key={t.id}
+                    className="rounded-md px-3 py-2"
+                    style={{ border: "1px solid var(--border-subtle)" }}
+                  >
+                    <p className="text-[13px] text-[color:var(--text-tertiary)] line-through">{t.subject}</p>
+                    <p className="num flex flex-wrap items-center gap-x-2 text-[11px] text-[color:var(--text-tertiary)]">
+                      {t.completedAt && (
+                        <span>{formatDate(t.completedAt, { day: "2-digit", month: "short" })}</span>
+                      )}
+                      {t.contactId && t.contactName && (
+                        <Link href={`/contacts/${t.contactId}`} className="flex items-center gap-1 hover:underline">
+                          <User className="h-3 w-3" />
+                          {t.contactName}
+                        </Link>
+                      )}
+                    </p>
+                  </li>
+                ))}
+                {doneTotal > doneTasks.length && (
+                  <li className="px-1 pt-1 text-center text-[11px] text-[color:var(--text-tertiary)]">
+                    Se muestran las {doneTasks.length} más recientes de {doneTotal}.
+                  </li>
+                )}
+              </ul>
             )}
           </div>
-
-          {confirmingArchive && (
-            <div
-              className="flex flex-col gap-2 px-4 py-3 text-[12px]"
-              style={{ borderBottom: "1px solid var(--border-subtle)", background: "rgba(220,38,38,0.05)" }}
-              role="alertdialog"
-              aria-label="Confirmar eliminar todo"
-            >
-              <p className="text-[color:var(--text-primary)]">
-                Dejarás de ver {doneTotal} tarea{doneTotal === 1 ? "" : "s"} hecha{doneTotal === 1 ? "" : "s"}.
-                Se archivan: no se pierden y el administrador las conserva en sus reportes.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={archiveDone}
-                  disabled={archiving}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold disabled:opacity-40"
-                  style={{ background: "#DC2626", color: "#fff" }}
-                >
-                  {archiving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Sí, eliminar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingArchive(false)}
-                  disabled={archiving}
-                  className="rounded-md px-3 py-1.5 font-medium disabled:opacity-40"
-                  style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {doneTasks.length === 0 ? (
-            <p className="px-4 py-6 text-center text-[13px] text-[color:var(--text-tertiary)]">
-              Aquí aparecerán las tareas que completes.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2 p-3">
-              {doneTasks.map((t) => (
-                <li
-                  key={t.id}
-                  className="rounded-md px-3 py-2"
-                  style={{ border: "1px solid var(--border-subtle)" }}
-                >
-                  <p className="text-[13px] text-[color:var(--text-tertiary)] line-through">{t.subject}</p>
-                  <p className="num flex flex-wrap items-center gap-x-2 text-[11px] text-[color:var(--text-tertiary)]">
-                    {t.completedAt && (
-                      <span>{formatDate(t.completedAt, { day: "2-digit", month: "short" })}</span>
-                    )}
-                    {t.contactId && t.contactName && (
-                      <Link href={`/contacts/${t.contactId}`} className="flex items-center gap-1 hover:underline">
-                        <User className="h-3 w-3" />
-                        {t.contactName}
-                      </Link>
-                    )}
-                  </p>
-                </li>
-              ))}
-              {doneTotal > doneTasks.length && (
-                <li className="px-1 pt-1 text-center text-[11px] text-[color:var(--text-tertiary)]">
-                  Se muestran las {doneTasks.length} más recientes de {doneTotal}.
-                </li>
-              )}
-            </ul>
-          )}
-        </div>
-      </aside>
+        </aside>
+      </div>
     </div>
   );
 }
