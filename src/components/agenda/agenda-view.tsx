@@ -1,6 +1,7 @@
 // Agenda personal (spec §6) en tres zonas (HUB #841):
 //  - izquierda: índice (como "Mi Actividad abierta" de Zoho) con filtro por periodo y atajos;
-//  - centro: captura arriba, pendientes agrupados por vencimiento, notas recientes;
+//  - centro: captura arriba, pendientes agrupados por vencimiento, notas recientes (que se
+//    pueden eliminar una por una, por selección o todas: #924);
 //  - derecha: "Tareas hechas" con "Eliminar todo", que ARCHIVA (no borra).
 // Reusa las convenciones visuales de /hoy (crm-card, variables CSS del tema, acento solo
 // como señal de prioridad).
@@ -23,12 +24,15 @@ import { PERIODO_LABEL, PERIODO_ORDER, matchPeriodo, type Periodo } from "@/lib/
 import type { AgendaNote, AgendaDoneItem, AgendaActivityRow, TareaAsignadaPorMi } from "@/server/agenda";
 import { QuickCapture } from "./quick-capture";
 import { AgendaTable } from "./agenda-table";
+import { NotasRecientes } from "./notas-recientes";
 
 interface AgendaViewProps {
   buckets: AgendaBuckets;
   total: number;
   truncated: boolean;
   notes: AgendaNote[];
+  /** #924: notas visibles en base, no solo las que se pintan. */
+  notesTotal?: number;
   doneTasks: AgendaDoneItem[];
   doneTotal: number;
   /** Reuniones y llamadas pendientes (HUB #842), cada una en su tabla. */
@@ -112,6 +116,7 @@ export function AgendaView({
   total,
   truncated,
   notes,
+  notesTotal = notes.length,
   doneTasks,
   doneTotal,
   meetings,
@@ -250,7 +255,7 @@ export function AgendaView({
             <IndexLink href="#agenda-tareas" icon={CheckSquare} label="Tareas" count={filteredCount} />
             <IndexLink href="#agenda-reuniones" icon={CalendarClock} label="Reuniones" count={filteredMeetings.length} />
             <IndexLink href="#agenda-llamadas" icon={Phone} label="Llamadas" count={filteredCalls.length} />
-            <IndexLink href="#agenda-notas" icon={StickyNote} label="Notas" count={notes.length} />
+            <IndexLink href="#agenda-notas" icon={StickyNote} label="Notas" count={notesTotal} />
             <IndexLink href="#tareas-hechas" icon={Check} label="Tareas hechas" count={doneTotal} />
           </nav>
         </div>
@@ -382,30 +387,7 @@ export function AgendaView({
         />
 
 
-        {notes.length > 0 && (
-          <section id="agenda-notas" className="crm-card !p-0 scroll-mt-4 overflow-hidden">
-            <div
-              className="flex items-center gap-2 px-4 py-3"
-              style={{ borderBottom: "1px solid var(--border-subtle)" }}
-            >
-              <StickyNote className="h-4 w-4" style={{ color: "var(--text-tertiary)" }} />
-              <span className="text-[13px] font-semibold text-[color:var(--text-primary)]">
-                Notas recientes
-              </span>
-            </div>
-            <ul className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
-              {notes.map((n) => (
-                <li key={n.id} className="px-4 py-2.5">
-                  <p className="truncate text-[13px] text-[color:var(--text-primary)]">{n.subject}</p>
-                  <p className="num text-[11px] text-[color:var(--text-tertiary)]">
-                    {formatDate(n.createdAt, { day: "2-digit", month: "short" })}
-                    {n.contactName ? ` · ${n.contactName}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        <NotasRecientes notes={notes} total={notesTotal} />
       </div>
 
       {/* ── Derecha: Tareas hechas ────────────────────────────────────── */}

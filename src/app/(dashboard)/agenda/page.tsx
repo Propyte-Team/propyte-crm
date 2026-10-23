@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   getMyAgenda,
   getMyRecentNotes,
+  countMyRecentNotes,
   getMyDoneTasks,
   getMyPendingMeetings,
   getMyPendingCalls,
@@ -17,9 +18,10 @@ export default async function AgendaPage() {
   const session = await getServerSession();
   if (!session?.user) redirect("/login");
 
-  const [agenda, notes, done, meetings, calls, asignadas] = await Promise.all([
+  const [agenda, notes, notesTotal, done, meetings, calls, asignadas] = await Promise.all([
     getMyAgenda(),
     getMyRecentNotes(),
+    countMyRecentNotes(),
     getMyDoneTasks(),
     getMyPendingMeetings(),
     getMyPendingCalls(),
@@ -33,6 +35,7 @@ export default async function AgendaPage() {
       total={agenda.total}
       truncated={agenda.truncated}
       notes={notes}
+      notesTotal={notesTotal}
       doneTasks={done.items}
       doneTotal={done.total}
       meetings={meetings}
