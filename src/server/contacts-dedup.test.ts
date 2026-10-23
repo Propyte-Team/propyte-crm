@@ -5,7 +5,10 @@ vi.mock("@/lib/db", () => ({ default: { contact: { findMany: (...a: unknown[]) =
 
 import { findDuplicateGroups } from "./contacts-dedup";
 
-beforeEach(() => findMany.mockReset());
+// Cuerpo de bloque: una flecha que devuelve el mock lo registra como limpieza (#808).
+beforeEach(() => {
+  findMany.mockReset();
+});
 
 const base = { createdAt: new Date(), assignedTo: null, instagramId: null, messengerPsid: null, _count: { deals: 0, activities: 0 } };
 

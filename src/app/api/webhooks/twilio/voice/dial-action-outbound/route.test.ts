@@ -21,7 +21,10 @@ function formReq(fields: Record<string, string>) {
   ) as unknown as import("next/server").NextRequest;
 }
 
-beforeEach(() => handleCallStatus.mockReset());
+// Cuerpo de bloque: una flecha que devuelve el mock lo registra como limpieza (#808).
+beforeEach(() => {
+  handleCallStatus.mockReset();
+});
 
 describe("voice/dial-action-outbound", () => {
   it("completa la Activity vía handleCallStatus con el CallSid padre + DialCallStatus", async () => {

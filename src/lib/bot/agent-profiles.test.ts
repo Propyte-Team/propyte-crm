@@ -4,7 +4,10 @@ import { selectAgentProfile, applyAgentTone, composeObjective, agentPlaybookOf }
 const findMany = vi.fn();
 const db = { botAgentProfile: { findMany: (...a: unknown[]) => findMany(...a) } };
 
-beforeEach(() => findMany.mockReset());
+// Cuerpo de bloque: una flecha que devuelve el mock lo registra como limpieza (#808).
+beforeEach(() => {
+  findMany.mockReset();
+});
 
 describe("selectAgentProfile", () => {
   it("filtra activos con el tipo (has) y toma el de menor priority", async () => {

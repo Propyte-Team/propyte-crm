@@ -32,6 +32,5 @@ overrides:
   brace-expansion@>=2.0.0 <2.1.6: ^2.1.6
   follow-redirects@>=1.16.0 <1.16.1: ^1.16.1
   source-map-js@<1.2.2: ^1.2.2
-  # Solo herramientas de prueba (vitest). tinypool, la otra crítica de vitest 3, exige
-  # vitest 4: ver claude/tinypool-criticas-vitest4-2026-10-19.md.
+  # Solo herramientas de prueba (vitest 4 usa vite 7).
   vite@>=7.0.0 <7.3.7: ^7.3.7

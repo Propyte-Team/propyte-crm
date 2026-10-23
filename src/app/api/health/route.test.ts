@@ -5,7 +5,13 @@ vi.mock("@/lib/db", () => ({ default: { $queryRaw: (...a: unknown[]) => queryRaw
 
 import { GET } from "./route";
 
-beforeEach(() => queryRaw.mockReset());
+// Cuerpo de bloque a propósito (#808). `() => queryRaw.mockReset()` DEVUELVE el mock, y
+// vitest trata cualquier función devuelta por un beforeEach como limpieza: la llama al
+// terminar cada prueba. Con el mock configurado para lanzar, esa llamada fantasma
+// tumbaba la prueba en vitest 4 aunque la ruta atrapara bien el error.
+beforeEach(() => {
+  queryRaw.mockReset();
+});
 // vi.restoreAllMocks() en afterEach en vez de err.mockRestore() al final de cada test:
 // llamar mockRestore() como último statement síncrono del test, con otro test antes en el
 // archivo, dispara un falso "unhandled rejection" en esta versión de vitest/tinyspy —
