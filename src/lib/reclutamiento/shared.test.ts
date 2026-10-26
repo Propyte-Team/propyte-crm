@@ -8,6 +8,7 @@ import {
   rutaCvCandidato,
   rutaEsDelCandidato,
   ubicacionLabel,
+  UBICACIONES,
   type CandidatoFila,
 } from "./shared";
 import { RECLUTAMIENTO_ROLES, puedeEliminarEnReclutamiento, puedeVerReclutamiento } from "./roles";
@@ -60,7 +61,7 @@ describe("validación del alta", () => {
 
   it("correo, ubicación, etapa y portafolio se validan", () => {
     expect(candidatoCrearSchema.safeParse({ fullName: "A", email: "no-es-correo" }).success).toBe(false);
-    expect(candidatoCrearSchema.safeParse({ fullName: "A", plaza: "CANCUN" }).success).toBe(false);
+    expect(candidatoCrearSchema.safeParse({ fullName: "A", plaza: "CHETUMAL" }).success).toBe(false);
     expect(candidatoCrearSchema.safeParse({ fullName: "A", stage: "INVENTADA" }).success).toBe(false);
     expect(candidatoCrearSchema.safeParse({ fullName: "A", portfolioUrl: "javascript:alert(1)" }).success).toBe(false);
     expect(candidatoCrearSchema.parse({ fullName: "A", plaza: "TULUM", stage: "OFERTA", portfolioUrl: "behance.net/ana" })).toMatchObject({
@@ -88,6 +89,12 @@ describe("celdas", () => {
     expect(celda("Sistemas")).toBe("Sistemas");
     expect(ubicacionLabel("PDC")).toBe("Playa del Carmen");
     expect(ubicacionLabel(null)).toBeNull();
+  });
+
+  it("#927: ubicación = las seis opciones de Notion, en su orden (lugar de trabajo o modalidad)", () => {
+    expect(UBICACIONES.map((u) => u.label)).toEqual(["Playa del Carmen", "Mérida", "Tulum", "Cancún", "Remoto", "Foráneo"]);
+    for (const u of UBICACIONES) expect(candidatoCrearSchema.parse({ fullName: "A", plaza: u.code }).plaza).toBe(u.code);
+    expect(ubicacionLabel("REMOTO")).toBe("Remoto");
   });
 });
 

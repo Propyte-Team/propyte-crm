@@ -36,13 +36,21 @@ export function etapa(code: string | null | undefined) {
 
 // --------------- ubicación y área ---------------
 
-/** Ubicación = plaza del CRM (enum Plaza), en el orden en que la pidió sistemas@. */
+/**
+ * Ubicación = dónde trabajará la persona, o la modalidad (#927, sistemas@ 2026-10-26). Las mismas
+ * opciones y orden que la base de Notion. Se guarda el `code` en recruit_candidates.plaza (TEXT):
+ * la columna conserva el nombre, pero ya no es el enum Plaza del CRM.
+ */
 export const UBICACIONES = [
-  { code: "TULUM", label: "Tulum" },
   { code: "PDC", label: "Playa del Carmen" },
   { code: "MERIDA", label: "Mérida" },
+  { code: "TULUM", label: "Tulum" },
+  { code: "CANCUN", label: "Cancún" },
+  { code: "REMOTO", label: "Remoto" },
+  { code: "FORANEO", label: "Foráneo" },
 ] as const;
 export type UbicacionCode = (typeof UBICACIONES)[number]["code"];
+const CODIGOS_UBICACION = UBICACIONES.map((u) => u.code) as [UbicacionCode, ...UbicacionCode[]];
 
 export function ubicacionLabel(code: string | null | undefined): string | null {
   return UBICACIONES.find((u) => u.code === code)?.label ?? null;
@@ -99,7 +107,7 @@ const campos = {
   phone: opcional(40),
   area: opcional(120),
   plaza: z
-    .union([z.enum(["TULUM", "PDC", "MERIDA"]), z.literal(""), z.null()])
+    .union([z.enum(CODIGOS_UBICACION, { errorMap: () => ({ message: "Ubicación no válida" }) }), z.literal(""), z.null()])
     .optional()
     .transform((v) => (v === "" ? null : v)),
   portfolioUrl: opcional(500).refine((v) => v == null || hrefSitio(v) !== null, "Portafolio: enlace no válido"),

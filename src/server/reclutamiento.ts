@@ -97,7 +97,7 @@ export async function crearCandidato(
       email: datos.email ?? null,
       phone: datos.phone ?? null,
       area: datos.area ?? null,
-      plaza: (datos.plaza ?? null) as never,
+      plaza: datos.plaza ?? null,
       portfolioUrl: datos.portfolioUrl ?? null,
       notes: datos.notes ?? null,
       stage: datos.stage ?? ETAPA_INICIAL,
