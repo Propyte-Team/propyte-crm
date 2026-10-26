@@ -4,6 +4,7 @@ import {
   rbacPermiteContacto,
   separarReferidos,
   validarReferidoPor,
+  tituloRegistros,
 } from "./referidos";
 
 describe("rbacPermiteContacto (#907: la regla que getContact y getContactAccessInfo copiaban)", () => {
@@ -63,5 +64,13 @@ describe("nombreDeContacto", () => {
     expect(nombreDeContacto({ firstName: "Ana", lastName: "López" })).toBe("Ana López");
     expect(nombreDeContacto({ firstName: "Ana", lastName: null })).toBe("Ana");
     expect(nombreDeContacto({})).toBe("Sin nombre");
+  });
+});
+
+describe("tituloRegistros (#929: antes «Referidos (N)»)", () => {
+  it("singular con 1, plural con 0 o varios", () => {
+    expect(tituloRegistros(1)).toBe("Registro de Broker (1)");
+    expect(tituloRegistros(0)).toBe("Registros de Broker (0)");
+    expect(tituloRegistros(3)).toBe("Registros de Broker (3)");
   });
 });

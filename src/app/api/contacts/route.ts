@@ -13,7 +13,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
-import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_ORDER } from "@/lib/constants";
+import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_BROKER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_ORDER } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
 import { sumarAlAnd } from "@/lib/api/where-and";
@@ -400,7 +400,8 @@ export async function POST(request: NextRequest) {
         whatsappUserId: data.whatsappUserId || null,
         secondaryPhone: data.secondaryPhone || null,
         contactType: data.contactType ?? null, // #863: nace sin tipo salvo que se elija
-        leadSource: data.leadSource,
+        // #929: si viene con broker, su fuente ES «Registro de Broker», diga lo que diga el body.
+        leadSource: data.referredById ? LEAD_SOURCE_BROKER : data.leadSource,
         leadSourceDetail: data.leadSourceDetail || null,
         temperature: data.temperature || "COLD",
         investmentProfile: data.investmentProfile || undefined,
@@ -605,6 +606,9 @@ export async function PUT(request: NextRequest) {
       updateData.referredBy = data.referredById
         ? { connect: { id: data.referredById } }
         : { disconnect: true };
+      // #929: ligar a un broker pone la fuente en «Registro de Broker», siempre. Quitar la liga
+      // no toca la fuente (no hay de dónde saber cuál tenía antes).
+      if (data.referredById) updateData.leadSource = LEAD_SOURCE_BROKER;
     }
 
     // Override manual de lifecycle: enruta por el helper para emitir evento + Activity.

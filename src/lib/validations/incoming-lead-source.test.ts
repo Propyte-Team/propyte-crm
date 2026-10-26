@@ -37,3 +37,20 @@ describe("incomingLeadSchema — contactType (#907)", () => {
     expect(incomingLeadSchema.safeParse({ ...BASE, contactType: "VENDEDOR" }).success).toBe(false);
   });
 });
+
+describe("incomingLeadSchema — retirados del #929", () => {
+  const BASE = { firstName: "Ana", lastName: "L", phone: "+529981234567" };
+
+  it("source REFERIDO_BROKER → REGISTRO_BROKER (y REGISTRO_BROKER ya se acepta)", () => {
+    const r = incomingLeadSchema.safeParse({ ...BASE, source: "REFERIDO_BROKER" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.source).toBe("REGISTRO_BROKER");
+    expect(incomingLeadSchema.safeParse({ ...BASE, source: "REGISTRO_BROKER" }).success).toBe(true);
+  });
+
+  it("contactType REFERIDO → sin tipo, sin tumbar el lead", () => {
+    const r = incomingLeadSchema.safeParse({ ...BASE, source: "WEBSITE", contactType: "REFERIDO" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.contactType).toBeUndefined();
+  });
+});

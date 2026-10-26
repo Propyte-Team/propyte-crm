@@ -1,4 +1,4 @@
-// «Referido por: <broker>» en el encabezado de la ficha (#909, seguimiento de la #907).
+// «Registrado por: <broker>» en el encabezado de la ficha (#909; texto de la #929, antes «Referido por»).
 // Va debajo del nombre y arriba de los chips (estado, temperatura, tipo…), y SOLO aparece si
 // el contacto tiene broker: así se sabe que es referido sin ir a buscarlo a la ficha del broker.
 import Link from "next/link";
@@ -15,7 +15,7 @@ export function ReferidoPorEncabezado({ referredBy }: { referredBy?: LigaBroker 
   if (!referredBy) return null;
   return (
     <p className="mt-1 text-[13px] text-[color:var(--text-tertiary)]">
-      Referido por:{" "}
+      Registrado por:{" "}
       {referredBy.puedeAbrir ? (
         <Link
           href={`/contacts/${referredBy.id}`}

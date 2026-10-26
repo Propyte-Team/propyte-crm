@@ -47,7 +47,7 @@ export const MAX_REFERIDOS_EN_FICHA = 500;
 export type MotivoReferidoInvalido = "mismo_contacto" | "no_existe" | "no_es_broker";
 
 export const MENSAJE_REFERIDO_INVALIDO: Record<MotivoReferidoInvalido, string> = {
-  mismo_contacto: "Un contacto no puede ser referido por sí mismo",
+  mismo_contacto: "Un contacto no puede ser registrado por sí mismo",
   // «No existe» y «no tienes acceso» dan el MISMO mensaje: distinguirlos confirmaría que
   // existe un contacto con ese id fuera de tu alcance (mismo criterio que el 404 de la ficha).
   no_existe: "El broker elegido no existe",
@@ -72,4 +72,9 @@ export function validarReferidoPor(opts: {
 /** Nombre para mostrar de un contacto ligado (broker o referido). */
 export function nombreDeContacto(c: { firstName?: string | null; lastName?: string | null }): string {
   return `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "Sin nombre";
+}
+
+/** Título de la tabla del broker (#929): «Registro de Broker (1)», «Registros de Broker (3)». */
+export function tituloRegistros(n: number): string {
+  return `${n === 1 ? "Registro" : "Registros"} de Broker (${n})`;
 }

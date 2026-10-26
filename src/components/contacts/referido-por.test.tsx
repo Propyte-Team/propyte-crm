@@ -9,7 +9,7 @@ vi.stubGlobal("React", React)
 
 import { ReferidoPorEncabezado } from "./referido-por"
 
-// #909 — «Referido por: <broker>» en el encabezado de la ficha, solo para referidos.
+// #909 — «Registrado por: <broker>» (antes «Referido por», #929) en el encabezado, solo para referidos.
 
 const texto = (html: string) => html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
 
@@ -19,11 +19,11 @@ describe("ReferidoPorEncabezado", () => {
     expect(renderToStaticMarkup(<ReferidoPorEncabezado />)).toBe("")
   })
 
-  it("con broker al alcance: «Referido por: <nombre>» y el nombre abre la ficha del broker", () => {
+  it("con broker al alcance: «Registrado por: <nombre>» y el nombre abre la ficha del broker", () => {
     const html = renderToStaticMarkup(
       <ReferidoPorEncabezado referredBy={{ id: "brk-1", nombre: "Bruno Broker", puedeAbrir: true }} />,
     )
-    expect(texto(html)).toBe("Referido por: Bruno Broker")
+    expect(texto(html)).toBe("Registrado por: Bruno Broker")
     expect(html).toContain('href="/contacts/brk-1"')
   })
 
@@ -31,12 +31,12 @@ describe("ReferidoPorEncabezado", () => {
     const html = renderToStaticMarkup(
       <ReferidoPorEncabezado referredBy={{ id: "brk-1", nombre: "Bruno Broker", puedeAbrir: false }} />,
     )
-    expect(texto(html)).toBe("Referido por: Bruno Broker")
+    expect(texto(html)).toBe("Registrado por: Bruno Broker")
     expect(html).not.toContain("href=")
   })
 })
 
-describe("ficha de contacto — posición de «Referido por»", () => {
+describe("ficha de contacto — posición de «Registrado por»", () => {
   it("va debajo del nombre y arriba de los chips (estado, temperatura, tipo…)", () => {
     const src = readFileSync(path.join(__dirname, "contact-detail.tsx"), "utf8")
     const nombre = src.indexOf("{contact.firstName} {contact.lastName}\n              </h1>")

@@ -40,7 +40,7 @@ const FIELD_LABELS: Record<string, string> = {
   score: "Puntuación",
   tags: "Etiquetas",
   custom: "Campos personalizados",
-  referredById: "Referido por", // #907: la ruta resuelve el id al nombre del broker
+  referredById: "Registrado por", // #907/#929: la ruta resuelve el id al nombre del broker
   ...ETIQUETAS_CAMPOS_ADICIONALES, // #914
 };
 
