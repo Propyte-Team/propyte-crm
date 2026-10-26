@@ -3117,7 +3117,9 @@ model RecruitCandidate {
   email          String?
   phone          String?
   area           String?
-  plaza          Plaza?
+  /// Ubicación de trabajo o modalidad: PDC | MERIDA | TULUM | CANCUN | REMOTO | FORANEO (#927).
+  /// TEXT, no el enum Plaza: Cancún, Remoto y Foráneo no son plazas del CRM.
+  plaza          String?
   portfolioUrl   String?
   notes          String?
   /// Código de etapa: ver ETAPAS en src/lib/reclutamiento/shared.ts
