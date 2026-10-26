@@ -210,12 +210,31 @@ export const LEAD_SOURCE_ORDER = [
   "LLAMADA_FRIA",
   "SELF_GEN",
   "BASE_DE_DATOS",
-  // Referidos / brokers
+  // Referidos / brokers. #929: «Referido de Broker» (REFERIDO_BROKER) se retiró: lo que trae
+  // un broker es «Registro de Broker». Ver LEAD_SOURCE_RETIRADAS.
   "REFERIDO_CLIENTE",
-  "REFERIDO_BROKER",
   "REGISTRO_BROKER",
   "OTRO",
 ] as const;
+
+/**
+ * Fuentes que siguen en el enum LeadSource de la base pero ya no se ofrecen ni se aceptan
+ * desde la UI (#929), con la vigente que las reemplaza. Mismo patrón que CONTACT_TYPE_RETIRADOS.
+ */
+export const LEAD_SOURCE_RETIRADAS = {
+  REFERIDO_BROKER: "REGISTRO_BROKER",
+} as const;
+
+/** Traduce una fuente retirada a la vigente (para entradas externas: Zapier, conectores). */
+export function normalizarFuente(valor: unknown): unknown {
+  if (typeof valor === "string" && Object.prototype.hasOwnProperty.call(LEAD_SOURCE_RETIRADAS, valor)) {
+    return LEAD_SOURCE_RETIRADAS[valor as keyof typeof LEAD_SOURCE_RETIRADAS];
+  }
+  return valor;
+}
+
+/** La fuente de todo contacto ligado a un broker (#929): elegir broker la pone sola. */
+export const LEAD_SOURCE_BROKER = "REGISTRO_BROKER" as const;
 
 export const LEAD_SOURCE_LABELS: Record<string, string> = {
   FACEBOOK_ADS: "Facebook Ads",
@@ -236,6 +255,7 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
   SELF_GEN: "Prospección propia",
   BASE_DE_DATOS: "Base de datos",
   REFERIDO_CLIENTE: "Referido de Cliente",
+  // Retirada (#929): solo para mostrar el historial.
   REFERIDO_BROKER: "Referido de Broker",
   REGISTRO_BROKER: "Registro de Broker",
   OTRO: "Otro",
@@ -371,6 +391,9 @@ export const URGENCY_COLORS: Record<string, string> = {
 // #907 (2026-10-19, pedido de sistemas@): «Broker externo» se muestra como «Broker» (el valor
 // interno BROKER_EXTERNO no cambia: lo usan los perfiles del bot, las reglas y el clasificador),
 // «Referidor» deja de ofrecerse —el que refiere ES el broker— y entran PROVEEDOR y OTRO.
+// #929 (2026-10-26): «Referido» también sale. Que a alguien lo trajo un broker lo dicen la liga
+// «Registrado por» y la fuente «Registro de Broker»; su tipo es lo que la conversación diga
+// (Comprador, Inversionista, Cliente, Otro…).
 export const CONTACT_TYPE_ORDER = [
   "LEAD",
   "PROSPECTO",
@@ -378,7 +401,6 @@ export const CONTACT_TYPE_ORDER = [
   "CLIENTE",
   "INVERSIONISTA",
   "BROKER_EXTERNO",
-  "REFERIDO",
   "EMPLEO",
   "PROVEEDOR",
   "OTRO",
@@ -386,23 +408,27 @@ export const CONTACT_TYPE_ORDER = [
 
 /**
  * Tipos que siguen existiendo en el enum ContactType de la base pero YA NO se ofrecen ni se
- * aceptan como entrada (#907), con el tipo vigente que los reemplaza. Se quedan en el enum
- * porque Postgres no deja quitar un valor sin recrear el tipo, y porque la cronología guarda
- * cambios viejos con ese valor (5 filas de record_field_changes al 19-oct; 0 contactos vivos).
+ * aceptan como entrada, con el tipo vigente que los reemplaza (null = queda sin tipo). Se
+ * quedan en el enum porque Postgres no deja quitar un valor sin recrear el tipo, y porque la
+ * cronología guarda cambios viejos con ese valor.
+ *  - REFERIDOR (#907): el que refiere es el broker.
+ *  - REFERIDO (#929): no hay un tipo que lo sustituya; su tipo sale de la conversación.
  */
-export const CONTACT_TYPE_RETIRADOS = {
+export const CONTACT_TYPE_RETIRADOS: Record<string, string | null> = {
   REFERIDOR: "BROKER_EXTERNO",
-} as const;
+  REFERIDO: null,
+};
 
 /**
  * Traduce un tipo retirado a su reemplazo y deja pasar todo lo demás tal cual. Para las
  * entradas EXTERNAS (Zapier, conectores de leads), donde una integración configurada antes
- * del #907 puede seguir mandando REFERIDOR: se acepta y se guarda como Broker en vez de
- * rechazar el lead. Las entradas de la propia UI validan contra CONTACT_TYPE_ORDER a secas.
+ * puede seguir mandando un tipo retirado: se acepta en vez de rechazar el lead. Un retirado
+ * sin reemplazo (REFERIDO) sale como `undefined` = «no viene tipo» (al crear, nace sin tipo;
+ * al editar, no se toca). Las entradas de la propia UI validan contra CONTACT_TYPE_ORDER a secas.
  */
 export function normalizarTipoContacto(valor: unknown): unknown {
   if (typeof valor === "string" && Object.prototype.hasOwnProperty.call(CONTACT_TYPE_RETIRADOS, valor)) {
-    return CONTACT_TYPE_RETIRADOS[valor as keyof typeof CONTACT_TYPE_RETIRADOS];
+    return CONTACT_TYPE_RETIRADOS[valor] ?? undefined;
   }
   return valor;
 }
@@ -435,13 +461,13 @@ export const CONTACT_TYPE_LABELS: Record<string, string> = {
   CLIENTE: "Cliente",
   INVERSIONISTA: "Inversionista",
   BROKER_EXTERNO: "Broker",
-  REFERIDO: "Referido",
   EMPLEO: "Empleo",
   COMPRADOR: "Comprador",
   PROVEEDOR: "Proveedor",
   OTRO: "Otro",
-  // Retirado (#907): solo para mostrar cambios viejos de la cronología.
+  // Retirados (#907, #929): solo para mostrar cambios viejos de la cronología.
   REFERIDOR: "Referidor",
+  REFERIDO: "Referido",
 } as const;
 
 // --- Estados de desarrollo ---

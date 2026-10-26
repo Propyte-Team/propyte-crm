@@ -25,7 +25,7 @@ function contactoCon(leadSource: string) {
 }
 
 describe("createContactSchema — leadSource sale de LEAD_SOURCE_ORDER (#730)", () => {
-  it("acepta los 21 valores de la lista, uno por uno", () => {
+  it("acepta los 20 valores de la lista, uno por uno", () => {
     for (const fuente of LEAD_SOURCE_ORDER) {
       const r = createContactSchema.safeParse(contactoCon(fuente));
       expect(r.success, `rechazó "${fuente}", que es un valor válido en la base`).toBe(true);
@@ -57,12 +57,16 @@ describe("createContactSchema — leadSource sale de LEAD_SOURCE_ORDER (#730)", 
     expect(createContactSchema.safeParse(contactoCon("facebook_ads")).success).toBe(false);
   });
 
-  it("la lista tiene 21 valores y ninguno repetido", () => {
+  it("#929: «Referido de Broker» ya no se acepta desde la UI", () => {
+    expect(createContactSchema.safeParse(contactoCon("REFERIDO_BROKER")).success).toBe(false);
+  });
+
+  it("la lista tiene 20 valores y ninguno repetido (#929: sin REFERIDO_BROKER)", () => {
     // Si alguien agrega un valor al enum de Prisma y no a LEAD_SOURCE_ORDER, quien avisa
     // es constants.lead-source.test.ts (necesita el cliente generado). Esto solo fija el
     // número para que un cambio accidental de la lista se note aquí también.
-    expect(LEAD_SOURCE_ORDER).toHaveLength(21);
-    expect(new Set(LEAD_SOURCE_ORDER).size).toBe(21);
+    expect(LEAD_SOURCE_ORDER).toHaveLength(20);
+    expect(new Set(LEAD_SOURCE_ORDER).size).toBe(20);
   });
 });
 

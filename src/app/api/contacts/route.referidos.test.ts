@@ -141,11 +141,11 @@ describe("PUT /api/contacts?id= con referredById (#907)", () => {
     expect(contactUpdate.mock.calls[0][0].data).not.toHaveProperty("referredBy");
   });
 
-  it("un contacto no puede ser referido por sí mismo: 400", async () => {
+  it("un contacto no puede ser registrado por sí mismo: 400", async () => {
     base({ id: CONTACTO, contactType: "BROKER_EXTERNO" });
     const res = await PUT(peticion("PUT", { referredById: CONTACTO }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("Un contacto no puede ser referido por sí mismo");
+    expect((await res.json()).error).toBe("Un contacto no puede ser registrado por sí mismo");
     expect(contactUpdate).not.toHaveBeenCalled();
   });
 
@@ -177,6 +177,45 @@ describe("Tipos de contacto en la API (#907)", () => {
   it("ya no acepta Referidor desde la UI (400)", async () => {
     const res = await POST(peticion("POST", { ...ALTA, contactType: "REFERIDOR" }));
     expect(res.status).toBe(400);
+    expect(contactCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("#929: ligar a un broker = fuente «Registro de Broker»", () => {
+  it("al crear con broker, la fuente es REGISTRO_BROKER aunque el body diga otra", async () => {
+    const res = await POST(peticion("POST", { ...ALTA, leadSource: "MESSENGER", referredById: BROKER }));
+    expect(res.status).toBe(201);
+    expect(contactCreate.mock.calls[0][0].data.leadSource).toBe("REGISTRO_BROKER");
+  });
+
+  it("al crear sin broker, la fuente es la del body", async () => {
+    const res = await POST(peticion("POST", { ...ALTA, leadSource: "MESSENGER" }));
+    expect(res.status).toBe(201);
+    expect(contactCreate.mock.calls[0][0].data.leadSource).toBe("MESSENGER");
+  });
+
+  it("al editar y ligar, la fuente pasa a REGISTRO_BROKER (también si el body manda otra)", async () => {
+    const res = await PUT(peticion("PUT", { referredById: BROKER, leadSource: "WHATSAPP" }));
+    expect(res.status).toBe(200);
+    expect(contactUpdate.mock.calls[0][0].data.leadSource).toBe("REGISTRO_BROKER");
+  });
+
+  it("al quitar la liga, la fuente no se toca", async () => {
+    const res = await PUT(peticion("PUT", { referredById: null }));
+    expect(res.status).toBe(200);
+    expect(contactUpdate.mock.calls[0][0].data).not.toHaveProperty("leadSource");
+  });
+
+  it("si el broker no es válido, no se toca nada (ni la fuente)", async () => {
+    base({ id: BROKER, contactType: "COMPRADOR" });
+    const res = await PUT(peticion("PUT", { referredById: BROKER }));
+    expect(res.status).toBe(400);
+    expect(contactUpdate).not.toHaveBeenCalled();
+  });
+
+  it("la UI ya no acepta el tipo Referido ni la fuente Referido de Broker", async () => {
+    expect((await POST(peticion("POST", { ...ALTA, contactType: "REFERIDO" }))).status).toBe(400);
+    expect((await POST(peticion("POST", { ...ALTA, leadSource: "REFERIDO_BROKER" }))).status).toBe(400);
     expect(contactCreate).not.toHaveBeenCalled();
   });
 });

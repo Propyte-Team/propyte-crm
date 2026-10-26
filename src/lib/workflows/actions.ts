@@ -2,7 +2,7 @@
 // Toda acción respeta doNotContact/whatsappOptOut y deja rastro (Activity/Notification).
 // AI_*: pasa por el bot (Fase 4); si no hay API key o el hilo está en HUMAN → SKIPPED con nota.
 import prisma from "@/lib/db";
-import { CONTACT_TYPE_ORDER } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER } from "@/lib/constants";
 import type { ActionQueue, Contact } from "@prisma/client";
 import { sendWhatsAppMessage } from "@/lib/twilio/whatsapp";
 import { autoRouteLead } from "./routing";
@@ -144,12 +144,7 @@ export async function executeAction(item: ActionQueue, ctx: { actorCache?: Actor
       // Validar enums: un valor inválido NO debe romper el update (Prisma lanzaría).
       const ENUMS: Record<string, string[]> = {
         contactType: [...CONTACT_TYPE_ORDER], // #907: única fuente, sin REFERIDOR
-        leadSource: [
-          "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "PORTAL_INMOBILIARIO",
-          "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA", "EVENTO", "WEBSITE", "WHATSAPP",
-          "MESSENGER", "META_ADS", "BASE_DE_DATOS", "SELF_GEN", "REGISTRO_BROKER", "WEBINAR",
-          "LINKEDIN", "OTRO", "LLAMADA_ENTRANTE",
-        ],
+        leadSource: [...LEAD_SOURCE_ORDER], // #929: única fuente, sin REFERIDO_BROKER
       };
       if (ENUMS[field] && !ENUMS[field].includes(String(value))) {
         return { skipped: true, note: `Valor inválido para ${field}: ${String(value)}` };

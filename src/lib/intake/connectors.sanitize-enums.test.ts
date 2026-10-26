@@ -79,3 +79,17 @@ describe("sanitizeEnumFields — tipos retirados (#907)", () => {
     expect(VALID_ENUMS.contactType).not.toContain("REFERIDOR");
   });
 });
+
+describe("sanitizeEnumFields — retirados del #929", () => {
+  it("source REFERIDO_BROKER entra como REGISTRO_BROKER", () => {
+    const fields: Record<string, unknown> = { source: "REFERIDO_BROKER" };
+    expect(sanitizeEnumFields(fields)).toEqual([]);
+    expect(fields).toEqual({ source: "REGISTRO_BROKER" });
+  });
+
+  it("contactType REFERIDO se quita (nace sin tipo) y no se reporta como inválido", () => {
+    const fields: Record<string, unknown> = { contactType: "REFERIDO", firstName: "Ana" };
+    expect(sanitizeEnumFields(fields)).toEqual([]);
+    expect(fields).toEqual({ firstName: "Ana" });
+  });
+});

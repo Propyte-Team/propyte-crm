@@ -4,14 +4,18 @@ import { authenticateApiKey } from "@/lib/auth/api-key";
 import { prisma } from "@/lib/db";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import { z } from "zod";
-import { LeadSource, LeadTemperature } from "@prisma/client";
-import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
+import { LeadTemperature } from "@prisma/client";
+import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER, normalizarFuente, normalizarTipoContacto } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 
 // #907: antes `z.nativeEnum(ContactType)`, que acepta REFERIDOR (sigue en el enum de la base
 // como valor retirado). Ahora solo los tipos vigentes; un Zap configurado antes del #907 que
 // mande REFERIDOR no se rechaza: se traduce a Broker, que es lo que ese tipo significa hoy.
-const tipoDeContactoExterno = z.preprocess(normalizarTipoContacto, z.enum(CONTACT_TYPE_ORDER)).optional();
+const tipoDeContactoExterno = z.preprocess(normalizarTipoContacto, z.enum(CONTACT_TYPE_ORDER).optional());
+// #929: lo mismo con la fuente. REFERIDO_BROKER se retiró y entra como REGISTRO_BROKER; el tipo
+// REFERIDO (retirado sin reemplazo) se vuelve `undefined` = «no viene tipo»: por eso el
+// `.optional()` va DENTRO del preprocess (fuera, zod lo evalúa antes de traducir y lo rechaza).
+const fuenteExterna = z.preprocess(normalizarFuente, z.enum(LEAD_SOURCE_ORDER).optional());
 
 // Auditoría 2026-09-10: el PUT de abajo SÍ validaba con zod estricto; el POST metía
 // `body.*` crudo en `prisma.contact.create`. Consecuencias medidas sobre el código:
@@ -33,7 +37,7 @@ const zapierContactCreateSchema = z
     email: z.string().email().optional().nullable(),
     secondaryPhone: z.string().trim().min(8).max(20).optional().nullable(),
     contactType: tipoDeContactoExterno,
-    leadSource: z.nativeEnum(LeadSource).optional(),
+    leadSource: fuenteExterna,
     leadSourceDetail: z.string().max(200).optional().nullable(),
     residenceCity: z.string().max(100).optional().nullable(),
     residenceCountry: z.string().max(100).optional().nullable(),
@@ -66,7 +70,7 @@ const zapierContactUpdateSchema = z.object({
   // Ahora los tres salen de `z.nativeEnum` sobre el enum de Prisma: si el schema cambia,
   // esto cambia con él y no hay una segunda lista que mantener a mano.
   contactType: tipoDeContactoExterno,
-  leadSource: z.nativeEnum(LeadSource).optional(),
+  leadSource: fuenteExterna,
   leadSourceDetail: z.string().max(200).optional().nullable(),
   residenceCity: z.string().max(100).optional().nullable(),
   residenceCountry: z.string().max(100).optional().nullable(),

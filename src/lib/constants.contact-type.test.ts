@@ -18,9 +18,9 @@ import {
 // de verdad se rompió: que COMPRADOR y los otros dos estuvieran fuera.
 
 describe("CONTACT_TYPE_ORDER (#730)", () => {
-  it("tiene los 10 tipos vigentes, sin repetidos", () => {
-    expect(CONTACT_TYPE_ORDER).toHaveLength(10);
-    expect(new Set(CONTACT_TYPE_ORDER).size).toBe(10);
+  it("tiene los 9 tipos vigentes, sin repetidos (#929: sin Referido)", () => {
+    expect(CONTACT_TYPE_ORDER).toHaveLength(9);
+    expect(new Set(CONTACT_TYPE_ORDER).size).toBe(9);
   });
 
   it("incluye los que el z.enum a mano dejaba fuera", () => {
@@ -60,16 +60,21 @@ describe("Tipos de contacto del #907 (Broker, Proveedor, Otro; sin Referidor)", 
     expect(CONTACT_TYPE_LABELS.OTRO).toBe("Otro");
   });
 
-  it("Referidor ya no se ofrece; Referido sí se queda", () => {
+  it("ni Referidor (#907) ni Referido (#929) se ofrecen", () => {
     expect(CONTACT_TYPE_ORDER as readonly string[]).not.toContain("REFERIDOR");
-    expect(CONTACT_TYPE_ORDER as readonly string[]).toContain("REFERIDO");
+    expect(CONTACT_TYPE_ORDER as readonly string[]).not.toContain("REFERIDO");
   });
 
-  it("ningún tipo retirado está también en la lista vigente, y cada uno apunta a uno vigente", () => {
+  it("ningún tipo retirado está también en la lista vigente, y cada uno apunta a uno vigente o a «sin tipo»", () => {
     for (const [viejo, nuevo] of Object.entries(CONTACT_TYPE_RETIRADOS)) {
       expect(CONTACT_TYPE_ORDER as readonly string[]).not.toContain(viejo);
-      expect(CONTACT_TYPE_ORDER as readonly string[]).toContain(nuevo);
+      if (nuevo !== null) expect(CONTACT_TYPE_ORDER as readonly string[]).toContain(nuevo);
     }
+  });
+
+  it("#929: REFERIDO de una entrada externa sale como «no viene tipo» (undefined)", () => {
+    expect(normalizarTipoContacto("REFERIDO")).toBeUndefined();
+    expect(CONTACT_TYPE_LABELS.REFERIDO).toBe("Referido"); // sigue leyéndose en la cronología
   });
 
   it("normalizarTipoContacto traduce REFERIDOR a Broker y deja todo lo demás igual", () => {

@@ -20,6 +20,9 @@ import {
   CONTACT_TYPE_ORDER,
   CONTACT_TYPE_LABELS,
   CONTACT_TYPE_BROKER,
+  LEAD_SOURCE_BROKER,
+  normalizarFuente,
+  normalizarTipoContacto,
 } from "@/lib/constants";
 import { ContactPicker, type PickedContact } from "@/components/agenda/contact-picker";
 
@@ -245,8 +248,10 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
     secondaryPhone: initialData?.secondaryPhone || "",
     whatsappUserId: initialData?.whatsappUserId || "",
     preferredLanguage: initialData?.preferredLanguage || "ES",
-    contactType: initialData?.contactType ?? null, // #863: antes "COMPRADOR" por defecto
-    leadSource: initialData?.leadSource || "OTRO",
+    // #863: antes "COMPRADOR" por defecto. #929: un tipo retirado (Referido, Referidor) se abre
+    // ya traducido —Referido queda sin tipo— para que el formulario se pueda guardar.
+    contactType: (normalizarTipoContacto(initialData?.contactType ?? null) ?? null) as ContactFormData["contactType"],
+    leadSource: (normalizarFuente(initialData?.leadSource) || "OTRO") as ContactFormData["leadSource"], // #929
     leadSourceDetail: initialData?.leadSourceDetail || "",
     residenceCity: initialData?.residenceCity || "",
     residenceCountry: initialData?.residenceCountry || "",
@@ -495,7 +500,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
               </SelectTrigger>
               <SelectContent>
                 {/* Valores legacy: solo visibles si el contacto ya los tiene (no se crean a mano) */}
-                {["LEAD", "PROSPECTO", "CLIENTE", "REFERIDO"].includes(formData.contactType ?? "") && (
+                {["LEAD", "PROSPECTO", "CLIENTE"].includes(formData.contactType ?? "") && (
                   <SelectItem key={formData.contactType} value={formData.contactType!}>
                     {formData.contactType} (legacy)
                   </SelectItem>
@@ -532,16 +537,23 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
           </div>
           {/* #907: el broker que lo trajo. Solo ofrece contactos de tipo Broker. */}
           <div className="space-y-2 sm:col-span-2">
-            <Label>Referido por (broker)</Label>
+            <Label>Registrado por (broker)</Label>
             <ContactPicker
               value={broker}
-              onChange={setBroker}
+              onChange={(b) => {
+                setBroker(b);
+                // #929: con broker, la fuente es «Registro de Broker» (el servidor lo aplica igual).
+                if (b) updateField("leadSource", LEAD_SOURCE_BROKER);
+              }}
               disabled={submitting}
               tipo={CONTACT_TYPE_BROKER}
               excluirId={initialData?.id}
               listarSinTexto
               placeholder="Buscar broker (opcional)"
             />
+            <p className="text-xs text-muted-foreground">
+              Al elegir un broker, la fuente pasa a «Registro de Broker».
+            </p>
             {errors.referredById && (
               <p className="text-xs text-destructive">{errors.referredById}</p>
             )}

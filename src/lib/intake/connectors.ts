@@ -4,7 +4,7 @@ import prisma from "@/lib/db";
 import type { ConnectorLeadStatus, LeadConnector, Prisma } from "@prisma/client";
 import { decryptPII, encryptPII } from "@/lib/crypto";
 import { normalizePhoneE164 } from "@/lib/phone";
-import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, normalizarFuente, normalizarTipoContacto } from "@/lib/constants";
 import { deriveInvestmentProfile } from "./profile-mapping";
 import { captureLead } from "./capture-lead";
 
@@ -121,7 +121,7 @@ export const VALID_ENUMS: Record<string, readonly string[]> = {
   language: ["ES", "EN"],
   source: [
     "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "LINKEDIN",
-    "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA",
+    "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REGISTRO_BROKER", "LLAMADA_FRIA", // #929
     "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
   ],
   investmentProfile: ["END_USER", "INVESTOR_RENTAL", "INVESTOR_FLIP", "INVESTOR_LAND", "MIXED"],
@@ -137,7 +137,12 @@ export const VALID_ENUMS: Record<string, readonly string[]> = {
 // el valor crudo ya se preserva en Contact.custom.
 export function sanitizeEnumFields(fields: Record<string, unknown>): string[] {
   const dropped: string[] = [];
-  if (fields.contactType !== undefined) fields.contactType = normalizarTipoContacto(fields.contactType);
+  if (fields.contactType !== undefined) {
+    fields.contactType = normalizarTipoContacto(fields.contactType);
+    // #929: un retirado sin reemplazo (REFERIDO) = no viene tipo.
+    if (fields.contactType === undefined) delete fields.contactType;
+  }
+  if (fields.source !== undefined) fields.source = normalizarFuente(fields.source);
   for (const [key, valid] of Object.entries(VALID_ENUMS)) {
     const v = fields[key];
     if (typeof v === "string" && v !== "" && !valid.includes(v)) {

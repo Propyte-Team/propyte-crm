@@ -2,7 +2,7 @@
 // credenciales de conectores (Anexo B §H), perfiles/plantillas (§J), intake (§H.5).
 import { z } from "zod";
 import { normalizePhoneE164 } from "@/lib/phone";
-import { CONTACT_TYPE_ORDER, normalizarTipoContacto } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, normalizarFuente, normalizarTipoContacto } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // DSL de condiciones (Anexo Técnico §D.4)
@@ -205,11 +205,16 @@ const normalizedPhone = z
 
 export const incomingLeadSchema = z
   .object({
-    source: z.enum([
-      "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "LINKEDIN",
-      "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REFERIDO_BROKER", "LLAMADA_FRIA",
-      "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
-    ]),
+    // #929: «Referido de Broker» se retiró → entra como «Registro de Broker» (que antes no
+    // estaba en esta lista: un lead que la trajera se habría rechazado).
+    source: z.preprocess(
+      normalizarFuente,
+      z.enum([
+        "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "LINKEDIN",
+        "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REGISTRO_BROKER", "LLAMADA_FRIA",
+        "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
+      ]),
+    ),
     firstName: z.string().min(1).max(80).trim(),
     lastName: z.string().min(1).max(80).trim().default("(sin apellido)"),
     phone: normalizedPhone.optional(),
@@ -257,7 +262,7 @@ export const incomingLeadSchema = z
     preferredZone: z.string().max(200).optional(),
     // Overrides opcionales para mapeo configurable por conector (editor Meta→Contact).
     // #907: los vigentes; un REFERIDOR de una integración vieja entra como Broker.
-    contactType: z.preprocess(normalizarTipoContacto, z.enum(CONTACT_TYPE_ORDER)).optional(),
+    contactType: z.preprocess(normalizarTipoContacto, z.enum(CONTACT_TYPE_ORDER).optional()),
     temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   })
   .refine((d) => !!d.phone || !!d.email || !!d.instagramId || !!d.messengerPsid, {

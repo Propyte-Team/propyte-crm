@@ -42,6 +42,7 @@ import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { BrandBadges } from "@/components/brands/brand-view";
 import { ReferidoPorEncabezado } from "@/components/contacts/referido-por";
+import { tituloRegistros } from "@/lib/contacts/referidos";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -464,7 +465,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             {/* #907: el broker que lo trajo. Se cambia en «Editar todo». */}
             {acc("referredById") !== "HIDDEN" && (
               <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
-                <span className="text-[color:var(--text-tertiary)]">Referido por</span>
+                <span className="text-[color:var(--text-tertiary)]">Registrado por</span>
                 {contact.referredBy ? (
                   contact.referredBy.puedeAbrir ? (
                     <Link
@@ -642,7 +643,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
 
       {/* ── Referidos del broker (#907): hasta abajo, cada uno abre su ficha ── */}
       {mostrarReferidos && (
-        <Section title={`Referidos (${referidos.length + referidosNoListados})`}>
+        // #929: «Registro(s) de Broker» (antes «Referidos»).
+        <Section title={tituloRegistros(referidos.length + referidosNoListados)}>
           {referidos.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-[13px]">
@@ -687,16 +689,16 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
           ) : (
             referidosNoListados === 0 && (
               <p className="py-6 text-center text-[13px] text-[color:var(--text-tertiary)]">
-                Este broker aún no tiene referidos. Para ligar uno, abre el contacto y elige a este
-                broker en «Referido por» (Editar todo).
+                Este broker aún no tiene registros. Para ligar uno, abre el contacto y elige a este
+                broker en «Registrado por» (Editar todo).
               </p>
             )
           )}
           {referidosNoListados > 0 && (
             <p className="pt-3 text-[12px] text-[color:var(--text-tertiary)]">
               {referidosNoListados === 1
-                ? "1 referido más no aparece aquí: está asignado a otro asesor o fuera de tu alcance."
-                : `${referidosNoListados} referidos más no aparecen aquí: están asignados a otros asesores o fuera de tu alcance.`}
+                ? "1 registro más no aparece aquí: está asignado a otro asesor o fuera de tu alcance."
+                : `${referidosNoListados} registros más no aparecen aquí: están asignados a otros asesores o fuera de tu alcance.`}
             </p>
           )}
         </Section>
