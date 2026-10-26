@@ -3,6 +3,7 @@
 // Conteo de conversaciones con mensajes sin leer, para pintar el
 // badge de "Inbox" en el sidebar (#791: no había ningún aviso de
 // mensajes pendientes fuera de la propia pestaña del Inbox).
+// La definición de "no leído" vive en @/lib/inbox/unread (#928).
 //
 // Usa la MISMA función de alcance que /api/conversations
 // (@/lib/inbox/scope) para que un asesor no vea en el badge
@@ -16,8 +17,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
-import type { Prisma } from "@prisma/client";
-import { inboxScopeWhere } from "@/lib/inbox/scope";
+import { unreadInboxWhere } from "@/lib/inbox/unread";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 
 export const dynamic = "force-dynamic";
@@ -26,14 +26,8 @@ export async function GET() {
   const session = await getServerSession();
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  const where: Prisma.ConversationWhereInput = {
-    status: { not: "CLOSED" },
-    unreadCount: { gt: 0 },
-  };
-
-  // Con marcas (2026-10-12): el badge no cuenta hilos de marcas que el usuario no ve.
-  const alcance = inboxScopeWhere(session.user, await getVisibleBrands(session.user));
-  if (alcance) where.contact = { AND: [alcance] };
+  // Misma definición que «Marcar todo como leído» (#928): @/lib/inbox/unread.
+  const where = unreadInboxWhere(session.user, await getVisibleBrands(session.user));
 
   const count = await prisma.conversation.count({ where });
 

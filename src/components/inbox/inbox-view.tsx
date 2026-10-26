@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Bot, User, Search, Send, StickyNote, Power, RotateCcw, X, DollarSign, Paperclip, FileText, Zap, ShieldBan,
+  CheckCheck, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/constants";
@@ -13,6 +14,7 @@ import { isMediaAllowed, mediaTypeFromMime, type ChatMediaType } from "@/lib/mes
 import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
 import { canMarkSpam } from "@/lib/moderation/roles";
 import { AssignControl } from "./assign-control";
+import { notifyInboxUnreadChanged } from "@/lib/inbox/unread-event";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam } from "@/components/brands/brand-view";
 
 interface ConversationListItem {
@@ -84,6 +86,8 @@ function slashTokenBefore(text: string): { query: string; start: number } | null
 
 interface ThreadDetail extends Omit<ConversationListItem, "messages"> {
   messages: ThreadMessage[];
+  /** #928: el servidor acaba de poner unreadCount en 0 al servir esta respuesta. */
+  markedRead?: boolean;
   contact: ConversationListItem["contact"] & {
     email: string | null;
     preferredLanguage: string;
@@ -204,6 +208,10 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
   const [search, setSearch] = useState("");
   const [list, setList] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("c"));
+  // «Marcar todo como leído» (#928): confirmación en línea de dos pasos y estado de envío.
+  const [confirmMarkAll, setConfirmMarkAll] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
+  const [markAllMsg, setMarkAllMsg] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [composer, setComposer] = useState("");
   const [asNote, setAsNote] = useState(false);
@@ -368,6 +376,12 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
       }
       if (res.ok) {
         const data = (await res.json()).data as ThreadDetail;
+        // #928: el servidor ya lo marcó leído. Se apaga su contador en la lista y en el badge
+        // del menú en este momento, sin esperar al siguiente sondeo (5 s la lista, 20 s el menú).
+        if (data.markedRead) {
+          setList((prev) => prev.map((c) => (c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c)));
+          notifyInboxUnreadChanged();
+        }
         // #802 — el servidor vuelve a FIRMAR todas las URLs de medios en cada respuesta
         // (mismo archivo, firma distinta) porque el polling de 5s pide el hilo completo
         // sin `?since=`. Si se reemplaza el mensaje entero, el <video>/<img> de
@@ -566,6 +580,34 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
     }
   }
 
+  // #928: marca como leídas todas las conversaciones que cuenta el badge del menú (mismo alcance).
+  async function markAllRead() {
+    setMarkingAll(true);
+    setMarkAllMsg(null);
+    try {
+      const res = await fetch("/api/inbox/mark-all-read", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof body.error === "string" ? body.error : "No se pudo marcar como leído");
+      const n = Number(body.data?.updated ?? 0);
+      setList((prev) => prev.map((c) => (c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c)));
+      setConfirmMarkAll(false);
+      setMarkAllMsg(n === 0 ? "No había nada sin leer." : `${n} conversación${n === 1 ? "" : "es"} marcada${n === 1 ? "" : "s"} como leída${n === 1 ? "" : "s"}.`);
+      notifyInboxUnreadChanged();
+      await loadList();
+    } catch (err) {
+      setMarkAllMsg(err instanceof Error ? err.message : "No se pudo marcar como leído");
+    } finally {
+      setMarkingAll(false);
+    }
+  }
+
+  // El aviso de resultado se va solo.
+  useEffect(() => {
+    if (!markAllMsg) return;
+    const t = setTimeout(() => setMarkAllMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [markAllMsg]);
+
   const isHuman = thread?.status === "HUMAN";
   const iControl = thread?.controlledBy?.id === userId;
 
@@ -574,7 +616,60 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
       {/* ── Panel 1: lista ── */}
       <div className="flex w-[320px] shrink-0 flex-col" style={{ borderRight: "1px solid var(--border-subtle)", background: "var(--bg-sidebar)" }}>
         <div className="p-3 space-y-2" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-          <h1 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>Inbox</h1>
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>Inbox</h1>
+            {!confirmMarkAll && (
+              <button
+                type="button"
+                onClick={() => { setConfirmMarkAll(true); setMarkAllMsg(null); }}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-black/5"
+                style={{ color: "var(--text-secondary)" }}
+                title="Marcar todas las conversaciones como leídas"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                Marcar todo como leído
+              </button>
+            )}
+          </div>
+          {confirmMarkAll && (
+            <div
+              role="alertdialog"
+              aria-label="Confirmar marcar todo como leído"
+              className="space-y-2 rounded-md p-2 text-[12px]"
+              style={{ border: "1px solid var(--border-subtle)", background: "var(--bg-base)" }}
+            >
+              <p style={{ color: "var(--text-primary)" }}>
+                Se marcarán como leídas todas las conversaciones abiertas que puedes ver, también las que
+                no están en esta lista. Se apagan para todo el equipo.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={markAllRead}
+                  disabled={markingAll}
+                  className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-semibold disabled:opacity-40"
+                  style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}
+                >
+                  {markingAll && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Sí, marcar todo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmMarkAll(false)}
+                  disabled={markingAll}
+                  className="rounded-md px-2.5 py-1 text-[12px] font-medium disabled:opacity-40"
+                  style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+          {markAllMsg && (
+            <p role="status" className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+              {markAllMsg}
+            </p>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-tertiary)" }} />
             <input
@@ -625,7 +720,12 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
           {list.filter((c) => channelFilter === "all" || c.channel === channelFilter).map((c) => (
             <button
               key={c.id}
-              onClick={() => setSelectedId(c.id)}
+              onClick={() => {
+                // #928: al abrirlo, su contador se apaga de inmediato; el servidor lo confirma al
+                // servir el hilo (markedRead) y entonces se refresca el badge del menú.
+                setList((prev) => prev.map((x) => (x.id === c.id && x.unreadCount > 0 ? { ...x, unreadCount: 0 } : x)));
+                setSelectedId(c.id);
+              }}
               className="w-full px-3 py-2.5 text-left transition-colors"
               style={{
                 background: selectedId === c.id ? "var(--color-teal-light)" : "transparent",
@@ -649,7 +749,9 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
                       ) : (
                         <User className="h-3.5 w-3.5" style={{ color: "var(--text-primary)" }} />
                       )}
-                      {c.unreadCount > 0 && (
+                      {/* #928: el hilo abierto no muestra no leídos: lo que llega mientras se ve ya
+                          se está leyendo (y el sondeo de 5 s del hilo lo marca en el servidor). */}
+                      {c.unreadCount > 0 && c.id !== selectedId && (
                         <span
                           className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold"
                           style={{ background: "var(--color-teal)", color: "var(--text-inverse)" }}

@@ -59,12 +59,17 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     return NextResponse.json({ error: "No existe" }, { status: 404 });
   }
 
-  // Marcar leído al abrir (solo si no es polling incremental)
-  if (!since && conversation.unreadCount > 0) {
+  // Marcar leído al abrir (solo si no es polling incremental). El polling del hilo abierto también
+  // pasa por aquí cada 5 s, así que un mensaje que llega mientras se ve el chat se apaga solo.
+  // #928: `markedRead` le avisa al cliente que hubo cambio, para refrescar el badge del menú en el
+  // momento; y `unreadCount` sale ya en 0 en vez del valor previo a la actualización.
+  const markedRead = !since && conversation.unreadCount > 0;
+  if (markedRead) {
     await prisma.conversation.update({
       where: { id: params.id },
       data: { unreadCount: 0 },
     });
+    conversation.unreadCount = 0;
   }
 
   // Media del bucket privado → signed URLs de lectura (24h); URLs externas pasan tal cual
@@ -80,6 +85,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const { connector, contact, ...rest } = conversation;
   const data = {
     ...rest,
+    markedRead,
     messages,
     connector: connector
       ? { name: connector.name, brand: connectorBrandLabel(connector), brandId: connector.brandId ?? null }
