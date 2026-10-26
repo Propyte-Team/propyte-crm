@@ -6,6 +6,7 @@ import { ContactDetail } from "@/components/contacts/contact-detail";
 import { resolveCoreFieldAccess, stripHiddenCoreFields } from "@/lib/metadata/core-fields";
 import { BrandViewProvider } from "@/components/brands/brand-view";
 import { getBrandViewContext } from "@/lib/brands/view-context";
+import { cargarConfigScoring, obtenerScoreContacto } from "@/lib/scoring/recalcular";
 
 interface ContactPageProps {
   params: Promise<{ id: string }>;
@@ -42,6 +43,15 @@ export default async function ContactDetailPage(props: ContactPageProps) {
   }
   // Badge de marca en el encabezado (entrega 3, 2026-10-12). getContact ya trae contact.brands.
   const brandView = await getBrandViewContext(session.user);
+  // Lead scoring: el desglose solo se carga si el rol puede ver el score. Las dos lecturas son
+  // best-effort: sin contact_scores migrada la ficha se ve como antes.
+  const veScore = fieldAccess.score !== "HIDDEN";
+  const [scoreGuardado, scoringActivo] = veScore
+    ? await Promise.all([
+        obtenerScoreContacto(params.id),
+        cargarConfigScoring().then((c) => c.activo).catch(() => false),
+      ])
+    : [null, false];
 
   return (
     <BrandViewProvider value={brandView}>
@@ -51,6 +61,8 @@ export default async function ContactDetailPage(props: ContactPageProps) {
         fieldAccess={fieldAccess}
         currentUserId={session.user.id}
         currentUserName={session.user.name ?? session.user.email ?? null}
+        scoreGuardado={scoreGuardado ? JSON.parse(JSON.stringify(scoreGuardado)) : null}
+        scoringActivo={scoringActivo}
       />
     </BrandViewProvider>
   );

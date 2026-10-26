@@ -1,6 +1,7 @@
 # Lead scoring — diseño
 
-**Fecha:** 2026-10-26 · **Estado:** propuesta, sin implementar · **Base:** `origin/main` @ `9b041ef0`
+**Fecha:** 2026-10-26 · **Estado:** F1 + F2 implementadas (modo sombra) y F3 lista detrás de bandera
+apagada; F4 con acciones de servidor, sin pantalla · **Base:** `origin/main` @ `9b041ef0`
 **Referencia externa:** `server/services/lead-scoring.ts` de GoHyperLevel (AGPL-3.0 — se toma la idea,
 no el código): reglas de propiedad y de evento, topes por regla, decaimiento por inactividad, umbrales
 con etiqueta y un desglose que explica cada punto.
@@ -84,7 +85,8 @@ no debe contaminar CAPI ni el ruteo.
 
 | `leadSource` | Puntos |
 |---|---|
-| REFERIDO_CLIENTE, REFERIDO_BROKER, WALK_IN, LLAMADA_ENTRANTE | 12 |
+| REFERIDO_CLIENTE, WALK_IN, LLAMADA_ENTRANTE | 12 |
+| REGISTRO_BROKER (y REFERIDO_BROKER histórico) | 10 |
 | WEBSITE, WHATSAPP | 8 |
 | PORTAL_INMOBILIARIO, EVENTO, WEBINAR | 6 |
 | FACEBOOK_ADS, META_ADS, INSTAGRAM, GOOGLE_ADS, TIKTOK_ADS, LINKEDIN, MESSENGER | 5 |
@@ -98,7 +100,7 @@ Ajuste por campaña/formulario: **fase posterior**, cuando el backtest diga qué
 |---|---|
 | Primer mensaje entrante (`WHATSAPP_IN`, `INSTAGRAM_IN`, `MESSENGER_IN`, `SMS_IN`, `EMAIL_RECEIVED`, `CALL_INBOUND`) en 30 días | 10 |
 | Cada entrante adicional en 30 días | +2, tope 6 |
-| Respondió en < 1 h al primer contacto saliente | 4 |
+| Respondió en < 1 h al primer contacto saliente | 4 — **no implementada**: pide emparejar cada saliente con su respuesta; queda para una versión 2 del modelo |
 | Playbook del bot completado (discovery hecho) | 8 |
 | `DISCOVERY_CALL` registrada | 6 |
 
@@ -117,30 +119,45 @@ Ajuste por campaña/formulario: **fase posterior**, cuando el backtest diga qué
 **Topes:** la suma por familia se recorta a su tope y el total a 100. Así ninguna familia sola (p. ej.
 alguien que escribe 20 veces sin perfil) llega a SQL.
 
-## 4. Cálculo y almacenamiento
+## 4. Cálculo y almacenamiento (implementado)
 
-### Columnas nuevas en `contacts` (migración manual en `prisma/migrations-manual/`)
+### Tabla aparte `contact_scores`, no columnas en `contacts`
+
+Cambio respecto a la primera versión de este spec: en vez de cuatro columnas en `contacts` hay una
+tabla nueva, **sin relación Prisma con `Contact`**. Motivo: Prisma selecciona todas las columnas
+escalares en cada consulta de contactos; si el código se desplegara antes de correr la migración, la
+ficha, la lista y el intake darían 500 (la misma clase de caída del 11–14 sep). Con tabla aparte, sin
+migrar solo falla —con guarda P2021— la etapa del cron y la ficha muestra la celda de siempre.
 
 | Columna | Tipo | Para qué |
 |---|---|---|
-| `scoreSombra` | `INT` null | El score calculado. En sombra **no** se copia a `score` |
-| `scoreDesglose` | `JSONB` null | `[{ regla, etiqueta, puntos, veces }]` — para mostrar el porqué |
-| `scoreCalculadoAt` | `TIMESTAMPTZ` null | Frescura |
-| `scoreModeloVersion` | `INT` null | Con qué versión del modelo |
+| `contactId` | `TEXT` PK | |
+| `score` | `INT` null | El score calculado; `null` = excluido (broker, empleo…) |
+| `desglose` | `JSONB` | `[{ regla, etiqueta, familia, puntos, veces }]` — el porqué |
+| `motivo` | `TEXT` null | Por qué es null o 0 (tipo excluido, descartado, no contactar) |
+| `modeloVersion` | `INT` | Con qué versión del modelo |
+| `calculadoAt` | `TIMESTAMP(3)` | Frescura |
 
-`score` (el que leen CAPI, ciclo de vida y ruteo) **no se toca** hasta la activación.
+Más un índice `activities("contactId","createdAt")` (`CONCURRENTLY`). Migración:
+`prisma/migrations-manual/2026-10-26-lead-scoring.sql`. `Contact.score` **no se toca** hasta la activación.
 
-### Cuándo se recalcula
+### Cuándo se recalcula (etapa `leadScoring` del cron de workflows, cada minuto, 200 por tick)
 
-1. **Por evento:** al capturar un lead (`captureLead`), al crear una `Activity` de los tipos de §3, al
-   editar campos de perfil y al cambiar `contactStatus`. Se encola el `contactId` en la cola de eventos
-   que ya procesa el cron de workflows (no se calcula dentro de la petición del usuario).
-2. **Barrido nocturno** para el decaimiento: contactos con `scoreCalculadoAt` > 24 h y actividad en los
-   últimos 180 días. Por lotes, como el replay de leads (keyset sobre `(id)`, tope por corrida).
+1. **Sucios (hasta 150):** sin fila, `contacts.updatedAt > calculadoAt`, o calculados con otra versión
+   del modelo. Subir la `version` del modelo recalcula a todos en las siguientes horas.
+2. **Viejos (el resto):** filas con más de 24 h. Cubre el decaimiento y las actividades/mensajes nuevos,
+   que no tocan `contacts.updatedAt`.
+
+Se descartó encolar por evento (`captureLead`, cada alta de `Activity`…): hay demasiados puntos de
+escritura y uno olvidado deja scores viejos sin que nadie lo note. El barrido es más simple y en sombra
+la latencia (≤ 1 min para ediciones, ≤ 24 h para actividad) sobra. **Para F3 no basta** (ver §7).
+
+Primera corrida: todos los contactos están «sucios»; a 150/min, ~20 mil contactos tardan ~2 h.
 
 ### Desde la activación (§6, F3) además
 
-- Se escribe `score = scoreSombra`.
+- Se escribe `contacts.score` con SQL directo (no mueve `updatedAt`, así el contacto no vuelve a quedar
+  sucio). Los excluidos (`null`) conservan su `score`.
 - Se emite `contact.scored` **solo al cruzar un umbral** (35 MQL / 70 SQL / 50 y 80 de CAPI), no en
   cada recálculo: así no se inunda la cola de workflows ni se re-dispara CAPI por un cambio de 1 punto.
 
@@ -157,12 +174,20 @@ alguien que escribe 20 veces sin perfil) llega a SQL.
 
 ## 6. Fases
 
-| Fase | Qué | Toca CAPI / etapas / ruteo |
-|---|---|---|
-| **F1** | `calcularScore` puro + modelo default + pruebas + script de backtest (solo lectura) | No |
-| **F2** | Migración + recálculo por evento y nocturno en `scoreSombra` + UI: chip en ficha y lista, panel «¿Por qué este score?» con el desglose, filtro y orden por score | No |
-| **F3** | Bandera `scoring.activo` en `SystemConfig`: copia a `score` y emite `contact.scored` al cruzar umbrales | **Sí** — ver §7 antes |
-| **F4** | Editor de reglas en admin (pesos, topes, umbrales) con vista previa del efecto sobre N contactos | — |
+| Fase | Qué | Toca CAPI / etapas / ruteo | Estado |
+|---|---|---|---|
+| **F1** | `calcularScore` puro (`lib/scoring/calcular.ts`) + modelo default validado con zod (`lib/scoring/modelo.ts`) + pruebas + `scripts/scoring-backtest.ts` | No | ✅ |
+| **F2** | `contact_scores` + etapa `leadScoring` del cron + celda «Score (sombra)» en la ficha con el desglose «¿Por qué este score?» | No | ✅ (sin columna/filtro en la lista todavía) |
+| **F3** | Bandera `scoring.activo`: copia a `contacts.score` y emite `contact.scored` al cruzar umbrales | **Sí** — ver §7 antes | Código listo, **bandera apagada** |
+| **F4** | Configuración manual: `src/server/scoring.ts` (`getScoringConfig`, `saveScoringModelo`, `resetScoringModelo`, `setScoringActivo`, solo ADMIN/DIRECTOR). Falta la pantalla en admin | — | Acciones ✅, pantalla pendiente |
+
+### Cómo se configura a mano (hoy, sin pantalla)
+
+El modelo completo (reglas, pesos, topes, decaimiento, exclusiones y umbrales) es un JSON en
+`SystemConfig` → `scoring.modelo`. Para cambiarlo: tomar el vigente con `getScoringConfig()`, editarlo,
+**subir `version`** y guardarlo con `saveScoringModelo()`, que lo valida antes de escribir. Si alguien lo
+escribe directo en la base y queda inválido, el cron usa el default y deja el motivo en el log
+(`[scoring] scoring.modelo inválido…`). La pantalla de F4 solo tiene que envolver esas acciones.
 
 ## 7. Riesgos y cosas por verificar
 
@@ -177,12 +202,25 @@ alguien que escribe 20 veces sin perfil) llega a SQL.
 - **Zoho sigue siendo el sistema operativo de los asesores:** si el score solo vive en el CRM, quien
   trabaja en Zoho no lo ve. Ver decisión 3 de §8.
 - **Ética y sesgo:** las reglas no usan nacionalidad, ciudad ni idioma como señal de calidad.
+- **Cronología (prerrequisito de F3):** el disparador `trg_contacts_field_changes` registra todo cambio
+  de columna salvo `updatedAt` y `lastActivityAt`. Al activar, cada cambio de score saldría en la
+  cronología de la ficha. Antes de F3: agregar `'score'` a `excluded_keys` o aceptarlo.
+- **Frescura (prerrequisito de F3):** el ruteo y CAPI leen el score al capturar el lead, antes de que
+  el cron lo calcule (≤ 1 min). Antes de F3: calcular el score dentro de `captureLead`
+  (`calcularYGuardar([id], cfg)` ya existe) y recalcular al crear actividades de §3.
+- **Prueba preexistente en Windows:** `referido-por.test.tsx` busca texto con `\n` dentro de
+  `contact-detail.tsx`; en un checkout con `core.autocrlf=true` el archivo trae `\r\n` y falla. No es de
+  este cambio; en Linux/CI pasa.
 
-## 8. Decisiones abiertas (Luis)
+## 8. Decisiones (tomadas 2026-10-26 con la mejor opción por defecto; todas configurables)
 
-1. **Pesos iniciales de §3:** ¿algo que de entrada esté mal? (p. ej. ¿el referido de broker vale lo
-   mismo que el de cliente?).
-2. **Umbrales:** MQL 35 / SQL 70 (los actuales del ciclo de vida con `capi.qualified_score_threshold =
-   70`). ¿Se quedan?
-3. **¿Mandar el score a Zoho?** (campo nuevo en Leads) para que los asesores lo vean donde trabajan.
-4. **`temperature`:** ¿se deja manual (propuesta) o el score la sugiere / la pone?
+1. **Pesos de §3:** se quedan como punto de partida, con un ajuste: `REGISTRO_BROKER` vale 10 (no 0),
+   porque desde #929 un lead ligado a un broker entra con esa fuente; `REFERIDO_BROKER` (retirado)
+   también 10. Se calibran con el backtest antes de activar.
+2. **Umbrales:** MQL 35 / SQL 70 (coinciden con `capi.qualified_score_threshold = 70` y con la mitad
+   que usa el ciclo de vida), más 50 y 80 de los tiers de CAPI.
+3. **Zoho:** **no** en esta entrega. Escribir en Leads de Zoho dispara sus workflows (ver
+   `feedback_lo_que_escribes_en_zoho_puede_pisarlo_un_workflow`) y no tiene sentido mandar un score sin
+   calibrar. Se revisa después del backtest.
+4. **`temperature`:** se queda **manual**. La pone el asesor con lo que sabe de la conversación; el score
+   se muestra al lado para contrastar. Si en sombra coinciden, se puede derivar después.

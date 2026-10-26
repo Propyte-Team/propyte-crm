@@ -1084,6 +1084,8 @@ model Activity {
 
   @@index([gmailThreadId])
   @@index([userId, status, archivedAt])
+  // Lead scoring: señales por contacto en una ventana de días.
+  @@index([contactId, createdAt])
   @@map("activities")
   @@schema("propyte_crm")
 }
@@ -1384,6 +1386,25 @@ model AdAttribution {
   updatedAt DateTime @updatedAt
 
   @@map("ad_attributions")
+  @@schema("propyte_crm")
+}
+
+// Lead scoring en modo sombra (spec 2026-10-26-lead-scoring-design.md). Tabla aparte y SIN
+// relación a Contact a propósito: si se despliega antes de correr la migración, ninguna consulta
+// de contactos cambia; solo falla (con guarda) el cálculo del score.
+// `score` null = contacto excluido (broker, empleo…). Contact.score NO se toca hasta que
+// SystemConfig `scoring.activo` sea true.
+// Migración: prisma/migrations-manual/2026-10-26-lead-scoring.sql
+model ContactScore {
+  contactId      String   @id
+  score          Int?
+  desglose       Json     @default("[]")
+  motivo         String?
+  modeloVersion  Int
+  calculadoAt    DateTime @default(now())
+
+  @@index([calculadoAt])
+  @@map("contact_scores")
   @@schema("propyte_crm")
 }
 

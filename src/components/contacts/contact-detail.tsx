@@ -44,6 +44,7 @@ import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { BrandBadges } from "@/components/brands/brand-view";
 import { ReferidoPorEncabezado } from "@/components/contacts/referido-por";
 import { tituloRegistros } from "@/lib/contacts/referidos";
+import { ScoreMetric, type ScoreGuardado } from "./score-metric";
 import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUS_COLORS,
@@ -99,9 +100,12 @@ interface ContactDetailProps {
   fieldAccess?: Record<string, FieldAccess>;
   currentUserId?: string;
   currentUserName?: string | null;
+  /** Lead scoring: último cálculo guardado (contact_scores) y si ya está activo o en sombra. */
+  scoreGuardado?: ScoreGuardado | null;
+  scoringActivo?: boolean;
 }
 
-export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName }: ContactDetailProps) {
+export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName, scoreGuardado = null, scoringActivo = false }: ContactDetailProps) {
   // Acceso por campo core (default EDIT). HIDDEN ya viene removido del server; aquí
   // ocultamos en UI igual por robustez y degradamos READ a solo lectura.
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
@@ -407,7 +411,9 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
         <Metric label="Actividades" value={String(activities.length)} num />
         <Metric label="Próx. seguimiento" value={nextFollowUp ? formatShort(nextFollowUp) : "—"} highlight={!!nextFollowUp} />
         <Metric label="Deals" value={String(contact.deals?.length ?? 0)} num />
-        {acc("score") !== "HIDDEN" && <Metric label="Score" value={String(contact.score ?? 0)} num />}
+        {acc("score") !== "HIDDEN" && (
+          <ScoreMetric scoreContacto={Number(contact.score ?? 0)} guardado={scoreGuardado} activo={scoringActivo} />
+        )}
       </div>
 
       {/* ── Grid principal: datos (izq) + timeline (der) ── */}

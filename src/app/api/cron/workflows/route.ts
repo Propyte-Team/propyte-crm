@@ -22,6 +22,19 @@ async function reintentarLeadsSafe() {
   }
 }
 
+// Lead scoring en modo sombra (spec 2026-10-26-lead-scoring-design.md). Igual que las
+// parcialidades: solo se perdona P2021 (contact_scores sin migrar); cualquier otro error sube
+// a la lista de ETAPAS con su nombre.
+async function recalcularScoresSafe() {
+  try {
+    const { recalcularScores } = await import("@/lib/scoring/recalcular");
+    return await recalcularScores(200);
+  } catch (err) {
+    if (esTablaSinMigrar(err)) return { calculados: 0, sinMigrar: true };
+    throw err;
+  }
+}
+
 async function processPendingConversionsSafe() {
   try {
     const { processPendingConversions } = await import("@/lib/capi/dispatch");
@@ -124,6 +137,9 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // #713: los leads que quedaron en ERROR con sus campos ya mapeados se vuelven a
   // intentar. Va al final porque no alimenta a ninguna otra etapa.
   { nombre: "replayLeads", correr: () => reintentarLeadsSafe() },
+  // Lead scoring: en sombra no alimenta a nadie (solo escribe contact_scores). Con
+  // `scoring.activo` emite `contact.scored`, que el tick SIGUIENTE procesa vía `events`.
+  { nombre: "leadScoring", correr: () => recalcularScoresSafe() },
   // #699 (defecto 2): retira los códigos de un solo uso que ya vencieron. Va al final por
   // lo mismo: no alimenta a nadie. Y NO lleva `try` propio —a diferencia de las etapas con
   // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto
