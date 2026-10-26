@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 // Config de grupos/roles extraída a nav-config.ts (módulo puro, testeable —
 // nav-config.test.ts fija que todo rol del enum vea al menos 1 item).
 import { navGroups } from "./nav-config"
+import { INBOX_UNREAD_CHANGED_EVENT } from "@/lib/inbox/unread-event"
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -50,11 +51,15 @@ export function Sidebar() {
     if (!session?.user || !hasInboxAccess) return
     let cancelled = false
     let inFlight = false
+    // #928: si algo se marca como leído mientras hay una petición en vuelo, la respuesta de esa
+    // petición puede traer el conteo viejo. Se anota y se vuelve a pedir al terminar.
+    let rerun = false
     const loadUnreadInbox = () => {
       // Pestaña oculta: no se sondea (cada pestaña abierta del CRM pegaba al servidor cada
       // 20 s aunque nadie la viera). Tampoco se encima una petición sobre otra lenta: si el
       // servidor tarda (el 504 del 2026-10-22), no se le apilan más.
-      if (document.hidden || inFlight) return
+      if (document.hidden) return
+      if (inFlight) { rerun = true; return }
       inFlight = true
       fetch("/api/inbox/unread-count")
         .then((res) => (res.ok ? res.json() : null))
@@ -62,7 +67,10 @@ export function Sidebar() {
           if (!cancelled && typeof data?.count === "number") setUnreadInbox(data.count)
         })
         .catch(() => {})
-        .finally(() => { inFlight = false })
+        .finally(() => {
+          inFlight = false
+          if (rerun && !cancelled) { rerun = false; loadUnreadInbox() }
+        })
     }
     loadUnreadInbox()
     // Polling simple (no hay websockets en este proyecto; el mismo patrón que
@@ -71,10 +79,14 @@ export function Sidebar() {
     // Al volver a la pestaña se actualiza de inmediato, sin esperar al siguiente tick.
     const onVisible = () => { if (!document.hidden) loadUnreadInbox() }
     document.addEventListener("visibilitychange", onVisible)
+    // #928: abrir un hilo o «Marcar todo como leído» en el Inbox avisa por este evento, y el
+    // badge se actualiza en el momento en vez de esperar hasta 20 s.
+    window.addEventListener(INBOX_UNREAD_CHANGED_EVENT, loadUnreadInbox)
     return () => {
       cancelled = true
       clearInterval(interval)
       document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener(INBOX_UNREAD_CHANGED_EVENT, loadUnreadInbox)
     }
   }, [session?.user, hasInboxAccess])
 

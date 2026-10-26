@@ -243,3 +243,34 @@ describe("GET /api/conversations/[id] — marcas (2026-10-12)", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("GET /api/conversations/[id] — markedRead (#928)", () => {
+  const params = { params: Promise.resolve({ id: "conv1" }) };
+
+  it("con no leídos: los apaga, avisa markedRead=true y devuelve unreadCount ya en 0", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    findUnique.mockResolvedValue(convWith({ unreadCount: 4 }));
+    const res = await GET(req(), params);
+    const { data } = await res.json();
+    expect(update).toHaveBeenCalledWith({ where: { id: "conv1" }, data: { unreadCount: 0 } });
+    expect(data.markedRead).toBe(true);
+    expect(data.unreadCount).toBe(0);
+  });
+
+  it("sin no leídos: no escribe y markedRead=false", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    findUnique.mockResolvedValue(convWith({ unreadCount: 0 }));
+    const { data } = await (await GET(req(), params)).json();
+    expect(update).not.toHaveBeenCalled();
+    expect(data.markedRead).toBe(false);
+  });
+
+  it("polling incremental (?since=): no marca y markedRead=false", async () => {
+    getServerSession.mockResolvedValue(GERENTE);
+    findUnique.mockResolvedValue(convWith({ unreadCount: 2 }));
+    const { data } = await (await GET(req("?since=2026-10-26T00:00:00.000Z"), params)).json();
+    expect(update).not.toHaveBeenCalled();
+    expect(data.markedRead).toBe(false);
+    expect(data.unreadCount).toBe(2);
+  });
+});
