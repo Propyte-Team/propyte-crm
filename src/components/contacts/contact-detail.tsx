@@ -30,6 +30,7 @@ import { CvContacto } from "@/components/contacts/cv-contacto";
 import { DealForm } from "@/components/pipeline/deal-form";
 import { ConversationPanel } from "@/components/contacts/conversation-panel";
 import { ContactTimeline } from "@/components/contacts/contact-timeline";
+import { BotonOjoCronologia, useCronologiaVisible } from "@/components/contacts/cronologia-visible";
 import { CallButton } from "@/components/voice/call-button";
 import { BotonCorreo } from "@/components/contacts/boton-correo";
 import { useVoice } from "@/components/voice/voice-device-provider";
@@ -116,6 +117,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [showConv, setShowConv] = useState(false);
+  // #932: la cronología se puede ocultar; la preferencia la recuerda el navegador.
+  const [cronologiaVisible, alternarCronologia] = useCronologiaVisible();
   // #885: al enviar un correo desde el encabezado, el historial (ActivityLog) se relee.
   const [historialKey, setHistorialKey] = useState(0);
 
@@ -636,9 +639,18 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
         )}
       </Section>
 
-      {/* ── Cronología ── */}
-      <Section title="Cronología">
-        <ContactTimeline contactId={contact.id} />
+      {/* ── Cronología ── #932: ojo para ocultarla; oculta no se monta (ni pide datos) */}
+      <Section
+        title="Cronología"
+        action={<BotonOjoCronologia visible={cronologiaVisible} onClick={alternarCronologia} />}
+      >
+        {cronologiaVisible ? (
+          <ContactTimeline contactId={contact.id} />
+        ) : (
+          <p className="py-4 text-center text-[13px] text-[color:var(--text-tertiary)]">
+            Cronología oculta. Usa «Mostrar» para ver los cambios, actividades y mensajes.
+          </p>
+        )}
       </Section>
 
       {/* ── Referidos del broker (#907): hasta abajo, cada uno abre su ficha ── */}
