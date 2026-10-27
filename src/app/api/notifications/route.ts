@@ -14,14 +14,14 @@ import { getServerSession } from "@/lib/auth/session";
 // Esquema de validación para marcar como leídas
 const markReadSchema = z.object({
   // IDs de notificaciones a marcar como leídas (si vacío, marca todas)
-  notificationIds: z.array(z.string().uuid()).optional(),
+  notificationIds: z.array(z.string().guid()).optional(),
   // Marcar todas las notificaciones como leídas
   markAll: z.boolean().optional(),
 });
 
 // Mismo shape que markReadSchema, para DELETE: notificationIds puntuales o deleteAll
 const deleteSchema = z.object({
-  notificationIds: z.array(z.string().uuid()).optional(),
+  notificationIds: z.array(z.string().guid()).optional(),
   deleteAll: z.boolean().optional(),
 });
 

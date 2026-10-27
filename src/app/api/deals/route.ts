@@ -33,9 +33,9 @@ const READ_ONLY_ROLES = ["MARKETING", "HOSTESS", "DEVELOPER_EXT", "MANTENIMIENTO
 
 // Esquema de validación para crear deal
 const createDealSchema = z.object({
-  contactId: z.string().uuid("ID de contacto inválido"),
-  developmentId: z.string().uuid("ID de desarrollo inválido").optional(),
-  unitId: z.string().uuid("ID de unidad inválido").optional(),
+  contactId: z.string().guid("ID de contacto inválido"),
+  developmentId: z.string().guid("ID de desarrollo inválido").optional(),
+  unitId: z.string().guid("ID de unidad inválido").optional(),
   // Inventario = Hub (SOT, Fase 1). El deal form ahora manda estos en vez de los FKs locales.
   hubDevelopmentId: z.string().min(1).optional(),
   hubUnitId: z.string().min(1).optional(),
@@ -51,7 +51,7 @@ const createDealSchema = z.object({
   // Hora de pared de Cancún si el string no trae zona — ver src/lib/due-date.ts
   expectedCloseDate: dueDateSchema,
   leadSourceAtDeal: z.string().min(1, "La fuente del lead es requerida"),
-  assignedToId: z.string().uuid("ID de asesor inválido").optional(),
+  assignedToId: z.string().guid("ID de asesor inválido").optional(),
 });
 
 /**

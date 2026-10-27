@@ -87,7 +87,7 @@ const contactCoreFields = z.object({
   budgetMin: z.number().positive().optional().nullable(),
   budgetMax: z.number().positive().optional().nullable(),
   preferredZone: z.string().max(200).optional(),
-  assignedToId: z.string().uuid().optional().nullable(),
+  assignedToId: z.string().guid().optional().nullable(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   residenceCity: z.string().max(100).optional(),
   residenceCountry: z.string().max(100).optional(),
@@ -98,7 +98,7 @@ const contactCoreFields = z.object({
   purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional().nullable(),
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional().nullable(),
   // #907: el broker que trajo a este contacto. null = quitar la liga.
-  referredById: z.string().uuid().nullable().optional(),
+  referredById: z.string().guid().nullable().optional(),
   // #914: «Información adicional» (empresa, Email 2, Facebook…). Lista única en
   // lib/contacts/campos-adicionales.ts; aquí solo se mezcla.
   ...CAMPOS_ADICIONALES_SHAPE,

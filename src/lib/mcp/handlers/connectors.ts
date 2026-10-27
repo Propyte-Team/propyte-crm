@@ -31,17 +31,17 @@ const createSchema = z.object({
   name:       z.string().min(2).max(120).trim(),
   provider:   z.enum(PROVIDERS),
   direction:  z.enum(DIRECTIONS).default("INBOUND"),
-  credentials: z.record(z.unknown()).optional(),
-  config:     z.record(z.unknown()).default({}),
-  fieldMap:   z.record(z.unknown()).default({}),
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  config:     z.record(z.string(), z.unknown()).default({}),
+  fieldMap:   z.record(z.string(), z.unknown()).default({}),
 });
 
 const updateSchema = z.object({
   name:        z.string().min(2).max(120).trim().optional(),
   status:      z.enum(STATUSES).optional(),
-  credentials: z.record(z.unknown()).optional(),
-  config:      z.record(z.unknown()).optional(),
-  fieldMap:    z.record(z.unknown()).optional(),
+  credentials: z.record(z.string(), z.unknown()).optional(),
+  config:      z.record(z.string(), z.unknown()).optional(),
+  fieldMap:    z.record(z.string(), z.unknown()).optional(),
 });
 
 // ── handlers ──────────────────────────────────────────────────────────────────

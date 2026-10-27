@@ -12,7 +12,7 @@ const ruleSchema = z.object({
   name: z.string().min(3).max(120).trim(),
   description: z.string().max(500).optional().nullable(),
   triggerType: z.enum(TRIGGER_TYPES),
-  triggerConfig: z.record(z.unknown()).default({}),
+  triggerConfig: z.record(z.string(), z.unknown()).default({}),
   conditions: conditionsDslSchema,
   actions: workflowActionsSchema.min(1, "Agrega al menos un nodo"),
   cooldownMinutes: z.number().int().min(0).max(43200).optional().nullable(),

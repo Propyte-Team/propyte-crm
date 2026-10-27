@@ -5,7 +5,7 @@ import { workflowActionTypes, conditionsDslSchema } from "@/lib/validations/rebu
 export const stepInputSchema = z.object({
   actionType: z.enum(workflowActionTypes),
   delayMinutes: z.number().int().min(0).max(1_000_000),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   autonomyLevel: z.enum(["L0", "L1", "L2"]).default("L0"),
 });
 export type StepInput = z.infer<typeof stepInputSchema>;

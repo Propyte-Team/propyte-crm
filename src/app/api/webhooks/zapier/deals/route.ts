@@ -20,8 +20,8 @@ import { parseDueDate } from "@/lib/due-date";
 // `.strict()` para que un campo mal escrito sea un 400 y no un negocio creado a medias.
 const zapierDealCreateSchema = z
   .object({
-    contactId: z.string().uuid(),
-    assignedToId: z.string().uuid(),
+    contactId: z.string().guid(),
+    assignedToId: z.string().guid(),
     dealType: z.enum([
       "NATIVA_CONTADO",
       "NATIVA_FINANCIAMIENTO",
@@ -31,8 +31,8 @@ const zapierDealCreateSchema = z
     ]),
     // Decimal(14,2) en la base: hasta 12 enteros. El tope evita el overflow silencioso.
     estimatedValue: z.number().positive().max(999_999_999_999),
-    developmentId: z.string().uuid().optional().nullable(),
-    unitId: z.string().uuid().optional().nullable(),
+    developmentId: z.string().guid().optional().nullable(),
+    unitId: z.string().guid().optional().nullable(),
     stage: z
       .enum([
         "NEW_LEAD",

@@ -34,7 +34,7 @@ export const mappingRuleSchema = z.object({
   metaField: z.string().optional(),
   target: targetSchema,
   value: z.string().optional(),
-  valueMap: z.record(z.string()).optional(),
+  valueMap: z.record(z.string(), z.string()).optional(),
   fallback: z.enum(["omit", "passthrough", "fixed"]).optional(),
   fallbackValue: z.string().optional(),
 });
@@ -42,5 +42,5 @@ export const mappingRuleSchema = z.object({
 // Union: legacy Record<string,string> | rich {rules}
 export const fieldMapSchema = z.union([
   z.object({ rules: z.array(mappingRuleSchema) }).strict(),
-  z.record(z.string()),
+  z.record(z.string(), z.string()),
 ]);

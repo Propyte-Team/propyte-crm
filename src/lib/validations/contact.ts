@@ -125,7 +125,7 @@ const contactBaseSchema = z.object({
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
 
   // ID del asesor asignado
-  assignedToId: z.string().uuid().optional().nullable(),
+  assignedToId: z.string().guid().optional().nullable(),
 
   // Etiquetas (tags)
   tags: z.array(z.string().max(50)).max(20, "Máximo 20 etiquetas").optional(),
@@ -136,7 +136,7 @@ export const createContactSchema = contactBaseSchema;
 
 // --- Esquema para actualización de contacto (todos los campos opcionales) ---
 export const updateContactSchema = contactBaseSchema.partial().extend({
-  id: z.string().uuid("ID de contacto inválido"),
+  id: z.string().guid("ID de contacto inválido"),
 });
 
 // --- Esquema para búsqueda de contactos ---
@@ -145,7 +145,7 @@ export const searchContactSchema = z.object({
   source: z.string().optional(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   type: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
-  assignedToId: z.string().uuid().optional(),
+  assignedToId: z.string().guid().optional(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
   // #745, cerrado ahora que el PR #51 está mezclado: la columna sale de la lista blanca

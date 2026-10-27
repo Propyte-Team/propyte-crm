@@ -42,13 +42,13 @@ const VALID_LOST_REASONS = [
 // --- Esquema para creación de deal ---
 export const createDealSchema = z.object({
   // ID del contacto asociado
-  contactId: z.string().uuid("ID de contacto inválido"),
+  contactId: z.string().guid("ID de contacto inválido"),
 
   // ID del desarrollo (opcional al inicio)
-  developmentId: z.string().uuid().optional(),
+  developmentId: z.string().guid().optional(),
 
   // ID de la unidad (opcional al inicio)
-  unitId: z.string().uuid().optional(),
+  unitId: z.string().guid().optional(),
 
   // Tipo de operación
   dealType: z.enum(VALID_DEAL_TYPES),
@@ -68,8 +68,8 @@ export const createDealSchema = z.object({
 
 // --- Esquema para actualización de deal ---
 export const updateDealSchema = z.object({
-  developmentId: z.string().uuid().optional().nullable(),
-  unitId: z.string().uuid().optional().nullable(),
+  developmentId: z.string().guid().optional().nullable(),
+  unitId: z.string().guid().optional().nullable(),
   dealType: z.enum(VALID_DEAL_TYPES).optional(),
   estimatedValue: z.number().positive("El valor debe ser positivo").optional(),
   currency: z.enum(["MXN", "USD"]).optional(),
@@ -81,12 +81,12 @@ export const updateDealSchema = z.object({
 // --- Esquema para transición de etapa con reglas de negocio ---
 export const stageTransitionSchema = z
   .object({
-    dealId: z.string().uuid("ID de negocio inválido"),
+    dealId: z.string().guid("ID de negocio inválido"),
     fromStage: z.enum(VALID_STAGES),
     toStage: z.enum(VALID_STAGES),
 
     // Campos que pueden ser requeridos según la etapa destino
-    unitId: z.string().uuid().optional(),
+    unitId: z.string().guid().optional(),
     estimatedValue: z.number().positive().optional(),
     actualCloseDate: dueDateSchema.optional(),
     lostReason: z.enum(VALID_LOST_REASONS).optional(),

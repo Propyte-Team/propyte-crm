@@ -4,11 +4,13 @@
 // Todos los mensajes son nuestros y en español: ninguno repite el valor recibido, así que se
 // pueden devolver tal cual aunque el campo sea el token.
 import { z } from "zod";
+import { siTipoInvalido } from "@/lib/validations/zod4";
 import { metaDmBaseName } from "@/lib/connectors/meta-dms";
 
-const required = (msg: string) => ({ required_error: msg, invalid_type_error: msg });
+// En zod 4 un solo `error` cubre "falta" y "tipo equivocado", como hacían los dos de zod 3.
+const required = (msg: string) => ({ error: msg });
 
-// trim() va primero: zod 3 aplica los checks en orden, y así un valor pegado con un salto de
+// trim() va primero: zod aplica los checks en orden, y así un valor pegado con un salto de
 // línea al final no cuenta como distinto ni un "   " pasa como no vacío.
 const idField = (label: string) =>
   z
@@ -50,17 +52,17 @@ export const metaDmsCreateSchema = z.object(
           .min(2, "El nombre debe tener al menos 2 caracteres")
           .max(100, "El nombre es demasiado largo (máx. 100)")
       ),
-    brandId: z.string({ invalid_type_error: "Marca inválida" }).uuid("Marca inválida").nullable().optional(),
-    includeInstagram: z.boolean({ invalid_type_error: "«Incluir Instagram» debe ser sí o no" }).default(false),
+    brandId: z.string(siTipoInvalido("Marca inválida")).guid("Marca inválida").nullable().optional(),
+    includeInstagram: z.boolean(siTipoInvalido("«Incluir Instagram» debe ser sí o no")).default(false),
     fields: z.object(
       {
         pageId: idField("Page ID"),
         pageAccessToken: pageTokenField,
         appSecret: secretField("App Secret"),
         verifyToken: secretField("Verify Token"),
-        brand: z.string({ invalid_type_error: "La marca visible debe ser texto" }).trim().max(120, "La marca visible es demasiado larga").optional(),
+        brand: z.string(siTipoInvalido("La marca visible debe ser texto")).trim().max(120, "La marca visible es demasiado larga").optional(),
         igBusinessId: z
-          .string({ invalid_type_error: "El Instagram Business ID debe ser texto" })
+          .string(siTipoInvalido("El Instagram Business ID debe ser texto"))
           .trim()
           .max(64, "El Instagram Business ID es demasiado largo")
           .regex(/^\S*$/, "El Instagram Business ID no puede tener espacios")

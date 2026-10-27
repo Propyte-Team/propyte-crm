@@ -1,6 +1,7 @@
 // Validación de reglas de comentarios. Vive fuera de cualquier archivo
 // "use server" (solo funciones async pueden exportarse de ahí).
 import { z } from "zod";
+import { parcialSinDefaults } from "@/lib/validations/zod4";
 
 export const PUBLIC_REPLY_MAX = 500;
 export const DM_MAX = 900; // el límite de Meta es 1000; margen para {{usuario}}
@@ -24,10 +25,11 @@ export const commentRuleCreateSchema = z.object({
   priority: z.number().int().min(1).max(999).default(100),
 });
 
-export const commentRuleUpdateSchema = commentRuleCreateSchema
-  .omit({ connectorId: true })
-  .partial()
-  .extend({ isActive: z.boolean().optional() });
+// parcialSinDefaults y no .partial(): en zod 4, .partial() aplica los .default() de los
+// campos ausentes, y una edición sin `dailyCap` o sin `excludePhrases` los reiniciaba (#930).
+export const commentRuleUpdateSchema = parcialSinDefaults(commentRuleCreateSchema.omit({ connectorId: true })).extend({
+  isActive: z.boolean().optional(),
+});
 
 // z.infer da el tipo de SALIDA (postFilter y priority ya resueltos por el
 // default). Para lo que el cliente MANDA hay que usar z.input.

@@ -47,7 +47,7 @@ export const workflowActionTypes = [
 
 export const actionSpecSchema = z.object({
   type: z.enum(workflowActionTypes),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   delayMinutes: z.number().int().min(0).optional(),
   autonomyLevel: z.enum(["L0", "L1", "L2"]).optional(),
 });
@@ -170,12 +170,12 @@ export const userProfileSchema = z.object({
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Slug en kebab-case (ej. felipe-luksic)")
     .max(60)
     .optional(),
-  cardTheme: z.record(z.unknown()).optional(),
-  socialLinks: z.record(z.string().url()).optional(),
+  cardTheme: z.record(z.string(), z.unknown()).optional(),
+  socialLinks: z.record(z.string(), z.string().url()).optional(),
   calendarUrl: z.string().url().optional(),
-  defaultCadenceId: z.string().uuid().optional().nullable(),
-  notificationPrefs: z.record(z.unknown()).optional(),
-  workingHours: z.record(z.unknown()).optional(),
+  defaultCadenceId: z.string().guid().optional().nullable(),
+  notificationPrefs: z.record(z.string(), z.unknown()).optional(),
+  workingHours: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ export const incomingLeadSchema = z
     messengerPsid: z.string().min(1).max(120).optional(),
     // Todos los campos crudos del formulario (Meta/TikTok/Google/LinkedIn) → Contact.custom.
     // Preserva preguntas custom (presupuesto, urgencia, etc.) sin perder nada.
-    custom: z.record(z.unknown()).optional(),
+    custom: z.record(z.string(), z.unknown()).optional(),
     // Perfil de Inversión derivado del formulario (normalizado a los enums del CRM).
     investmentProfile: z.enum(["END_USER", "INVESTOR_RENTAL", "INVESTOR_FLIP", "INVESTOR_LAND", "MIXED"]).optional(),
     propertyType: z.enum(["DEPARTAMENTO", "CASA", "TERRENO", "MACROLOTE", "LOCAL_COMERCIAL", "OTRO"]).optional(),

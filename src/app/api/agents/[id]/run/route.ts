@@ -39,12 +39,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   const schema = z.object({
     trigger: z.string().default(session?.user ? "manual" : "cron"),
-    input: z.record(z.unknown()).default({}),
+    input: z.record(z.string(), z.unknown()).default({}),
   });
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
-  // #714 (S-03), la otra mitad: `z.record(z.unknown())` acepta cualquier objeto de
+  // #714 (S-03), la otra mitad: `z.record(z.string(), z.unknown())` acepta cualquier objeto de
   // cualquier tamaño, y ese objeto acaba dentro del prompt del modelo. El tope acota el
   // coste y el espacio de una inyección; no la impide (eso lo hace la puerta de rol).
   const fuera = inputFueraDeTope(parsed.data.input);

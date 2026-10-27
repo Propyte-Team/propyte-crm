@@ -25,10 +25,10 @@ const captureSchema = z
     subject: z.string().trim().min(3, "El asunto debe tener al menos 3 caracteres").max(200),
     description: z.string().max(5000).optional(),
     dueDate: dueDateSchema.optional(),
-    contactId: z.string().uuid("ID de contacto inválido").optional(),
+    contactId: z.string().guid("ID de contacto inválido").optional(),
     // #915: dejarle la tarea a otra persona. NO es `userId`: el alcance lo decide el servidor
     // (resolverAsignadoTarea), no el body. Sin él la tarea es de quien la captura, como siempre.
-    assigneeId: z.string().uuid("ID de usuario inválido").optional(),
+    assigneeId: z.string().guid("ID de usuario inválido").optional(),
   })
   .strict(); // cualquier otro campo extra (dealId, userId) es un 400, no un silencio
 

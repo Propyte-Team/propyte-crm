@@ -9,9 +9,9 @@ const CREATE_ROLES = ["ADMIN", "DIRECTOR"];
 const createSchema = z.object({
   name: z.string().min(2).max(120),
   plaza: z.enum(["PDC", "TULUM", "MERIDA"]),
-  leaderId: z.string().uuid().optional(),
-  parentTeamId: z.string().uuid().optional(),
-  forecastManagerId: z.string().uuid().optional(),
+  leaderId: z.string().guid().optional(),
+  parentTeamId: z.string().guid().optional(),
+  forecastManagerId: z.string().guid().optional(),
 });
 
 export async function GET() {

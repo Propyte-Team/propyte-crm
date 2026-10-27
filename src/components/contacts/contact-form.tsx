@@ -79,11 +79,11 @@ export const contactFormSchema = z
   preferredZone: z.string().max(200).optional(),
   purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional(),
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional(),
-  assignedToId: z.string().uuid().optional().nullable(),
+  assignedToId: z.string().guid().optional().nullable(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   // #907: el broker que trajo a este contacto; null = sin broker.
-  referredById: z.string().uuid().nullable().optional(),
+  referredById: z.string().guid().nullable().optional(),
   })
   .refine((data) => Boolean(data.phone) || Boolean(data.whatsappUserId), {
     message: "Captura un teléfono o un Usuario de WhatsApp",

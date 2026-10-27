@@ -1,6 +1,7 @@
 // Desarrolladores (#872) — reglas compartidas entre servidor y pantalla. Módulo PURO: sin
 // Prisma, sin sesión, sin React, para probarlo en node y poder importarlo desde el cliente.
 import { z } from "zod";
+import { siFalta } from "@/lib/validations/zod4";
 
 /**
  * Quién da de alta y corrige desarrolladores. Todos los demás roles solo consultan.
@@ -54,7 +55,7 @@ const opcional = (max: number) =>
     .refine((v) => v == null || v.length <= max, `Máximo ${max} caracteres`);
 
 const campos = {
-  name: z.string({ required_error: "El nombre es obligatorio" }).trim().min(1, "El nombre es obligatorio").max(200),
+  name: z.string(siFalta("El nombre es obligatorio")).trim().min(1, "El nombre es obligatorio").max(200),
   website: opcional(300).refine((v) => v == null || hrefSitio(v) !== null, "Sitio web no válido"),
   email: opcional(254).refine(
     (v) => v == null || z.string().email().safeParse(v).success,

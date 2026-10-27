@@ -42,13 +42,13 @@ const zapierContactCreateSchema = z
     residenceCity: z.string().max(100).optional().nullable(),
     residenceCountry: z.string().max(100).optional().nullable(),
     temperature: z.nativeEnum(LeadTemperature).optional(),
-    assignedToId: z.string().uuid().optional().nullable(),
+    assignedToId: z.string().guid().optional().nullable(),
     tags: z.array(z.string().max(50)).max(30).optional(),
   })
   .strict();
 
 const zapierContactUpdateSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
   email: z.string().email().optional().nullable(),
@@ -75,7 +75,7 @@ const zapierContactUpdateSchema = z.object({
   residenceCity: z.string().max(100).optional().nullable(),
   residenceCountry: z.string().max(100).optional().nullable(),
   temperature: z.nativeEnum(LeadTemperature).optional(),
-  assignedToId: z.string().uuid().optional().nullable(),
+  assignedToId: z.string().guid().optional().nullable(),
   tags: z.array(z.string()).optional(),
 }).strict();
 

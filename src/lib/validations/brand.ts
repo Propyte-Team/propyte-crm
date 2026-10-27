@@ -12,7 +12,7 @@ const base = {
   slug: z.string().regex(/^[a-z0-9-]{2,40}$/, "Solo minúsculas, números y guiones (2-40)"),
   persona: z.string().max(2000).nullable().optional(),
   knowledge: z.string().max(20000).nullable().optional(),
-  developmentIds: z.array(z.string().uuid()).max(20).optional(),
+  developmentIds: z.array(z.string().guid()).max(20).optional(),
   defaultPlaza: z.enum(["PDC", "TULUM", "MERIDA"]).nullable().optional(),
   // null = hereda los canales de la configuración global del bot. `[]` NO es heredar: bot-respond lo
   // leería como "no contestar en ningún canal" y silenciaría al agente sin aviso (revisión final).
@@ -25,8 +25,8 @@ const base = {
     .enum(["PROFESIONAL_CALIDO", "CALIDO_CERCANO_MX", "EJECUTIVO_SOBRIO", "NEUTRO_DIRECTO"])
     .nullable()
     .optional(),
-  playbookId: z.string().uuid().nullable().optional(),
-  marketingOwnerUserId: z.string().uuid().nullable().optional(),
+  playbookId: z.string().guid().nullable().optional(),
+  marketingOwnerUserId: z.string().guid().nullable().optional(),
   botEnabled: z.boolean().optional(),
 };
 
@@ -39,7 +39,7 @@ export const brandCreateSchema = z
     ...base,
     botEnabled: z
       .literal(false, {
-        errorMap: () => ({ message: "La marca nace con el agente apagado; enciéndelo al editarla" }),
+        error: "La marca nace con el agente apagado; enciéndelo al editarla",
       })
       .default(false),
   })

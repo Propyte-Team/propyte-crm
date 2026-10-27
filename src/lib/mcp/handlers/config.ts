@@ -91,7 +91,7 @@ const setTerritoryRulesSchema = z.object({
   territoryId: z.string(),
   rules: z.array(z.object({
     priority:   z.number().int().default(100),
-    conditions: z.record(z.unknown()),
+    conditions: z.record(z.string(), z.unknown()),
     isActive:   z.boolean().default(true),
   })),
 });
@@ -162,7 +162,7 @@ const createFieldSchema = z.object({
   isRequired:    z.boolean().default(false),
   isSearchable:  z.boolean().default(false),
   helpText:      z.string().optional(),
-  validation:    z.record(z.unknown()).default({}),
+  validation:    z.record(z.string(), z.unknown()).default({}),
   force:         z.boolean().default(false),
 });
 
@@ -171,7 +171,7 @@ const updateFieldSchema = z.object({
   helpText:     z.string().nullable().optional(),
   isRequired:   z.boolean().optional(),
   isSearchable: z.boolean().optional(),
-  validation:   z.record(z.unknown()).optional(),
+  validation:   z.record(z.string(), z.unknown()).optional(),
   order:        z.number().int().optional(),
   archive:      z.boolean().optional(),
 });
@@ -257,8 +257,8 @@ const createAgentSchema = z.object({
   systemUserId:  z.string(),
   autonomyLevel: z.enum(AUTONOMY_LEVELS).default("L2"),
   allowedTools:  z.array(z.string()).min(1),
-  trigger:       z.record(z.unknown()).default({}),
-  limits:        z.record(z.unknown()).default({}),
+  trigger:       z.record(z.string(), z.unknown()).default({}),
+  limits:        z.record(z.string(), z.unknown()).default({}),
   isActive:      z.boolean().default(false),
 });
 

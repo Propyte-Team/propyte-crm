@@ -24,10 +24,10 @@ const createSchema = z.object({
     "META", "TIKTOK", "WEBSITE", "ZAPIER", "MANUAL", "INSTAGRAM", "MESSENGER",
     "GOOGLE_ADS", "LINKEDIN", "WHATSAPP",
   ]),
-  credentials: z.record(z.string()).optional(),
-  config: z.record(z.unknown()).optional(),
-  fieldMap: z.record(z.string()).optional(),
-  brandId: z.string().uuid().nullable().optional(),
+  credentials: z.record(z.string(), z.string()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  fieldMap: z.record(z.string(), z.string()).optional(),
+  brandId: z.string().guid().nullable().optional(),
 });
 
 function credentialsSchemaFor(provider: string) {
@@ -37,7 +37,7 @@ function credentialsSchemaFor(provider: string) {
   if (provider === "WEBSITE") return connectorCredentialsWebsiteSchema;
   if (provider === "GOOGLE_ADS") return connectorCredentialsGoogleAdsSchema;
   if (provider === "LINKEDIN") return connectorCredentialsLinkedInSchema;
-  return z.record(z.string());
+  return z.record(z.string(), z.string());
 }
 
 async function assertRole() {

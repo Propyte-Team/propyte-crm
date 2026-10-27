@@ -97,10 +97,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const schema = z.object({
-    relationshipId: z.string().uuid(),
+    relationshipId: z.string().guid(),
     fromId: z.string().min(1),
     toId: z.string().min(1),
-    labelId: z.string().uuid().optional(),
+    labelId: z.string().guid().optional(),
   });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });

@@ -1,5 +1,6 @@
 // src/lib/mcp/handlers/automation.ts
 import { z } from "zod";
+import { parcialSinDefaults } from "@/lib/validations/zod4";
 import prisma from "@/lib/db";
 import { conditionsDslSchema, workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 import { writeAudit } from "../respond";
@@ -10,9 +11,9 @@ const ruleSchema = z.object({
   name: z.string().min(3).max(120).trim(),
   description: z.string().max(500).nullable().optional(),
   triggerType: z.enum(TRIGGER_TYPES),
-  triggerConfig: z.record(z.unknown()).default({}),
+  triggerConfig: z.record(z.string(), z.unknown()).default({}),
   conditions: conditionsDslSchema,
-  actions: z.array(z.object({ type: z.enum(workflowActionTypes), config: z.record(z.unknown()).default({}) })).min(1),
+  actions: z.array(z.object({ type: z.enum(workflowActionTypes), config: z.record(z.string(), z.unknown()).default({}) })).min(1),
   cooldownMinutes: z.number().int().min(0).max(43200).nullable().optional(),
   priority: z.number().int().min(1).max(1000).default(100),
   isActive: z.boolean().default(false),
@@ -38,10 +39,13 @@ export async function createRule(body: unknown, userId: string) {
   await writeAudit(userId, "CREATE", "AutomationRule", rule.id, { name: d.name });
   return rule;
 }
+// Las ediciones usan parcialSinDefaults y no .partial(): en zod 4, .partial() aplica los
+// .default() de los campos ausentes, y editar solo el nombre dejaba la regla con
+// isActive: false, priority: 100 y la configuración en {} (#930).
 export async function updateRule(id: string, body: unknown, userId: string) {
   const existing = await prisma.automationRule.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Regla no encontrada");
-  const d = ruleSchema.partial().parse(body);
+  const d = parcialSinDefaults(ruleSchema).parse(body);
   if (d.name && await prisma.automationRule.findFirst({ where: { name: d.name, deletedAt: null, id: { not: id } } }))
     throw new Error("Ya existe otra regla con ese nombre");
   const rule = await prisma.automationRule.update({ where: { id }, data: {
@@ -73,14 +77,14 @@ const planSchema = z.object({
   name: z.string().min(3).max(120).trim(),
   isActive: z.boolean().default(false),
   ownerUserId: z.string().nullable().optional(),
-  entryTrigger: z.record(z.unknown()).default({}),
-  exitConditions: z.record(z.unknown()).default({}),
+  entryTrigger: z.record(z.string(), z.unknown()).default({}),
+  exitConditions: z.record(z.string(), z.unknown()).default({}),
   steps: z.array(z.object({
     order: z.number().int().min(0),
     delayMinutes: z.number().int().min(0).default(0),
     actionType: z.enum(workflowActionTypes),
-    config: z.record(z.unknown()).default({}),
-    conditions: z.record(z.unknown()).nullable().optional(),
+    config: z.record(z.string(), z.unknown()).default({}),
+    conditions: z.record(z.string(), z.unknown()).nullable().optional(),
     autonomyLevel: z.enum(["L0", "L1", "L2"]).default("L0"),
   })).default([]),
 });
@@ -102,7 +106,7 @@ export async function createPlan(body: unknown, userId: string) {
 export async function updatePlan(id: string, body: unknown, userId: string) {
   const existing = await prisma.actionPlan.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Plan no encontrado");
-  const d = planSchema.partial().parse(body);
+  const d = parcialSinDefaults(planSchema).parse(body);
   // Si vienen steps, reemplaza el set completo (borra steps viejos y recrea).
   const plan = await prisma.$transaction(async (tx) => {
     if (d.steps) {
@@ -131,9 +135,9 @@ const routingSchema = z.object({
   priority: z.number().int().min(1).max(1000).default(100),
   // Nace inactiva: activación explícita tras revisión (principio de seguridad del MCP; difiere del default true del modelo).
   isActive: z.boolean().default(false),
-  conditions: z.record(z.unknown()).default({}),
+  conditions: z.record(z.string(), z.unknown()).default({}),
   strategy: z.enum(["ROUND_ROBIN", "PERFORMANCE", "MANUAL", "GUARDIA"]),
-  targets: z.record(z.unknown()).default({}),
+  targets: z.record(z.string(), z.unknown()).default({}),
 });
 export async function listRouting() { return prisma.routingRule.findMany({ where: { deletedAt: null }, orderBy: { priority: "asc" } }); }
 export async function createRouting(body: unknown, userId: string) {
@@ -150,7 +154,7 @@ export async function createRouting(body: unknown, userId: string) {
 export async function updateRouting(id: string, body: unknown, userId: string) {
   const existing = await prisma.routingRule.findFirst({ where: { id, deletedAt: null } });
   if (!existing) throw new Error("Regla de ruteo no encontrada");
-  const d = routingSchema.partial().parse(body);
+  const d = parcialSinDefaults(routingSchema).parse(body);
   const r = await prisma.routingRule.update({ where: { id }, data: {
     ...(d.name !== undefined ? { name: d.name } : {}),
     ...(d.priority !== undefined ? { priority: d.priority } : {}),
@@ -171,9 +175,9 @@ const slaSchema = z.object({
   firstTouchMinutes: z.number().int().min(1).default(5),
   retryMinutes: z.number().int().min(1).default(30),
   orphanHours: z.number().int().min(1).default(24),
-  escalationChain: z.array(z.record(z.unknown())).default([]),
-  businessHours: z.record(z.unknown()).default({}),
-  channelFallback: z.record(z.unknown()).default({}),
+  escalationChain: z.array(z.record(z.string(), z.unknown())).default([]),
+  businessHours: z.record(z.string(), z.unknown()).default({}),
+  channelFallback: z.record(z.string(), z.unknown()).default({}),
 });
 export async function listSla() { return prisma.slaPolicy.findMany({ orderBy: { name: "asc" } }); }
 export async function createSla(body: unknown, userId: string) {
@@ -191,7 +195,7 @@ export async function createSla(body: unknown, userId: string) {
 export async function updateSla(id: string, body: unknown, userId: string) {
   const existing = await prisma.slaPolicy.findUnique({ where: { id } });
   if (!existing) throw new Error("Política SLA no encontrada");
-  const d = slaSchema.partial().parse(body);
+  const d = parcialSinDefaults(slaSchema).parse(body);
   const s = await prisma.slaPolicy.update({ where: { id }, data: {
     ...(d.name !== undefined ? { name: d.name } : {}),
     ...(d.isDefault !== undefined ? { isDefault: d.isDefault } : {}),
