@@ -64,3 +64,49 @@ describe("buildSystemPrompt — con marca", () => {
     expect(o).not.toContain("Información oficial de");
   });
 });
+
+describe("buildSystemPrompt — idioma", () => {
+  const SIGUE_AL_CLIENTE = "si escribe en inglés contesta en inglés";
+  const conMarca = (slug?: string) =>
+    buildSystemPrompt({
+      config: DEFAULT_BOT_CONFIG,
+      contact: { firstName: "Eli", preferredLanguage: "EN" },
+      objective: "Saluda y califica.",
+      brand: { ...YAX, ...(slug ? { slug } : {}) },
+    });
+
+  it("Yaxnáh (slug yaxnah) contesta SIEMPRE en español, aunque el cliente escriba en inglés", () => {
+    const out = conMarca("yaxnah");
+    expect(out).toContain("Responde SIEMPRE en español, sin excepción");
+    expect(out).toContain("aunque haya llenado el formulario en inglés");
+    expect(out).not.toContain(SIGUE_AL_CLIENTE);
+    // el idioma registrado (EN) no se le menciona: no debe abrir la puerta al inglés
+    expect(out).not.toContain("Idioma registrado");
+    expect(out).toContain("Cliente: Eli · Contesta en español.");
+  });
+
+  it("no depende del nombre: aunque la marca se renombre, manda el slug", () => {
+    const out = buildSystemPrompt({ config: DEFAULT_BOT_CONFIG, brand: { ...YAX, name: "Yaxnáh", slug: "yaxnah" } });
+    expect(out).toContain("Responde SIEMPRE en español, sin excepción");
+  });
+
+  it("otra marca sigue contestando en el idioma del cliente", () => {
+    const out = conMarca("avica");
+    expect(out).toContain(SIGUE_AL_CLIENTE);
+    expect(out).not.toContain("Responde SIEMPRE en español");
+    expect(out).toContain("Idioma registrado: EN (solo referencia");
+  });
+
+  it("marca sin slug (llamador viejo) → regla de siempre", () => {
+    expect(conMarca()).toContain(SIGUE_AL_CLIENTE);
+  });
+
+  it("sin marca (Propyte) → regla de siempre", () => {
+    const out = buildSystemPrompt({
+      config: DEFAULT_BOT_CONFIG,
+      contact: { firstName: "Eli", preferredLanguage: "EN" },
+    });
+    expect(out).toContain(SIGUE_AL_CLIENTE);
+    expect(out).not.toContain("Responde SIEMPRE en español");
+  });
+});

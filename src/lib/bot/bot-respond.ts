@@ -486,7 +486,7 @@ export async function botRespond(
   // Spread condicional: sin marca los argumentos son idénticos a los de siempre
   // (`brand` ausente, no `brand: undefined`) y el prompt no cambia ni un byte.
   const brandPrompt: BrandPromptInput | undefined = brand
-    ? { name: brand.name, persona: brand.persona, knowledge: brand.knowledge }
+    ? { name: brand.name, persona: brand.persona, knowledge: brand.knowledge, slug: brand.slug }
     : undefined;
   const system = buildSystemPrompt({
     config: effectiveConfig,
