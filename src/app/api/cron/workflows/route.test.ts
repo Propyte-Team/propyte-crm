@@ -10,6 +10,7 @@ const emitEvent = vi.fn();
 const limpiarOtpVencidos = vi.fn();
 const sincronizarCorreoEntranteTick = vi.fn();
 const recalcularScores = vi.fn();
+const completarPerfilDesdeHub = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
 /** Ejecuta el callback de `$transaction` con un `tx` mínimo. */
@@ -57,6 +58,9 @@ vi.mock("@/lib/google/gmail-sync", () => ({
 vi.mock("@/lib/scoring/recalcular", () => ({
   recalcularScores: (...a: unknown[]) => recalcularScores(...a),
 }));
+vi.mock("@/lib/intake/perfil-desde-hub", () => ({
+  completarPerfilDesdeHub: (...a: unknown[]) => completarPerfilDesdeHub(...a),
+}));
 vi.mock("@/lib/workflows/scheduler", () => ({
   runEnrollments: (...a: unknown[]) => runEnrollments(...a),
   runInactivityRules: (...a: unknown[]) => runInactivityRules(...a),
@@ -87,6 +91,33 @@ beforeEach(() => {
   limpiarOtpVencidos.mockResolvedValue(0);
   sincronizarCorreoEntranteTick.mockResolvedValue({ cuentas: 1, registrados: 0, omitidos: 0, desconectadas: 0, errores: [] });
   recalcularScores.mockResolvedValue({ calculados: 0, activo: false });
+  completarPerfilDesdeHub.mockResolvedValue({ revisados: 0, completados: 0, campos: 0 });
+});
+
+describe("etapa perfilMeta", () => {
+  it("corre antes de leadScoring, para que el score vea el perfil recién llenado", async () => {
+    const orden: string[] = [];
+    completarPerfilDesdeHub.mockImplementation(async () => {
+      orden.push("perfilMeta");
+      return { revisados: 1, completados: 1, campos: 3 };
+    });
+    recalcularScores.mockImplementation(async () => {
+      orden.push("leadScoring");
+      return { calculados: 1, activo: false };
+    });
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect(orden).toEqual(["perfilMeta", "leadScoring"]);
+  });
+
+  it("si revienta, sale con su nombre y no tumba al score", async () => {
+    completarPerfilDesdeHub.mockRejectedValue(new Error("hub caído"));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await res.json();
+    expect(res.status).toBe(500);
+    expect(body.fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["perfilMeta"]);
+    expect(recalcularScores).toHaveBeenCalled();
+  });
 });
 
 describe("etapa leadScoring", () => {

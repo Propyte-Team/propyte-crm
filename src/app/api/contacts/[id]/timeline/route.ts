@@ -30,6 +30,9 @@ const SOURCE_LABELS: Record<string, string> = {
   zapier: "Zapier",
   lifecycle_auto: "Ciclo de vida (auto)",
   lifecycle_manual: "Ciclo de vida (manual)",
+  // Perfil (plazo, pago, interés, presupuesto) copiado del formulario de Meta guardado en el Hub.
+  // Ver lib/intake/perfil-desde-hub.ts.
+  perfil_meta_hub: "Formulario de Meta (Hub)",
 };
 
 function sourceLabel(source: string | null): string {

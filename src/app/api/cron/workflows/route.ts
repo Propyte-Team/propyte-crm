@@ -137,6 +137,13 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // #713: los leads que quedaron en ERROR con sus campos ya mapeados se vuelven a
   // intentar. Va al final porque no alimenta a ninguna otra etapa.
   { nombre: "replayLeads", correr: () => reintentarLeadsSafe() },
+  // Perfil de inversión desde los leads de Meta del Hub (plazo, pago, interés, presupuesto):
+  // solo llena huecos. Va ANTES de leadScoring porque toca `updatedAt` y así el score del
+  // contacto se recalcula en esta misma pasada.
+  {
+    nombre: "perfilMeta",
+    correr: async () => (await import("@/lib/intake/perfil-desde-hub")).completarPerfilDesdeHub(50),
+  },
   // Lead scoring: en sombra no alimenta a nadie (solo escribe contact_scores). Con
   // `scoring.activo` emite `contact.scored`, que el tick SIGUIENTE procesa vía `events`.
   { nombre: "leadScoring", correr: () => recalcularScoresSafe() },
