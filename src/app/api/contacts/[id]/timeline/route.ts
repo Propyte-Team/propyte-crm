@@ -13,6 +13,7 @@ import { getContactAccessInfo } from "@/server/contacts";
 import { nombreDeContacto } from "@/lib/contacts/referidos";
 import { mergeTimeline } from "@/lib/timeline/merge";
 import { fieldChangeTitle } from "@/lib/timeline/format";
+import { cambiosCustomVisibles } from "@/lib/timeline/custom";
 import { ACTIVITY_TYPE_LABELS, LEAD_SOURCE_LABELS } from "@/lib/constants";
 import type { TimelineItem, TimelineItemKind } from "@/lib/timeline/types";
 
@@ -33,6 +34,9 @@ const SOURCE_LABELS: Record<string, string> = {
   // Perfil (plazo, pago, interés, presupuesto) copiado del formulario de Meta guardado en el Hub.
   // Ver lib/intake/perfil-desde-hub.ts.
   perfil_meta_hub: "Formulario de Meta (Hub)",
+  // #933: salían crudos («· bot_classifier»).
+  bot_classifier: "Bot (clasificador)",
+  social_profile: "Perfil de redes sociales",
 };
 
 function sourceLabel(source: string | null): string {
@@ -82,15 +86,38 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     // --- RecordFieldChange (tabla puede no existir aún — migración pendiente) ---
     if (wantsKind("field_change")) {
       try {
-        const changes = await prisma.recordFieldChange.findMany({
-          where: {
-            entityType: "contact",
-            entityId: contact.id,
-            ...(beforeDate ? { changedAt: { lt: beforeDate } } : {}),
-          },
-          orderBy: { changedAt: "desc" },
-          take: limit,
-        });
+        // #933: los cambios de `custom` que solo tocan claves internas (la clasificación del
+        // bot, la foto de perfil, el rastro de Meta/Zoho…) no se muestran, y eran ~85% de los
+        // de `custom`. Filtrarlos DESPUÉS de un `take: limit` rompería la paginación: esta fuente
+        // devolvería menos de lo que hay y el cursor del merge podría saltarse cambios reales.
+        // Por eso se piden lotes hasta juntar `limit` renglones VISIBLES (o acabar), con tope.
+        const LOTE = Math.max(limit * 2, 100);
+        const MAX_LOTES = 10;
+        const whereCambios = {
+          entityType: "contact",
+          entityId: contact.id,
+          ...(beforeDate ? { changedAt: { lt: beforeDate } } : {}),
+        };
+        type Cambio = Awaited<ReturnType<typeof prisma.recordFieldChange.findMany>>[number];
+        const changes: Cambio[] = [];
+        let visibles = 0;
+        for (let lote = 0; lote < MAX_LOTES && visibles < limit; lote++) {
+          const pagina = await prisma.recordFieldChange.findMany({
+            where: whereCambios,
+            // id como desempate: varias filas comparten el mismo instante (un UPDATE masivo).
+            orderBy: [{ changedAt: "desc" }, { id: "desc" }],
+            skip: lote * LOTE,
+            take: LOTE,
+          });
+          for (const c of pagina) {
+            const n = c.field === "custom" ? cambiosCustomVisibles(c.oldValue, c.newValue).length : 1;
+            if (n === 0) continue;
+            changes.push(c);
+            visibles += n;
+            if (visibles >= limit) break;
+          }
+          if (pagina.length < LOTE) break;
+        }
 
         // Batch de nombres: actorId + (para assignedToId) los ids old/new.
         const userIds = new Set<string>();
@@ -122,7 +149,22 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
         const brokerById = new Map(brokers.map((b) => [b.id, nombreDeContacto(b)]));
 
         sources.push(
-          changes.map((c) => {
+          changes.flatMap((c) => {
+            const comun = {
+              ts: c.changedAt.toISOString(),
+              kind: "field_change" as const,
+              actorName: c.actorId ? nameById.get(c.actorId) ?? undefined : undefined,
+              source: sourceLabel(c.source),
+              meta: { field: c.field },
+            };
+            // #933: un renglón por dato de negocio que cambió; nunca «[object Object]».
+            if (c.field === "custom") {
+              return cambiosCustomVisibles(c.oldValue, c.newValue).map((k) => ({
+                ...comun,
+                id: `fc_${c.id}_${k.clave}`,
+                title: `${k.etiqueta} se actualizó de ${k.antes} a ${k.despues}`,
+              }));
+            }
             let oldForTitle: unknown = c.oldValue;
             let newForTitle: unknown = c.newValue;
             if (c.field === "assignedToId") {
@@ -141,15 +183,13 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
                 ? brokerById.get(c.newValue as string) ?? "Contacto desconocido"
                 : "Nadie";
             }
-            return {
-              id: `fc_${c.id}`,
-              ts: c.changedAt.toISOString(),
-              kind: "field_change" as const,
-              title: fieldChangeTitle(c.field, oldForTitle, newForTitle),
-              actorName: c.actorId ? nameById.get(c.actorId) ?? undefined : undefined,
-              source: sourceLabel(c.source),
-              meta: { field: c.field },
-            };
+            return [
+              {
+                ...comun,
+                id: `fc_${c.id}`,
+                title: fieldChangeTitle(c.field, oldForTitle, newForTitle),
+              },
+            ];
           })
         );
       } catch {
