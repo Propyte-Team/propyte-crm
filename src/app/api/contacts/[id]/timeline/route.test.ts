@@ -96,3 +96,30 @@ describe("GET /api/contacts/[id]/timeline — campos personalizados (#933)", () 
     expect(body.items[0].source).toBe("Bot (clasificador)");
   });
 });
+
+describe("GET /api/contacts/[id]/timeline — fuentes legibles (#934)", () => {
+  it("lead_form_summary y las demás que salían crudas ya tienen nombre", async () => {
+    rfcFindMany.mockResolvedValueOnce([
+      fila("firstName", "Messenger", "Frank Arturo", "lead_form_summary"),
+      fila("tags", [], ["spam"], "inbox_spam"),
+      fila("assignedToId", null, "u1", "inbox_assign"),
+      fila("deletedAt", null, "2026-10-16T21:00:00.000Z", "limpieza_contactos_2026_10_16"),
+    ]);
+    const body = await pedir("kinds=field_change&limit=10");
+    expect(body.items.map((i: { source: string }) => i.source)).toEqual([
+      "Formulario del anuncio (Messenger)",
+      "Inbox (marcado como spam)",
+      "Inbox (asignación)",
+      "Limpieza de contactos (16-oct)",
+    ]);
+    expect(body.items[0].title).toBe("Nombre se actualizó de Messenger a Frank Arturo");
+    expect(body.items[3].title).toBe("Contacto eliminado");
+  });
+
+  it("una fuente nueva sin etiqueta sale en palabras, no como identificador", async () => {
+    rfcFindMany.mockResolvedValueOnce([fila("phone", "", "+529997402652", "nueva_fuente_x")]);
+    const body = await pedir();
+    expect(body.items[0].source).toBe("Nueva fuente x");
+    expect(body.items[0].title).toBe("Teléfono se actualizó de — a +529997402652");
+  });
+});

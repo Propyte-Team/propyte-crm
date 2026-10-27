@@ -37,12 +37,25 @@ const SOURCE_LABELS: Record<string, string> = {
   // #933: salían crudos («· bot_classifier»).
   bot_classifier: "Bot (clasificador)",
   social_profile: "Perfil de redes sociales",
+  // #934: las que seguían crudas (medido el 27-oct sobre record_field_changes).
+  // Nombre/apellido/teléfono/correo tomados del resumen del formulario de anuncio que llega
+  // en el texto del DM (lib/messaging/lead-form-summary).
+  lead_form_summary: "Formulario del anuncio (Messenger)",
+  inbox_spam: "Inbox (marcado como spam)",
+  inbox_assign: "Inbox (asignación)",
+  limpieza_contactos_2026_10_16: "Limpieza de contactos (16-oct)",
 };
+
+/** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */
+function fuenteAPalabras(source: string): string {
+  const t = source.replace(/[_:-]+/g, " ").trim().toLowerCase();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : source;
+}
 
 function sourceLabel(source: string | null): string {
   if (!source) return "Sistema";
   if (source === "workflow" || source.startsWith("workflow:")) return "Regla de flujo";
-  return SOURCE_LABELS[source] ?? source;
+  return SOURCE_LABELS[source] ?? fuenteAPalabras(source);
 }
 
 const MESSAGE_CHANNEL_LABELS: Record<string, string> = {
