@@ -287,6 +287,21 @@ export async function captureLead(
   await emitEvent("contact.created", "contact", contact.id, { leadSource: lead.source });
 
   if (!opts.provisional) {
+    // Score antes de lead.captured, CAPI y ruteo, que lo leen: el cron tardaría hasta 1 min
+    // (spec lead scoring §7, «Frescura»). Con la bandera apagada solo llena contact_scores.
+    // Best effort: un fallo aquí no puede tirar la captura; el cron lo recalcula.
+    try {
+      const { cargarConfigScoring, calcularYGuardar } = await import("@/lib/scoring/recalcular");
+      const cfg = await cargarConfigScoring();
+      await calcularYGuardar([contact.id], cfg);
+      if (cfg.activo) {
+        const fresco = await prisma.contact.findUnique({ where: { id: contact.id }, select: { score: true } });
+        if (fresco) contact.score = fresco.score;
+      }
+    } catch (err) {
+      console.error("[captureLead] scoring:", err);
+    }
+
     await emitEvent("lead.captured", "contact", contact.id, {
       leadSource: lead.source,
       connectorId: opts.connectorId,
