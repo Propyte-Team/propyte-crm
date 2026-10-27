@@ -9,6 +9,7 @@ const runInactivityRules = vi.fn();
 const emitEvent = vi.fn();
 const limpiarOtpVencidos = vi.fn();
 const sincronizarCorreoEntranteTick = vi.fn();
+const recalcularScores = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
 /** Ejecuta el callback de `$transaction` con un `tx` mínimo. */
@@ -51,6 +52,11 @@ vi.mock("@/lib/auth/otp-limpieza", () => ({
 vi.mock("@/lib/google/gmail-sync", () => ({
   sincronizarCorreoEntranteTick: (...a: unknown[]) => sincronizarCorreoEntranteTick(...a),
 }));
+// Lead scoring en sombra: se dobla para probar su aislamiento; el cálculo tiene sus pruebas en
+// lib/scoring/calcular.test.ts.
+vi.mock("@/lib/scoring/recalcular", () => ({
+  recalcularScores: (...a: unknown[]) => recalcularScores(...a),
+}));
 vi.mock("@/lib/workflows/scheduler", () => ({
   runEnrollments: (...a: unknown[]) => runEnrollments(...a),
   runInactivityRules: (...a: unknown[]) => runInactivityRules(...a),
@@ -80,6 +86,23 @@ beforeEach(() => {
   paymentUpdate.mockResolvedValue({});
   limpiarOtpVencidos.mockResolvedValue(0);
   sincronizarCorreoEntranteTick.mockResolvedValue({ cuentas: 1, registrados: 0, omitidos: 0, desconectadas: 0, errores: [] });
+  recalcularScores.mockResolvedValue({ calculados: 0, activo: false });
+});
+
+describe("etapa leadScoring", () => {
+  it("con contact_scores sin migrar (P2021) no tumba el tick", async () => {
+    recalcularScores.mockRejectedValue(Object.assign(new Error("tabla no existe"), { code: "P2021" }));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).leadScoring).toEqual({ calculados: 0, sinMigrar: true });
+  });
+
+  it("cualquier otro error sale con su nombre y el tick responde 500", async () => {
+    recalcularScores.mockRejectedValue(new Error("conexión caída"));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["leadScoring"]);
+  });
 });
 
 /** Una parcialidad vencida tal como la selecciona `checkOverduePayments`. */
