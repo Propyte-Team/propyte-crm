@@ -229,3 +229,20 @@ escribe directo en la base y queda inválido, el cron usa el default y deja el m
    calibrar. Se revisa después del backtest.
 4. **`temperature`:** se queda **manual**. La pone el asesor con lo que sabe de la conversación; el score
    se muestra al lado para contrastar. Si en sombra coinciden, se puede derivar después.
+
+## 9. Preparación de F3 (2026-10-27)
+
+- **Frescura — hecho en código:** `captureLead` llama `calcularYGuardar([id], cfg)` en el alta (no
+  provisional) antes de `lead.captured`, CAPI y ruteo. Con la bandera encendida relee `score` para que
+  el `ConversionEvent` LEAD lleve el valor fresco. Best effort: si falla, la captura sigue y el cron lo
+  recalcula. Pruebas: `capture-lead.scoring.test.ts`. **No cubierto:** recalcular al crear actividades
+  (el cron las recoge en ≤ 24 h) ni en el lead repetido, que solo mueve `lastActivityAt` (no
+  `updatedAt`), así que también espera al barrido de 24 h.
+- **Cronología — SQL listo, SIN APLICAR:** `prisma/migrations-manual/2026-10-27-cronologia-sin-score.sql`
+  excluye `score` solo para contactos (la función es compartida con deals).
+- **Backtest — no pasa el criterio, no activar.** Corrido 2026-10-27 (`scoring-backtest.ts 12 7`, modelo v1):
+  205 contactos en 12 meses, 145 excluidos por tipo → **60 evaluables, 4 con reunión (6.7 %), 0 ganados**.
+  Decil superior (34–44): **0 % reunión**; las reuniones caen en los deciles 2, 4 y 10. Con n=6 por decil
+  la muestra no distingue nada: el problema es volumen y perfil vacío (el score topa ~25 por falta de
+  datos), no los pesos. Volver a correr cuando el CRM tenga más historia propia o el perfil llegue
+  desde el Hub/Zoho.
