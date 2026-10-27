@@ -3,6 +3,20 @@
 # esta entrada cubre pnpm 11+ por si la plataforma actualiza. Ver .npmrc para el motivo.
 nodeLinker: hoisted
 
+# Build scripts de dependencias (#774). pnpm 10 los ignora con un aviso; pnpm 11 aborta el
+# install con ERR_PNPM_IGNORED_BUILDS si alguno no esta decidido aqui. Todos en false = lo
+# mismo que hace hoy pnpm 10 en Hostinger y en la CI, sin cambiar nada de lo que corre:
+# - Prisma: el cliente lo genera el `postinstall` del proyecto (`prisma generate`), no estos.
+# - esbuild y unrs-resolver: su binario llega como dependencia opcional por plataforma; el
+#   script solo lo re-verifica.
+# Si aparece una dependencia nueva con build script, pnpm 11 vuelve a abortar: decidirla aqui.
+allowBuilds:
+  '@prisma/client': false
+  '@prisma/engines': false
+  esbuild: false
+  prisma: false
+  unrs-resolver: false
+
 # Fijaciones de seguridad de dependencias transitivas (#773).
 #
 # Antes vivian en `overrides` de package.json, que es sintaxis de NPM: pnpm la ignora, asi
