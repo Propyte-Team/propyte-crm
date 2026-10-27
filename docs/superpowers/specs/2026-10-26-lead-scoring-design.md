@@ -152,7 +152,12 @@ Se descartó encolar por evento (`captureLead`, cada alta de `Activity`…): hay
 escritura y uno olvidado deja scores viejos sin que nadie lo note. El barrido es más simple y en sombra
 la latencia (≤ 1 min para ediciones, ≤ 24 h para actividad) sobra. **Para F3 no basta** (ver §7).
 
-Primera corrida: todos los contactos están «sucios»; a 150/min, ~20 mil contactos tardan ~2 h.
+Primera corrida: todos los contactos están «sucios». Medido 2026-10-26: 763 contactos vivos → a
+150/min, ~6 min.
+
+**Migración aplicada en producción el 2026-10-26** (tabla, 2 índices de `contact_scores` e índice de
+`activities`, todos válidos; sin privilegios para `anon`/`authenticated`). `contacts.score` medido:
+0 en los 763 contactos, así que activar F3 no pisa ningún valor previo.
 
 ### Desde la activación (§6, F3) además
 
