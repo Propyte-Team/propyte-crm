@@ -124,7 +124,7 @@ import { ESCALATE_MARKETING_TOKEN } from "./marketing-routing";
 const LUIS = "23361b42-f80c-42ce-ba8f-3a232b9f088c";
 
 const YAX = {
-  id: "b-yax", name: "Yaxnáh Caucel", isDefault: false, persona: "Eres el asistente de Yaxnáh.", knowledge: "K",
+  id: "b-yax", name: "Yaxnáh Caucel", slug: "yaxnah", isDefault: false, persona: "Eres el asistente de Yaxnáh.", knowledge: "K",
   developmentIds: ["dev-yax"], defaultPlaza: "MERIDA", enabledChannels: ["WHATSAPP", "INSTAGRAM"],
   tonePreset: "CALIDO_CERCANO_MX", playbookId: null, marketingOwnerUserId: "u-mkt-yax", botEnabled: true, deletedAt: null,
 };
@@ -264,7 +264,8 @@ describe("botRespond — cuenta con marca", () => {
     await botRespond("c1", { connectorId: "c-yax" });
 
     const args = buildSystemPromptMock.mock.calls[0][0];
-    expect(args.brand).toEqual({ name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K" });
+    // El slug viaja al prompt: de él depende que Yaxnáh conteste siempre en español.
+    expect(args.brand).toEqual({ name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K", slug: "yaxnah" });
     expect(args.config.tonePreset).toBe("CALIDO_CERCANO_MX");
   });
 
@@ -469,7 +470,7 @@ describe("botRespond — la conversación y la marca salen de la misma cuenta", 
       where: { contactId: "c1", channel: "WHATSAPP", connectorId: "c-yax" },
     });
     expect(buildSystemPromptMock.mock.calls[0][0].brand).toEqual({
-      name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K",
+      name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K", slug: "yaxnah",
     });
     // y sale por la cuenta de la marca
     expect(sendChannelMessage.mock.calls[0][4]).toEqual({ bot: true, connectorId: "c-yax" });
@@ -538,7 +539,7 @@ describe("botRespond — la conversación y la marca salen de la misma cuenta", 
     expect(result).toBe(true);
     expect(resolveBrandMock.mock.calls[0][0]).toBe("c-yax");
     expect(buildSystemPromptMock.mock.calls[0][0].brand).toEqual({
-      name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K",
+      name: "Yaxnáh Caucel", persona: YAX.persona, knowledge: "K", slug: "yaxnah",
     });
     expect(sendChannelMessage.mock.calls[0][4]).toEqual({ bot: true, connectorId: "c-yax" });
   });

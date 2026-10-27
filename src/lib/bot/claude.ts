@@ -264,7 +264,29 @@ export interface BrandPromptInput {
   name: string;
   persona: string | null;
   knowledge: string | null;
+  /** Para reglas que dependen de la marca y no de su texto (p. ej. el idioma fijo). */
+  slug?: string;
 }
+
+/**
+ * Marcas cuyo bot contesta SIEMPRE en español, escriba el cliente en el idioma que escriba
+ * (2026-10-27). Yaxnáh vende casas con crédito INFONAVIT/FOVISSSTE en Mérida: su equipo atiende
+ * en español, y el formulario en inglés de Meta hacía que el bot siguiera la conversación en
+ * inglés. Va por slug y no por nombre porque el nombre se edita (ya pasó de «Yaxnáh Caucel» a
+ * «Yaxnáh» y de vuelta); si alguien cambia el slug de la marca en Ajustes, hay que cambiarlo aquí.
+ * Propyte (sin marca) y las demás marcas siguen contestando en el idioma del cliente.
+ */
+const SPANISH_ONLY_BRAND_SLUGS: ReadonlySet<string> = new Set(["yaxnah"]);
+
+export function brandAlwaysSpanish(brand?: BrandPromptInput): boolean {
+  return !!brand?.slug && SPANISH_ONLY_BRAND_SLUGS.has(brand.slug);
+}
+
+const FOLLOW_CLIENT_LANGUAGE_RULE =
+  "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.";
+
+const SPANISH_ONLY_RULE =
+  "Responde SIEMPRE en español, sin excepción: aunque el cliente escriba en inglés o en otro idioma, aunque haya llenado el formulario en inglés y aunque mensajes anteriores de esta conversación estén en inglés. Nunca cambies de idioma ni ofrezcas atenderlo en otro idioma.";
 
 // Sin marca, la presentación es la de siempre (byte a byte): el prompt de Propyte no cambia.
 const LEGACY_IDENTITY = "Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.";
@@ -304,7 +326,7 @@ export function buildBrandRules(config: BotConfigResolved, brand?: BrandPromptIn
     `Si la persona NO busca propiedad sino que viene a ofrecer o presentar servicios, publicidad, marketing, una propuesta comercial o una alianza, o pide hablar con el equipo de marketing: responde UN mensaje breve y cálido diciendo que compartes su mensaje con la persona responsable para que se comunique con ella por este mismo chat. NO le hagas preguntas, NO le pidas confirmación, NO prometas tiempos y NO la califiques como compradora, y termina con el token ${ESCALATE_MARKETING_TOKEN} (en lugar de ${ESCALATE_TOKEN}).`,
     // BUG 2026-07-24: el "Idioma: ES" del perfil (default del intake) le ganaba a esta
     // regla y el bot contestaba en español a mensajes en inglés. El último mensaje manda.
-    "Responde SIEMPRE en el idioma del ÚLTIMO mensaje del cliente: si escribe en inglés contesta en inglés, si escribe en español contesta en español — aunque el idioma registrado del contacto diga otra cosa.",
+    brandAlwaysSpanish(brand) ? SPANISH_ONLY_RULE : FOLLOW_CLIENT_LANGUAGE_RULE,
     `Mensajes cortos, estilo WhatsApp (máx ~${config.maxLines} líneas).`,
     "En WhatsApp la negrita se escribe con UN solo asterisco (*así*). NUNCA uses sintaxis markdown: ni doble asterisco (**negrita**) ni encabezados con #.",
     "Nunca digas que eres una IA salvo pregunta directa; entonces sé honesto.",
@@ -351,8 +373,11 @@ export function buildSystemPrompt(args: {
   if (contact) {
     // "registrado" + "solo referencia": el preferredLanguage suele ser el default ES del
     // intake, no una elección del cliente — no debe leerse como directiva de idioma.
+    // Con idioma fijo de la marca, el registrado no se menciona: no debe abrir la puerta a otro idioma.
     parts.push(
-      `\nCliente: ${contact.firstName} · Idioma registrado: ${contact.preferredLanguage} (solo referencia — responde en el idioma del último mensaje del cliente)`
+      brandAlwaysSpanish(brand)
+        ? `\nCliente: ${contact.firstName} · Contesta en español.`
+        : `\nCliente: ${contact.firstName} · Idioma registrado: ${contact.preferredLanguage} (solo referencia — responde en el idioma del último mensaje del cliente)`
     );
   }
   parts.push(`\n${catalogBlock}`);
