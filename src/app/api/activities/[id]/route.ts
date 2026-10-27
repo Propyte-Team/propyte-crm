@@ -17,7 +17,7 @@ const updateActivitySchema = z.object({
   outcome: z.string().max(1000).nullable().optional(),
   duration_minutes: z.number().int().min(0).max(480).nullable().optional(),
   // #915: reasignar a otra persona, con el mismo alcance que al crear.
-  assigneeId: z.string().uuid().optional(),
+  assigneeId: z.string().guid().optional(),
 });
 
 function errToResponse(error: unknown) {

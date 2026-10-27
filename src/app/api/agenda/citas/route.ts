@@ -27,7 +27,7 @@ const citaSchema = z
     // Obligatoria: una reunión o llamada sin fecha no tiene lugar en la agenda.
     dueDate: dueDateSchema,
     durationMinutes: z.number().int().min(1).max(480).optional(),
-    contactId: z.string().uuid("ID de contacto inválido"),
+    contactId: z.string().guid("ID de contacto inválido"),
   })
   .strict(); // dealId, userId, status y cualquier otro campo es un 400, no un silencio
 

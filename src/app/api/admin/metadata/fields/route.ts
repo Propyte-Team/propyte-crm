@@ -20,7 +20,7 @@ const createSchema = z.object({
   isRequired: z.boolean().default(false),
   isSearchable: z.boolean().default(false),
   helpText: z.string().max(500).optional(),
-  validation: z.record(z.unknown()).default({}),
+  validation: z.record(z.string(), z.unknown()).default({}),
   options: z.array(z.object({ value: z.string().min(1), label: z.string().min(1), color: z.string().optional() })).optional(),
   force: z.boolean().default(false), // crea aunque haya similares (tras ver el warning)
 });
@@ -101,12 +101,12 @@ export async function POST(req: NextRequest) {
 }
 
 const patchSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   label: z.string().min(1).max(120).optional(),
   helpText: z.string().max(500).nullable().optional(),
   isRequired: z.boolean().optional(),
   isSearchable: z.boolean().optional(),
-  validation: z.record(z.unknown()).optional(),
+  validation: z.record(z.string(), z.unknown()).optional(),
   order: z.number().int().optional(),
   archive: z.boolean().optional(), // soft: conserva valores (PC6)
 });

@@ -4,7 +4,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
-const posSchema = z.record(z.object({ x: z.number(), y: z.number() }));
+const posSchema = z.record(z.string(), z.object({ x: z.number(), y: z.number() }));
 const putSchema = z.object({ scope: z.string().min(1).max(200), positions: posSchema });
 
 export async function GET(req: Request) {

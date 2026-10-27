@@ -57,7 +57,7 @@ const contactSchema = z.object({
   preferredZone: z.string().max(200).optional(),
   purchaseModality: z.enum(["PREVENTA", "ENTREGA_INMEDIATA", "REVENTA", "ABIERTO"]).optional().nullable(),
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional().nullable(),
-  assignedToId: z.string().uuid().optional().nullable(),
+  assignedToId: z.string().guid().optional().nullable(),
   tags: z.array(z.string().max(50)).max(20).optional(),
   residenceCity: z.string().max(100).optional(),
   residenceCountry: z.string().max(100).optional(),

@@ -12,12 +12,12 @@ import { CorreoNoConectadoError, resolverCorreoDelUsuario } from "@/lib/email/pr
 export const dynamic = "force-dynamic"
 
 const schema = z.object({
-  contactId: z.string().uuid(),
+  contactId: z.string().guid(),
   to: z.string().email(),
   subject: z.string().min(1).max(998),
   body: z.string().min(1), // HTML permitido (rich text)
   from: z.string().email().optional(), // remitente elegido; el proveedor lo valida
-  dealId: z.string().uuid().optional(),
+  dealId: z.string().guid().optional(),
   threadId: z.string().optional(), // para responder dentro de un hilo
 })
 

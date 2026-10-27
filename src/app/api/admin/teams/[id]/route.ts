@@ -14,8 +14,8 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
   const schema = z.object({
     name: z.string().min(2).max(120).optional(),
-    leaderId: z.string().uuid().nullable().optional(),
-    forecastManagerId: z.string().uuid().nullable().optional(),
+    leaderId: z.string().guid().nullable().optional(),
+    forecastManagerId: z.string().guid().nullable().optional(),
     isActive: z.boolean().optional(),
   });
   const parsed = schema.safeParse(await req.json().catch(() => null));
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
   const schema = z.object({
-    userId: z.string().uuid(),
+    userId: z.string().guid(),
     roleInTeam: z.enum(["LEADER", "SENIOR", "JUNIOR", "HOSTESS"]).default("JUNIOR"),
   });
   const parsed = schema.safeParse(await req.json().catch(() => null));

@@ -15,7 +15,7 @@ import { POST } from "./route";
 // Auditoría 2026-09-10: los ids pasaron de "c1"/"u1" a uuids reales porque el POST ahora
 // valida la forma. No es un ajuste cosmético del test: `Deal.contactId` referencia a
 // `Contact.id`, que es `@default(uuid())`, y el PUT hermano de contactos ya exigía
-// `z.string().uuid()`. Un "c1" nunca podría existir en la base — antes se enteraba Prisma
+// `z.string().guid()`. Un "c1" nunca podría existir en la base — antes se enteraba Prisma
 // y devolvía un 500 opaco; ahora se enteran aquí y es un 400 que dice qué campo.
 const CONTACT_ID = "3f1c4a8e-6b2d-4c1a-9f7e-5d0b8a2c1e34";
 const USER_ID = "7a2e9c1b-4d3f-4a8e-b6c5-1f0d9e8a7b62";

@@ -48,9 +48,9 @@ const updateDealSchema = z.object({
   probability: z.number().int().min(0).max(100).optional(),
   // Hora de pared de Cancún si el string no trae zona — ver src/lib/due-date.ts
   expectedCloseDate: dueDateSchema.optional(),
-  developmentId: z.string().uuid().optional().nullable(),
-  unitId: z.string().uuid().optional().nullable(),
-  assignedToId: z.string().uuid().optional(),
+  developmentId: z.string().guid().optional().nullable(),
+  unitId: z.string().guid().optional().nullable(),
+  assignedToId: z.string().guid().optional(),
   lostReason: z.enum([
     "PRECIO", "COMPETENCIA", "FINANCIAMIENTO_RECHAZADO", "NO_INTERESADO",
     "NO_CONTACTABLE", "COMPRO_DIRECTO", "DESARROLLO_CANCELADO", "OTRO",

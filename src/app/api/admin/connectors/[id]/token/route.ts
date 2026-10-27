@@ -11,6 +11,7 @@
 // si no es la de la cuenta, no se guarda. El token nunca sale en la respuesta ni en un log.
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { mensajesDeTipo } from "@/lib/validations/zod4";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { readCredentials, writeCredentials } from "@/lib/intake/connectors";
@@ -21,12 +22,12 @@ export const dynamic = "force-dynamic";
 // Mismos roles que /api/admin/connectors: quien puede editar la cuenta puede cambiarle el token.
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
-// trim() va primero: zod 3 aplica los checks en orden, y así un token pegado con un salto de
+// trim() va primero: zod aplica los checks en orden, y así un token pegado con un salto de
 // línea al final no cuenta como distinto ni un "   " pasa como no vacío. Los tokens de Meta
 // rondan los 200-300 caracteres; 2048 deja margen sin aceptar cualquier cosa.
 const bodySchema = z.object({
   pageAccessToken: z
-    .string({ required_error: "Pega el token", invalid_type_error: "El token debe ser texto" })
+    .string(mensajesDeTipo("Pega el token", "El token debe ser texto"))
     .trim()
     .min(1, "Pega el token")
     .max(2048, "El token es demasiado largo")

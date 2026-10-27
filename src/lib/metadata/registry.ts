@@ -85,7 +85,7 @@ function zodForField(field: FieldWithMeta): z.ZodTypeAny {
       break;
     case "USER":
     case "LOOKUP":
-      schema = z.string().uuid();
+      schema = z.string().guid();
       break;
     case "TEXTAREA": {
       let t = z.string().max(typeof v.max === "number" ? v.max : 5000);

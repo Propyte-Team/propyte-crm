@@ -1,6 +1,7 @@
 // #926 — Reclutamiento: reglas compartidas entre servidor y pantalla. Módulo PURO (sin Prisma,
 // sin sesión, sin React) para probarlo en node e importarlo desde el cliente.
 import { z } from "zod";
+import { siFalta } from "@/lib/validations/zod4";
 import { extension } from "@/lib/contacts/archivos";
 import { hrefSitio } from "@/lib/developer-partners/shared";
 
@@ -98,7 +99,7 @@ const edad = z
 
 const campos = {
   fullName: z
-    .string({ required_error: "El nombre completo es obligatorio" })
+    .string(siFalta("El nombre completo es obligatorio"))
     .trim()
     .min(1, "El nombre completo es obligatorio")
     .max(200, "Máximo 200 caracteres"),
@@ -107,12 +108,12 @@ const campos = {
   phone: opcional(40),
   area: opcional(120),
   plaza: z
-    .union([z.enum(CODIGOS_UBICACION, { errorMap: () => ({ message: "Ubicación no válida" }) }), z.literal(""), z.null()])
+    .union([z.enum(CODIGOS_UBICACION, { error: "Ubicación no válida" }), z.literal(""), z.null()])
     .optional()
     .transform((v) => (v === "" ? null : v)),
   portfolioUrl: opcional(500).refine((v) => v == null || hrefSitio(v) !== null, "Portafolio: enlace no válido"),
   notes: opcional(5000),
-  stage: z.enum(CODIGOS_ETAPA, { errorMap: () => ({ message: "Etapa no válida" }) }).optional(),
+  stage: z.enum(CODIGOS_ETAPA, { error: "Etapa no válida" }).optional(),
 };
 
 export const candidatoCrearSchema = z.object(campos).strict();

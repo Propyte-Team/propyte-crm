@@ -32,7 +32,7 @@ export function puedeCorrerAgentes(role: string | null | undefined): boolean {
 /**
  * Tope al `input` que se le pasa al agente.
  *
- * La otra mitad de S-03: el esquema era `z.record(z.unknown())`, o sea cualquier objeto de
+ * La otra mitad de S-03: el esquema era `z.record(z.string(), z.unknown())`, o sea cualquier objeto de
  * cualquier tamaño, y ese objeto acaba dentro del prompt del modelo. Sin tope, quien pueda
  * llamar al endpoint puede empujar un texto arbitrariamente largo —coste de tokens— y
  * tiene todo el espacio del mundo para intentar reescribir las instrucciones del agente.

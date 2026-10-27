@@ -12,8 +12,8 @@ const createSchema = z.object({
   type: z.enum(["GEO", "SEGMENT"]).default("GEO"),
   plaza: z.enum(["PDC", "TULUM", "MERIDA"]).optional(),
   zones: z.array(z.string().max(80)).default([]),
-  parentTerritoryId: z.string().uuid().optional(),
-  forecastManagerId: z.string().uuid().optional(),
+  parentTerritoryId: z.string().guid().optional(),
+  forecastManagerId: z.string().guid().optional(),
 });
 
 export async function GET() {
@@ -64,9 +64,9 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
   }
   const schema = z.object({
-    territoryId: z.string().uuid(),
+    territoryId: z.string().guid(),
     members: z
-      .array(z.object({ userId: z.string().uuid(), accessLevel: z.enum(["VIEW", "EDIT"]).default("VIEW") }))
+      .array(z.object({ userId: z.string().guid(), accessLevel: z.enum(["VIEW", "EDIT"]).default("VIEW") }))
       .optional(),
     rules: z
       .array(z.object({ priority: z.number().int().min(1).max(1000), conditions: conditionsDslSchema, isActive: z.boolean().default(true) }))

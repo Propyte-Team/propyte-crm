@@ -6,7 +6,7 @@ import { conditionsDslSchema, workflowActionTypes } from "@/lib/validations/rebu
 const actionsSchema = z
   .array(z.object({
     type: z.enum(workflowActionTypes),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).default({}),
     delayMinutes: z.number().int().min(0).optional(),
   }))
   .min(1);

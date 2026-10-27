@@ -8,11 +8,11 @@ const ruleSchema = z.object({
   name: z.string().min(3).max(120),
   description: z.string().max(500).optional().nullable(),
   triggerType: z.enum(TRIGGER_TYPES),
-  triggerConfig: z.record(z.unknown()).default({}),
+  triggerConfig: z.record(z.string(), z.unknown()).default({}),
   conditions: conditionsDslSchema,
   actions: z.array(z.object({
     type: z.enum(workflowActionTypes),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).default({}),
     delayMinutes: z.number().int().min(0).optional(),
   })).min(1),
 });

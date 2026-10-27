@@ -6,6 +6,7 @@
 // 6,000,000 y un descuento de 150 lo dejaba en -500,000, con parcialidades negativas.
 // Los enums libres reventaban en Prisma como 500 opaco en vez de 400.
 import { z } from "zod";
+import { siTipoInvalido } from "@/lib/validations/zod4";
 
 export const QUOTE_CURRENCIES = ["MXN", "USD"] as const;
 export const QUOTE_SCHEMES = [
@@ -27,13 +28,13 @@ export const QUOTE_STATUSES = [
 const MONTO_MAX = 9_999_999_999.99;
 
 const monto = z
-  .number({ invalid_type_error: "El monto debe ser un número" })
+  .number(siTipoInvalido("El monto debe ser un número"))
   .finite()
   .positive("El monto debe ser mayor a cero")
   .max(MONTO_MAX, "El monto excede el máximo permitido");
 
 const porcentaje = z
-  .number({ invalid_type_error: "El porcentaje debe ser un número" })
+  .number(siTipoInvalido("El porcentaje debe ser un número"))
   .finite()
   .min(0, "El porcentaje no puede ser negativo")
   .max(100, "El porcentaje no puede ser mayor a 100");
@@ -43,10 +44,10 @@ const fechaOpcional = z.union([z.coerce.date(), z.null()]).optional();
 export const createQuoteSchema = z.object({
   dealId: z.string().min(1, "dealId es requerido"),
   hubUnitId: z.string().min(1).nullish(),
-  currency: z.enum(QUOTE_CURRENCIES, { errorMap: () => ({ message: "Moneda inválida" }) }),
+  currency: z.enum(QUOTE_CURRENCIES, { error: "Moneda inválida" }),
   listPrice: monto,
   discountPct: porcentaje.default(0),
-  scheme: z.enum(QUOTE_SCHEMES, { errorMap: () => ({ message: "Esquema de pago inválido" }) }),
+  scheme: z.enum(QUOTE_SCHEMES, { error: "Esquema de pago inválido" }),
   notes: z.string().max(5000).nullish(),
   expiresAt: fechaOpcional,
   fxRate: z.number().finite().positive("El tipo de cambio debe ser positivo").nullish(),
@@ -54,21 +55,21 @@ export const createQuoteSchema = z.object({
 
 export const updateQuoteSchema = z.object({
   hubUnitId: z.string().min(1).nullish(),
-  currency: z.enum(QUOTE_CURRENCIES, { errorMap: () => ({ message: "Moneda inválida" }) }).optional(),
+  currency: z.enum(QUOTE_CURRENCIES, { error: "Moneda inválida" }).optional(),
   listPrice: monto.optional(),
   discountPct: porcentaje.optional(),
-  scheme: z.enum(QUOTE_SCHEMES, { errorMap: () => ({ message: "Esquema de pago inválido" }) }).optional(),
+  scheme: z.enum(QUOTE_SCHEMES, { error: "Esquema de pago inválido" }).optional(),
   notes: z.string().max(5000).nullish(),
   expiresAt: fechaOpcional,
   fxRate: z.number().finite().positive("El tipo de cambio debe ser positivo").nullish(),
-  status: z.enum(QUOTE_STATUSES, { errorMap: () => ({ message: "Estatus inválido" }) }).optional(),
+  status: z.enum(QUOTE_STATUSES, { error: "Estatus inválido" }).optional(),
 });
 
 export const paymentPlanSchema = z
   .object({
     downPaymentPct: porcentaje,
     monthsCount: z
-      .number({ invalid_type_error: "El número de meses debe ser un número" })
+      .number(siTipoInvalido("El número de meses debe ser un número"))
       .int("El número de meses debe ser entero")
       .min(0, "El número de meses no puede ser negativo")
       .max(600, "El número de meses no puede pasar de 600"),
@@ -82,7 +83,7 @@ export const paymentPlanSchema = z
 
 export const updateInstallmentSchema = z.object({
   status: z.enum(["PENDIENTE", "PAGADA", "VENCIDA", "CONDONADA"], {
-    errorMap: () => ({ message: "Estatus de parcialidad inválido" }),
+    error: "Estatus de parcialidad inválido",
   }).optional(),
   paidAt: fechaOpcional,
   paidAmount: z.union([monto, z.literal(0), z.null()]).optional(),

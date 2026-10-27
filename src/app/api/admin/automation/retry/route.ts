@@ -6,7 +6,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
-const schema = z.object({ id: z.string().uuid() });
+const schema = z.object({ id: z.string().guid() });
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession();

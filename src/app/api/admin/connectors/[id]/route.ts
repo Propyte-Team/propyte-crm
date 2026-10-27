@@ -12,10 +12,10 @@ const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 const patchSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ERROR"]).optional(),
-  credentials: z.record(z.string()).optional(),
-  config: z.record(z.unknown()).optional(),
+  credentials: z.record(z.string(), z.string()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
   fieldMap: fieldMapSchema.optional(),
-  brandId: z.string().uuid().nullable().optional(),
+  brandId: z.string().guid().nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {

@@ -26,7 +26,7 @@ const editarCitaSchema = z
     description: z.string().trim().max(5000).nullable().optional(),
     dueDate: dueDateSchema,
     durationMinutes: z.number().int().min(1).max(480).nullable().optional(),
-    contactId: z.string().uuid("ID de contacto inválido").optional(),
+    contactId: z.string().guid("ID de contacto inválido").optional(),
   })
   .strict();
 

@@ -8,14 +8,14 @@ import { AGENT_TOOLS } from "@/lib/agents/tools";
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
 
 const upsertSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().guid().optional(),
   name: z.string().min(2).max(80),
   goal: z.string().min(10).max(2000),
-  systemUserId: z.string().uuid(),
+  systemUserId: z.string().guid(),
   autonomyLevel: z.enum(["L0", "L1", "L2"]).default("L2"),
   allowedTools: z.array(z.string()).min(1),
-  trigger: z.record(z.unknown()).default({}),
-  limits: z.record(z.unknown()).default({}),
+  trigger: z.record(z.string(), z.unknown()).default({}),
+  limits: z.record(z.string(), z.unknown()).default({}),
   isActive: z.boolean().default(false),
 });
 

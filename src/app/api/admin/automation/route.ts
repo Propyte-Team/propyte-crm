@@ -56,11 +56,11 @@ export async function GET() {
 }
 
 const patchSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("rule"), id: z.string().uuid(), isActive: z.boolean() }),
-  z.object({ kind: z.literal("plan"), id: z.string().uuid(), isActive: z.boolean() }),
+  z.object({ kind: z.literal("rule"), id: z.string().guid(), isActive: z.boolean() }),
+  z.object({ kind: z.literal("plan"), id: z.string().guid(), isActive: z.boolean() }),
   z.object({
     kind: z.literal("sla"),
-    id: z.string().uuid(),
+    id: z.string().guid(),
     firstTouchMinutes: z.number().int().min(1).max(1440).optional(),
     retryMinutes: z.number().int().min(1).max(1440).optional(),
     orphanHours: z.number().int().min(1).max(720).optional(),

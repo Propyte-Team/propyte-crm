@@ -13,7 +13,7 @@ function esTablaSinMigrar(err: unknown): boolean {
 const createSchema = z.object({
   name: z.string().min(1).max(80).trim(),
   module: z.string().min(2).max(40),
-  filters: z.record(z.unknown()).default({}),
+  filters: z.record(z.string(), z.unknown()).default({}),
   scope: z.enum(["personal", "team", "org"]).default("personal"),
 });
 

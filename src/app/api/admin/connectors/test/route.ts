@@ -9,7 +9,7 @@ const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 
 const schema = z.object({
   provider: z.string().min(1).refine((p) => providerById(p) !== undefined, "Proveedor desconocido"),
-  credentials: z.record(z.string()),
+  credentials: z.record(z.string(), z.string()),
 });
 
 export async function POST(req: NextRequest) {

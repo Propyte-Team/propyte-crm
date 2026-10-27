@@ -29,8 +29,8 @@ const OWN_ACCESS_ROLES = ["ASESOR", "ASESOR_SR", "ASESOR_JR", "BROKER", "HOSTESS
 
 // Esquema de validación para crear actividad
 const createActivitySchema = z.object({
-  contactId: z.string().uuid("ID de contacto inválido"),
-  dealId: z.string().uuid("ID de deal inválido").optional(),
+  contactId: z.string().guid("ID de contacto inválido"),
+  dealId: z.string().guid("ID de deal inválido").optional(),
   activityType: z.enum([
     "CALL_OUTBOUND", "CALL_INBOUND", "WHATSAPP_OUT", "WHATSAPP_IN",
     "EMAIL_SENT", "EMAIL_RECEIVED", "MEETING_VIRTUAL", "MEETING_PRESENTIAL",
@@ -44,7 +44,7 @@ const createActivitySchema = z.object({
   outcome: z.string().max(1000).optional(),
   duration_minutes: z.number().int().min(0).max(480).optional(),
   // #915: a quién queda. Sin él, a quien la crea. El alcance se valida en resolverAsignadoTarea.
-  assigneeId: z.string().uuid("ID de usuario inválido").optional(),
+  assigneeId: z.string().guid("ID de usuario inválido").optional(),
 });
 
 /**

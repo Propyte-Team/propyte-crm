@@ -31,7 +31,7 @@ const bodySchema = z.object({
   code: z.string().min(10).max(4096),
   wabaId: metaId,
   phoneNumberId: metaId.nullable().optional(),
-  brandId: z.string().uuid().nullable().optional(),
+  brandId: z.string().guid().nullable().optional(),
   name: z.string().trim().min(2).max(120).optional(),
 });
 

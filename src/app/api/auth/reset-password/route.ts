@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.errors[0]?.message || "Datos inválidos" },
+        { error: parsed.error.issues[0]?.message || "Datos inválidos" },
         { status: 400 }
       );
     }

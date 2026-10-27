@@ -8,8 +8,8 @@ import { getServerSession } from "@/lib/auth/session";
 import { asignarHuerfanosEnLote, MAX_ASIGNACION_POR_LOTE } from "@/server/orphan-leads";
 
 const bodySchema = z.object({
-  contactIds: z.array(z.string().uuid()).min(1).max(MAX_ASIGNACION_POR_LOTE),
-  assigneeId: z.string().uuid(),
+  contactIds: z.array(z.string().guid()).min(1).max(MAX_ASIGNACION_POR_LOTE),
+  assigneeId: z.string().guid(),
 });
 
 const ERRORES = {

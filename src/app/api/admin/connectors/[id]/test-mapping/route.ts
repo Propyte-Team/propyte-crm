@@ -9,7 +9,7 @@ import { z } from "zod";
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
 const bodySchema = z.object({
   rules: z.array(mappingRuleSchema),
-  sample: z.object({ fieldData: z.record(z.unknown()).optional(), metadata: z.record(z.unknown()).optional() }).optional(),
+  sample: z.object({ fieldData: z.record(z.string(), z.unknown()).optional(), metadata: z.record(z.string(), z.unknown()).optional() }).optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
