@@ -1064,6 +1064,11 @@ model Activity {
   status           ActivityStatus @default(PENDIENTE)
   outcome          String?
   duration_minutes Int?
+  // Duración exacta de la llamada en segundos, tal como la reporta Twilio (CallDuration /
+  // DialCallDuration). duration_minutes sigue llenándose (redondeado hacia arriba) para reportes
+  // y el formulario. NULL en filas anteriores y en actividades que no son llamadas de Twilio.
+  // Migración: prisma/migrations-manual/2026-10-28-activity-duration-seconds.sql
+  duration_seconds Int?
   // HUB #860: una NOTE escrita sobre una reunión o llamada de la Agenda apunta a ella. FK lógica a
   // activities(id) ON DELETE SET NULL e índice parcial (WHERE "parentActivityId" IS NOT NULL) en la
   // migración SQL agenda_notas_de_citas_parent_activity; sin relation de Prisma, como completedById.
