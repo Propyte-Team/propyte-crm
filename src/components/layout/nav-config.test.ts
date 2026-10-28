@@ -101,9 +101,9 @@ describe("nav-config — menú del nombre (opciones de sistema)", () => {
 // El orden del sidebar es el pedido explícito de Luis (flujo del día del asesor):
 // si alguien lo reordena por accidente, este test lo dice.
 describe("nav-config — orden del sidebar", () => {
-  it("el grupo operativo es Hoy → Inbox → Agenda (el Dashboard se retiró en #890)", () => {
+  it("el grupo operativo es Hoy → Inbox → Agenda → Copilot (el Dashboard se retiró en #890)", () => {
     expect(navGroups[0].title).toBeNull();
-    expect(navGroups[0].items.map((i) => i.label)).toEqual(["Hoy", "Inbox", "Agenda"]);
+    expect(navGroups[0].items.map((i) => i.label)).toEqual(["Hoy", "Inbox", "Agenda", "Copilot"]);
   });
 
   it("Ventas sigue el embudo: Contactos → Negocios → Cotizaciones", () => {
