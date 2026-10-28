@@ -21,6 +21,7 @@ import { EmailComposerDrawer } from "./email-composer-drawer"
 import { EmailThread } from "./email-thread"
 import { CallButton } from "@/components/voice/call-button"
 import { EVENTO_CORREO_ENTRANTE } from "@/lib/notificaciones/avisos-nuevos"
+import { formatoDuracion } from "@/lib/activities/duracion"
 
 const TYPE_ICON: Record<string, LucideIcon> = {
   CALL_OUTBOUND: Phone, CALL_INBOUND: Phone,
@@ -44,6 +45,8 @@ interface Activity {
   status: string
   outcome?: string | null
   duration_minutes?: number | null
+  /** Duración exacta de llamadas de Twilio, en segundos. */
+  duration_seconds?: number | null
   gmailThreadId?: string | null
   recordingUrl?: string | null
   user?: { name: string } | null
@@ -222,7 +225,10 @@ export function ActivityLog({ contactId, contactName, contactEmail, contactFirst
           <span className="text-[13px] font-medium text-[color:var(--text-primary)]">{a.subject}</span>
           <span className="shrink-0 text-[11px] text-[color:var(--text-tertiary)]">
             {ACTIVITY_TYPE_LABELS[a.activityType] ?? a.activityType}
-            {a.duration_minutes ? ` · ${a.duration_minutes} min` : ""}
+            {(() => {
+              const d = formatoDuracion(a.duration_seconds, a.duration_minutes)
+              return d ? ` · ${d}` : ""
+            })()}
           </span>
         </div>
         {a.description && a.description !== a.subject && (

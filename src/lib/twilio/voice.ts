@@ -64,10 +64,15 @@ export async function handleCallStatus(payload: {
   if (!activity) return;
   if (!["completed", "no-answer", "busy", "failed"].includes(CallStatus)) return;
 
+  // Twilio manda la duración en segundos. Se guarda tal cual y, además, redondeada a minutos
+  // para los reportes que ya leen duration_minutes.
+  const segundos = CallDuration !== undefined && CallDuration !== "" ? parseInt(CallDuration, 10) : NaN;
+  const conDuracion = Number.isFinite(segundos) && segundos >= 0;
   const data: Record<string, unknown> = {
     status: "COMPLETADA",
     completedAt: new Date(),
-    duration_minutes: CallDuration ? Math.ceil(parseInt(CallDuration) / 60) : null,
+    duration_seconds: conDuracion ? segundos : null,
+    duration_minutes: conDuracion ? Math.ceil(segundos / 60) : null,
   };
   const auto = statusToOutcome(CallStatus);
   if (auto && !activity.outcome) data.outcome = auto;
