@@ -7,7 +7,11 @@ import {
   FLUJO_VACIO_LABEL,
   etiquetaFlujo,
   opcionesFlujo,
+  FLUJO_SIN_FLUJO,
+  whereFlujo,
+  campoFlujo,
 } from "./flujos";
+import { COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
 import { CORE_FIELDS } from "@/lib/metadata/core-fields-catalogo";
 import { fieldChangeTitle } from "@/lib/timeline/format";
 import { CAMPOS_EXPORTACION } from "@/lib/contacts/exportar";
@@ -108,5 +112,36 @@ describe("Llenado automático en la base (#948, decisión de sistemas@ 2026-10-2
 
   it("Corretaje y Masterbroker NO se llenan solos", () => {
     expect(migracion).not.toMatch(/'F1_CORRETAJE_VENDEDOR'::|SET flujo = 'F[1-4]_/);
+  });
+});
+
+describe("Lista de Contactos y formulario (#951)", () => {
+  it("el filtro «Sin flujo» busca NULL; un flujo, ese valor; lo demás no filtra", () => {
+    expect(whereFlujo("SIN_FLUJO")).toEqual({ flujo: null });
+    expect(whereFlujo(FLUJO_SIN_FLUJO)).toEqual({ flujo: null });
+    expect(whereFlujo("F7_INMOBILIARIA")).toEqual({ flujo: "F7_INMOBILIARIA" });
+    expect(whereFlujo(null)).toBeNull();
+    expect(whereFlujo("")).toBeNull();
+    expect(whereFlujo("ALL")).toBeNull();
+    expect(whereFlujo("f6_broker")).toBeNull();
+  });
+
+  it("la tabla de Contactos ofrece la columna «Flujo», visible por defecto, junto al tipo", () => {
+    const i = COLUMNAS_CONTACTOS.findIndex((c) => c.key === "flujo");
+    expect(COLUMNAS_CONTACTOS[i]).toMatchObject({ label: "Flujo", defaultVisible: true });
+    expect(COLUMNAS_CONTACTOS[i - 1].key).toBe("tipo");
+  });
+
+  it("al crear, el formulario manda el flujo solo si se eligió", () => {
+    expect(campoFlujo("create", null, "F2_CORRETAJE_COMPRADOR")).toEqual({ flujo: "F2_CORRETAJE_COMPRADOR" });
+    expect(campoFlujo("create", null, null)).toEqual({});
+  });
+
+  it("al editar, solo si cambió (un rol con el flujo en solo lectura puede guardar lo demás)", () => {
+    expect(campoFlujo("edit", "F6_BROKER", "F6_BROKER")).toEqual({});
+    expect(campoFlujo("edit", null, null)).toEqual({});
+    expect(campoFlujo("edit", undefined, null)).toEqual({});
+    expect(campoFlujo("edit", "F6_BROKER", "F1_CORRETAJE_VENDEDOR")).toEqual({ flujo: "F1_CORRETAJE_VENDEDOR" });
+    expect(campoFlujo("edit", "F6_BROKER", null)).toEqual({ flujo: null });
   });
 });

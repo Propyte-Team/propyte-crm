@@ -24,7 +24,7 @@ import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter
 import { getContactAccessInfo } from "@/server/contacts";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
-import { FLUJO_ORDER } from "@/lib/flujos";
+import { FLUJO_ORDER, whereFlujo } from "@/lib/flujos";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import {
   FULL_ACCESS_ROLES,
@@ -144,7 +144,7 @@ const createContactSchema = contactCoreFields.refine(
 /**
  * GET /api/contacts
  * Lista contactos con paginación, búsqueda y filtros.
- * Soporta: ?search=, ?source=, ?temperature=, ?type=, ?assignedTo=, ?marca=, ?page=, ?pageSize=
+ * Soporta: ?search=, ?source=, ?temperature=, ?type=, ?flujo=, ?assignedTo=, ?marca=, ?page=, ?pageSize=
  * El acceso se filtra según el rol del usuario (RBAC).
  */
 export async function GET(request: NextRequest) {
@@ -167,6 +167,8 @@ export async function GET(request: NextRequest) {
     const source = searchParams.get("source") || undefined;
     const temperature = searchParams.get("temperature") || undefined;
     const contactType = searchParams.get("type") || undefined;
+    // #951: F1–F8 o «Sin flujo» (FLUJO_SIN_FLUJO). Un valor que no existe se ignora.
+    const porFlujo = whereFlujo(searchParams.get("flujo"));
     const contactStatus = searchParams.get("status") || undefined;
     const lifecycleStage = searchParams.get("lifecycle") || undefined;
     const assignedToId = searchParams.get("assignedTo") || undefined;
@@ -226,6 +228,9 @@ export async function GET(request: NextRequest) {
       where.contactType = null;
     } else if (contactType) {
       where.contactType = contactType as any;
+    }
+    if (porFlujo) {
+      where.flujo = porFlujo.flujo;
     }
     if (contactStatus) {
       where.contactStatus = contactStatus as any;

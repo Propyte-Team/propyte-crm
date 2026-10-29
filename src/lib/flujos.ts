@@ -60,3 +60,37 @@ export function etiquetaFlujo(valor: string | null | undefined): string {
 export function opcionesFlujo(vacio: string = FLUJO_VACIO_LABEL): { value: string; label: string }[] {
   return [{ value: "", label: vacio }, ...FLUJO_ORDER.map((value) => ({ value, label: FLUJO_LABELS[value] }))];
 }
+
+// ───────────────────────── #951: lista de Contactos y formulario ─────────────────────────
+
+/**
+ * Valor del filtro «Sin flujo» de la lista (contactos con flujo NULL). No es un valor del enum:
+ * solo viaja como `?flujo=` y se traduce a `flujo: null`, igual que «Sin tipo» (#863).
+ */
+export const FLUJO_SIN_FLUJO = "SIN_FLUJO";
+
+/**
+ * `?flujo=` de GET /api/contacts → condición para el `where`. `null` = no filtrar (sin parámetro o
+ * con un valor que no existe: se ignora, como el filtro de etapa, en vez de vaciar la lista).
+ */
+export function whereFlujo(valor: string | null | undefined): { flujo: Flujo | null } | null {
+  if (!valor) return null;
+  if (valor === FLUJO_SIN_FLUJO) return { flujo: null };
+  return (FLUJO_ORDER as readonly string[]).includes(valor) ? { flujo: valor as Flujo } : null;
+}
+
+/**
+ * Qué mandar del flujo desde el formulario del contacto (alta y «Editar todo»). Al crear, solo si
+ * se eligió uno (vacío = que lo llene la base según el tipo). Al editar, solo si CAMBIÓ: el
+ * servidor responde 403 a cualquier campo bloqueado por rol que llegue en el cuerpo, aunque traiga
+ * el mismo valor, y un rol con el flujo en solo lectura no podría guardar lo demás. Mismo patrón
+ * que «Registrado por» (campoReferidoPor, #907).
+ */
+export function campoFlujo(
+  mode: "create" | "edit",
+  inicial: string | null | undefined,
+  actual: string | null,
+): { flujo?: string | null } {
+  if (mode === "create") return actual ? { flujo: actual } : {};
+  return (inicial ?? null) === actual ? {} : { flujo: actual };
+}

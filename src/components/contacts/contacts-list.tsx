@@ -53,6 +53,7 @@ import { FiltroAsesores } from "@/components/contacts/filtro-asesores";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } from "@/components/brands/brand-view";
 import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
 import { COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
+import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_SIN_FLUJO, etiquetaFlujo, opcionesFlujo } from "@/lib/flujos";
 import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_VACIO_LABEL, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Tipos ---
@@ -65,6 +66,7 @@ interface ContactData {
   leadSource: string;
   temperature: string;
   contactType: string | null; // null = sin tipo (#863): «—» hasta que alguien lo elija
+  flujo?: string | null; // #951: null = «Sin flujo» (#948)
   contactStatus: string;
   lifecycleStage: string | null;
   createdAt: string;
@@ -164,6 +166,10 @@ export function ContactsList({
   const [filterAsesor, setFilterAsesor] = useState("");
   const asesorRef = useRef(filterAsesor);
   asesorRef.current = filterAsesor;
+  // #951: filtro por flujo. Va por ref, como marca y asesor, para no alargar fetchContacts.
+  const [filterFlujo, setFilterFlujo] = useState("ALL");
+  const flujoRef = useRef(filterFlujo);
+  flujoRef.current = filterFlujo;
 
   // Función para obtener contactos desde la API
   const fetchContacts = useCallback(
@@ -189,6 +195,7 @@ export function ContactsList({
         if (lifecycleVal) params.set("lifecycle", lifecycleVal);
         if (brandRef.current) params.set("marca", brandRef.current);
         if (asesorRef.current) params.set("assignedTo", asesorRef.current);
+        if (flujoRef.current !== "ALL") params.set("flujo", flujoRef.current);
 
         const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("Error al cargar contactos");
@@ -247,6 +254,13 @@ export function ContactsList({
     fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
   };
 
+  // Cambio de flujo (#951)
+  const handleFlujoChange = (value: string) => {
+    setFilterFlujo(value);
+    flujoRef.current = value;
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
+  };
+
   // Limpiar todos los filtros
   const clearFilters = () => {
     setSearch("");
@@ -259,6 +273,8 @@ export function ContactsList({
     brandRef.current = null;
     setFilterAsesor("");
     asesorRef.current = "";
+    setFilterFlujo("ALL");
+    flujoRef.current = "ALL";
     fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1, "");
   };
 
@@ -286,6 +302,10 @@ export function ContactsList({
     const as = typeof f.assignedTo === "string" ? f.assignedTo : "";
     setFilterAsesor(as);
     asesorRef.current = as;
+    // #951: vistas guardadas antes del filtro de flujo no lo traen → «Todos los flujos».
+    const fl = typeof f.flujo === "string" ? f.flujo : "ALL";
+    setFilterFlujo(fl);
+    flujoRef.current = fl;
     fetchContacts(s, src, tmp, typ, st, 1, lc);
   };
 
@@ -313,6 +333,22 @@ export function ContactsList({
     }).catch(() => null);
     if (!res?.ok && previo !== undefined) {
       setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactType: previo } : c)));
+    }
+  };
+
+  // #951: cambio rápido del flujo desde la lista. Mismo patrón que el tipo: si el servidor lo
+  // rechaza (permisos por rol), se regresa al valor anterior. null = «Sin flujo».
+  const updateFlujo = async (id: string, flujo: string | null) => {
+    const previo = contacts.find((c) => c.id === id)?.flujo ?? null;
+    if (previo === flujo) return;
+    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, flujo } : c)));
+    const res = await fetch(`/api/contacts?id=${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flujo }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, flujo: previo } : c)));
     }
   };
 
@@ -346,7 +382,7 @@ export function ContactsList({
 
   // Verificar si hay filtros activos
   const hasActiveFilters =
-    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null || filterAsesor !== "";
+    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null || filterAsesor !== "" || filterFlujo !== "ALL";
 
   // Calcular rango visible
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -409,7 +445,7 @@ export function ContactsList({
       {/* Vistas guardadas (Fase 5) */}
       <SavedViewsBar
         module="contacts"
-        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus, marca: brandFilter, assignedTo: filterAsesor || null }}
+        currentFilters={{ search, source: filterSource, temperature: filterTemp, type: filterType, status: filterStatus, marca: brandFilter, assignedTo: filterAsesor || null, flujo: filterFlujo === "ALL" ? null : filterFlujo }}
         onApply={applyView}
       />
 
@@ -495,6 +531,20 @@ export function ContactsList({
                 <SelectItem value={CONTACT_TYPE_SIN_TIPO}>Sin tipo</SelectItem>
                 {CONTACT_TYPE_ORDER.map((t) => (
                   <SelectItem key={t} value={t}>{CONTACT_TYPE_LABELS[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Filtro por flujo (#951): los 8 del flujograma + «Sin flujo» */}
+            <Select value={filterFlujo} onValueChange={handleFlujoChange}>
+              <SelectTrigger className="w-48 shrink-0" aria-label="Filtrar por flujo">
+                <SelectValue placeholder="Flujo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todos los flujos</SelectItem>
+                <SelectItem value={FLUJO_SIN_FLUJO}>Sin flujo</SelectItem>
+                {FLUJO_ORDER.map((f) => (
+                  <SelectItem key={f} value={f}>{FLUJO_LABELS[f]}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -604,6 +654,7 @@ export function ContactsList({
                           contact={contact}
                           onStatus={updateStatus}
                           onType={updateType}
+                          onFlujo={updateFlujo}
                         />
                       ))}
                       {/* Menú de acciones */}
@@ -770,6 +821,9 @@ function PastillaEditable({
 }
 
 const STATUS_OPTIONS = CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }));
+// #951: "" = «Sin flujo» (un <select> nativo no admite null). Mismo ámbar que el chip de la ficha.
+const FLUJO_OPTIONS = opcionesFlujo();
+const FLUJO_SIN_ELEGIR_COLOR = "#D97706";
 // "" = sin tipo (#863). Un <select> nativo no admite null como valor, así que viaja como "".
 const TYPE_OPTIONS = [
   { value: "", label: CONTACT_TYPE_VACIO_LABEL },
@@ -782,12 +836,14 @@ function CeldaContacto({
   contact,
   onStatus,
   onType,
+  onFlujo,
 }: {
   col: string;
   align: "left" | "center";
   contact: ContactData;
   onStatus: (id: string, v: string) => void;
   onType: (id: string, v: string | null) => void;
+  onFlujo: (id: string, v: string | null) => void;
 }) {
   const vacio = <span className="text-muted-foreground">-</span>;
   // Clase base de toda celda (#865): padding simétrico para que el centrado sea real.
@@ -844,6 +900,20 @@ function CeldaContacto({
             options={TYPE_OPTIONS}
             ariaLabel="Cambiar tipo de contacto"
             onChange={(v) => onType(contact.id, v || null)}
+          />
+        </td>
+      );
+    case "flujo":
+      // #951: «Sin flujo» con punto ámbar (aviso, como en la ficha) para que se vea qué falta.
+      return (
+        <td className={`${base}`} onClick={(e) => e.stopPropagation()}>
+          <PastillaEditable
+            label={etiquetaFlujo(contact.flujo)}
+            color={contact.flujo ? undefined : FLUJO_SIN_ELEGIR_COLOR}
+            value={contact.flujo ?? ""}
+            options={FLUJO_OPTIONS}
+            ariaLabel="Cambiar flujo"
+            onChange={(v) => onFlujo(contact.id, v || null)}
           />
         </td>
       );
