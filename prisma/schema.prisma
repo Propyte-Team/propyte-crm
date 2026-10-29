@@ -257,6 +257,22 @@ enum DealStage {
   @@schema("propyte_crm")
 }
 
+// #948 — Flujo comercial del flujograma (F1–F8). Lista única con etiquetas: src/lib/flujos.ts.
+// Lo usan contacts.flujo (flujo de entrada) y deals.flujo (el de cada negocio). Opcional.
+// Migración y disparadores de llenado: prisma/migrations-manual/2026-10-29-flujo.sql.
+enum Flujo {
+  F1_CORRETAJE_VENDEDOR
+  F2_CORRETAJE_COMPRADOR
+  F3_CAPTACION_MB
+  F4_MB
+  F5_NATIVA
+  F6_BROKER
+  F7_INMOBILIARIA
+  F8_EMPLEO
+
+  @@schema("propyte_crm")
+}
+
 // Tipo de operación (determina tabla de comisiones)
 enum DealType {
   NATIVA_CONTADO
@@ -779,6 +795,9 @@ model Contact {
   // Antes era @default(COMPRADOR) y todo contacto parecía comprador sin que nadie lo
   // decidiera. Migración: prisma/migrations-manual/2026-10-13-contact-type-nullable.sql.
   contactType       ContactType?
+  // #948: flujo con el que entró (F1–F8). NULL = «Sin flujo». Un disparador lo llena si está
+  // vacío: Broker externo → F6, Empleo → F8 (ver src/lib/flujos.ts).
+  flujo             Flujo?
   leadSource        LeadSource
   leadSourceDetail  String?
   residenceCity     String?
@@ -884,6 +903,7 @@ model Contact {
   deletedAt DateTime?
 
   @@index([referredById])
+  @@index([flujo])
   @@map("contacts")
   @@schema("propyte_crm")
 }
@@ -976,6 +996,9 @@ model Deal {
   // Pipeline
   stage             DealStage @default(NEW_LEAD)
   dealType          DealType
+  // #948: flujo de ESTE negocio (F1–F8). Al crearse, si viene vacío, un disparador pone F5 si es
+  // Nativa y si no el flujo del contacto. Se puede cambiar después (ver src/lib/flujos.ts).
+  flujo             Flujo?
   estimatedValue    Decimal   @db.Decimal(14, 2)
   currency          Currency  @default(MXN)
   probability       Int       @default(5)

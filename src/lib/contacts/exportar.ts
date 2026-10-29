@@ -12,6 +12,7 @@ import {
   URGENCY_LABELS,
 } from "@/lib/constants";
 import { CANCUN_TZ } from "@/lib/format-date";
+import { etiquetaFlujo } from "@/lib/flujos";
 import {
   INVESTMENT_LABEL,
   MODALITY_LABEL,
@@ -36,6 +37,7 @@ export interface ContactoExportable {
   phone: string;
   secondaryPhone: string | null;
   contactType: string | null;
+  flujo: string | null; // #948
   contactStatus: string;
   lifecycleStage: string | null;
   temperature: string;
@@ -111,6 +113,8 @@ export const CAMPOS_EXPORTACION: CampoExportacion[] = [
 
   // Clasificación
   { key: "tipo", label: "Tipo de contacto", grupo: "Clasificación", porDefecto: true, valor: (c) => etiqueta(CONTACT_TYPE_LABELS, c.contactType) },
+  // #948: vacío sale «Sin flujo» y no en blanco, para que se vea qué falta elegir.
+  { key: "flujo", label: "Flujo", grupo: "Clasificación", valor: (c) => etiquetaFlujo(c.flujo) },
   { key: "estado", label: "Estado", grupo: "Clasificación", porDefecto: true, valor: (c) => etiqueta(CONTACT_STATUS_LABELS, c.contactStatus) },
   { key: "etapa", label: "Etapa del ciclo de vida", grupo: "Clasificación", valor: (c) => etiqueta(LIFECYCLE_LABELS, c.lifecycleStage) },
   { key: "temperatura", label: "Temperatura", grupo: "Clasificación", porDefecto: true, valor: (c) => etiqueta(LEAD_TEMPERATURE_LABELS, c.temperature) },

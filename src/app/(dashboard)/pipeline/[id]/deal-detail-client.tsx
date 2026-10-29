@@ -49,6 +49,7 @@ import type { PipelineDeal } from "@/components/pipeline/pipeline-view";
 import { ActivityLog } from "@/components/activities/activity-log";
 import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
+import { opcionesFlujo } from "@/lib/flujos";
 
 interface DealDetailClientProps {
   deal: any;
@@ -60,6 +61,7 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
   const router = useRouter();
   const [showStageDialog, setShowStageDialog] = useState(false);
   const [selectedStage, setSelectedStage] = useState("");
+  const [guardandoFlujo, setGuardandoFlujo] = useState(false); // #948
 
   // Etapas ordenadas para la barra de progreso (excluyendo LOST y FROZEN)
   const progressStages = PIPELINE_STAGES.filter(
@@ -252,6 +254,30 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
             </InfoRow>
             <InfoRow icon={<Building2 className="h-4 w-4" />} label="Tipo">
               {DEAL_TYPE_LABELS[deal.dealType] || deal.dealType}
+            </InfoRow>
+            {/* #948: flujo del flujograma; se cambia aquí mismo. Vacío = «Sin flujo». */}
+            <InfoRow icon={<Building2 className="h-4 w-4" />} label="Flujo">
+              <select
+                aria-label="Flujo del negocio"
+                className="rounded-md border bg-transparent px-1.5 py-0.5 text-sm font-medium disabled:opacity-50"
+                style={{ borderColor: "var(--border-default)", color: deal.flujo ? undefined : "#D97706" }}
+                value={deal.flujo ?? ""}
+                disabled={guardandoFlujo}
+                onChange={async (e) => {
+                  setGuardandoFlujo(true);
+                  const res = await fetch(`/api/deals/${deal.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ flujo: e.target.value || null }),
+                  });
+                  setGuardandoFlujo(false);
+                  if (res.ok) router.refresh();
+                }}
+              >
+                {opcionesFlujo().map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </InfoRow>
             <InfoRow icon={<User className="h-4 w-4" />} label="Fuente lead">
               {deal.leadSourceAtDeal}

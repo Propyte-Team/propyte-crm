@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { FLUJO_ORDER } from "@/lib/flujos";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
@@ -45,6 +46,9 @@ const createDealSchema = z.object({
     "CONTRACT_SIGNED", "CLOSING", "WON", "LOST", "FROZEN",
   ]).optional(),
   dealType: z.enum(["NATIVA_CONTADO", "NATIVA_FINANCIAMIENTO", "MACROLOTE", "CORRETAJE", "MASTERBROKER"]),
+  // #948: flujo del negocio (F1–F8). Vacío = automático: el disparador pone F5 si es Nativa y si
+  // no el flujo del contacto. Lista única: lib/flujos.ts.
+  flujo: z.enum(FLUJO_ORDER).nullable().optional(),
   estimatedValue: z.number().positive("El valor estimado debe ser positivo"),
   currency: z.enum(["MXN", "USD"]).optional(),
   probability: z.number().int().min(0).max(100).optional(),
@@ -316,6 +320,7 @@ export async function POST(request: NextRequest) {
         hubUnitId: data.hubUnitId || null,
         stage: initialStage as any,
         dealType: data.dealType,
+        flujo: data.flujo ?? null, // #948: null → lo llena el disparador
         estimatedValue: data.estimatedValue,
         currency: data.currency || "MXN",
         probability,

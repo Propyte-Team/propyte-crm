@@ -34,6 +34,8 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     { key: "contactStatus", label: "Estado del contacto", group: "Clasificación" },
     { key: "temperature", label: "Temperatura", group: "Clasificación" },
     { key: "contactType", label: "Tipo de contacto", group: "Clasificación" },
+    // #948: flujo del flujograma (F1–F8). Gateable por rol como los demás.
+    { key: "flujo", label: "Flujo", group: "Clasificación" },
     { key: "urgency", label: "Urgencia", group: "Clasificación" },
     { key: "score", label: "Score", group: "Clasificación" },
     // AUD-20260710-04: fuente editable inline en el detalle — gateable por rol desde aquí

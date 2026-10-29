@@ -12,7 +12,7 @@ import {
 
 const contacto = (over: Partial<ContactoExportable> = {}): ContactoExportable => ({
   firstName: "Javier", lastName: "Prieto", email: "prietojavier357@gmail.com", phone: "+5219842536158",
-  secondaryPhone: null, contactType: null, contactStatus: "NUEVO", lifecycleStage: "MQL", temperature: "COLD",
+  secondaryPhone: null, contactType: null, flujo: null, contactStatus: "NUEVO", lifecycleStage: "MQL", temperature: "COLD",
   score: 10, urgency: null, tags: ["vip", "cancun"], leadSource: "MESSENGER", leadSourceDetail: null,
   targetPlaza: null, residenceCity: "Mérida", residenceCountry: null, nationality: null, preferredLanguage: "ES",
   investmentProfile: "INVESTOR_RENTAL", propertyType: null, purchaseTimeline: null, budgetMin: "2500000.00",

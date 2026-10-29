@@ -24,6 +24,7 @@ import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter
 import { getContactAccessInfo } from "@/server/contacts";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
+import { FLUJO_ORDER } from "@/lib/flujos";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import {
   FULL_ACCESS_ROLES,
@@ -72,6 +73,8 @@ const contactCoreFields = z.object({
   // null = «sin tipo» (#863): permite al asesor dejarlo en «—».
   // #907: única fuente = CONTACT_TYPE_ORDER (sin REFERIDOR, con PROVEEDOR y OTRO).
   contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(),
+  // #948: flujo del flujograma (F1–F8). null = «Sin flujo». Lista única: lib/flujos.ts.
+  flujo: z.enum(FLUJO_ORDER).nullable().optional(),
   // Única fuente de verdad = CONTACT_STATUS_ORDER (constants.ts) — evita el bug clásico
   // "enum Prisma ≠ enum zod" (un valor válido en BD pero ausente aquí se rechaza en silencio).
   contactStatus: z.enum(CONTACT_STATUS_ORDER).optional(),
@@ -400,6 +403,8 @@ export async function POST(request: NextRequest) {
         whatsappUserId: data.whatsappUserId || null,
         secondaryPhone: data.secondaryPhone || null,
         contactType: data.contactType ?? null, // #863: nace sin tipo salvo que se elija
+        // #948: si no se elige, el disparador lo llena según el tipo (Broker → F6, Empleo → F8).
+        flujo: data.flujo ?? null,
         // #929: si viene con broker, su fuente ES «Registro de Broker», diga lo que diga el body.
         leadSource: data.referredById ? LEAD_SOURCE_BROKER : data.leadSource,
         leadSourceDetail: data.leadSourceDetail || null,
@@ -576,6 +581,7 @@ export async function PUT(request: NextRequest) {
     if (data.whatsappUserId !== undefined) updateData.whatsappUserId = data.whatsappUserId || null;
     if (data.secondaryPhone !== undefined) updateData.secondaryPhone = data.secondaryPhone || null;
     if (data.contactType !== undefined) updateData.contactType = data.contactType;
+    if (data.flujo !== undefined) updateData.flujo = data.flujo; // #948
     if (data.contactStatus !== undefined) updateData.contactStatus = data.contactStatus;
     if (data.urgency !== undefined) updateData.urgency = data.urgency;
     if (data.leadSource !== undefined) updateData.leadSource = data.leadSource;
