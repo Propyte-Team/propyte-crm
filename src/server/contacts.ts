@@ -291,6 +291,8 @@ export async function getContact(id: string) {
         take: MAX_REFERIDOS_EN_FICHA,
       },
       _count: { select: { referrals: { where: { deletedAt: null } } } },
+      // #949: la empresa a la que pertenece (catálogo compartido: no tiene dueño ni marca).
+      developerPartner: { select: { id: true, name: true, type: true, deletedAt: true } },
     },
   });
 
@@ -332,8 +334,14 @@ export async function getContact(id: string) {
   const { visibles, ocultos } = separarReferidos(referrals ?? [], puedeAbrir);
   const totalReferidos = Math.max(_count?.referrals ?? 0, referrals?.length ?? 0);
 
+  // #949: una empresa borrada (soft delete) ya no se ofrece ni se muestra: la ficha dice «—».
+  const empresa = resto.developerPartner && !resto.developerPartner.deletedAt
+    ? { id: resto.developerPartner.id, name: resto.developerPartner.name, type: resto.developerPartner.type }
+    : null;
+
   return {
     ...resto,
+    developerPartner: empresa,
     referredBy: ligaBroker,
     referidos: visibles.map((r) => ({
       id: r.id,

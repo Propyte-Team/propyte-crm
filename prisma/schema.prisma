@@ -862,6 +862,12 @@ model Contact {
   // #917: archivos subidos a la ficha (CV).
   files        ContactFile[]
 
+  // #949: empresa a la que pertenece (módulo «Empresas», tabla developer_partners). N:1. Si la
+  // empresa se borra de verdad, la liga se suelta (SET NULL). No confundir con `company`, el
+  // texto libre que vino de Zoho (#914), que se queda como histórico.
+  developerPartnerId String?
+  developerPartner   DeveloperPartner? @relation(fields: [developerPartnerId], references: [id], onDelete: SetNull)
+
   // Información adicional (#914). Nacieron para la migración de los leads de Zoho, pero son
   // campos normales del contacto: se editan en la ficha y se gatean por rol como los demás.
   // Lista única con etiquetas y validación: src/lib/contacts/campos-adicionales.ts.
@@ -904,6 +910,7 @@ model Contact {
 
   @@index([referredById])
   @@index([flujo])
+  @@index([developerPartnerId])
   @@map("contacts")
   @@schema("propyte_crm")
 }
@@ -3082,12 +3089,17 @@ model DeveloperPartner {
   website     String?
   email       String?
   phone       String?
+  // #949: tipo de empresa (DESARROLLADORA, INMOBILIARIA, PROVEEDOR…). Texto y no enum para poder
+  // agregar tipos sin migración; la lista válida vive en src/lib/developer-partners/shared.ts.
+  type        String?
   createdById String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
+  contacts    Contact[] // #949
 
   @@index([name])
+  @@index([type])
   @@map("developer_partners")
   @@schema("propyte_crm")
 }

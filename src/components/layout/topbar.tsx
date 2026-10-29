@@ -51,7 +51,7 @@ const MODULE_LABELS: Record<string, string> = {
   "/cotizaciones": "Cotizaciones",
   "/cobranza": "Cobranza",
   "/developments": "Desarrollos y Propiedades",
-  "/desarrolladores": "Desarrolladores",
+  "/empresas": "Empresas", // #949: antes «Desarrolladores»
   "/commissions": "Comisiones",
   "/metas": "Metas",
   "/reports": "Reportes",

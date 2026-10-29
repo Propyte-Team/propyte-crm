@@ -41,6 +41,10 @@ export default async function ContactDetailPage(props: ContactPageProps) {
     delete visibleContact.referidos;
     delete visibleContact.referidosNoListados;
   }
+  // #949: «Empresa» oculta para el rol → tampoco el nombre ya resuelto.
+  if (fieldAccess.developerPartnerId === "HIDDEN") {
+    delete visibleContact.developerPartner;
+  }
   // Badge de marca en el encabezado (entrega 3, 2026-10-12). getContact ya trae contact.brands.
   const brandView = await getBrandViewContext(session.user);
   // Lead scoring: el desglose solo se carga si el rol puede ver el score. Las dos lecturas son

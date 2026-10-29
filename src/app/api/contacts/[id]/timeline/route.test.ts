@@ -10,6 +10,7 @@ vi.mock("@/lib/db", () => ({
     recordFieldChange: { findMany: (...a: unknown[]) => rfcFindMany(...a) },
     user: { findMany: async () => [{ id: "u1", name: "Luis Flores" }] },
     contact: { findMany: async () => [] },
+    developerPartner: { findMany: async () => [{ id: "e1", name: "Ekasa" }, { id: "e2", name: "Ánfora" }] },
     activity: { findMany: async () => [] },
     message: { findMany: async () => [] },
     actionPlanEnrollment: { findMany: async () => [] },
@@ -121,5 +122,23 @@ describe("GET /api/contacts/[id]/timeline — fuentes legibles (#934)", () => {
     const body = await pedir();
     expect(body.items[0].source).toBe("Nueva fuente x");
     expect(body.items[0].title).toBe("Teléfono se actualizó de — a +529997402652");
+  });
+});
+
+describe("GET /api/contacts/[id]/timeline — empresa (#949)", () => {
+  it("el cambio de empresa se lee con nombres, no con ids", async () => {
+    rfcFindMany.mockResolvedValueOnce([
+      fila("developerPartnerId", "e1", "e2", "ui"),
+      fila("developerPartnerId", null, "e1", "ui"),
+      fila("developerPartnerId", "e2", null, "ui"),
+      fila("developerPartnerId", "borrada", "e1", "ui"),
+    ]);
+    const body = await pedir("kinds=field_change&limit=10");
+    expect(body.items.map((i: { title: string }) => i.title)).toEqual([
+      "Empresa se actualizó de Ekasa a Ánfora",
+      "Empresa se actualizó de Ninguna a Ekasa",
+      "Empresa se actualizó de Ánfora a Ninguna",
+      "Empresa se actualizó de Empresa desconocida a Ekasa",
+    ]);
   });
 });

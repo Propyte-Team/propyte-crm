@@ -43,6 +43,7 @@ import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { BrandBadges } from "@/components/brands/brand-view";
 import { ReferidoPorEncabezado } from "@/components/contacts/referido-por";
+import { EmpresaDelContacto } from "@/components/contacts/empresa-del-contacto";
 import { tituloRegistros } from "@/lib/contacts/referidos";
 import { opcionesFlujo } from "@/lib/flujos";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
@@ -485,6 +486,12 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
           )}
 
           <Section title="Asignación">
+            {/* #949: empresa a la que pertenece (módulo «Empresas»). */}
+            <EmpresaDelContacto
+              empresa={contact.developerPartner}
+              access={acc("developerPartnerId")}
+              onSave={(developerPartnerId) => save({ developerPartnerId })}
+            />
             {/* #907: el broker que lo trajo. Se cambia en «Editar todo». */}
             {acc("referredById") !== "HIDDEN" && (
               <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
