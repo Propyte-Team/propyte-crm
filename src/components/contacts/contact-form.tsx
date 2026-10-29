@@ -25,6 +25,8 @@ import {
   normalizarTipoContacto,
 } from "@/lib/constants";
 import { ContactPicker, type PickedContact } from "@/components/agenda/contact-picker";
+import { EmpresaSelect } from "@/components/developer-partners/empresa-select";
+import { campoEmpresa, type EmpresaOpcion } from "@/lib/developer-partners/shared";
 import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_VACIO_LABEL, campoFlujo } from "@/lib/flujos";
 
 // --- Esquema de validación Zod ---
@@ -87,6 +89,8 @@ export const contactFormSchema = z
   tags: z.array(z.string().max(50)).max(20).optional(),
   // #907: el broker que trajo a este contacto; null = sin broker.
   referredById: z.string().guid().nullable().optional(),
+  // #949: empresa a la que pertenece; null = sin empresa. Sin esta clave zod la quitaría.
+  developerPartnerId: z.string().min(1).nullable().optional(),
   })
   .refine((data) => Boolean(data.phone) || Boolean(data.whatsappUserId), {
     message: "Captura un teléfono o un Usuario de WhatsApp",
@@ -108,6 +112,11 @@ interface ContactFormProps {
   mode: "create" | "edit";
   initialData?: any;
   onSuccess: () => void;
+  /**
+   * #949: alta desde el cuadro de una empresa. El contacto nace ligado a ella y el selector de
+   * empresa queda fijo.
+   */
+  empresaFija?: EmpresaOpcion;
 }
 
 // --- Opciones de selects con etiquetas en español ---
@@ -243,7 +252,7 @@ export function campoReferidoPor(
   return actualId === inicialId ? {} : { referredById: actualId };
 }
 
-export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) {
+export function ContactForm({ mode, initialData, onSuccess, empresaFija }: ContactFormProps) {
   // Estado del formulario
   const [formData, setFormData] = useState<Partial<ContactFormData>>({
     firstName: initialData?.firstName || "",
@@ -287,6 +296,17 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
   // #951: el flujo va aparte de formData (no se esparce): solo viaja si se eligió o si cambió.
   const flujoInicial: string | null = initialData?.flujo ?? null;
   const [flujo, setFlujo] = useState<string | null>(flujoInicial);
+  // #949: la ficha trae la empresa ya resuelta; la lista solo el id (mismo trato que el broker).
+  const empresaInicial: EmpresaOpcion | null = initialData?.developerPartner?.id
+    ? {
+        id: initialData.developerPartner.id,
+        name: initialData.developerPartner.name ?? "",
+        type: initialData.developerPartner.type ?? null,
+      }
+    : initialData?.developerPartnerId
+      ? { id: initialData.developerPartnerId, name: "Empresa ligada (ver ficha)", type: null }
+      : null;
+  const [empresa, setEmpresa] = useState<EmpresaOpcion | null>(empresaFija ?? empresaInicial);
 
   const [tagsInput, setTagsInput] = useState(
     (initialData?.tags || []).join(", ")
@@ -335,6 +355,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
       ...buildSubmitData(formData, tags),
       ...campoReferidoPor(mode, brokerInicial?.id ?? null, broker?.id ?? null),
       ...campoFlujo(mode, flujoInicial, flujo), // #951
+      ...campoEmpresa(mode, empresaInicial?.id ?? null, empresa?.id ?? null), // #949
     };
 
     // Validar con Zod
@@ -582,6 +603,19 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
             </p>
             {errors.referredById && (
               <p className="text-xs text-destructive">{errors.referredById}</p>
+            )}
+          </div>
+          {/* #949: empresa a la que pertenece (módulo «Empresas»). */}
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Empresa</Label>
+            <EmpresaSelect
+              value={empresa}
+              onChange={setEmpresa}
+              disabled={submitting || Boolean(empresaFija)}
+              placeholder="Buscar empresa (opcional)"
+            />
+            {errors.developerPartnerId && (
+              <p className="text-xs text-destructive">{errors.developerPartnerId}</p>
             )}
           </div>
           <div className="space-y-2 sm:col-span-2">

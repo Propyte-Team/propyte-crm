@@ -163,6 +163,22 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
           : [];
         const brokerById = new Map(brokers.map((b) => [b.id, nombreDeContacto(b)]));
 
+        // #949: «Empresa» guarda el id de una empresa (developer_partners). Incluye las borradas:
+        // la cronología cuenta lo que pasó, aunque la empresa ya no exista.
+        const empresaIds = new Set<string>();
+        for (const c of changes) {
+          if (c.field !== "developerPartnerId") continue;
+          if (typeof c.oldValue === "string") empresaIds.add(c.oldValue);
+          if (typeof c.newValue === "string") empresaIds.add(c.newValue);
+        }
+        const empresas = empresaIds.size
+          ? await prisma.developerPartner.findMany({
+              where: { id: { in: [...empresaIds] } },
+              select: { id: true, name: true },
+            })
+          : [];
+        const empresaById = new Map(empresas.map((e) => [e.id, e.name]));
+
         sources.push(
           changes.flatMap((c) => {
             const comun = {
@@ -197,6 +213,14 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
               newForTitle = c.newValue
                 ? brokerById.get(c.newValue as string) ?? "Contacto desconocido"
                 : "Nadie";
+            }
+            if (c.field === "developerPartnerId") {
+              oldForTitle = c.oldValue
+                ? empresaById.get(c.oldValue as string) ?? "Empresa desconocida"
+                : "Ninguna";
+              newForTitle = c.newValue
+                ? empresaById.get(c.newValue as string) ?? "Empresa desconocida"
+                : "Ninguna";
             }
             return [
               {

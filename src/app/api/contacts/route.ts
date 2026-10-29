@@ -102,6 +102,8 @@ const contactCoreFields = z.object({
   rentalStrategy: z.enum(["LONG_TERM", "AIRBNB", "BOTH", "NA"]).optional().nullable(),
   // #907: el broker que trajo a este contacto. null = quitar la liga.
   referredById: z.string().guid().nullable().optional(),
+  // #949: empresa a la que pertenece (módulo «Empresas»). null = quitar la liga.
+  developerPartnerId: z.string().trim().min(1).max(64).nullable().optional(),
   // #914: «Información adicional» (empresa, Email 2, Facebook…). Lista única en
   // lib/contacts/campos-adicionales.ts; aquí solo se mezcla.
   ...CAMPOS_ADICIONALES_SHAPE,
@@ -129,6 +131,18 @@ async function errorDeReferidoPor(
     : null;
   const motivo = validarReferidoPor({ contactId, referredById, broker });
   return motivo ? MENSAJE_REFERIDO_INVALIDO[motivo] : null;
+}
+
+/**
+ * #949: ¿existe la empresa elegida? Cualquier rol puede ELEGIR una empresa existente (crearla es
+ * otra cosa: /api/desarrolladores). Devuelve el mensaje de error o null si es válida.
+ */
+async function errorDeEmpresa(developerPartnerId: string): Promise<string | null> {
+  const empresa = await prisma.developerPartner.findFirst({
+    where: { id: developerPartnerId, deletedAt: null },
+    select: { id: true },
+  });
+  return empresa ? null : "La empresa elegida no existe";
 }
 
 // Usado tal cual por POST (exige al menos un identificador de contacto). PUT usa
@@ -391,6 +405,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // #949: la empresa, si se eligió una (p. ej. al crear el contacto desde el cuadro de la empresa).
+    if (data.developerPartnerId) {
+      const error = await errorDeEmpresa(data.developerPartnerId);
+      if (error) {
+        return NextResponse.json({ error, fields: ["developerPartnerId"] }, { status: 400 });
+      }
+    }
+
     // Si no se asignó a nadie, asignar al usuario actual (si es asesor/TL)
     const assignedToId =
       data.assignedToId ||
@@ -430,6 +452,7 @@ export async function POST(request: NextRequest) {
         purchaseModality: data.purchaseModality || undefined,
         rentalStrategy: data.rentalStrategy || undefined,
         referredById: data.referredById || null, // #907
+        developerPartnerId: data.developerPartnerId || null, // #949
         ...datosCamposAdicionales(data), // #914
       },
       include: {
@@ -574,6 +597,14 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // #949: ligar a una empresa (quitarla, null, no necesita comprobación).
+    if (data.developerPartnerId) {
+      const error = await errorDeEmpresa(data.developerPartnerId);
+      if (error) {
+        return NextResponse.json({ error, fields: ["developerPartnerId"] }, { status: 400 });
+      }
+    }
+
     // Construir objeto de actualización
     const updateData: Prisma.ContactUpdateInput = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
@@ -620,6 +651,11 @@ export async function PUT(request: NextRequest) {
       // #929: ligar a un broker pone la fuente en «Registro de Broker», siempre. Quitar la liga
       // no toca la fuente (no hay de dónde saber cuál tenía antes).
       if (data.referredById) updateData.leadSource = LEAD_SOURCE_BROKER;
+    }
+    if (data.developerPartnerId !== undefined) {
+      updateData.developerPartner = data.developerPartnerId
+        ? { connect: { id: data.developerPartnerId } }
+        : { disconnect: true };
     }
 
     // Override manual de lifecycle: enruta por el helper para emitir evento + Activity.

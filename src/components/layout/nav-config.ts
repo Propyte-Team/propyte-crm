@@ -67,8 +67,9 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       // #867: MARKETING entra de solo lectura (ve, no modifica) — src/lib/rbac/quote-scope.ts
       { label: "Cotizaciones", href: "/cotizaciones", icon: FileText, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "BROKER", "MARKETING", ...ASESORES] },
       { label: "Desarrollos y Propiedades", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING", "MANTENIMIENTO", "DEVELOPER_EXT"] },
-      // #872: todos consultan; ADMIN y DIRECTOR editan (src/lib/developer-partners/shared.ts)
-      { label: "Desarrolladores", href: "/desarrolladores", icon: Handshake, roles: TODOS },
+      // #872/#949: «Empresas» (antes «Desarrolladores»). Todos consultan; ADMIN, DIRECTOR y GERENTE
+      // editan (src/lib/developer-partners/shared.ts).
+      { label: "Empresas", href: "/empresas", icon: Handshake, roles: TODOS },
     ],
   },
   {

@@ -43,6 +43,8 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     // #907: el broker que trajo al contacto. Gateable igual que los demás; si se oculta, la
     // ficha no muestra la liga ni la lista de referidos (ver contacts/[id]/page.tsx).
     { key: "referredById", label: "Registrado por", group: "Clasificación" }, // #929: antes «Referido por»
+    // #949: empresa del contacto (módulo «Empresas»). Gateable por rol como los demás.
+    { key: "developerPartnerId", label: "Empresa", group: "Clasificación" },
     // #914: «Información adicional» — de la lista única, sin copiarla.
     ...CAMPOS_ADICIONALES.map((c) => ({ key: c.key, label: c.label, group: GRUPO_CAMPOS_ADICIONALES })),
   ],

@@ -15,7 +15,7 @@ const NAV = [
   { label: "Cotizaciones", href: "/cotizaciones", icon: FileText },
   { label: "Cobranza", href: "/cobranza", icon: DollarSign },
   { label: "Desarrollos y Propiedades", href: "/developments", icon: Building2 },
-  { label: "Desarrolladores", href: "/desarrolladores", icon: Handshake },
+  { label: "Empresas", href: "/empresas", icon: Handshake }, // #949
   { label: "Configuración", href: "/configuracion", icon: Settings },
 ];
 
