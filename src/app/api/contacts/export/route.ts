@@ -32,6 +32,7 @@ const SELECT_EXPORT = {
   phone: true,
   secondaryPhone: true,
   contactType: true,
+  flujo: true, // #948
   contactStatus: true,
   lifecycleStage: true,
   temperature: true,

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { FLUJO_ORDER } from "@/lib/flujos";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { DEAL_STAGE_PROBABILITY } from "@/lib/constants";
@@ -43,6 +44,8 @@ const updateDealSchema = z.object({
     "CONTRACT_SIGNED", "CLOSING", "WON", "LOST", "FROZEN",
   ]).optional(),
   dealType: z.enum(["NATIVA_CONTADO", "NATIVA_FINANCIAMIENTO", "MACROLOTE", "CORRETAJE", "MASTERBROKER"]).optional(),
+  // #948: flujo del negocio (F1–F8). null = «Sin flujo». Lista única: lib/flujos.ts.
+  flujo: z.enum(FLUJO_ORDER).nullable().optional(),
   estimatedValue: z.number().positive().optional(),
   currency: z.enum(["MXN", "USD"]).optional(),
   probability: z.number().int().min(0).max(100).optional(),
@@ -315,6 +318,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       updateData.probability = data.probability || DEAL_STAGE_PROBABILITY[data.stage] || 0;
     }
     if (data.dealType !== undefined) updateData.dealType = data.dealType;
+    if (data.flujo !== undefined) updateData.flujo = data.flujo; // #948
     if (data.estimatedValue !== undefined) updateData.estimatedValue = data.estimatedValue;
     if (data.currency !== undefined) updateData.currency = data.currency;
     if (data.probability !== undefined && !data.stage) updateData.probability = data.probability;

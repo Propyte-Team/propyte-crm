@@ -44,6 +44,8 @@ const SOURCE_LABELS: Record<string, string> = {
   inbox_spam: "Inbox (marcado como spam)",
   inbox_assign: "Inbox (asignación)",
   limpieza_contactos_2026_10_16: "Limpieza de contactos (16-oct)",
+  // #948: la migración llenó el flujo de los casos seguros (Broker → F6, Empleo → F8).
+  flujo_llenado_2026_10_29: "Llenado de flujo (29-oct)",
 };
 
 /** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */

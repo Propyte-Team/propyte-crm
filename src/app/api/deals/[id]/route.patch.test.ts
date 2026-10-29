@@ -166,3 +166,26 @@ describe("PATCH /api/deals/[id] — integridad del cierre (#D-02)", () => {
     expect(txActivityCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("PATCH /api/deals/[id] — flujo del negocio (#948)", () => {
+  it("guarda el flujo elegido en el detalle del negocio", async () => {
+    dealEnEtapa("NEGOTIATION");
+    const res = await PATCH(req({ flujo: "F3_CAPTACION_MB" }), params);
+    expect(res.status).toBe(200);
+    expect(txDealUpdate.mock.calls[0][0].data.flujo).toBe("F3_CAPTACION_MB");
+  });
+
+  it("«Sin flujo» se guarda como null", async () => {
+    dealEnEtapa("NEGOTIATION");
+    const res = await PATCH(req({ flujo: null }), params);
+    expect(res.status).toBe(200);
+    expect(txDealUpdate.mock.calls[0][0].data).toHaveProperty("flujo", null);
+  });
+
+  it("un flujo que no existe se rechaza con 400 y no escribe", async () => {
+    dealEnEtapa("NEGOTIATION");
+    const res = await PATCH(req({ flujo: "F9" }), params);
+    expect(res.status).toBe(400);
+    expect(txDealUpdate).not.toHaveBeenCalled();
+  });
+});

@@ -9,6 +9,7 @@ import {
 } from "@/lib/constants";
 import { ETIQUETAS_CAMPOS_ADICIONALES } from "@/lib/contacts/campos-adicionales";
 import { CORE_FIELDS } from "@/lib/metadata/core-fields-catalogo";
+import { FLUJO_LABELS } from "@/lib/flujos";
 import {
   INVESTMENT_LABEL,
   MODALITY_LABEL,
@@ -107,6 +108,7 @@ const VALUE_LABEL_MAPS: Record<string, Record<string, string>> = {
   purchaseModality: MODALITY_LABEL,
   rentalStrategy: RENTAL_LABEL,
   targetPlaza: PLAZA_LABELS,
+  flujo: FLUJO_LABELS, // #948
 };
 
 /** Montos: se leen con separador de miles («2,000,000»), sin inventar la moneda. */

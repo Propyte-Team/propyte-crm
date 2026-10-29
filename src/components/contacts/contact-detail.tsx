@@ -44,6 +44,7 @@ import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { BrandBadges } from "@/components/brands/brand-view";
 import { ReferidoPorEncabezado } from "@/components/contacts/referido-por";
 import { tituloRegistros } from "@/lib/contacts/referidos";
+import { opcionesFlujo } from "@/lib/flujos";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
 import {
   CONTACT_STATUS_LABELS,
@@ -70,6 +71,8 @@ import {
 } from "@/lib/contacts/perfil-labels";
 
 // --- Etiquetas locales (no en constants) ---
+// #948: punto del chip «Sin flujo» (aviso, no error).
+const FLUJO_SIN_ELEGIR_COLOR = "#D97706";
 const TEMP_COLORS: Record<string, string> = {
   HOT: "#DC2626",
   WARM: "#D97706",
@@ -314,6 +317,17 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
                   loading={busy === "contactType"}
                   readOnly={acc("contactType") !== "EDIT"}
                   onChange={(v) => changeField("contactType", v || null)}
+                />
+              )}
+              {/* #948: flujo del flujograma. Vacío = «Sin flujo» con punto ámbar, para que se elija. */}
+              {acc("flujo") !== "HIDDEN" && (
+                <ChipSelect
+                  value={contact.flujo ?? ""}
+                  options={opcionesFlujo()}
+                  dotColor={contact.flujo ? undefined : FLUJO_SIN_ELEGIR_COLOR}
+                  loading={busy === "flujo"}
+                  readOnly={acc("flujo") !== "EDIT"}
+                  onChange={(v) => changeField("flujo", v || null)}
                 />
               )}
               {acc("urgency") !== "HIDDEN" && (

@@ -14,6 +14,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DEAL_TYPE_LABELS, CURRENCY_LABELS, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_AUTOMATICO_LABEL } from "@/lib/flujos";
+
+// #948: Radix no admite un SelectItem con value="": «Automático» viaja como este centinela y
+// no se manda (el disparador de la base pone F5 si es Nativa y si no el flujo del contacto).
+const FLUJO_AUTO = "_auto";
 
 interface DealFormProps {
   // Datos iniciales para edición
@@ -63,6 +68,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
   const [developmentId, setDevelopmentId] = useState(initialData?.developmentId || "");
   const [unitId, setUnitId] = useState(initialData?.unitId || "");
   const [dealType, setDealType] = useState(initialData?.dealType || "");
+  const [flujo, setFlujo] = useState<string>(FLUJO_AUTO); // #948
   const [estimatedValue, setEstimatedValue] = useState(
     initialData?.estimatedValue?.toString() || ""
   );
@@ -183,6 +189,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
         expectedCloseDate,
         leadSourceAtDeal: leadSourceAtDeal || "OTRO",
       };
+      if (flujo !== FLUJO_AUTO) body.flujo = flujo; // #948
 
       // Inventario = Hub (SOT). Guardamos los IDs del Hub, no FKs locales.
       if (developmentId) body.hubDevelopmentId = developmentId;
@@ -299,6 +306,24 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
         {fieldErrors.dealType && (
           <p className="text-sm text-red-600">{fieldErrors.dealType}</p>
         )}
+      </div>
+
+      {/* #948: flujo del flujograma. Opcional; «Automático» deja que lo ponga la base. */}
+      <div className="space-y-2">
+        <Label htmlFor="flujo">Flujo</Label>
+        <Select value={flujo} onValueChange={setFlujo}>
+          <SelectTrigger id="flujo">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={FLUJO_AUTO}>{FLUJO_AUTOMATICO_LABEL}</SelectItem>
+            {FLUJO_ORDER.map((f) => (
+              <SelectItem key={f} value={f}>
+                {FLUJO_LABELS[f]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Valor estimado y moneda */}
