@@ -2,6 +2,7 @@
 // identidad (capa objetivo), playbook propio (opcional) y tono override (opcional).
 // Sin perfil activo para el tipo → null y el bot se comporta como hoy (global).
 import type { BotAgentProfile, BotPlaybook, BotTask, ContactType, PrismaClient } from "@prisma/client";
+import { tiposEquivalentes } from "@/lib/constants";
 
 export type AgentProfileWithPlaybook = BotAgentProfile & {
   playbook: (BotPlaybook & { tasks: BotTask[] }) | null;
@@ -12,8 +13,9 @@ export type AgentProfileWithPlaybook = BotAgentProfile & {
  * COMPRADOR y lo atendía el agente de compradores; ahora nace sin tipo, pero el bot debe
  * seguir hablándole igual mientras no se clasifique. Solo afecta a qué agente responde: el
  * contacto NO se marca como comprador.
+ * #938: COMPRADOR se retiró y se juntó con INVERSIONISTA en LEAD_COMPRADOR.
  */
-export const TIPO_AGENTE_SIN_CLASIFICAR: ContactType = "COMPRADOR";
+export const TIPO_AGENTE_SIN_CLASIFICAR: ContactType = "LEAD_COMPRADOR";
 
 /** Perfil activo cuyo contactTypes incluye el tipo; menor priority gana. null = sin agente. */
 export async function selectAgentProfile(
@@ -25,7 +27,9 @@ export async function selectAgentProfile(
       where: {
         isActive: true,
         deletedAt: null,
-        contactTypes: { has: contactType ?? TIPO_AGENTE_SIN_CLASIFICAR },
+        // #938: también los tipos retirados equivalentes (COMPRADOR, LEAD, INVERSIONISTA para
+        // LEAD_COMPRADOR): un perfil guardado con el valor viejo sigue atendiendo a su segmento.
+        contactTypes: { hasSome: tiposEquivalentes(contactType ?? TIPO_AGENTE_SIN_CLASIFICAR) as ContactType[] },
       },
       orderBy: { priority: "asc" },
       take: 1,

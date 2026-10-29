@@ -6,6 +6,7 @@ import {
   CONTACT_TYPE_LABELS,
   CONTACT_TYPE_RETIRADOS,
   normalizarTipoContacto,
+  tiposEquivalentes,
 } from "./constants";
 
 // Tarjeta #730, la mitad de ContactType. Hermana de constants.lead-source.test.ts y por
@@ -18,15 +19,16 @@ import {
 // de verdad se rompió: que COMPRADOR y los otros dos estuvieran fuera.
 
 describe("CONTACT_TYPE_ORDER (#730)", () => {
-  it("tiene los 9 tipos vigentes, sin repetidos (#929: sin Referido)", () => {
-    expect(CONTACT_TYPE_ORDER).toHaveLength(9);
-    expect(new Set(CONTACT_TYPE_ORDER).size).toBe(9);
+  it("tiene los 10 tipos vigentes, sin repetidos (#938)", () => {
+    expect(CONTACT_TYPE_ORDER).toHaveLength(10);
+    expect(new Set(CONTACT_TYPE_ORDER).size).toBe(10);
   });
 
   it("incluye los que el z.enum a mano dejaba fuera", () => {
     // COMPRADOR es el DEFAULT del modelo en Prisma y el valor que escribe el intake:
     // el tipo por defecto del sistema no era seleccionable.
-    for (const t of ["COMPRADOR", "EMPLEO"]) {
+    // #938: el comprador hoy es LEAD_COMPRADOR (COMPRADOR se retiró).
+    for (const t of ["LEAD_COMPRADOR", "EMPLEO"]) {
       expect(CONTACT_TYPE_ORDER as readonly string[]).toContain(t);
     }
   });
@@ -79,12 +81,46 @@ describe("Tipos de contacto del #907 (Broker, Proveedor, Otro; sin Referidor)", 
 
   it("normalizarTipoContacto traduce REFERIDOR a Broker y deja todo lo demás igual", () => {
     expect(normalizarTipoContacto("REFERIDOR")).toBe("BROKER_EXTERNO");
-    expect(normalizarTipoContacto("COMPRADOR")).toBe("COMPRADOR");
+    expect(normalizarTipoContacto("EMPLEO")).toBe("EMPLEO");
     expect(normalizarTipoContacto("VENDEDOR")).toBe("VENDEDOR"); // lo inválido lo rechaza el z.enum
     expect(normalizarTipoContacto(null)).toBeNull();
     expect(normalizarTipoContacto(undefined)).toBeUndefined();
     // Una clave del prototipo no es un tipo retirado.
     expect(normalizarTipoContacto("toString")).toBe("toString");
+  });
+});
+
+describe("Tipos de contacto del #938 (Lead Comprador, Lead Vendedor, Referidos)", () => {
+  it("se ofrecen en este orden, con sus etiquetas", () => {
+    expect([...CONTACT_TYPE_ORDER]).toEqual([
+      "LEAD_COMPRADOR", "LEAD_VENDEDOR", "PROSPECTO", "CLIENTE", "REFERIDO_DE_BROKER",
+      "REFERIDO_DE_CLIENTE", "BROKER_EXTERNO", "EMPLEO", "PROVEEDOR", "OTRO",
+    ]);
+    expect(CONTACT_TYPE_LABELS.LEAD_COMPRADOR).toBe("Lead Comprador");
+    expect(CONTACT_TYPE_LABELS.LEAD_VENDEDOR).toBe("Lead Vendedor");
+    expect(CONTACT_TYPE_LABELS.REFERIDO_DE_BROKER).toBe("Referido de Broker");
+    expect(CONTACT_TYPE_LABELS.REFERIDO_DE_CLIENTE).toBe("Referido de Cliente");
+  });
+
+  it("Lead, Comprador e Inversionista ya no se ofrecen y se traducen a Lead Comprador", () => {
+    for (const t of ["LEAD", "COMPRADOR", "INVERSIONISTA"]) {
+      expect(CONTACT_TYPE_ORDER as readonly string[]).not.toContain(t);
+      expect(normalizarTipoContacto(t)).toBe("LEAD_COMPRADOR");
+      expect(CONTACT_TYPE_LABELS[t], `${t} debe seguir leyéndose en la cronología`).toBeTruthy();
+    }
+  });
+
+  it("el REFERIDO viejo sigue quedando sin tipo: no se sabe si era de broker o de cliente", () => {
+    expect(normalizarTipoContacto("REFERIDO")).toBeUndefined();
+  });
+
+  it("tiposEquivalentes: un tipo vigente trae a los retirados que se traducen a él", () => {
+    expect(tiposEquivalentes("LEAD_COMPRADOR").sort()).toEqual(["COMPRADOR", "INVERSIONISTA", "LEAD", "LEAD_COMPRADOR"]);
+    expect(tiposEquivalentes("COMPRADOR").sort()).toEqual(["COMPRADOR", "INVERSIONISTA", "LEAD", "LEAD_COMPRADOR"]);
+    expect(tiposEquivalentes("BROKER_EXTERNO").sort()).toEqual(["BROKER_EXTERNO", "REFERIDOR"]);
+    expect(tiposEquivalentes("EMPLEO")).toEqual(["EMPLEO"]);
+    expect(tiposEquivalentes("LEAD_VENDEDOR")).toEqual(["LEAD_VENDEDOR"]);
+    expect(tiposEquivalentes("REFERIDO")).toEqual(["REFERIDO"]);
   });
 });
 

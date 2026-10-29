@@ -79,13 +79,15 @@ describe("createContactSchema — contactType sale de CONTACT_TYPE_ORDER (#730)"
     }
   });
 
-  it("acepta COMPRADOR, que es el valor por defecto del modelo", () => {
-    // El más importante de los tres que faltaban: Prisma lo pone por defecto y el intake
-    // lo escribe, así que el tipo con el que nace la mayoría de los contactos no era
-    // elegible en este esquema.
-    const r = createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: "COMPRADOR" });
-
-    expect(r.success).toBe(true);
+  it("#938: acepta LEAD_COMPRADOR y LEAD_VENDEDOR; ya no COMPRADOR, INVERSIONISTA ni LEAD", () => {
+    // COMPRADOR era el más importante de los que faltaban en #730. Con el #938 se juntó con
+    // INVERSIONISTA y LEAD en LEAD_COMPRADOR: la UI ya no puede elegir los retirados.
+    for (const tipo of ["LEAD_COMPRADOR", "LEAD_VENDEDOR", "REFERIDO_DE_BROKER", "REFERIDO_DE_CLIENTE"]) {
+      expect(createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: tipo }).success, tipo).toBe(true);
+    }
+    for (const tipo of ["COMPRADOR", "INVERSIONISTA", "LEAD"]) {
+      expect(createContactSchema.safeParse({ ...contactoCon("MESSENGER"), contactType: tipo }).success, tipo).toBe(false);
+    }
   });
 
   it("sigue siendo opcional y sigue rechazando lo inventado", () => {

@@ -46,6 +46,8 @@ const SOURCE_LABELS: Record<string, string> = {
   limpieza_contactos_2026_10_16: "Limpieza de contactos (16-oct)",
   // #948: la migración llenó el flujo de los casos seguros (Broker → F6, Empleo → F8).
   flujo_llenado_2026_10_29: "Llenado de flujo (29-oct)",
+  // #938: la migración pasó Lead, Comprador e Inversionista a «Lead Comprador».
+  tipos_lead_comprador_938: "Cambio de tipos (Lead Comprador)",
 };
 
 /** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */

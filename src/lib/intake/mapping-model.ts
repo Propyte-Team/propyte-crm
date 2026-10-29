@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CONTACT_TYPE_ORDER } from "@/lib/constants";
 
 // Campos Contact permitidos como destino (+ custom.*). Deben existir en incomingLeadSchema/captureLead.
 export const TARGET_FIELDS = [
@@ -13,7 +14,7 @@ export const METADATA_KEYS = [
 
 // Opciones de enum por destino (para el value-map en la UI).
 export const ENUM_OPTIONS: Record<string, string[]> = {
-  contactType: ["COMPRADOR","INVERSIONISTA","BROKER_EXTERNO","EMPLEO","PROVEEDOR","OTRO"], // #907: sin REFERIDOR
+  contactType: [...CONTACT_TYPE_ORDER], // #938: la misma lista que el resto del CRM (antes era una copia a mano)
   temperature: ["HOT","WARM","COLD","DEAD"],
   source: ["WALK_IN","FACEBOOK_ADS","GOOGLE_ADS","INSTAGRAM","TIKTOK_ADS","LINKEDIN","PORTAL_INMOBILIARIO","REFERIDO_CLIENTE","REGISTRO_BROKER","LLAMADA_FRIA","EVENTO","WEBSITE","WHATSAPP","MESSENGER","OTRO"],
   investmentProfile: ["END_USER","INVESTOR_RENTAL","INVESTOR_FLIP","INVESTOR_LAND","MIXED"],

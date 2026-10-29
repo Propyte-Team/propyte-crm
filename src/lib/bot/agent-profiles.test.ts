@@ -15,18 +15,30 @@ describe("selectAgentProfile", () => {
     const r = await selectAgentProfile(db as never, "BROKER_EXTERNO");
     expect(r?.id).toBe("p1");
     const args = findMany.mock.calls[0][0];
-    expect(args.where).toMatchObject({ isActive: true, deletedAt: null, contactTypes: { has: "BROKER_EXTERNO" } });
+    expect(args.where).toMatchObject({ isActive: true, deletedAt: null });
+    // #938: también busca los retirados equivalentes (REFERIDOR → Broker).
+    expect([...args.where.contactTypes.hasSome].sort()).toEqual(["BROKER_EXTERNO", "REFERIDOR"]);
     expect(args.orderBy).toEqual({ priority: "asc" });
     expect(args.take).toBe(1);
   });
 
   // #863: un contacto sin tipo lo sigue atendiendo el agente que antes le tocaba por el
   // default COMPRADOR — el bot no cambia de comportamiento por el cambio de default.
-  it("contacto sin tipo (null) → se busca el agente de COMPRADOR", async () => {
+  // #938: COMPRADOR se juntó en LEAD_COMPRADOR; el perfil guardado todavía con COMPRADOR (antes
+  // de la migración de datos) también cuenta.
+  it("contacto sin tipo (null) → se busca el agente de Lead Comprador (o de los tipos viejos)", async () => {
     findMany.mockResolvedValue([{ id: "p-comp", name: "Compradores", playbook: null }]);
     const r = await selectAgentProfile(db as never, null);
     expect(r?.id).toBe("p-comp");
-    expect(findMany.mock.calls[0][0].where).toMatchObject({ contactTypes: { has: "COMPRADOR" } });
+    expect([...findMany.mock.calls[0][0].where.contactTypes.hasSome].sort()).toEqual(
+      ["COMPRADOR", "INVERSIONISTA", "LEAD", "LEAD_COMPRADOR"],
+    );
+  });
+
+  it("#938: un Lead Vendedor busca solo su tipo", async () => {
+    findMany.mockResolvedValue([]);
+    await selectAgentProfile(db as never, "LEAD_VENDEDOR");
+    expect(findMany.mock.calls[0][0].where.contactTypes).toEqual({ hasSome: ["LEAD_VENDEDOR"] });
   });
 
   it("sin perfil para el tipo → null; error de BD → null (nunca lanza)", async () => {

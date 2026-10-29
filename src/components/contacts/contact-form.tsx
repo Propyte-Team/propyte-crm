@@ -129,9 +129,13 @@ const SIN_TIPO = "__SIN_TIPO__";
 // #951: lo mismo para «Sin flujo».
 const SIN_FLUJO = "__SIN_FLUJO__";
 
+// #938: Comprador e Inversionista se juntan en «Lead Comprador»; entran «Lead Vendedor» y los
+// dos referidos.
 const CONTACT_TYPE_OPTIONS = [
-  { value: "COMPRADOR", label: "Comprador" },
-  { value: "INVERSIONISTA", label: "Inversionista" },
+  { value: "LEAD_COMPRADOR", label: CONTACT_TYPE_LABELS.LEAD_COMPRADOR },
+  { value: "LEAD_VENDEDOR", label: CONTACT_TYPE_LABELS.LEAD_VENDEDOR },
+  { value: "REFERIDO_DE_BROKER", label: CONTACT_TYPE_LABELS.REFERIDO_DE_BROKER },
+  { value: "REFERIDO_DE_CLIENTE", label: CONTACT_TYPE_LABELS.REFERIDO_DE_CLIENTE },
   { value: "BROKER_EXTERNO", label: CONTACT_TYPE_LABELS.BROKER_EXTERNO },
   { value: "EMPLEO", label: "Empleo" },
   // #907: «Referidor» sale (el que refiere es el broker); entran Proveedor y Otro.
@@ -264,6 +268,7 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
     preferredLanguage: initialData?.preferredLanguage || "ES",
     // #863: antes "COMPRADOR" por defecto. #929: un tipo retirado (Referido, Referidor) se abre
     // ya traducido —Referido queda sin tipo— para que el formulario se pueda guardar.
+    // #938: igual Lead, Comprador e Inversionista, que se abren como «Lead Comprador».
     contactType: (normalizarTipoContacto(initialData?.contactType ?? null) ?? null) as ContactFormData["contactType"],
     leadSource: (normalizarFuente(initialData?.leadSource) || "OTRO") as ContactFormData["leadSource"], // #929
     leadSourceDetail: initialData?.leadSourceDetail || "",
@@ -530,7 +535,8 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
               </SelectTrigger>
               <SelectContent>
                 {/* Valores legacy: solo visibles si el contacto ya los tiene (no se crean a mano) */}
-                {["LEAD", "PROSPECTO", "CLIENTE"].includes(formData.contactType ?? "") && (
+                {/* #938: LEAD ya no llega aquí: se abre traducido a «Lead Comprador». */}
+                {["PROSPECTO", "CLIENTE"].includes(formData.contactType ?? "") && (
                   <SelectItem key={formData.contactType} value={formData.contactType!}>
                     {formData.contactType} (legacy)
                   </SelectItem>

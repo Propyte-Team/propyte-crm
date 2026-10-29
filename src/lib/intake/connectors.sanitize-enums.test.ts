@@ -10,10 +10,18 @@ describe("sanitizeEnumFields", () => {
   });
 
   it("conserva un valor de enum válido", () => {
-    const fields: Record<string, unknown> = { contactType: "COMPRADOR", temperature: "HOT" };
+    const fields: Record<string, unknown> = { contactType: "LEAD_COMPRADOR", temperature: "HOT" };
     const dropped = sanitizeEnumFields(fields);
-    expect(fields).toEqual({ contactType: "COMPRADOR", temperature: "HOT" });
+    expect(fields).toEqual({ contactType: "LEAD_COMPRADOR", temperature: "HOT" });
     expect(dropped).toEqual([]);
+  });
+
+  it("#938: un conector configurado antes que manda COMPRADOR / INVERSIONISTA / LEAD entra como Lead Comprador", () => {
+    for (const viejo of ["COMPRADOR", "INVERSIONISTA", "LEAD"]) {
+      const fields: Record<string, unknown> = { contactType: viejo };
+      expect(sanitizeEnumFields(fields), viejo).toEqual([]);
+      expect(fields, viejo).toEqual({ contactType: "LEAD_COMPRADOR" });
+    }
   });
 
   it("no toca campos que no son enum", () => {
@@ -32,12 +40,12 @@ describe("sanitizeEnumFields", () => {
 
   it("detecta varios enums inválidos en el mismo lead", () => {
     const fields: Record<string, unknown> = {
-      contactType: "COMPRADOR",
+      contactType: "LEAD_VENDEDOR",
       source: "FACEBOOK ADS", // inválido (espacio en vez de _)
       temperature: "TIBIO", // inválido
     };
     const dropped = sanitizeEnumFields(fields);
-    expect(fields).toEqual({ contactType: "COMPRADOR" });
+    expect(fields).toEqual({ contactType: "LEAD_VENDEDOR" });
     expect(dropped.sort()).toEqual(["source=FACEBOOK ADS", "temperature=TIBIO"].sort());
   });
 

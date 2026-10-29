@@ -381,7 +381,7 @@ async function main() {
       {
         firstName: "Rodrigo", lastName: "Martínez Vega",
         email: "rodrigo.martinez@gmail.com", phone: "+52 55 1234 5678",
-        contactType: "LEAD" as const, leadSource: "FACEBOOK_ADS" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "FACEBOOK_ADS" as const,
         temperature: "HOT" as const, investmentProfile: "INVESTOR_RENTAL" as const,
         budgetMin: 4000000, budgetMax: 6000000, preferredZone: "Tulum",
         assignedToId: maria.id, score: 85, tags: ["inversionista", "urgente"],
@@ -405,7 +405,7 @@ async function main() {
       {
         firstName: "Ana Lucía", lastName: "Herrera Domínguez",
         email: "analucia.herrera@gmail.com", phone: "+52 984 200 1111",
-        contactType: "LEAD" as const, leadSource: "WALK_IN" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "WALK_IN" as const,
         temperature: "WARM" as const, investmentProfile: "END_USER" as const,
         budgetMin: 3500000, budgetMax: 5000000, preferredZone: "Tulum",
         assignedToId: alejandro.id, score: 55, tags: ["walk-in"],
@@ -413,7 +413,7 @@ async function main() {
       {
         firstName: "José Luis", lastName: "Peña Morales",
         email: "jlpena@hotmail.com", phone: "+52 55 4444 7890",
-        contactType: "INVERSIONISTA" as const, leadSource: "PORTAL_INMOBILIARIO" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "PORTAL_INMOBILIARIO" as const,
         temperature: "HOT" as const, investmentProfile: "INVESTOR_LAND" as const,
         budgetMin: 2000000, budgetMax: 5000000, preferredZone: "Tulum",
         assignedToId: valentina.id, score: 78, tags: ["terrenos", "inversionista"],
@@ -429,7 +429,7 @@ async function main() {
       {
         firstName: "Eduardo", lastName: "Vargas Mendoza",
         email: "eduardo.vargas@empresa.mx", phone: "+52 222 111 3333",
-        contactType: "LEAD" as const, leadSource: "WEBSITE" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "WEBSITE" as const,
         temperature: "WARM" as const, investmentProfile: "INVESTOR_RENTAL" as const,
         budgetMin: 4500000, budgetMax: 7000000, preferredZone: "Playa del Carmen",
         assignedToId: diego.id, score: 60, tags: ["web"],
@@ -445,7 +445,7 @@ async function main() {
       {
         firstName: "Ricardo", lastName: "Delgado Fuentes",
         email: "rdelgadof@gmail.com", phone: "+52 55 7777 5555",
-        contactType: "LEAD" as const, leadSource: "FACEBOOK_ADS" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "FACEBOOK_ADS" as const,
         temperature: "COLD" as const, investmentProfile: "END_USER" as const,
         budgetMin: 3000000, budgetMax: 4500000, preferredZone: "Tulum",
         assignedToId: alejandro.id, score: 30, tags: ["facebook"],
@@ -461,7 +461,7 @@ async function main() {
       {
         firstName: "Arturo", lastName: "Soto Campos",
         email: "arturo.soto@protonmail.com", phone: "+52 81 2222 8888",
-        contactType: "LEAD" as const, leadSource: "GOOGLE_ADS" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "GOOGLE_ADS" as const,
         temperature: "HOT" as const, investmentProfile: "INVESTOR_LAND" as const,
         budgetMin: 2500000, budgetMax: 4000000, preferredZone: "Tulum",
         assignedToId: valentina.id, score: 75, tags: ["macrolotes"],
@@ -477,7 +477,7 @@ async function main() {
       {
         firstName: "Héctor", lastName: "Luna Espinoza",
         email: "hector.luna@yahoo.com", phone: "+52 998 400 1010",
-        contactType: "LEAD" as const, leadSource: "WHATSAPP" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "WHATSAPP" as const,
         temperature: "COLD" as const, investmentProfile: "MIXED" as const,
         budgetMin: 3000000, budgetMax: 6000000, preferredZone: "Cancún",
         assignedToId: alejandro.id, score: 35, tags: ["whatsapp"],
@@ -493,7 +493,7 @@ async function main() {
       {
         firstName: "Daniel", lastName: "Méndez Ibarra",
         email: "daniel.mendez.i@gmail.com", phone: "+52 55 6666 3030",
-        contactType: "INVERSIONISTA" as const, leadSource: "PORTAL_INMOBILIARIO" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "PORTAL_INMOBILIARIO" as const,
         temperature: "HOT" as const, investmentProfile: "INVESTOR_FLIP" as const,
         budgetMin: 9000000, budgetMax: 14000000, preferredZone: "Playa del Carmen",
         assignedToId: sofia.id, score: 82, tags: ["inversionista", "portal"],
@@ -501,7 +501,7 @@ async function main() {
       {
         firstName: "Valeria", lastName: "Castro León",
         email: "vale.castro@outlook.com", phone: "+52 984 600 4040",
-        contactType: "LEAD" as const, leadSource: "INSTAGRAM" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "INSTAGRAM" as const,
         temperature: "COLD" as const, investmentProfile: "END_USER" as const,
         budgetMin: 3500000, budgetMax: 5500000, preferredZone: "Tulum",
         assignedToId: valentina.id, score: 28, tags: ["instagram", "joven"],
@@ -517,7 +517,7 @@ async function main() {
       {
         firstName: "Isabella", lastName: "Moreno Pacheco",
         email: "isabella.moreno@icloud.com", phone: "+52 55 8888 6060",
-        contactType: "LEAD" as const, leadSource: "WEBSITE" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "WEBSITE" as const,
         temperature: "WARM" as const, investmentProfile: "INVESTOR_LAND" as const,
         budgetMin: 2000000, budgetMax: 3500000, preferredZone: "Tulum",
         assignedToId: alejandro.id, score: 50, tags: ["web", "terrenos"],
@@ -533,7 +533,7 @@ async function main() {
       {
         firstName: "Natalia", lastName: "Cervantes Solís",
         email: "natalia.cervantes@gmail.com", phone: "+52 33 9999 8080",
-        contactType: "LEAD" as const, leadSource: "FACEBOOK_ADS" as const,
+        contactType: "LEAD_COMPRADOR" as const, leadSource: "FACEBOOK_ADS" as const,
         temperature: "WARM" as const, investmentProfile: "MIXED" as const,
         budgetMin: 5000000, budgetMax: 8000000, preferredZone: "Playa del Carmen",
         assignedToId: maria.id, score: 58, tags: ["facebook", "seguimiento"],

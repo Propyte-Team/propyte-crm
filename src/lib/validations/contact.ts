@@ -59,6 +59,7 @@ const contactBaseSchema = z.object({
   // #730, la otra mitad: eran 6 de los 9 valores de ContactType. Faltaban EMPLEO,
   // REFERIDOR y —el que importa— COMPRADOR, que es el DEFAULT del modelo en Prisma y el
   // que escribe el intake: el valor por defecto del sistema no era elegible.
+  // (#938: COMPRADOR ya se retiró; hoy el comprador es LEAD_COMPRADOR.)
   contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(), // null = sin tipo (#863)
 
   // Fuente del lead (enum LeadSource)
@@ -144,7 +145,7 @@ export const searchContactSchema = z.object({
   query: z.string().max(200).optional(),
   source: z.string().optional(),
   temperature: z.enum(["HOT", "WARM", "COLD", "DEAD"]).optional(),
-  type: z.enum(["LEAD", "PROSPECTO", "CLIENTE", "INVERSIONISTA", "BROKER_EXTERNO", "REFERIDO"]).optional(),
+  type: z.enum(CONTACT_TYPE_ORDER).optional(), // #938: era una copia a mano y desfasada
   assignedToId: z.string().guid().optional(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
