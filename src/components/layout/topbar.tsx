@@ -44,6 +44,7 @@ function permisoNavegador(): PermisoNavegador {
 const MODULE_LABELS: Record<string, string> = {
   "/hoy": "Hoy",
   "/agenda": "Agenda",
+  "/copilot": "Copilot",
   "/contacts": "Contactos",
   "/inbox": "Inbox",
   "/pipeline": "Negocios",

@@ -4,7 +4,7 @@
 // sidebar vacío. nav-config.test.ts fija que TODO rol del enum vea al menos 1 item.
 //
 // ORDEN (pedido de Luis, ago-2026): el sidebar sigue el flujo del día del asesor —
-// primero lo operativo (Hoy → Inbox → Agenda), luego el embudo en su orden real
+// primero lo operativo (Hoy → Inbox → Agenda → Copilot), luego el embudo en su orden real
 // (Contactos → Negocios → Cotizaciones), y al final los números. El Dashboard se
 // retiró (#890, 2026-10-15): la página de inicio es «Hoy».
 // Las opciones de sistema YA NO viven aquí: salen en el menú del nombre (Topbar),
@@ -28,6 +28,7 @@ import {
   CopyCheck,
   Plug,
   BriefcaseBusiness,
+  Sparkles,
 } from "lucide-react"
 import { COMMENT_RULES_ROLES } from "@/lib/comments/roles"
 import { REPORTES_ROLES } from "@/lib/rbac/report-scope"
@@ -52,6 +53,8 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       { label: "Hoy", href: "/hoy", icon: Sun, roles: TODOS },
       { label: "Inbox", href: "/inbox", icon: MessageSquare, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "MARKETING"] },
       { label: "Agenda", href: "/agenda", icon: CalendarCheck, roles: TODOS },
+      // #947: módulo del asistente. Por ahora solo la página vacía; lo funcional va en tarjetas aparte.
+      { label: "Copilot", href: "/copilot", icon: Sparkles, roles: TODOS },
     ],
   },
   {
