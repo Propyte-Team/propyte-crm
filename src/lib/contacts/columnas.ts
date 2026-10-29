@@ -15,6 +15,9 @@ export const COLUMNAS_CONTACTOS: ColumnaDef[] = [
   { key: "nombre", label: "Nombre", required: true, defaultVisible: true, align: "left" },
   { key: "estado", label: "Estado", defaultVisible: true, align: "center" },
   { key: "tipo", label: "Tipo de contacto", defaultVisible: true, align: "center" },
+  // #951: flujo del flujograma (#948). Visible por defecto para que salten los «Sin flujo»; quien
+  // ya guardó su elección de columnas lo agrega desde «Gestionar columnas».
+  { key: "flujo", label: "Flujo", defaultVisible: true, align: "center" },
   { key: "telefono", label: "Teléfono", defaultVisible: true, align: "left" },
   { key: "email", label: "Email", defaultVisible: true, align: "left" },
   { key: "fuente", label: "Fuente", defaultVisible: true, align: "center" },

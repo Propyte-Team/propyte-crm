@@ -12,11 +12,12 @@ describe("COLUMNAS_CONTACTOS", () => {
     expect(COLUMNAS_CONTACTOS.filter((c) => c.required).map((c) => c.key)).toEqual(["nombre"]);
   });
 
-  it("sin preferencia guardada se ve lo de siempre MÁS el tipo de contacto, junto a Estado", () => {
+  it("sin preferencia guardada se ve lo de siempre MÁS el tipo de contacto, junto a Estado, y el flujo (#951)", () => {
     expect(columnasVisibles(COLUMNAS_CONTACTOS, null)).toEqual([
       "nombre",
       "estado",
       "tipo",
+      "flujo",
       "telefono",
       "email",
       "fuente",

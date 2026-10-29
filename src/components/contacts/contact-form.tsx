@@ -25,6 +25,7 @@ import {
   normalizarTipoContacto,
 } from "@/lib/constants";
 import { ContactPicker, type PickedContact } from "@/components/agenda/contact-picker";
+import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_VACIO_LABEL, campoFlujo } from "@/lib/flujos";
 
 // --- Esquema de validación Zod ---
 // El teléfono se normaliza (sin espacios/guiones/paréntesis) antes de validar,
@@ -65,6 +66,8 @@ export const contactFormSchema = z
   preferredLanguage: z.enum(["ES", "EN"]).optional(),
   // null = sin tipo (#863): el contacto nace en «—» salvo que se elija uno.
   contactType: z.enum(CONTACT_TYPE_ORDER).nullable().optional(),
+  // #951: sin esta clave, zod la quitaba del cuerpo en silencio. null = «Sin flujo».
+  flujo: z.enum(FLUJO_ORDER).nullable().optional(),
   leadSource: z.enum(LEAD_SOURCE_ORDER),
   leadSourceDetail: z.string().max(200).optional(),
   residenceCity: z.string().max(100).optional(),
@@ -114,6 +117,8 @@ interface ContactFormProps {
 // Radix Select no admite "" como valor de un item: «—» viaja con este centinela y se
 // traduce a null al guardar (#863).
 const SIN_TIPO = "__SIN_TIPO__";
+// #951: lo mismo para «Sin flujo».
+const SIN_FLUJO = "__SIN_FLUJO__";
 
 const CONTACT_TYPE_OPTIONS = [
   { value: "COMPRADOR", label: "Comprador" },
@@ -279,6 +284,9 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
       ? { id: initialData.referredById, name: "Broker ligado (ver ficha)" }
       : null;
   const [broker, setBroker] = useState<PickedContact | null>(brokerInicial);
+  // #951: el flujo va aparte de formData (no se esparce): solo viaja si se eligió o si cambió.
+  const flujoInicial: string | null = initialData?.flujo ?? null;
+  const [flujo, setFlujo] = useState<string | null>(flujoInicial);
 
   const [tagsInput, setTagsInput] = useState(
     (initialData?.tags || []).join(", ")
@@ -326,6 +334,7 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
     const submitData = {
       ...buildSubmitData(formData, tags),
       ...campoReferidoPor(mode, brokerInicial?.id ?? null, broker?.id ?? null),
+      ...campoFlujo(mode, flujoInicial, flujo), // #951
     };
 
     // Validar con Zod
@@ -509,6 +518,23 @@ export function ContactForm({ mode, initialData, onSuccess }: ContactFormProps) 
                 {CONTACT_TYPE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* #951: flujo del flujograma. Vacío al crear = lo llena la base según el tipo. */}
+          <div className="space-y-2">
+            <Label htmlFor="flujo">Flujo</Label>
+            <Select value={flujo ?? SIN_FLUJO} onValueChange={(v) => setFlujo(v === SIN_FLUJO ? null : v)}>
+              <SelectTrigger id="flujo">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SIN_FLUJO}>{FLUJO_VACIO_LABEL}</SelectItem>
+                {FLUJO_ORDER.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {FLUJO_LABELS[f]}
                   </SelectItem>
                 ))}
               </SelectContent>
