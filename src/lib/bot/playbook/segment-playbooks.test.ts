@@ -1,12 +1,74 @@
 import { describe, it, expect } from "vitest";
 import { SEGMENT_PLAYBOOKS } from "./segment-playbooks";
 import { NATIVE_TARGET_FIELDS, isCustomTarget, isNativeTarget } from "./fields";
+import { etiquetaCustom, valorCustom } from "@/lib/timeline/custom";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // Estos tests existen por una razón concreta: `resolveWrite` (apply.ts) descarta
 // un targetField desconocido con kind:"skip" **sin lanzar ni loguear**. Un typo o
 // un campo no whitelisteado no rompe el bot: simplemente hace que el dato nunca
 // se guarde, y eso solo se descubre semanas después mirando contactos vacíos.
 // Aquí se convierte ese fallo silencioso en un test rojo.
+
+describe("Agentes del #954/#955", () => {
+  it("existen el playbook de Lead Comprador (renombrado) y el de Lead Vendedor", () => {
+    const agentes = SEGMENT_PLAYBOOKS.map((p) => p.agentName);
+    expect(agentes).toContain("Agente Lead Comprador");
+    expect(agentes).toContain("Agente Lead Vendedor");
+    // El nombre viejo ya no existe en la BD: el aplicador diría «no existe el agente».
+    expect(agentes).not.toContain("Agente Clientes");
+  });
+
+  it("Lead Vendedor guarda lo de la propiedad en custom.propiedad_venta_*, no en campos de comprador", () => {
+    const vendedor = SEGMENT_PLAYBOOKS.find((p) => p.agentName === "Agente Lead Vendedor")!;
+    const deLaPropiedad = vendedor.tasks.filter((t) => !["firstName", "phone"].includes(t.targetField));
+    expect(deLaPropiedad.length).toBeGreaterThanOrEqual(5);
+    for (const t of deLaPropiedad) expect(t.targetField, t.key).toMatch(/^custom\.propiedad_venta_/);
+    expect(vendedor.tasks.some((t) => t.targetField === "phone")).toBe(true);
+  });
+});
+
+describe("La migración del #955 es copia fiel del playbook", () => {
+  // Las tareas del Agente Lead Vendedor se aplican a producción con SQL (sin acceso de la
+  // sesión a la BD). Si alguien cambia el playbook aquí y no el SQL, esto lo avisa.
+  it("cada tarea de Lead Vendedor está en el SQL con su campo, captura y obligatoriedad", () => {
+    const sql = readFileSync(
+      join(process.cwd(), "prisma", "migrations-manual", "2026-10-30-agentes-lead-comprador-y-vendedor.sql"),
+      "utf8",
+    );
+    const vendedor = SEGMENT_PLAYBOOKS.find((p) => p.agentName === "Agente Lead Vendedor")!;
+    vendedor.tasks.forEach((t, i) => {
+      const fila = `(${i}, '${t.key}', '${t.objective.replace(/'/g, "''")}', '${t.targetField}', '${t.captureType}', '${JSON.stringify(t.enumOptions ?? [])}'`;
+      expect(sql, t.key).toContain(fila);
+      expect(sql, `${t.key} required`).toMatch(new RegExp(`\\(${i}, '${t.key}'[^\\n]*, ${t.required ?? true}\\),?\\n`));
+    });
+    expect(sql).toContain(`'${vendedor.name}'`);
+    expect(sql).toContain("'Agente Lead Comprador'");
+  });
+});
+
+describe("SEGMENT_PLAYBOOKS — se leen bien en la cronología (#933, #955)", () => {
+  // Un custom.* nuevo sin etiqueta sale en la ficha como «Propiedad venta tipo: CESION_DE_DERECHOS».
+  const custom = SEGMENT_PLAYBOOKS.flatMap((p) => p.tasks).filter((t) => isCustomTarget(t.targetField));
+
+  it("cada valor ENUM de un campo custom tiene su texto en español", () => {
+    const crudos: string[] = [];
+    for (const t of custom.filter((t) => t.captureType === "ENUM")) {
+      const clave = t.targetField.slice("custom.".length);
+      for (const o of t.enumOptions ?? []) {
+        if (valorCustom(clave, o.value) === o.value) crudos.push(`${clave}=${o.value}`);
+      }
+    }
+    expect(crudos).toEqual([]);
+  });
+
+  it("los campos de la propiedad en venta tienen etiqueta propia", () => {
+    for (const t of custom.filter((t) => t.targetField.startsWith("custom.propiedad_venta_"))) {
+      expect(etiquetaCustom(t.targetField.slice("custom.".length)), t.key).toMatch(/^Propiedad en venta: /);
+    }
+  });
+});
 
 describe("SEGMENT_PLAYBOOKS — contrato con el aplicador", () => {
   const allTasks = SEGMENT_PLAYBOOKS.flatMap((p) =>
@@ -91,12 +153,20 @@ describe("SEGMENT_PLAYBOOKS — contrato con el aplicador", () => {
     }
   });
 
-  it("ningún playbook de broker o reclutamiento pregunta presupuesto de compra", () => {
+  it("ningún playbook de broker, reclutamiento o vendedor pregunta presupuesto de compra", () => {
     // El punto entero de separar por segmento: no preguntarle presupuesto de
-    // inversión a un candidato a empleo ni a un broker.
-    const camposDeCompra = ["budgetMax", "budgetMin", "purchaseTimeline", "propertyType"];
+    // inversión a un candidato a empleo, a un broker ni a quien viene a vender (#955).
+    const camposDeCompra = ["budgetMax", "budgetMin", "purchaseTimeline", "propertyType", "preferredZone", "investmentProfile"];
     for (const p of SEGMENT_PLAYBOOKS) {
-      if (p.agentName === "Agente Clientes") continue;
+      if (p.agentName === "Agente Lead Comprador") continue;
+      if (p.agentName === "Agente Brokers") {
+        // La zona donde opera el broker sí va en preferredZone (decisión de septiembre).
+        const intrusos = p.tasks
+          .filter((t) => camposDeCompra.filter((c) => c !== "preferredZone").includes(t.targetField))
+          .map((t) => t.key);
+        expect(intrusos, `"${p.name}" pregunta cosas de comprador`).toEqual([]);
+        continue;
+      }
       const intrusos = p.tasks
         .filter((t) => camposDeCompra.includes(t.targetField))
         .map((t) => t.key);
