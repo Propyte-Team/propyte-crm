@@ -2,6 +2,7 @@
 // es quien escribe, para elegir el agente del bot. Mismo patrón defensivo que el
 // extractor del playbook: structured output, timeout 4s, NUNCA lanza ni bloquea.
 import type { ContactType, Prisma, PrismaClient } from "@prisma/client";
+import { normalizarTipoContacto } from "@/lib/constants";
 import { thinkingFieldFor } from "./claude";
 import type { BotMessage } from "./claude";
 
@@ -13,6 +14,10 @@ export const MAX_CLASSIFY_ATTEMPTS = 3;
  * pisar sin haberlos escrito él. Desde el #863 un contacto nuevo nace SIN tipo (null), que
  * también es pisable; COMPRADOR/LEAD se quedan en la lista por los contactos anteriores, que
  * nacieron con esos defaults sin que nadie los eligiera.
+ *
+ * #938: COMPRADOR y LEAD se retiraron (→ LEAD_COMPRADOR). Siguen aquí para el rato entre el
+ * despliegue y la migración de datos; la migración deja a esos contactos como «del bot» (ver
+ * prisma/migrations-manual/2026-10-29-tipos-lead-comprador.sql) para que sigan siendo pisables.
  */
 export const OVERRIDABLE_TYPES: ContactType[] = ["COMPRADOR", "LEAD"];
 
@@ -22,13 +27,15 @@ function esPisable(t: ContactType | null): boolean {
 
 // #907: REFERIDOR salió. Quien quiere referir a alguien ES un broker para Propyte y lo atiende
 // el Agente Brokers (su playbook ya cubre «solo refiero / pase de cliente»).
+// #938: COMPRADOR e INVERSIONISTA se juntan en LEAD_COMPRADOR y entra LEAD_VENDEDOR. Los
+// referidos no se clasifican: que alguien viene referido lo dice quien lo registra, no el chat.
 const CLASSIFIABLE: ContactType[] = [
-  "COMPRADOR", "INVERSIONISTA", "BROKER_EXTERNO", "EMPLEO", "CLIENTE",
+  "LEAD_COMPRADOR", "LEAD_VENDEDOR", "BROKER_EXTERNO", "EMPLEO", "CLIENTE",
 ];
 
 const CLASSIFY_SYSTEM_PROMPT = `Clasifica al remitente de esta conversación con una inmobiliaria (Propyte, Riviera Maya) según su intención EXPLÍCITA:
-- COMPRADOR: quiere comprar/rentar una propiedad para uso propio.
-- INVERSIONISTA: busca invertir, pregunta por ROI, rentas, plusvalía o preventas como inversión.
+- LEAD_COMPRADOR: quiere comprar o rentar una propiedad, para vivir o como inversión (pregunta por precios, ROI, rentas, plusvalía o preventas).
+- LEAD_VENDEDOR: es el dueño de una propiedad y quiere venderla (no es agente de otra inmobiliaria).
 - BROKER_EXTERNO: es agente/broker de OTRA inmobiliaria (ofrece propiedades, clientes o alianzas/comisión compartida) O quiere recomendar/referir a alguien más para que compre (no compra él).
 - EMPLEO: busca trabajo, vacantes o unirse al equipo.
 - CLIENTE: dice explícitamente que YA es cliente de Propyte (compró antes / tiene un trato en curso).
@@ -141,11 +148,15 @@ export async function maybeClassifyContact(
         ? (contact.custom as Record<string, unknown>)
         : {};
     const marker = (custom.bot_classification ?? {}) as ClassifyMarker;
+    // #938: un marker escrito antes con un tipo retirado (COMPRADOR, INVERSIONISTA) se lee como
+    // su reemplazo. Si no, al pasar el contacto a LEAD_COMPRADOR dejaría de coincidir con lo que
+    // escribió el bot, se tomaría como decisión de un humano y la clasificación se congelaría.
+    const markerType = marker.type ? ((normalizarTipoContacto(marker.type) as string | undefined) ?? marker.type) : marker.type;
 
     // El bot es "dueño" del valor actual si nunca ha clasificado nada (marker.type sin
     // poner) o si lo último que escribió sigue vigente. Si no, alguien más lo tocó
     // después del último write del bot → se respeta esa decisión, no se vuelve a tocar.
-    const botOwnsCurrentType = !marker.type || marker.type === contact.contactType;
+    const botOwnsCurrentType = !markerType || markerType === normalizarTipoContacto(contact.contactType);
     if (!botOwnsCurrentType) return contact.contactType;
 
     // Sin clasificación del bot todavía: solo tiene sentido intentar sobre un contacto sin

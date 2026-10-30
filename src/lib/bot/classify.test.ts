@@ -49,6 +49,25 @@ describe("classifyContactType", () => {
     expect(await classifyContactType({ messages: msgs, model: "m" })).toBeNull();
   });
 
+  it("#938: ofrece LEAD_COMPRADOR y LEAD_VENDEDOR; ya no COMPRADOR ni INVERSIONISTA", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okClassify("LEAD_VENDEDOR"));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await classifyContactType({ messages: msgs, model: "m" })).toBe("LEAD_VENDEDOR");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const opciones = body.output_config.format.schema.properties.contactType.enum;
+    expect(opciones).toEqual(expect.arrayContaining(["LEAD_COMPRADOR", "LEAD_VENDEDOR"]));
+    for (const retirado of ["COMPRADOR", "INVERSIONISTA", "LEAD"]) expect(opciones).not.toContain(retirado);
+    expect(body.system).toMatch(/LEAD_COMPRADOR:[^\n]*inversión/);
+    expect(body.system).toMatch(/LEAD_VENDEDOR:[^\n]*vender/);
+    // Los referidos no los decide el chat.
+    expect(opciones).not.toContain("REFERIDO_DE_BROKER");
+    expect(opciones).not.toContain("REFERIDO_DE_CLIENTE");
+
+    // Y si el modelo respondiera un tipo retirado de todos modos, no se escribe.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("INVERSIONISTA")));
+    expect(await classifyContactType({ messages: msgs, model: "m" })).toBeNull();
+  });
+
   it("UNKNOWN, valor fuera del enum, HTTP !ok, sin API key o timeout → null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("UNKNOWN")));
     expect(await classifyContactType({ messages: msgs, model: "m" })).toBeNull();
@@ -184,7 +203,7 @@ describe("maybeClassifyContact", () => {
   // y el bot seguía respondiendo con la identidad de reclutamiento. Estas pruebas
   // habrían fallado contra el código viejo.
   it("cambio de intención tras una clasificación previa del propio bot → SÍ reclasifica (ya no se congela)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("INVERSIONISTA")));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("LEAD_COMPRADOR")));
     const { db, contactUpdate, auditCreate } = mkDb();
     const yaEmpleo = {
       ...baseContact,
@@ -192,15 +211,15 @@ describe("maybeClassifyContact", () => {
       custom: { bot_classification: { type: "EMPLEO", attempts: 0 } },
     };
     const r = await maybeClassifyContact(db as never, yaEmpleo, msgs, "m");
-    expect(r).toBe("INVERSIONISTA");
+    expect(r).toBe("LEAD_COMPRADOR");
     expect(contactUpdate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        contactType: "INVERSIONISTA",
-        custom: expect.objectContaining({ bot_classification: expect.objectContaining({ type: "INVERSIONISTA" }) }),
+        contactType: "LEAD_COMPRADOR",
+        custom: expect.objectContaining({ bot_classification: expect.objectContaining({ type: "LEAD_COMPRADOR" }) }),
       }),
     }));
     expect(auditCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ changes: expect.objectContaining({ from: "EMPLEO", to: "INVERSIONISTA" }) }),
+      data: expect.objectContaining({ changes: expect.objectContaining({ from: "EMPLEO", to: "LEAD_COMPRADOR" }) }),
     }));
   });
 
@@ -215,6 +234,47 @@ describe("maybeClassifyContact", () => {
     const r = await maybeClassifyContact(db as never, yaEmpleo, msgs, "m");
     expect(r).toBe("EMPLEO");
     expect(contactUpdate).not.toHaveBeenCalled();
+  });
+
+  // #938: el bot escribió COMPRADOR/INVERSIONISTA antes del cambio y la migración pasó el
+  // contacto a LEAD_COMPRADOR. El marker viejo se lee como su reemplazo: el bot sigue siendo
+  // dueño del valor y puede volver a clasificarlo. Sin esto se tomaría como decisión de un humano.
+  it("#938: marker viejo (COMPRADOR / INVERSIONISTA) sobre un contacto ya migrado → sigue vigilando", async () => {
+    for (const viejo of ["COMPRADOR", "INVERSIONISTA"]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okClassify("EMPLEO")));
+      const { db, contactUpdate } = mkDb();
+      const migrado = {
+        ...baseContact,
+        contactType: "LEAD_COMPRADOR" as const,
+        custom: { bot_classification: { type: viejo, attempts: 1 } },
+      };
+      const r = await maybeClassifyContact(db as never, migrado, msgs, "m");
+      expect(r, viejo).toBe("EMPLEO");
+      expect(contactUpdate.mock.calls[0][0].data.contactType).toBe("EMPLEO");
+    }
+  });
+
+  it("#938: un humano cambió el tipo después del bot → se sigue respetando aunque el marker sea viejo", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { db, contactUpdate } = mkDb();
+    const humano = {
+      ...baseContact,
+      contactType: "LEAD_VENDEDOR" as const,
+      custom: { bot_classification: { type: "COMPRADOR", attempts: 1 } },
+    };
+    expect(await maybeClassifyContact(db as never, humano, msgs, "m")).toBe("LEAD_VENDEDOR");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(contactUpdate).not.toHaveBeenCalled();
+  });
+
+  it("#938: un Lead Comprador puesto a mano (sin marker) no se pisa", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { db } = mkDb();
+    const r = await maybeClassifyContact(db as never, { ...baseContact, contactType: "LEAD_COMPRADOR" }, msgs, "m");
+    expect(r).toBe("LEAD_COMPRADOR");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("cualquier error → devuelve el tipo actual (nunca rompe al bot)", async () => {
@@ -256,7 +316,7 @@ describe("maybeClassifyContact — contacto sin tipo (#863)", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const { db, contactUpdate } = mkDb();
-    const vaciado = { ...sinTipo, custom: { bot_classification: { type: "INVERSIONISTA", attempts: 1 } } };
+    const vaciado = { ...sinTipo, custom: { bot_classification: { type: "LEAD_COMPRADOR", attempts: 1 } } };
     const r = await maybeClassifyContact(db as never, vaciado, msgs, "m");
     expect(r).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();

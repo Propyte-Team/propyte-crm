@@ -11,7 +11,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
-import { CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER, tiposEquivalentes } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import {
   CONTACT_BRAND_SELECT,
@@ -185,7 +185,9 @@ export async function getContacts(filters: ContactFilters = {}) {
     where.temperature = filters.temperature as any;
   }
   if (filters.type) {
-    where.contactType = filters.type === CONTACT_TYPE_SIN_TIPO ? null : (filters.type as any);
+    // #938: «Lead Comprador» también encuentra a los que siguen con Lead/Comprador/Inversionista.
+    const tipos = filters.type === CONTACT_TYPE_SIN_TIPO ? null : tiposEquivalentes(filters.type);
+    where.contactType = tipos === null ? null : tipos.length === 1 ? (tipos[0] as any) : ({ in: tipos } as any);
   }
   if (filters.assignedTo) {
     where.assignedToId = filters.assignedTo;

@@ -394,12 +394,17 @@ export const URGENCY_COLORS: Record<string, string> = {
 // #929 (2026-10-26): «Referido» también sale. Que a alguien lo trajo un broker lo dicen la liga
 // «Registrado por» y la fuente «Registro de Broker»; su tipo es lo que la conversación diga
 // (Comprador, Inversionista, Cliente, Otro…).
+// #938 (2026-10-29, pedido de sistemas@): Lead, Comprador e Inversionista se juntan en
+// «Lead Comprador»; entran «Lead Vendedor» (quien quiere vender su propiedad) y vuelven los
+// referidos, ahora como dos tipos: «Referido de Broker» y «Referido de Cliente». Revierte a
+// propósito la parte de tipos del #929; «Registrado por» sigue diciendo QUÉ broker lo trajo.
 export const CONTACT_TYPE_ORDER = [
-  "LEAD",
+  "LEAD_COMPRADOR",
+  "LEAD_VENDEDOR",
   "PROSPECTO",
-  "COMPRADOR",
   "CLIENTE",
-  "INVERSIONISTA",
+  "REFERIDO_DE_BROKER",
+  "REFERIDO_DE_CLIENTE",
   "BROKER_EXTERNO",
   "EMPLEO",
   "PROVEEDOR",
@@ -412,11 +417,17 @@ export const CONTACT_TYPE_ORDER = [
  * quedan en el enum porque Postgres no deja quitar un valor sin recrear el tipo, y porque la
  * cronología guarda cambios viejos con ese valor.
  *  - REFERIDOR (#907): el que refiere es el broker.
- *  - REFERIDO (#929): no hay un tipo que lo sustituya; su tipo sale de la conversación.
+ *  - REFERIDO (#929): no hay un tipo que lo sustituya; su tipo sale de la conversación. Con el
+ *    #938 hay dos referidos, pero el valor viejo no dice si era de broker o de cliente, así que
+ *    sigue quedando sin tipo.
+ *  - LEAD, COMPRADOR e INVERSIONISTA (#938): se juntan en LEAD_COMPRADOR.
  */
 export const CONTACT_TYPE_RETIRADOS: Record<string, string | null> = {
   REFERIDOR: "BROKER_EXTERNO",
   REFERIDO: null,
+  LEAD: "LEAD_COMPRADOR",
+  COMPRADOR: "LEAD_COMPRADOR",
+  INVERSIONISTA: "LEAD_COMPRADOR",
 };
 
 /**
@@ -433,6 +444,20 @@ export function normalizarTipoContacto(valor: unknown): unknown {
   return valor;
 }
 
+/**
+ * Un tipo y los retirados que se traducen a él (#938): LEAD_COMPRADOR → [LEAD_COMPRADOR, LEAD,
+ * COMPRADOR, INVERSIONISTA]. Un tipo retirado se traduce primero. Para BUSCAR por tipo (filtro de
+ * la lista, perfil del agente del bot) sin perder lo que todavía guarda el valor viejo: los datos
+ * se migran después del despliegue, y un perfil o un contacto puede quedar con el valor viejo.
+ * Un retirado sin reemplazo (REFERIDO) o un valor desconocido se devuelven tal cual.
+ */
+export function tiposEquivalentes(tipo: string): string[] {
+  const vigente = normalizarTipoContacto(tipo);
+  if (typeof vigente !== "string") return [tipo];
+  const retirados = Object.keys(CONTACT_TYPE_RETIRADOS).filter((k) => CONTACT_TYPE_RETIRADOS[k] === vigente);
+  return [vigente, ...retirados];
+}
+
 /** El tipo que define a un broker (#907): solo estos contactos pueden tener referidos. */
 export const CONTACT_TYPE_BROKER = "BROKER_EXTERNO" as const;
 
@@ -446,28 +471,44 @@ export const CONTACT_TYPE_SIN_TIPO = "SIN_TIPO";
 export const CONTACT_TYPE_VACIO_LABEL = "—";
 
 /**
- * ¿El contacto lleva ciclo de vida (Lead → MQL → SQL…)? Compradores, inversionistas y, desde
+ * ¿El contacto lleva ciclo de vida (Lead → MQL → SQL…)? Los leads y referidos (#938) y, desde
  * el #863, los que aún no tienen tipo: antes todos nacían COMPRADOR y entraban aquí, así que
  * excluir a los «sin tipo» habría dejado de avanzar la etapa de cada prospecto nuevo.
  * Única fuente de la regla: la usan el auto-avance (lifecycle/apply.ts) y la ficha.
+ *
+ * #938: antes eran Comprador e Inversionista. Un tipo retirado se evalúa como su reemplazo,
+ * así un contacto que todavía no pasa por la migración de datos no pierde su ciclo de vida.
  */
+const TIPOS_CON_CICLO_DE_VIDA: ReadonlySet<string> = new Set([
+  "LEAD_COMPRADOR",
+  "LEAD_VENDEDOR",
+  "REFERIDO_DE_BROKER",
+  "REFERIDO_DE_CLIENTE",
+]);
+
 export function tieneCicloDeVida(contactType: string | null | undefined): boolean {
-  return contactType == null || contactType === "COMPRADOR" || contactType === "INVERSIONISTA";
+  if (contactType == null) return true;
+  const vigente = normalizarTipoContacto(contactType);
+  return typeof vigente === "string" && TIPOS_CON_CICLO_DE_VIDA.has(vigente);
 }
 
 export const CONTACT_TYPE_LABELS: Record<string, string> = {
-  LEAD: "Lead",
+  LEAD_COMPRADOR: "Lead Comprador",
+  LEAD_VENDEDOR: "Lead Vendedor",
   PROSPECTO: "Prospecto",
   CLIENTE: "Cliente",
-  INVERSIONISTA: "Inversionista",
+  REFERIDO_DE_BROKER: "Referido de Broker",
+  REFERIDO_DE_CLIENTE: "Referido de Cliente",
   BROKER_EXTERNO: "Broker",
   EMPLEO: "Empleo",
-  COMPRADOR: "Comprador",
   PROVEEDOR: "Proveedor",
   OTRO: "Otro",
-  // Retirados (#907, #929): solo para mostrar cambios viejos de la cronología.
+  // Retirados (#907, #929, #938): solo para mostrar cambios viejos de la cronología.
   REFERIDOR: "Referidor",
   REFERIDO: "Referido",
+  LEAD: "Lead",
+  COMPRADOR: "Comprador",
+  INVERSIONISTA: "Inversionista",
 } as const;
 
 // --- Estados de desarrollo ---

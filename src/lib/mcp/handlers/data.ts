@@ -1,6 +1,7 @@
 // src/lib/mcp/handlers/data.ts
 import { z } from "zod";
 import prisma from "@/lib/db";
+import { tiposEquivalentes } from "@/lib/constants";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,11 @@ export async function searchContacts(query: unknown) {
   const where: Record<string, unknown> = { deletedAt: null };
 
   if (d.temperature) where.temperature  = d.temperature;
-  if (d.type)        where.contactType  = d.type;
+  if (d.type) {
+    // #938: un tipo vigente también trae a los retirados que se traducen a él (y al revés).
+    const tipos = tiposEquivalentes(d.type);
+    where.contactType = tipos.length === 1 ? tipos[0] : { in: tipos };
+  }
   if (d.assignedTo)  where.assignedToId = d.assignedTo;
 
   if (d.search) {

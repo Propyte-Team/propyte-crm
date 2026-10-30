@@ -73,6 +73,13 @@ enum ContactType {
   // #907: tipos nuevos. Migración: prisma/migrations-manual/2026-10-19-broker-referidos.sql.
   PROVEEDOR
   OTRO
+  // #938 (2026-10-29): LEAD, COMPRADOR e INVERSIONISTA se retiran y se juntan en LEAD_COMPRADOR;
+  // entran LEAD_VENDEDOR y los dos referidos. Los retirados se quedan arriba por la misma razón
+  // que REFERIDOR. Migración: prisma/migrations-manual/2026-10-29-tipos-lead-comprador.sql.
+  LEAD_COMPRADOR
+  LEAD_VENDEDOR
+  REFERIDO_DE_BROKER
+  REFERIDO_DE_CLIENTE
 
   @@schema("propyte_crm")
 }

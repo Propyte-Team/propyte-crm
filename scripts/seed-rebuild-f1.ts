@@ -54,7 +54,7 @@ const CANONICAL_RULES = [
     triggerConfig: { hours: 24, field: "contact.lastActivityAt" },
     conditions: {
       all: [
-        { field: "contact.contactType", op: "eq", value: "LEAD" },
+        { field: "contact.contactType", op: "eq", value: "LEAD_COMPRADOR" }, // #938: antes "LEAD"
         { field: "contact.doNotContact", op: "eq", value: false },
       ],
     },

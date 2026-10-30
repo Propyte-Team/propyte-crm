@@ -13,7 +13,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { resolveCoreFieldAccess, nonEditableKeys } from "@/lib/metadata/core-fields";
-import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_BROKER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_ORDER } from "@/lib/constants";
+import { LIFECYCLE_ORDER, CONTACT_STATUS_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_BROKER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_ORDER, tiposEquivalentes } from "@/lib/constants";
 import { withChangeSource } from "@/lib/audit/change-context";
 import { ordenValidado } from "@/lib/api/orden";
 import { sumarAlAnd } from "@/lib/api/where-and";
@@ -241,7 +241,9 @@ export async function GET(request: NextRequest) {
     if (contactType === CONTACT_TYPE_SIN_TIPO) {
       where.contactType = null;
     } else if (contactType) {
-      where.contactType = contactType as any;
+      // #938: «Lead Comprador» también encuentra a los que siguen con Lead/Comprador/Inversionista.
+      const tipos = tiposEquivalentes(contactType);
+      where.contactType = tipos.length === 1 ? (tipos[0] as any) : ({ in: tipos } as any);
     }
     if (porFlujo) {
       where.flujo = porFlujo.flujo;
