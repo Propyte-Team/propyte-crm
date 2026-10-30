@@ -45,6 +45,8 @@ import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { BrandBadges } from "@/components/brands/brand-view";
 import { ReferidoPorEncabezado } from "@/components/contacts/referido-por";
 import { EmpresaDelContacto } from "@/components/contacts/empresa-del-contacto";
+import { BrokerDelContacto } from "@/components/contacts/broker-del-contacto";
+import { RegistrarEnBroker } from "@/components/contacts/registrar-en-broker";
 import { tituloRegistros } from "@/lib/contacts/referidos";
 import { opcionesFlujo } from "@/lib/flujos";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
@@ -493,32 +495,13 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               access={acc("developerPartnerId")}
               onSave={(developerPartnerId) => save({ developerPartnerId })}
             />
-            {/* #907: el broker que lo trajo. Se cambia en «Editar todo». */}
-            {acc("referredById") !== "HIDDEN" && (
-              <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
-                <span className="text-[color:var(--text-tertiary)]">Registrado por</span>
-                {contact.referredBy ? (
-                  contact.referredBy.puedeAbrir ? (
-                    <Link
-                      href={`/contacts/${contact.referredBy.id}`}
-                      className="text-right font-medium underline-offset-2 hover:underline"
-                      style={{ color: "var(--color-teal, #0D9488)" }}
-                    >
-                      {contact.referredBy.nombre}
-                    </Link>
-                  ) : (
-                    <span
-                      className="text-right font-medium text-[color:var(--text-primary)]"
-                      title="No tienes acceso a la ficha de este broker"
-                    >
-                      {contact.referredBy.nombre}
-                    </span>
-                  )
-                ) : (
-                  <span className="text-right text-[color:var(--text-tertiary)]">—</span>
-                )}
-              </div>
-            )}
+            {/* #907: el broker que lo trajo. #939: se elige aquí mismo, como Empresa y Asesor. */}
+            <BrokerDelContacto
+              contactId={contact.id}
+              broker={contact.referredBy}
+              access={acc("referredById")}
+              onSave={(referredById) => save({ referredById })}
+            />
             {/* #937: «Detalle de la fuente» = campaña o evento. Se cambia en «Editar todo». */}
             {acc("campaignId") !== "HIDDEN" && (
               <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
@@ -702,7 +685,18 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
       {/* ── Referidos del broker (#907): hasta abajo, cada uno abre su ficha ── */}
       {mostrarReferidos && (
         // #929: «Registro(s) de Broker» (antes «Referidos»).
-        <Section title={tituloRegistros(referidos.length + referidosNoListados)}>
+        <Section
+          title={tituloRegistros(referidos.length + referidosNoListados)}
+          action={
+            // #939: «Registrar» solo en un Broker y si el rol puede tocar «Registrado por».
+            contact.contactType === CONTACT_TYPE_BROKER && acc("referredById") === "EDIT" ? (
+              <RegistrarEnBroker
+                broker={{ id: contact.id, nombre: `${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim() || "este broker" }}
+                onRegistrado={() => router.refresh()}
+              />
+            ) : undefined
+          }
+        >
           {referidos.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-[13px]">
@@ -747,8 +741,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
           ) : (
             referidosNoListados === 0 && (
               <p className="py-6 text-center text-[13px] text-[color:var(--text-tertiary)]">
-                Este broker aún no tiene registros. Para ligar uno, abre el contacto y elige a este
-                broker en «Registrado por» (Editar todo).
+                Este broker aún no tiene registros. Usa «Registrar» para ligarle un contacto o
+                dar de alta uno nuevo.
               </p>
             )
           )}
