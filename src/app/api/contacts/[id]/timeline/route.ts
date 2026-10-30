@@ -181,6 +181,21 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
           : [];
         const empresaById = new Map(empresas.map((e) => [e.id, e.name]));
 
+        // #937: «Campaña o evento» guarda el id de lead_campaigns (incluye las archivadas).
+        const campanaIds = new Set<string>();
+        for (const c of changes) {
+          if (c.field !== "campaignId") continue;
+          if (typeof c.oldValue === "string") campanaIds.add(c.oldValue);
+          if (typeof c.newValue === "string") campanaIds.add(c.newValue);
+        }
+        const campanas = campanaIds.size
+          ? await prisma.leadCampaign.findMany({
+              where: { id: { in: [...campanaIds] } },
+              select: { id: true, name: true },
+            })
+          : [];
+        const campanaById = new Map(campanas.map((e) => [e.id, e.name]));
+
         sources.push(
           changes.flatMap((c) => {
             const comun = {
@@ -222,6 +237,14 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
                 : "Ninguna";
               newForTitle = c.newValue
                 ? empresaById.get(c.newValue as string) ?? "Empresa desconocida"
+                : "Ninguna";
+            }
+            if (c.field === "campaignId") {
+              oldForTitle = c.oldValue
+                ? campanaById.get(c.oldValue as string) ?? "Campaña desconocida"
+                : "Ninguna";
+              newForTitle = c.newValue
+                ? campanaById.get(c.newValue as string) ?? "Campaña desconocida"
                 : "Ninguna";
             }
             return [

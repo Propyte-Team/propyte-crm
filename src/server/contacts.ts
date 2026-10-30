@@ -295,6 +295,8 @@ export async function getContact(id: string) {
       _count: { select: { referrals: { where: { deletedAt: null } } } },
       // #949: la empresa a la que pertenece (catálogo compartido: no tiene dueño ni marca).
       developerPartner: { select: { id: true, name: true, type: true, deletedAt: true } },
+      // #937: campaña o evento de donde vino (catálogo compartido). Una archivada se sigue viendo.
+      campaign: { select: { id: true, name: true, kind: true } },
     },
   });
 

@@ -67,6 +67,8 @@ export interface ContactoExportable {
   updatedAt: Date | string;
   assignedTo: { name: string; email: string } | null;
   brands: { brand: { name: string } }[];
+  /** #937: campaña o evento (opcional en el tipo: los exportes viejos de prueba no lo traen). */
+  campaign?: { name: string } | null;
   _count: { deals: number; activities: number };
 }
 
@@ -125,6 +127,7 @@ export const CAMPOS_EXPORTACION: CampoExportacion[] = [
   // Origen y asignación
   { key: "fuente", label: "Fuente", grupo: "Origen y asignación", porDefecto: true, valor: (c) => etiqueta(LEAD_SOURCE_LABELS, c.leadSource) },
   { key: "fuenteDetalle", label: "Detalle de la fuente", grupo: "Origen y asignación", valor: (c) => texto(c.leadSourceDetail) },
+  { key: "campana", label: "Campaña o evento", grupo: "Origen y asignación", valor: (c) => c.campaign?.name ?? "" }, // #937
   { key: "marcas", label: "Marca", grupo: "Origen y asignación", porDefecto: true, valor: (c) => c.brands.map((b) => b.brand.name).join(", ") },
   { key: "plaza", label: "Plaza", grupo: "Origen y asignación", valor: (c) => etiqueta(PLAZA_LABELS, c.targetPlaza) },
   { key: "asesor", label: "Asesor asignado", grupo: "Origen y asignación", porDefecto: true, valor: (c) => c.assignedTo?.name ?? "" },

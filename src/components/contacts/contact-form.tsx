@@ -26,6 +26,9 @@ import {
 import { ContactPicker, type PickedContact } from "@/components/agenda/contact-picker";
 import { EmpresaSelect } from "@/components/developer-partners/empresa-select";
 import { campoEmpresa, type EmpresaOpcion } from "@/lib/developer-partners/shared";
+import { campoCampana, detalleFuenteHistorico } from "@/lib/catalogos/clave";
+import { EtiquetasSelect } from "@/components/catalogos/etiquetas-select";
+import { CampanaSelect, type CampanaOpcion } from "@/components/catalogos/campana-select";
 import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_VACIO_LABEL, campoFlujo } from "@/lib/flujos";
 
 // --- Esquema de validación Zod ---
@@ -90,6 +93,8 @@ export const contactFormSchema = z
   referredById: z.string().guid().nullable().optional(),
   // #949: empresa a la que pertenece; null = sin empresa. Sin esta clave zod la quitaría.
   developerPartnerId: z.string().min(1).nullable().optional(),
+  // #937: campaña o evento («Detalle de la fuente»); null = quitarla. Sin esta clave zod la quitaría.
+  campaignId: z.string().min(1).nullable().optional(),
   })
   .refine((data) => Boolean(data.phone) || Boolean(data.whatsappUserId), {
     message: "Captura un teléfono o un Usuario de WhatsApp",
@@ -312,9 +317,16 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
       : null;
   const [empresa, setEmpresa] = useState<EmpresaOpcion | null>(empresaFija ?? empresaInicial);
 
-  const [tagsInput, setTagsInput] = useState(
-    (initialData?.tags || []).join(", ")
-  );
+  // #936: etiquetas elegidas del catálogo (antes, texto separado por comas).
+  const [tags, setTags] = useState<string[]>(initialData?.tags || []);
+  // #937: la ficha trae la campaña ya resuelta; la lista solo el id.
+  const campanaInicial: CampanaOpcion | null = initialData?.campaign?.id
+    ? { id: initialData.campaign.id, name: initialData.campaign.name ?? "", kind: initialData.campaign.kind ?? "" }
+    : initialData?.campaignId
+      ? { id: initialData.campaignId, name: "Campaña ligada (ver ficha)", kind: "" }
+      : null;
+  const [campana, setCampana] = useState<CampanaOpcion | null>(campanaInicial);
+  const detalleViejo = detalleFuenteHistorico(initialData?.leadSourceDetail);
   const [advisors, setAdvisors] = useState<Advisor[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -349,17 +361,12 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
     setServerError("");
     setErrors({});
 
-    // Parsear tags desde el input separado por comas
-    const tags = tagsInput
-      .split(",")
-      .map((t: string) => t.trim())
-      .filter((t: string) => t.length > 0);
-
     const submitData = {
       ...buildSubmitData(formData, tags),
       ...campoReferidoPor(mode, brokerInicial?.id ?? null, broker?.id ?? null),
       ...campoFlujo(mode, flujoInicial, flujo), // #951
       ...campoEmpresa(mode, empresaInicial?.id ?? null, empresa?.id ?? null), // #949
+      ...campoCampana(mode, campanaInicial?.id ?? null, campana?.id ?? null), // #937
     };
 
     // Validar con Zod
@@ -623,14 +630,15 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
               <p className="text-xs text-destructive">{errors.developerPartnerId}</p>
             )}
           </div>
+          {/* #937: campaña o evento del catálogo. El texto viejo (leadSourceDetail) ya no se edita
+              aquí: lo escriben las entradas automáticas y el bot lo lee. */}
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="leadSourceDetail">Detalle de la fuente</Label>
-            <Input
-              id="leadSourceDetail"
-              value={formData.leadSourceDetail || ""}
-              onChange={(e) => updateField("leadSourceDetail", e.target.value)}
-              placeholder="Ej: Campaña PDC Octubre 2024"
-            />
+            <Label>Detalle de la fuente (campaña o evento)</Label>
+            <CampanaSelect value={campana} onChange={setCampana} disabled={submitting} />
+            {detalleViejo && (
+              <p className="text-xs text-muted-foreground">Dato anterior: «{detalleViejo}»</p>
+            )}
+            {errors.campaignId && <p className="text-xs text-destructive">{errors.campaignId}</p>}
           </div>
         </div>
       </div>
@@ -877,13 +885,10 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
             </Select>
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="tags">Etiquetas (separadas por coma)</Label>
-            <Input
-              id="tags"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              placeholder="VIP, seguimiento, Tulum"
-            />
+            <Label>Etiquetas</Label>
+            {/* #936: se eligen del catálogo; «Crear +» agrega una nueva. */}
+            <EtiquetasSelect value={tags} onChange={setTags} disabled={submitting} />
+            {errors.tags && <p className="text-xs text-destructive">{errors.tags}</p>}
           </div>
         </div>
       </div>
