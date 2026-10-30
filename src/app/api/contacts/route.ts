@@ -22,6 +22,8 @@ import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter";
 import { brokerElegible } from "@/lib/contacts/catalogo-brokers";
+import { resolverEtiquetas } from "@/lib/contacts/etiquetas";
+import { errorDeCampana } from "@/lib/contacts/campanas";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
 import { FLUJO_ORDER, whereFlujo } from "@/lib/flujos";
@@ -104,6 +106,8 @@ const contactCoreFields = z.object({
   referredById: z.string().guid().nullable().optional(),
   // #949: empresa a la que pertenece (módulo «Empresas»). null = quitar la liga.
   developerPartnerId: z.string().trim().min(1).max(64).nullable().optional(),
+  // #937: campaña o evento de donde vino («Detalle de la fuente»). null = quitarla.
+  campaignId: z.string().trim().min(1).max(64).nullable().optional(),
   // #914: «Información adicional» (empresa, Email 2, Facebook…). Lista única en
   // lib/contacts/campos-adicionales.ts; aquí solo se mezcla.
   ...CAMPOS_ADICIONALES_SHAPE,
@@ -411,6 +415,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // #937: la campaña o evento, si se eligió una.
+    if (data.campaignId) {
+      const error = await errorDeCampana(data.campaignId);
+      if (error) {
+        return NextResponse.json({ error, fields: ["campaignId"] }, { status: 400 });
+      }
+    }
+
+    // #936: cada etiqueta tiene que estar en el catálogo; se guarda escrita como allí.
+    let tags: string[] = [];
+    if (data.tags?.length) {
+      const r = await resolverEtiquetas(data.tags, []);
+      if (!r.ok) return NextResponse.json({ error: r.error, fields: ["tags"] }, { status: 400 });
+      tags = r.tags;
+    }
+
     // Si no se asignó a nadie, asignar al usuario actual (si es asesor/TL)
     const assignedToId =
       data.assignedToId ||
@@ -440,7 +460,7 @@ export async function POST(request: NextRequest) {
         budgetMax: data.budgetMax || undefined,
         preferredZone: data.preferredZone || null,
         assignedToId: assignedToId || null,
-        tags: data.tags || [],
+        tags, // #936: ya traducidas al catálogo
         residenceCity: data.residenceCity || null,
         residenceCountry: data.residenceCountry || null,
         nationality: data.nationality || null,
@@ -451,6 +471,7 @@ export async function POST(request: NextRequest) {
         rentalStrategy: data.rentalStrategy || undefined,
         referredById: data.referredById || null, // #907
         developerPartnerId: data.developerPartnerId || null, // #949
+        campaignId: data.campaignId || null, // #937
         ...datosCamposAdicionales(data), // #914
       },
       include: {
@@ -603,6 +624,23 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // #937: ligar a una campaña o evento (quitarla, null, no necesita comprobación). La que ya
+    // tenía se acepta aunque se haya archivado.
+    if (data.campaignId) {
+      const error = await errorDeCampana(data.campaignId, existing.campaignId ?? null);
+      if (error) {
+        return NextResponse.json({ error, fields: ["campaignId"] }, { status: 400 });
+      }
+    }
+
+    // #936: etiquetas del catálogo; las que el contacto ya tenía se respetan aunque no estén.
+    let tagsResueltas: string[] | undefined;
+    if (data.tags !== undefined) {
+      const r = await resolverEtiquetas(data.tags, existing.tags ?? []);
+      if (!r.ok) return NextResponse.json({ error: r.error, fields: ["tags"] }, { status: 400 });
+      tagsResueltas = r.tags;
+    }
+
     // Construir objeto de actualización
     const updateData: Prisma.ContactUpdateInput = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
@@ -630,7 +668,7 @@ export async function PUT(request: NextRequest) {
     if (data.preferredZone !== undefined) updateData.preferredZone = data.preferredZone || null;
     if (data.purchaseModality !== undefined) updateData.purchaseModality = data.purchaseModality;
     if (data.rentalStrategy !== undefined) updateData.rentalStrategy = data.rentalStrategy;
-    if (data.tags !== undefined) updateData.tags = data.tags;
+    if (tagsResueltas !== undefined) updateData.tags = tagsResueltas; // #936
     if (data.residenceCity !== undefined) updateData.residenceCity = data.residenceCity || null;
     if (data.residenceCountry !== undefined) updateData.residenceCountry = data.residenceCountry || null;
     if (data.nationality !== undefined) updateData.nationality = data.nationality || null;
@@ -654,6 +692,9 @@ export async function PUT(request: NextRequest) {
       updateData.developerPartner = data.developerPartnerId
         ? { connect: { id: data.developerPartnerId } }
         : { disconnect: true };
+    }
+    if (data.campaignId !== undefined) {
+      updateData.campaign = data.campaignId ? { connect: { id: data.campaignId } } : { disconnect: true }; // #937
     }
 
     // Override manual de lifecycle: enruta por el helper para emitir evento + Activity.

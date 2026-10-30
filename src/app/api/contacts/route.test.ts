@@ -18,6 +18,8 @@ vi.mock("@/lib/db", () => ({
       create: (...a: unknown[]) => contactCreate(...a),
     },
     user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
+    // #936: el catálogo de etiquetas, para el caso que edita «tags».
+    contactTag: { findMany: async () => [{ name: "vip", nameKey: "vip" }] },
   },
 }));
 

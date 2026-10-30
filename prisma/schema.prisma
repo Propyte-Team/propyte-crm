@@ -874,6 +874,10 @@ model Contact {
   // texto libre que vino de Zoho (#914), que se queda como histórico.
   developerPartnerId String?
   developerPartner   DeveloperPartner? @relation(fields: [developerPartnerId], references: [id], onDelete: SetNull)
+  // #937: campaña o evento de donde vino (catálogo lead_campaigns). `leadSourceDetail` sigue
+  // siendo el detalle técnico que escriben las entradas automáticas («comentario:<id>»).
+  campaignId         String?
+  campaign           LeadCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   // Información adicional (#914). Nacieron para la migración de los leads de Zoho, pero son
   // campos normales del contacto: se editan en la ficha y se gatean por rol como los demás.
@@ -918,6 +922,7 @@ model Contact {
   @@index([referredById])
   @@index([flujo])
   @@index([developerPartnerId])
+  @@index([campaignId])
   @@map("contacts")
   @@schema("propyte_crm")
 }
@@ -3229,5 +3234,43 @@ model RecruitCandidateFile {
 
   @@index([candidateId, kind])
   @@map("recruit_candidate_files")
+  @@schema("propyte_crm")
+}
+
+// =====================================================================
+// CATÁLOGOS DE CONTACTO — #936 etiquetas, #937 campañas y eventos (2026-10-30)
+// =====================================================================
+// Migración: prisma/migrations-manual/2026-10-30-catalogos-contacto.sql, ANTES de desplegar.
+// `nameKey` = nombre sin acentos, en minúsculas y con espacios colapsados (src/lib/catalogos/
+// clave.ts): único, para que no haya dos variantes de lo mismo. `createdById` sin relación a
+// propósito, como developer_partners: así el modelo User (compartido con el Hub) no cambia.
+
+// Etiquetas que se pueden elegir en un contacto. Contact.tags sigue guardando los NOMBRES.
+model ContactTag {
+  id          String    @id @default(uuid())
+  name        String
+  nameKey     String    @unique
+  createdById String?
+  createdAt   DateTime  @default(now())
+  archivedAt  DateTime?
+
+  @@map("contact_tags")
+  @@schema("propyte_crm")
+}
+
+// «Detalle de la fuente»: campañas y eventos de donde vienen los contactos.
+model LeadCampaign {
+  id          String    @id @default(uuid())
+  name        String
+  nameKey     String    @unique
+  /// CAMPANA | EVENTO (TIPOS_CAMPANA en src/lib/catalogos/clave.ts; TEXT para poder agregar)
+  kind        String
+  createdById String?
+  createdAt   DateTime  @default(now())
+  archivedAt  DateTime?
+  contacts    Contact[]
+
+  @@index([kind])
+  @@map("lead_campaigns")
   @@schema("propyte_crm")
 }

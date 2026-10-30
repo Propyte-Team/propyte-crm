@@ -58,6 +58,7 @@ const FIELD_LABELS: Record<string, string> = {
   custom: "Campos personalizados",
   referredById: "Registrado por", // #907/#929: la ruta resuelve el id al nombre del broker
   developerPartnerId: "Empresa", // #949: la ruta resuelve el id al nombre de la empresa
+  campaignId: "Campaña o evento", // #937: la ruta resuelve el id al nombre de la campaña
   ...ETIQUETAS_CAMPOS_ADICIONALES, // #914
   email: "Correo", // la ficha dice «Email»; en la frase se lee mejor «Correo se actualizó…»
 };

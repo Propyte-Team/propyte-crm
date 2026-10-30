@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { etiquetaTipoCampana } from "@/lib/catalogos/clave";
 import { LifecycleStepper } from "@/components/contacts/lifecycle-stepper";
 import { InfoAdicionalSection, AnuncioOrigenSection } from "@/components/contacts/info-adicional";
 import { CvContacto } from "@/components/contacts/cv-contacto";
@@ -513,6 +514,24 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
                       {contact.referredBy.nombre}
                     </span>
                   )
+                ) : (
+                  <span className="text-right text-[color:var(--text-tertiary)]">—</span>
+                )}
+              </div>
+            )}
+            {/* #937: «Detalle de la fuente» = campaña o evento. Se cambia en «Editar todo». */}
+            {acc("campaignId") !== "HIDDEN" && (
+              <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+                <span className="text-[color:var(--text-tertiary)]">Campaña o evento</span>
+                {contact.campaign ? (
+                  <span className="text-right font-medium text-[color:var(--text-primary)]">
+                    {contact.campaign.name}
+                    {contact.campaign.kind && (
+                      <span className="ml-1 text-[12px] font-normal text-[color:var(--text-tertiary)]">
+                        · {etiquetaTipoCampana(contact.campaign.kind)}
+                      </span>
+                    )}
+                  </span>
                 ) : (
                   <span className="text-right text-[color:var(--text-tertiary)]">—</span>
                 )}

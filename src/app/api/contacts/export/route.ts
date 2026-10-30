@@ -62,6 +62,7 @@ const SELECT_EXPORT = {
   updatedAt: true,
   assignedTo: { select: { name: true, email: true } },
   brands: { select: { brand: { select: { name: true } } } },
+  campaign: { select: { name: true } }, // #937
   _count: { select: { deals: true, activities: true } },
 } satisfies Prisma.ContactSelect;
 
