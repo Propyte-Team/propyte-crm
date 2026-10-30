@@ -44,6 +44,13 @@ const ETIQUETAS: Record<string, string> = {
   experiencia_inmobiliaria: "Experiencia inmobiliaria",
   urgencia: "Urgencia",
   interes_principal: "Interés principal",
+  // #955: lo que captura el Agente Lead Vendedor sobre la propiedad que quiere vender.
+  propiedad_venta_tipo: "Propiedad en venta: tipo",
+  propiedad_venta_ubicacion: "Propiedad en venta: ubicación",
+  propiedad_venta_precio: "Propiedad en venta: precio esperado",
+  propiedad_venta_moneda: "Propiedad en venta: moneda",
+  propiedad_venta_situacion_legal: "Propiedad en venta: situación legal",
+  propiedad_venta_plazo: "Propiedad en venta: plazo para vender",
 };
 
 // Valores de los ENUM que captura el bot (segment-playbooks.ts).
@@ -61,6 +68,27 @@ const VALORES: Record<string, Record<string, string>> = {
     MARKETING: "Marketing",
     ADMINISTRATIVO: "Administrativo",
     OTRO: "Otro",
+  },
+  propiedad_venta_tipo: {
+    DEPARTAMENTO: "Departamento",
+    CASA: "Casa",
+    TERRENO: "Terreno",
+    MACROLOTE: "Macrolote",
+    LOCAL_COMERCIAL: "Local comercial",
+    OTRO: "Otro",
+  },
+  propiedad_venta_moneda: { MXN: "Pesos (MXN)", USD: "Dólares (USD)" },
+  propiedad_venta_situacion_legal: {
+    ESCRITURADA: "Escriturada",
+    CESION_DE_DERECHOS: "Cesión de derechos (preventa)",
+    EN_TRAMITE: "Escrituración en trámite",
+    OTRO: "Otra / no sabe",
+  },
+  propiedad_venta_plazo: {
+    INMEDIATO: "Lo antes posible",
+    UNO_A_TRES_MESES: "De 1 a 3 meses",
+    TRES_A_SEIS_MESES: "De 3 a 6 meses",
+    SIN_PRISA: "Sin prisa",
   },
   experiencia_inmobiliaria: {
     SIN_EXPERIENCIA: "Sin experiencia",

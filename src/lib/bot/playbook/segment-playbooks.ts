@@ -34,10 +34,13 @@ export interface SegmentPlaybookSpec {
 
 export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
   {
-    agentName: "Agente Clientes",
-    name: "Clientes — calificación de inversión",
+    // #954 (2026-10-30): «Agente Clientes» pasó a llamarse «Agente Lead Comprador» (tipo
+    // LEAD_COMPRADOR del #938). El aplicador busca agente y playbook POR NOMBRE: la migración
+    // 2026-10-30-agentes-lead-comprador-y-vendedor.sql renombra las dos filas a la vez.
+    agentName: "Agente Lead Comprador",
+    name: "Lead Comprador — calificación de inversión",
     description:
-      "Compradores e inversionistas: zona, presupuesto, tipo de propiedad, plazo y perfil de inversión. " +
+      "Lead Comprador (compradores, inversionistas y leads) y referidos: zona, presupuesto, tipo de propiedad, plazo y perfil de inversión. " +
       "Es el playbook global más el perfil de inversión, que es lo que separa a un usuario final de un inversionista.",
     tasks: [
       {
@@ -168,6 +171,98 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
           { value: "REPRESENTACION", synonyms: ["representación", "exclusiva", "represento al desarrollo"] },
           { value: "POR_DEFINIR", synonyms: ["no sé", "lo que se pueda", "por definir", "abierto"] },
         ],
+      },
+    ],
+  },
+  {
+    // #955 (2026-10-30): dueños que quieren vender su propiedad (tipo LEAD_VENDEDOR del #938).
+    // Todo va a `custom.propiedad_venta_*` y no a propertyType/preferredZone/budgetMax: esos
+    // campos son lo que el contacto BUSCA comprar, y aquí es lo que OFRECE vender. Mezclarlos
+    // haría que un vendedor apareciera en los filtros y reportes de compradores.
+    agentName: "Agente Lead Vendedor",
+    name: "Lead Vendedor — captación de propiedad",
+    description:
+      "Dueños que quieren vender: qué propiedad es, dónde está, precio que espera, situación legal y " +
+      "en cuánto tiempo quiere vender. Nada de presupuesto de compra: el vendedor no viene a comprar.",
+    tasks: [
+      {
+        key: "nombre",
+        targetField: "firstName",
+        captureType: "FULL_NAME",
+        objective: "Pregunta su nombre para poder dirigirte a él o ella de forma personal.",
+      },
+      {
+        key: "tipo_propiedad",
+        targetField: "custom.propiedad_venta_tipo",
+        captureType: "ENUM",
+        objective: "Pregunta qué tipo de propiedad quiere vender.",
+        enumOptions: [
+          { value: "DEPARTAMENTO", synonyms: ["depa", "departamento", "depto", "condo"] },
+          { value: "CASA", synonyms: ["casa", "residencia", "villa"] },
+          { value: "TERRENO", synonyms: ["terreno", "lote"] },
+          { value: "MACROLOTE", synonyms: ["macrolote"] },
+          { value: "LOCAL_COMERCIAL", synonyms: ["local", "comercial", "oficina"] },
+          { value: "OTRO", synonyms: ["otro"] },
+        ],
+      },
+      {
+        key: "ubicacion",
+        targetField: "custom.propiedad_venta_ubicacion",
+        captureType: "TEXT",
+        objective: "Pregunta dónde está la propiedad: ciudad, zona y, si aplica, el nombre del desarrollo.",
+        extractionHint:
+          'Guarda la ubicación como la diga, en una línea (p. ej. "Tulum, Aldea Zamá").',
+      },
+      {
+        key: "precio",
+        targetField: "custom.propiedad_venta_precio",
+        captureType: "MONEY",
+        objective:
+          "Pregunta en cuánto le gustaría venderla. Si todavía no lo sabe, está bien: no insistas, " +
+          "el asesor le ayuda a definirlo.",
+      },
+      {
+        key: "moneda",
+        targetField: "custom.propiedad_venta_moneda",
+        captureType: "ENUM",
+        required: false,
+        objective: "Si dio un precio y no queda claro, confirma si es en pesos o en dólares.",
+        enumOptions: [
+          { value: "MXN", synonyms: ["pesos", "mxn", "moneda nacional"] },
+          { value: "USD", synonyms: ["dólares", "dolares", "usd", "dls"] },
+        ],
+      },
+      {
+        key: "situacion_legal",
+        targetField: "custom.propiedad_venta_situacion_legal",
+        captureType: "ENUM",
+        objective:
+          "Pregunta si la propiedad ya está escriturada a su nombre o si la compró en preventa " +
+          "(cesión de derechos). Pregúntalo natural, no como trámite.",
+        enumOptions: [
+          { value: "ESCRITURADA", synonyms: ["escriturada", "tengo escrituras", "ya está escriturada", "a mi nombre"] },
+          { value: "CESION_DE_DERECHOS", synonyms: ["preventa", "cesión de derechos", "todavía no me la entregan", "contrato de compraventa"] },
+          { value: "EN_TRAMITE", synonyms: ["en trámite", "escriturando", "en proceso"] },
+          { value: "OTRO", synonyms: ["no sé", "otro", "herencia", "intestado"] },
+        ],
+      },
+      {
+        key: "plazo_venta",
+        targetField: "custom.propiedad_venta_plazo",
+        captureType: "ENUM",
+        objective: "Pregunta en cuánto tiempo le gustaría venderla.",
+        enumOptions: [
+          { value: "INMEDIATO", synonyms: ["ya", "lo antes posible", "urgente", "este mes"] },
+          { value: "UNO_A_TRES_MESES", synonyms: ["1 a 3 meses", "pronto", "unos meses"] },
+          { value: "TRES_A_SEIS_MESES", synonyms: ["3 a 6 meses", "medio año"] },
+          { value: "SIN_PRISA", synonyms: ["sin prisa", "no tengo prisa", "solo explorando", "cuando se pueda"] },
+        ],
+      },
+      {
+        key: "telefono",
+        targetField: "phone",
+        captureType: "PHONE",
+        objective: "Pide un teléfono para que el asesor de captación lo contacte.",
       },
     ],
   },
