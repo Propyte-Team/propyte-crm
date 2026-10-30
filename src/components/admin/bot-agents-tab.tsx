@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Plus, Trash2, Save, Bot } from "lucide-react";
 import { upsertAgentProfile, deleteAgentProfile } from "@/server/bot-agents";
-import { AGENT_CONTACT_TYPES, AGENT_TONE_PRESETS } from "@/server/bot-agents.schema";
+import { AGENT_CONTACT_TYPES, AGENT_TONE_PRESETS, tiposDeAgenteVigentes } from "@/server/bot-agents.schema";
 import { CONTACT_TYPE_LABELS } from "@/lib/constants";
 
 // #907: mismas etiquetas que el resto del CRM («Broker», «Proveedor», «Otro»…).
@@ -32,7 +32,11 @@ interface Props {
 }
 
 export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
-  const [profiles, setProfiles] = useState<AgentProfileRow[]>(initialProfiles);
+  // #956: los tipos se muestran ya traducidos a los vigentes. Antes un tipo retirado (Lead,
+  // Comprador, Inversionista, Referidor) quedaba invisible en el arreglo y tumbaba el guardado.
+  const [profiles, setProfiles] = useState<AgentProfileRow[]>(() =>
+    initialProfiles.map((p) => ({ ...p, contactTypes: tiposDeAgenteVigentes(p.contactTypes) })),
+  );
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
 
   function patch(idx: number, p: Partial<AgentProfileRow>) {
@@ -53,7 +57,7 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
     }
     setSavingIdx(idx);
     try {
-      const saved = await upsertAgentProfile({
+      const res = await upsertAgentProfile({
         id: row.id,
         name: row.name,
         contactTypes: row.contactTypes as never,
@@ -63,7 +67,11 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
         isActive: row.isActive,
         priority: row.priority,
       });
-      patch(idx, { id: saved.id });
+      if (!res.ok) {
+        alert(`No se guardó: ${res.error}`);
+        return;
+      }
+      patch(idx, { id: res.profile.id });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Error al guardar");
     } finally {
