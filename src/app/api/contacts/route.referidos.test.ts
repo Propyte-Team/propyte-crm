@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // #907: «Referido por». Al crear o editar un contacto se puede ligar al broker que lo trajo.
-// El broker tiene que existir, ser de tipo Broker, no ser el mismo contacto y estar al alcance
-// de quien edita (misma puerta que abrir su ficha). Quitar la liga (null) no se comprueba.
+// El broker tiene que existir, ser de tipo Broker y no ser el mismo contacto. #935: ya no tiene
+// que estar al alcance de quien edita (la puerta de su ficha): basta con estar en el catálogo de
+// «Registrado por», que respeta la marca. Quitar la liga (null) no se comprueba.
 
 const contactFindFirst = vi.fn();
 const contactCreate = vi.fn();
@@ -32,10 +33,17 @@ vi.mock("@/lib/audit/change-context", () => ({
     fn({ contact: { update: (...a: unknown[]) => contactUpdate(...a) } }),
 }));
 
-const getContactAccessInfo = vi.fn();
-vi.mock("@/server/contacts", () => ({
-  getContactAccessInfo: (...a: unknown[]) => getContactAccessInfo(...a),
-}));
+// #935: la marca sí cuenta para elegir broker. Por defecto el usuario ve todas.
+const getVisibleBrands = vi.fn();
+vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
+
+/** ¿Se buscó al broker? (findFirst con su id) */
+function buscoAlBroker() {
+  return contactFindFirst.mock.calls.some((c) => c[0]?.where?.id === BROKER);
+}
+function whereDelBroker() {
+  return contactFindFirst.mock.calls.find((c) => c[0]?.where?.id === BROKER)?.[0].where;
+}
 
 import { POST, PUT } from "./route";
 
@@ -64,13 +72,13 @@ function base(broker: { id: string; contactType: string | null } | null) {
 }
 
 beforeEach(() => {
-  [contactFindFirst, contactCreate, contactUpdate, getServerSession, nonEditableKeys, getContactAccessInfo]
+  [contactFindFirst, contactCreate, contactUpdate, getServerSession, nonEditableKeys, getVisibleBrands]
     .forEach((m) => m.mockReset());
   getServerSession.mockResolvedValue(SESION);
   nonEditableKeys.mockReturnValue(new Set());
   contactCreate.mockResolvedValue({ id: "nuevo" });
   contactUpdate.mockResolvedValue({ id: CONTACTO });
-  getContactAccessInfo.mockResolvedValue({ ok: true, contact: { id: BROKER } });
+  getVisibleBrands.mockResolvedValue("ALL");
   base({ id: BROKER, contactType: "BROKER_EXTERNO" });
 });
 
@@ -79,15 +87,14 @@ describe("POST /api/contacts con referredById (#907)", () => {
     const res = await POST(peticion("POST", { ...ALTA, referredById: BROKER }));
     expect(res.status).toBe(201);
     expect(contactCreate.mock.calls[0][0].data.referredById).toBe(BROKER);
-    // La puerta de acceso es la de la ficha, con la sesión de quien crea.
-    expect(getContactAccessInfo).toHaveBeenCalledWith(BROKER, SESION);
+    expect(buscoAlBroker()).toBe(true);
   });
 
   it("sin referredById: nace sin broker (null), como siempre", async () => {
     const res = await POST(peticion("POST", ALTA));
     expect(res.status).toBe(201);
     expect(contactCreate.mock.calls[0][0].data.referredById).toBeNull();
-    expect(getContactAccessInfo).not.toHaveBeenCalled();
+    expect(buscoAlBroker()).toBe(false);
   });
 
   it("si el elegido no es Broker: 400 y no crea", async () => {
@@ -106,11 +113,33 @@ describe("POST /api/contacts con referredById (#907)", () => {
     expect(contactCreate).not.toHaveBeenCalled();
   });
 
-  it("si el broker está fuera del alcance de quien crea: MISMO 400 «no existe» (no confirma que exista)", async () => {
-    getContactAccessInfo.mockResolvedValue({ ok: false, reason: "forbidden" });
+  it("#935: un ASESOR liga a un broker que es de otro (de un ADMIN): no se le pide abrir su ficha", async () => {
+    const res = await POST(peticion("POST", { ...ALTA, referredById: BROKER }));
+    expect(res.status).toBe(201);
+    const where = whereDelBroker();
+    // Sin alcance por dueño: ni assignedToId ni el OR del rol.
+    expect(JSON.stringify(where)).not.toContain("assignedToId");
+    expect(where.deletedAt).toBeNull();
+  });
+
+  it("#935: un broker de una marca que el usuario no ve: MISMO 400 «no existe» (no confirma que exista)", async () => {
+    getVisibleBrands.mockResolvedValue({ brandIds: [], includesDefault: true });
+    // La base no lo encuentra con el filtro de marca puesto.
+    contactFindFirst.mockImplementation(async (args: { where: { id?: string; AND?: unknown } }) => {
+      if (args.where.id === CONTACTO) return { id: CONTACTO, phone: "+5219991112233", whatsappUserId: null };
+      if (args.where.id === BROKER) return args.where.AND ? null : { id: BROKER, contactType: "BROKER_EXTERNO" };
+      return null;
+    });
     const res = await POST(peticion("POST", { ...ALTA, referredById: BROKER }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("El broker elegido no existe");
+    expect(contactCreate).not.toHaveBeenCalled();
+  });
+
+  it("#935: un rol que no trabaja contactos no puede ligar broker", async () => {
+    getServerSession.mockResolvedValue({ user: { id: "x", role: "ROL_INVENTADO", plaza: "CANCUN" } });
+    const res = await POST(peticion("POST", { ...ALTA, referredById: BROKER }));
+    expect([400, 403]).toContain(res.status);
     expect(contactCreate).not.toHaveBeenCalled();
   });
 
@@ -132,7 +161,7 @@ describe("PUT /api/contacts?id= con referredById (#907)", () => {
     const res = await PUT(peticion("PUT", { referredById: null }));
     expect(res.status).toBe(200);
     expect(contactUpdate.mock.calls[0][0].data.referredBy).toEqual({ disconnect: true });
-    expect(getContactAccessInfo).not.toHaveBeenCalled();
+    expect(buscoAlBroker()).toBe(false);
   });
 
   it("si no viene referredById, la liga no se toca", async () => {

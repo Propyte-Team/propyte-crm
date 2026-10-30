@@ -21,7 +21,7 @@ import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, contactBrandVisibilityWhere } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, contactBrandFilterWhere } from "@/lib/brands/filter";
-import { getContactAccessInfo } from "@/server/contacts";
+import { brokerElegible } from "@/lib/contacts/catalogo-brokers";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
 import { FLUJO_ORDER, whereFlujo } from "@/lib/flujos";
@@ -111,24 +111,20 @@ const contactCoreFields = z.object({
 
 /**
  * #907: ¿se puede ligar este contacto al broker `referredById`? El broker tiene que existir,
- * ser de tipo Broker, no ser el mismo contacto y estar al alcance de quien edita (la misma
- * puerta que abrir su ficha: rol + marca). Devuelve el mensaje de error o null si es válido.
+ * ser de tipo Broker y no ser el mismo contacto. #935: ya NO tiene que estar al alcance de quien
+ * edita (antes era la puerta de su ficha y a un asesor le dejaba casi ningún broker): basta con
+ * que esté en el catálogo de «Registrado por» (lib/contacts/catalogo-brokers.ts), el mismo que
+ * lista el selector. La marca sí cuenta. Devuelve el mensaje de error o null si es válido.
  */
 async function errorDeReferidoPor(
   referredById: string,
   contactId: string | null,
-  session: { user: { id: string; role: string; plaza: string } },
+  session: { user: { id: string; role: string } },
 ): Promise<string | null> {
   if (contactId && referredById === contactId) {
     return MENSAJE_REFERIDO_INVALIDO.mismo_contacto;
   }
-  const acceso = await getContactAccessInfo(referredById, session);
-  const broker = acceso.ok
-    ? await prisma.contact.findFirst({
-        where: { id: referredById, deletedAt: null },
-        select: { id: true, contactType: true },
-      })
-    : null;
+  const broker = await brokerElegible(session.user, referredById);
   const motivo = validarReferidoPor({ contactId, referredById, broker });
   return motivo ? MENSAJE_REFERIDO_INVALIDO[motivo] : null;
 }
