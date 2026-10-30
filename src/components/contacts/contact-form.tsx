@@ -19,7 +19,6 @@ import {
   LEAD_SOURCE_LABELS,
   CONTACT_TYPE_ORDER,
   CONTACT_TYPE_LABELS,
-  CONTACT_TYPE_BROKER,
   LEAD_SOURCE_BROKER,
   normalizarFuente,
   normalizarTipoContacto,
@@ -588,7 +587,8 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
               <p className="text-xs text-destructive">{errors.leadSource}</p>
             )}
           </div>
-          {/* #907: el broker que lo trajo. Solo ofrece contactos de tipo Broker. */}
+          {/* #907: el broker que lo trajo. #935: todos los brokers, de 30 en 30, sin importar el
+              alcance de quien edita (la ficha del broker sí sigue con su alcance). */}
           <div className="space-y-2 sm:col-span-2">
             <Label>Registrado por (broker)</Label>
             <ContactPicker
@@ -599,9 +599,8 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
                 if (b) updateField("leadSource", LEAD_SOURCE_BROKER);
               }}
               disabled={submitting}
-              tipo={CONTACT_TYPE_BROKER}
+              catalogo="brokers"
               excluirId={initialData?.id}
-              listarSinTexto
               placeholder="Buscar broker (opcional)"
             />
             <p className="text-xs text-muted-foreground">
