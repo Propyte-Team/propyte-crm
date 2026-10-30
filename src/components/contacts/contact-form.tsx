@@ -121,6 +121,11 @@ interface ContactFormProps {
    * empresa queda fijo.
    */
   empresaFija?: EmpresaOpcion;
+  /**
+   * #939: alta desde «Registrar» en la ficha de un broker: el contacto nace con este broker en
+   * «Registrado por» (y, por la #929, con la fuente «Registro de Broker»).
+   */
+  brokerFijo?: PickedContact;
 }
 
 // --- Opciones de selects con etiquetas en español ---
@@ -260,7 +265,7 @@ export function campoReferidoPor(
   return actualId === inicialId ? {} : { referredById: actualId };
 }
 
-export function ContactForm({ mode, initialData, onSuccess, empresaFija }: ContactFormProps) {
+export function ContactForm({ mode, initialData, onSuccess, empresaFija, brokerFijo }: ContactFormProps) {
   // Estado del formulario
   const [formData, setFormData] = useState<Partial<ContactFormData>>({
     firstName: initialData?.firstName || "",
@@ -274,7 +279,10 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
     // ya traducido —Referido queda sin tipo— para que el formulario se pueda guardar.
     // #938: igual Lead, Comprador e Inversionista, que se abren como «Lead Comprador».
     contactType: (normalizarTipoContacto(initialData?.contactType ?? null) ?? null) as ContactFormData["contactType"],
-    leadSource: (normalizarFuente(initialData?.leadSource) || "OTRO") as ContactFormData["leadSource"], // #929
+    // #929: con broker la fuente es «Registro de Broker»; #939: también si nace desde el broker.
+    leadSource: (brokerFijo
+      ? LEAD_SOURCE_BROKER
+      : normalizarFuente(initialData?.leadSource) || "OTRO") as ContactFormData["leadSource"],
     leadSourceDetail: initialData?.leadSourceDetail || "",
     residenceCity: initialData?.residenceCity || "",
     residenceCountry: initialData?.residenceCountry || "",
@@ -301,7 +309,7 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
     : initialData?.referredById
       ? { id: initialData.referredById, name: "Broker ligado (ver ficha)" }
       : null;
-  const [broker, setBroker] = useState<PickedContact | null>(brokerInicial);
+  const [broker, setBroker] = useState<PickedContact | null>(brokerFijo ?? brokerInicial);
   // #951: el flujo va aparte de formData (no se esparce): solo viaja si se eligió o si cambió.
   const flujoInicial: string | null = initialData?.flujo ?? null;
   const [flujo, setFlujo] = useState<string | null>(flujoInicial);
@@ -605,7 +613,7 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija }: Conta
                 // #929: con broker, la fuente es «Registro de Broker» (el servidor lo aplica igual).
                 if (b) updateField("leadSource", LEAD_SOURCE_BROKER);
               }}
-              disabled={submitting}
+              disabled={submitting || Boolean(brokerFijo)}
               catalogo="brokers"
               excluirId={initialData?.id}
               placeholder="Buscar broker (opcional)"
