@@ -26,13 +26,45 @@ export async function listAgentProfiles() {
   });
 }
 
-export async function upsertAgentProfile(input: AgentProfileUpsertInput) {
-  const session = await requireAdminRole();
-  const data = agentProfileUpsertSchema.parse(input);
+/**
+ * #956: devuelve el resultado en vez de lanzar. En producción Next oculta el mensaje de un error
+ * lanzado desde un server action («An error occurred in the Server Components render…» y un
+ * 500), así que la persona no sabía qué corregir. Con `{ ok: false, error }` el mensaje llega tal
+ * cual a la pestaña.
+ */
+export type ResultadoGuardarAgente =
+  | { ok: true; profile: { id: string } }
+  | { ok: false; error: string };
+
+export async function upsertAgentProfile(input: AgentProfileUpsertInput): Promise<ResultadoGuardarAgente> {
+  try {
+    return { ok: true, profile: await guardarAgente(input) };
+  } catch (err) {
+    if (err instanceof ErrorDeAgente) return { ok: false, error: err.message };
+    console.error("[bot-agents] no se pudo guardar el agente:", err);
+    return { ok: false, error: "No se pudo guardar el agente. Intenta de nuevo; si sigue fallando, avisa a sistemas." };
+  }
+}
+
+/** Error que se le puede mostrar tal cual a quien edita (validación, permisos, playbook). */
+class ErrorDeAgente extends Error {}
+
+async function guardarAgente(input: AgentProfileUpsertInput) {
+  let session;
+  try {
+    session = await requireAdminRole();
+  } catch (err) {
+    throw new ErrorDeAgente(err instanceof Error ? err.message : "No autorizado");
+  }
+  const parsed = agentProfileUpsertSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new ErrorDeAgente(parsed.error.issues.map((i) => i.message).join(". "));
+  }
+  const data = parsed.data;
 
   if (data.playbookId) {
     const pb = await prisma.botPlaybook.findFirst({ where: { id: data.playbookId, deletedAt: null } });
-    if (!pb) throw new Error("El playbook seleccionado no existe");
+    if (!pb) throw new ErrorDeAgente("El playbook seleccionado no existe");
   }
 
   const { id, ...fields } = data;
