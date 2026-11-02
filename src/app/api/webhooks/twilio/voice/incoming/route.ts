@@ -55,6 +55,10 @@ export async function POST(req: NextRequest) {
     });
     if (r.contactId) {
       contact = { id: r.contactId, assignedToId: r.assignedToId };
+    } else {
+      // #892: antes este fallo no dejaba rastro (la llamada se iba al buzón sin contacto).
+      // Sin el teléfono en el log (dato personal): el CallSid basta para encontrarla en Twilio.
+      console.error(`[voice/incoming] no se pudo dar de alta la llamada ${params.CallSid ?? "(sin CallSid)"}:`, r.error);
     }
   }
 
