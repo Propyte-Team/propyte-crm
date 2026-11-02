@@ -42,6 +42,20 @@ describe("voice/incoming", () => {
     expect(xml).toContain("<Record");
     expect(create).not.toHaveBeenCalled();
   });
+  it("#892: si el alta del número desconocido falla, queda en el log y la llamada va a buzón", async () => {
+    findContactByPhone.mockResolvedValue(null);
+    captureLead.mockResolvedValue({ contactId: null, isNew: false, assignedToId: null, error: "source inválido" });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await POST(formReq({ CallSid: "CA11", From: "+521000000001", To: "+52..." }));
+    const xml = await res.text();
+    expect(err).toHaveBeenCalledWith(
+      expect.stringContaining("[voice/incoming] no se pudo dar de alta"),
+      "source inválido",
+    );
+    expect(xml).toContain("<Record");
+    expect(create).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
   it("firma inválida → 403", async () => {
     const { validateTwilioSignature } = await import("@/lib/twilio/client");
     (validateTwilioSignature as unknown as { mockResolvedValueOnce: (v: boolean) => void }).mockResolvedValueOnce(false);

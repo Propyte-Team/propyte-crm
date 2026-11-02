@@ -2,7 +2,7 @@
 // credenciales de conectores (Anexo B §H), perfiles/plantillas (§J), intake (§H.5).
 import { z } from "zod";
 import { normalizePhoneE164 } from "@/lib/phone";
-import { CONTACT_TYPE_ORDER, normalizarFuente, normalizarTipoContacto } from "@/lib/constants";
+import { CONTACT_TYPE_ORDER, LEAD_SOURCE_ORDER, normalizarFuente, normalizarTipoContacto } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // DSL de condiciones (Anexo Técnico §D.4)
@@ -205,16 +205,11 @@ const normalizedPhone = z
 
 export const incomingLeadSchema = z
   .object({
-    // #929: «Referido de Broker» se retiró → entra como «Registro de Broker» (que antes no
-    // estaba en esta lista: un lead que la trajera se habría rechazado).
-    source: z.preprocess(
-      normalizarFuente,
-      z.enum([
-        "WALK_IN", "FACEBOOK_ADS", "GOOGLE_ADS", "INSTAGRAM", "TIKTOK_ADS", "LINKEDIN",
-        "PORTAL_INMOBILIARIO", "REFERIDO_CLIENTE", "REGISTRO_BROKER", "LLAMADA_FRIA",
-        "EVENTO", "WEBSITE", "WHATSAPP", "MESSENGER", "OTRO",
-      ]),
-    ),
+    // #929: «Referido de Broker» se retiró → entra como «Registro de Broker».
+    // #892: única fuente = LEAD_SOURCE_ORDER. Era una copia a mano con 15 de las 20 vigentes y le
+    // faltaba LLAMADA_ENTRANTE, así que el alta de las llamadas de números desconocidos
+    // (twilio/voice/incoming) se rechazaba siempre, en silencio. Mismo patrón que #730.
+    source: z.preprocess(normalizarFuente, z.enum(LEAD_SOURCE_ORDER)),
     firstName: z.string().min(1).max(80).trim(),
     lastName: z.string().min(1).max(80).trim().default("(sin apellido)"),
     phone: normalizedPhone.optional(),
