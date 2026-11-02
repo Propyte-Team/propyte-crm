@@ -45,6 +45,12 @@ function whereDelBroker() {
   return contactFindFirst.mock.calls.find((c) => c[0]?.where?.id === BROKER)?.[0].where;
 }
 
+// #908: PUT y DELETE pasan por la puerta de acceso de la ficha; aquí se prueba otra cosa, así
+// que el contacto siempre está al alcance de quien guarda. La puerta se prueba en route.acceso.test.ts.
+vi.mock("@/server/contacts", () => ({
+  getContactAccessInfo: vi.fn(async () => ({ ok: true, contact: {} })),
+}));
+
 import { POST, PUT } from "./route";
 
 const SESION = { user: { id: "u1", role: "ASESOR", plaza: "CANCUN" } };

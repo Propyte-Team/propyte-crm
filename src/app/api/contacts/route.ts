@@ -33,9 +33,11 @@ import {
   PLAZA_ACCESS_ROLES,
   OWN_ACCESS_ROLES,
   TEAM_ACCESS_ROLES,
+  READ_ONLY_ROLES,
   alcanceListaContactos,
   filtroAsesor,
 } from "@/lib/contacts/alcance-lista";
+import { getContactAccessInfo } from "@/server/contacts";
 
 // Los sets de roles y el alcance de la lista viven en lib/contacts/alcance-lista.ts (#919):
 // el filtro «Asesores» usa la misma regla.
@@ -516,6 +518,42 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * #908/#952: ¿puede esta sesión MODIFICAR (guardar o borrar) este contacto? Devuelve la respuesta
+ * de rechazo, o null si puede.
+ *
+ * Antes, PUT y DELETE solo comprobaban que el contacto existiera: un asesor con sesión podía
+ * cambiarle el teléfono, el estado o el dueño a un contacto ajeno mandando su id, y la marca no
+ * se miraba. La puerta es la MISMA que decide quién abre la ficha
+ * (`getContactAccessInfo`: rol + marca), así que quien hoy edita desde la ficha (el dueño, su
+ * líder, su gerente, dirección) sigue pudiendo.
+ *
+ * Los roles de solo lectura se rechazan antes: `alcanceListaContactos` les da alcance total para
+ * VER, y sin este corte esa misma puerta les dejaría guardar. MANTENIMIENTO está en los dos sets
+ * (acceso total y solo lectura); aquí gana solo lectura.
+ *
+ * Fuera de marca o inexistente → 404 (no se confirma que exista); fuera de alcance por rol → 403,
+ * igual que /api/contacts/[id]/files.
+ */
+async function rechazoDeModificacion(
+  id: string,
+  session: { user: { id: string; role: string; plaza?: string | null } },
+): Promise<NextResponse | null> {
+  if (READ_ONLY_ROLES.includes(session.user.role)) {
+    return NextResponse.json(
+      { error: "Tu rol puede ver contactos, pero no modificarlos" },
+      { status: 403 }
+    );
+  }
+  const acceso = await getContactAccessInfo(id, session as Parameters<typeof getContactAccessInfo>[1]);
+  if (!acceso.ok) {
+    return acceso.reason === "not_found"
+      ? NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 })
+      : NextResponse.json({ error: "No tienes acceso a este contacto" }, { status: 403 });
+  }
+  return null;
+}
+
+/**
  * PUT /api/contacts?id=<contactId>
  * Actualiza un contacto existente.
  */
@@ -533,7 +571,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "ID de contacto requerido" }, { status: 400 });
     }
 
-    // Verificar que el contacto existe
+    // #908: guardar exige poder abrir la ficha de ESTE contacto (rol + marca).
+    const rechazo = await rechazoDeModificacion(id, session);
+    if (rechazo) return rechazo;
+
+    // El contacto completo: los chequeos de abajo comparan contra lo que ya tenía.
     const existing = await prisma.contact.findFirst({
       where: { id, deletedAt: null },
     });
@@ -771,12 +813,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "No tienes permiso para eliminar contactos" }, { status: 403 });
     }
 
-    const existing = await prisma.contact.findFirst({
-      where: { id, deletedAt: null },
-    });
-    if (!existing) {
-      return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
-    }
+    // #908: además del rol, el contacto tiene que estar a su alcance (la misma puerta de la ficha).
+    // Un id inexistente o de otra marca responde 404.
+    const rechazo = await rechazoDeModificacion(id, session);
+    if (rechazo) return rechazo;
 
     // Soft delete
     await withChangeSource(

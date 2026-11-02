@@ -34,7 +34,11 @@ vi.mock("@/lib/audit/change-context", () => ({
     fn({ contact: { update: (...a: unknown[]) => contactUpdate(...a) } }),
 }));
 
-vi.mock("@/server/contacts", () => ({ getContactAccessInfo: vi.fn() }));
+// #908: PUT y DELETE pasan por la puerta de acceso de la ficha; aquí se prueba otra cosa, así
+// que el contacto siempre está al alcance de quien guarda. La puerta se prueba en route.acceso.test.ts.
+vi.mock("@/server/contacts", () => ({
+  getContactAccessInfo: vi.fn(async () => ({ ok: true, contact: {} })),
+}));
 vi.mock("@/lib/notificaciones/avisar-asignacion", () => ({ avisarAsignacion: vi.fn() }));
 
 import { POST, PUT } from "./route";
