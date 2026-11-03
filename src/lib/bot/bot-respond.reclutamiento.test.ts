@@ -145,6 +145,17 @@ describe("bot-respond + reclutamiento", () => {
     expect(sys.objective).toContain("Eres reclutador.");
   });
 
+  it("tras el cierre, objetivo y contexto van juntos: el cierre primero y la ficha después", async () => {
+    runPlaybookStep.mockResolvedValue({ objective: "Ya tienes lo esencial…", status: "COMPLETED" });
+    hookReclutamiento.mockResolvedValue({ objetivo: "CIERRE APTO", contexto: "Ficha de la vacante: oficinas en Mérida" });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    const sys = systemArgs.mock.calls[0][0] as { objective: string };
+    expect(sys.objective).toContain("CIERRE APTO\n\nFicha de la vacante: oficinas en Mérida");
+    expect(sys.objective).not.toContain("Ya tienes lo esencial");
+  });
+
   it("mientras el guion sigue, el contexto del hook se suma al objetivo del playbook", async () => {
     runPlaybookStep.mockResolvedValue({ objective: "Tu meta ahora: pide su nombre", status: "IN_PROGRESS" });
     hookReclutamiento.mockResolvedValue({ contexto: "Ficha: 100 % comisión" });

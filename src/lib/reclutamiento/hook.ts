@@ -103,6 +103,14 @@ export function contextoEnCurso(ficha: string): string {
 }
 
 /**
+ * Contexto después del cierre: el candidato puede seguir preguntando por la empresa, las oficinas o los
+ * productos. Sin la ficha el modelo contestaba sin datos. Sin las reglas del guion (ya terminó).
+ */
+export function contextoTrasCierre(ficha: string): string {
+  return `Ficha de la vacante (úsala solo si el candidato pregunta por la empresa, oficinas, productos o el esquema; no inventes datos que no estén aquí): ${ficha}`;
+}
+
+/**
  * Copia a la ficha lo que el bot ya sabe (contacto fresco + respuestas del guion). Se hace en cada
  * turno para que /reclutamiento muestre teléfono y respuestas aunque el guion nunca termine.
  */
@@ -117,7 +125,7 @@ async function sincronizarFicha(candidatoId: string, contacto: ContactoConCustom
 export interface ResultadoHook {
   /** Reemplaza el objetivo del playbook cuando hay cierre. */
   objetivo?: string;
-  /** Texto que se suma a la capa de objetivo (ficha de la vacante) mientras el guion sigue. */
+  /** Texto que se suma a la capa de objetivo (ficha de la vacante); con objetivo va después de él. */
   contexto?: string;
 }
 
@@ -133,6 +141,11 @@ export async function hookReclutamiento(input: {
     const cand = await asegurarCandidato({ contact: input.contact, canal: input.channel, conversationId: input.conversationId });
     if (!cand) return {};
 
+    const cfg = await cargarConfigReclutamiento();
+    if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
+    // Ficha = base (SystemConfig o default) + oficinas + desarrollos del Hub (nunca lanza; sin Hub → solo base).
+    const fichaVacante = async () => construirFicha(cfg.ficha, await desarrollosParaReclutamiento());
+
     // Ya evaluado: el bot no vuelve a evaluar solo. Si es APTO y falta horario, lo intenta capturar.
     if (cand.botEvaluadoAt !== null) {
       await sincronizarFicha(cand.id, await recargarContacto(input.contact));
@@ -146,19 +159,15 @@ export async function hookReclutamiento(input: {
         const h = ext.horario_entrevista;
         if (typeof h === "string" && h.trim()) {
           await guardarHorario(cand.id, h.trim());
-          return { objetivo: OBJETIVOS_CIERRE.APTO_HORARIO_GUARDADO };
+          return { objetivo: OBJETIVOS_CIERRE.APTO_HORARIO_GUARDADO, contexto: contextoTrasCierre(await fichaVacante()) };
         }
       }
-      return { objetivo: cierreDe(cand) };
+      return { objetivo: cierreDe(cand), contexto: contextoTrasCierre(await fichaVacante()) };
     }
-
-    const cfg = await cargarConfigReclutamiento();
-    if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
 
     if (input.playbook.status !== "COMPLETED") {
       await sincronizarFicha(cand.id, await recargarContacto(input.contact));
-      // Ficha = base (SystemConfig o default) + oficinas + desarrollos del Hub (nunca lanza; sin Hub → solo base).
-      return { contexto: contextoEnCurso(construirFicha(cfg.ficha, await desarrollosParaReclutamiento())) };
+      return { contexto: contextoEnCurso(await fichaVacante()) };
     }
 
     // Playbook completo → evaluar. Dos mensajes casi simultáneos entrarían aquí a la vez:
@@ -191,7 +200,10 @@ export async function hookReclutamiento(input: {
       responsables,
     });
 
-    return { objetivo: cierreDe({ botResultado: ev.resultado, tieneCv: cand.tieneCv, horarioEntrevista: null }) };
+    return {
+      objetivo: cierreDe({ botResultado: ev.resultado, tieneCv: cand.tieneCv, horarioEntrevista: null }),
+      contexto: contextoTrasCierre(await fichaVacante()),
+    };
   } catch (err) {
     console.error("[reclutamiento] hook falló; el bot sigue con el playbook:", err);
     return {};

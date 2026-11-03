@@ -535,7 +535,8 @@ export async function botRespond(
             messages: history,
             playbook: { status: pr.status },
           });
-          if (hr.objetivo) playbookObjective = hr.objetivo;
+          // Tras el cierre llegan los dos: el cierre manda y la ficha va detrás (preguntas por la empresa).
+          if (hr.objetivo) playbookObjective = hr.contexto ? `${hr.objetivo}\n\n${hr.contexto}` : hr.objetivo;
           else if (hr.contexto) {
             // También cuando el paso del playbook no dio objetivo (su catch defensivo): sin las
             // reglas del guion el modelo cerraba la charla por su cuenta (prueba 2026-11-03).

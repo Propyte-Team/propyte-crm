@@ -35,7 +35,7 @@ vi.mock("@/lib/hub/reclutamiento-inventario", () => ({
   desarrollosParaReclutamiento: (...a: unknown[]) => desarrollosParaReclutamiento(...a),
 }));
 
-import { hookReclutamiento, esAgenteReclutamiento, OBJETIVOS_CIERRE } from "./hook";
+import { hookReclutamiento, esAgenteReclutamiento, OBJETIVOS_CIERRE, contextoTrasCierre } from "./hook";
 import { MODELO_DEFAULT, FICHA_DEFAULT } from "./modelo";
 
 const contactoApto = {
@@ -174,6 +174,7 @@ describe("hookReclutamiento", () => {
       expect.objectContaining({ resultado: "APTO", plaza: "PDC", nombre: "Ana López", responsables: ["u1"] })
     );
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_SIN_CV);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("al completar con CV ya recibido: suma puntos de CV y no lo pide", async () => {
@@ -183,6 +184,7 @@ describe("hookReclutamiento", () => {
     const ev = (persistirEvaluacion.mock.calls[0][0] as { evaluacion: { puntaje: number } }).evaluacion;
     expect(ev.puntaje).toBe(74); // 69 + 5
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_CON_CV);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("al completar relee el contacto: evalúa con las capturas del turno, no con el contacto cargado al inicio", async () => {
@@ -202,6 +204,7 @@ describe("hookReclutamiento", () => {
     );
     expect(avisarResultado).toHaveBeenCalledWith(expect.objectContaining({ nombre: "Ana López" }));
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_SIN_CV);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("si releer el contacto falla, evalúa con el contacto de entrada", async () => {
@@ -212,6 +215,7 @@ describe("hookReclutamiento", () => {
     const ev = (persistirEvaluacion.mock.calls[0][0] as { evaluacion: { resultado: string } }).evaluacion;
     expect(ev.resultado).toBe("APTO");
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_SIN_CV);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("NO_APTO: cierre amable sin pedir nada", async () => {
@@ -220,6 +224,7 @@ describe("hookReclutamiento", () => {
     const contacto = { ...contactoApto, custom: { ...contactoApto.custom, reclutamiento_movilidad: "NO" } };
     const r = await hookReclutamiento({ ...base, contact: contacto, playbook: { status: "COMPLETED" } });
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.NO_APTO);
+    expect(r.contexto).toContain("Ficha de la vacante");
     expect(avisarResultado).toHaveBeenCalledWith(expect.objectContaining({ resultado: "NO_APTO" }));
   });
 
@@ -235,6 +240,7 @@ describe("hookReclutamiento", () => {
     expect(persistirEvaluacion).not.toHaveBeenCalled();
     expect(guardarHorario).toHaveBeenCalledWith("c1", "martes por la tarde");
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_HORARIO_GUARDADO);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("otro turno ya reclamó la evaluación: no evalúa, no avisa y devuelve {}", async () => {
@@ -267,8 +273,8 @@ describe("hookReclutamiento", () => {
     extractFields.mockResolvedValue({});
     const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
     expect(guardarHorario).not.toHaveBeenCalled();
-    expect(cargarConfigReclutamiento).not.toHaveBeenCalled();
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_CON_CV);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("ya evaluado (APTO) con horario: confirma sin volver a extraer", async () => {
@@ -276,6 +282,7 @@ describe("hookReclutamiento", () => {
     const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
     expect(extractFields).not.toHaveBeenCalled();
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_HORARIO_GUARDADO);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("ya evaluado REVISAR: solo mantiene el cierre, no re-evalúa", async () => {
@@ -283,6 +290,7 @@ describe("hookReclutamiento", () => {
     const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
     expect(persistirEvaluacion).not.toHaveBeenCalled();
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.REVISAR_SIN_CV);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("ya evaluado NO_APTO: devuelve el cierre NO_APTO sin re-evaluar", async () => {
@@ -291,6 +299,7 @@ describe("hookReclutamiento", () => {
     expect(persistirEvaluacion).not.toHaveBeenCalled();
     expect(avisarResultado).not.toHaveBeenCalled();
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.NO_APTO);
+    expect(r.contexto).toContain("Ficha de la vacante");
   });
 
   it("si la evaluación revienta, no lanza y devuelve {}", async () => {
@@ -299,6 +308,24 @@ describe("hookReclutamiento", () => {
     persistirEvaluacion.mockRejectedValue(new Error("db"));
     const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
     expect(r).toEqual({});
+  });
+});
+
+describe("contextoTrasCierre", () => {
+  it("da la ficha sin las reglas de «no cierres» del guion", () => {
+    const t = contextoTrasCierre("FICHA-X");
+    expect(t).toContain("Ficha de la vacante");
+    expect(t).toContain("FICHA-X");
+    expect(t).toContain("no inventes datos");
+    expect(t).not.toMatch(/NO cierres/);
+  });
+
+  it("ya evaluado: la ficha incluye los desarrollos del Hub", async () => {
+    asegurarCandidato.mockResolvedValue({ ...sinEvaluar, botResultado: "NO_APTO", botEvaluadoAt: new Date() });
+    const base = { conversationId: "v1", channel: "INSTAGRAM" as const, model: "m", messages: [{ role: "user" as const, content: "hola" }] };
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
+    expect(cargarConfigReclutamiento).toHaveBeenCalledTimes(1);
+    expect(r.contexto).toContain("Yaxnáh Caucel");
   });
 });
 
