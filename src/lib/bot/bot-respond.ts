@@ -390,21 +390,6 @@ export async function botRespond(
     return false;
   }
 
-  // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
-  // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
-  // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
-  //
-  // Con marca (2026-10-09): el catálogo es SOLO el de los desarrollos de la marca (sin
-  // filtrar por presupuesto/zona del contacto: ese perfil puede venir de otra marca).
-  const { data: catalog, error: catalogError } = brand
-    ? await findMatchingDevelopments({ developmentIds: brand.developmentIds, limit: 10 })
-    : await findMatchingDevelopments({
-        budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
-        budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
-        zone: contact.preferredZone,
-      });
-  if (catalogError) console.error("[bot-respond] catálogo del Hub no disponible:", catalogError);
-
   // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente
   // (identidad + playbook + tono propios). Solo gasta clasificación si hay agentes activos.
   // Best-effort: cualquier fallo deja el flujo global de siempre intacto.
@@ -440,6 +425,29 @@ export async function botRespond(
       // defensivo: sin agente → comportamiento global
     }
   }
+
+  // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
+  // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
+  // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
+  //
+  // Con marca (2026-10-09): el catálogo es SOLO el de los desarrollos de la marca (sin
+  // filtrar por presupuesto/zona del contacto: ese perfil puede venir de otra marca).
+  //
+  // Agente de reclutamiento (2026-11-03): NO recibe el catálogo de ventas. Con él habló de
+  // Ancestral y Gran Coralia como departamentos a un candidato. Su ficha (oficinas y
+  // desarrollos exclusivos/co-broker) llega por el hook de reclutamiento. Por eso el
+  // catálogo se consulta DESPUÉS de resolver el agente.
+  const { data: catalog, error: catalogError } = brand
+    ? await findMatchingDevelopments({ developmentIds: brand.developmentIds, limit: 10 })
+    : esAgenteReclutamiento(agentProfile)
+      ? { data: [], error: null }
+      : await findMatchingDevelopments({
+          budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
+          budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
+          zone: contact.preferredZone,
+        });
+  if (catalogError) console.error("[bot-respond] catálogo del Hub no disponible:", catalogError);
+
   // El tono propio de la marca reemplaza al global; sin marca (o sin tono) todo igual.
   const baseConfig = brand?.tonePreset ? { ...config, tonePreset: brand.tonePreset } : config;
   const effectiveConfig = applyAgentTone(baseConfig, agentProfile);

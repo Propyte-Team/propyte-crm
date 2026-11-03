@@ -81,9 +81,11 @@ export function resolverModelo(valor: unknown): { modelo: ModeloReclutamiento; e
   return { modelo: MODELO_DEFAULT, error: r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") };
 }
 
+// Texto oficial (2026-11-03). Oficinas y desarrollos del Hub se le suman en `ficha.ts` (construirFicha).
 export const FICHA_DEFAULT =
+  "Propyte es una comercializadora inmobiliaria con producto en Tulum, Playa del Carmen, Cancún, Mérida y Telchac. " +
   "Buscamos asesores inmobiliarios para Playa del Carmen y Mérida. Esquema 100 % comisión (sin sueldo base), " +
-  "comisiones competitivas por venta, capacitación continua, inventario de desarrollos y acompañamiento del equipo. " +
+  "comisiones competitivas por venta, capacitación continua, inventario propio y de co-broker, y acompañamiento del equipo. " +
   "Necesitas vehículo propio y disponibilidad para moverte por la zona. El proceso: una charla aquí, tu CV y una entrevista con el Gerente de Ventas.";
 
 /** Ids de usuario responsables por plaza; `default` aplica cuando la plaza no tiene lista propia. */

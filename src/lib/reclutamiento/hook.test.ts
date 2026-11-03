@@ -28,6 +28,10 @@ const extractFields = vi.fn();
 vi.mock("@/lib/bot/playbook/extract", () => ({ extractFields: (...a: unknown[]) => extractFields(...a) }));
 const contactFindUnique = vi.fn();
 vi.mock("@/lib/db", () => ({ default: { contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) } } }));
+const desarrollosParaReclutamiento = vi.fn();
+vi.mock("@/lib/hub/reclutamiento-inventario", () => ({
+  desarrollosParaReclutamiento: (...a: unknown[]) => desarrollosParaReclutamiento(...a),
+}));
 
 import { hookReclutamiento, esAgenteReclutamiento, OBJETIVOS_CIERRE } from "./hook";
 import { MODELO_DEFAULT, FICHA_DEFAULT } from "./modelo";
@@ -66,6 +70,11 @@ beforeEach(() => {
   cargarConfigReclutamiento.mockResolvedValue({ modelo: MODELO_DEFAULT, ficha: FICHA_DEFAULT, responsables: {} });
   responsablesDe.mockResolvedValue(["u1"]);
   reclamarEvaluacion.mockResolvedValue(true);
+  desarrollosParaReclutamiento.mockReset();
+  desarrollosParaReclutamiento.mockResolvedValue([
+    { nombre: "Yaxnáh Caucel", ciudad: "Mérida", relacion: "EXCLUSIVO", tipos: ["Casa"], disponibles: 10 },
+    { nombre: "Gran Coralia", ciudad: "Tulum", relacion: "CO_BROKER", tipos: ["Terreno"], disponibles: 5 },
+  ]);
 });
 
 describe("esAgenteReclutamiento", () => {
@@ -100,6 +109,26 @@ describe("hookReclutamiento", () => {
     expect(r.contexto).toContain("no inventes desarrollos");
     expect(r.contexto).toContain("Ficha de la vacante: ");
     expect(r.contexto!.indexOf("Reglas del guion")).toBeLessThan(r.contexto!.indexOf("Ficha de la vacante"));
+  });
+
+  it("en curso: la ficha lleva oficinas y desarrollos del Hub (exclusivos con nombre, co-broker solo contados)", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "IN_PROGRESS" } });
+    expect(desarrollosParaReclutamiento).toHaveBeenCalledTimes(1);
+    expect(r.contexto).toContain("Oficinas: Playa del Carmen, Quinta Avenida esquina con calle 40");
+    expect(r.contexto).toContain("Mérida: oficina de ventas de Yaxnáh Caucel, en Ciudad Caucel.");
+    expect(r.contexto).toContain("Desarrollos exclusivos de Propyte (producto propio): Yaxnáh Caucel (casas, Mérida).");
+    expect(r.contexto).toContain("(co-broker): Tulum: 1 desarrollo (terrenos).");
+    expect(r.contexto).not.toContain("Gran Coralia");
+  });
+
+  it("en curso: si el Hub no responde, la ficha base sigue (sin líneas de desarrollos)", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    desarrollosParaReclutamiento.mockResolvedValue([]);
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "IN_PROGRESS" } });
+    expect(r.contexto).toContain("Esquema 100 % comisión");
+    expect(r.contexto).toContain("Oficinas: ");
+    expect(r.contexto).not.toContain("Desarrollos exclusivos");
   });
 
   it("al completar: evalúa, persiste, avisa y devuelve el cierre APTO pidiendo CV y horario", async () => {

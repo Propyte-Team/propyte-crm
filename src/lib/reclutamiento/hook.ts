@@ -9,6 +9,8 @@ import { evaluarActitud } from "./actitud";
 import { asegurarCandidato, guardarHorario, persistirEvaluacion, plazaDeRespuesta, reclamarEvaluacion, type ContactoDelBot } from "./candidato";
 import type { Veredicto } from "./etapas";
 import { evaluar } from "./evaluar";
+import { desarrollosParaReclutamiento } from "@/lib/hub/reclutamiento-inventario";
+import { construirFicha } from "./ficha";
 import { cargarConfigReclutamiento } from "./modelo";
 import { leerRespuestas } from "./respuestas";
 import { avisarResultado, responsablesDe } from "./avisos";
@@ -133,7 +135,8 @@ export async function hookReclutamiento(input: {
     if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
 
     if (input.playbook.status !== "COMPLETED") {
-      return { contexto: contextoEnCurso(cfg.ficha) };
+      // Ficha = base (SystemConfig o default) + oficinas + desarrollos del Hub (nunca lanza; sin Hub → solo base).
+      return { contexto: contextoEnCurso(construirFicha(cfg.ficha, await desarrollosParaReclutamiento())) };
     }
 
     // Playbook completo → evaluar. Dos mensajes casi simultáneos entrarían aquí a la vez:

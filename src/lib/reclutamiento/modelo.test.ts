@@ -27,6 +27,12 @@ describe("modelo de reclutamiento", () => {
     expect(FICHA_DEFAULT).not.toMatch(/gerente de la plaza/i);
   });
 
+  it("la ficha default presenta a Propyte con el texto oficial y el inventario propio y de co-broker", async () => {
+    const { FICHA_DEFAULT } = await import("./modelo");
+    expect(FICHA_DEFAULT).toMatch(/^Propyte es una comercializadora inmobiliaria con producto en Tulum, Playa del Carmen, Cancún, Mérida y Telchac\./);
+    expect(FICHA_DEFAULT).toContain("inventario propio y de co-broker");
+  });
+
   it("sin valor en SystemConfig usa el default sin error", () => {
     expect(resolverModelo(undefined)).toEqual({ modelo: MODELO_DEFAULT });
   });
