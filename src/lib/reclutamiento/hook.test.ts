@@ -4,8 +4,10 @@ const asegurarCandidato = vi.fn();
 const persistirEvaluacion = vi.fn();
 const guardarHorario = vi.fn();
 const reclamarEvaluacion = vi.fn();
+const sincronizarCandidato = vi.fn();
 vi.mock("./candidato", () => ({
   reclamarEvaluacion: (...a: unknown[]) => reclamarEvaluacion(...a),
+  sincronizarCandidato: (...a: unknown[]) => sincronizarCandidato(...a),
   asegurarCandidato: (...a: unknown[]) => asegurarCandidato(...a),
   persistirEvaluacion: (...a: unknown[]) => persistirEvaluacion(...a),
   guardarHorario: (...a: unknown[]) => guardarHorario(...a),
@@ -63,7 +65,7 @@ const contactoApto = {
 const sinEvaluar = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, tieneCv: false };
 
 beforeEach(() => {
-  [asegurarCandidato, persistirEvaluacion, guardarHorario, reclamarEvaluacion, evaluarActitud, cargarConfigReclutamiento, responsablesDe, avisarResultado, extractFields, contactFindUnique].forEach(
+  [asegurarCandidato, persistirEvaluacion, guardarHorario, reclamarEvaluacion, sincronizarCandidato, evaluarActitud, cargarConfigReclutamiento, responsablesDe, avisarResultado, extractFields, contactFindUnique].forEach(
     (f) => f.mockReset()
   );
   contactFindUnique.mockResolvedValue(null); // sin fila releída → se usa el contacto de entrada
@@ -99,6 +101,31 @@ describe("hookReclutamiento", () => {
     expect(r.contexto).toContain("Esquema 100 % comisión");
     expect(r.objetivo).toBeUndefined();
     expect(persistirEvaluacion).not.toHaveBeenCalled();
+  });
+
+  it("en curso: copia a la ficha el contacto releído y las respuestas capturadas hasta ahora", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    contactFindUnique.mockResolvedValue({
+      firstName: "Myriam",
+      lastName: "",
+      phone: "+5219991112233",
+      email: null,
+      custom: { reclutamiento_mayor_edad: "SI", reclutamiento_plaza: "PDC", otra_cosa: "x" },
+    });
+    await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "IN_PROGRESS" } });
+    expect(sincronizarCandidato).toHaveBeenCalledWith({
+      candidatoId: "c1",
+      contacto: { firstName: "Myriam", lastName: "", phone: "+5219991112233", email: null },
+      respuestas: { mayor_edad: "SI", plaza: "PDC" },
+    });
+  });
+
+  it("ya evaluado: también sincroniza la ficha (el teléfono puede llegar después)", async () => {
+    asegurarCandidato.mockResolvedValue({ ...sinEvaluar, botResultado: "REVISAR", botEvaluadoAt: new Date() });
+    await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
+    expect(sincronizarCandidato).toHaveBeenCalledWith(
+      expect.objectContaining({ candidatoId: "c1", contacto: { firstName: "Ana", lastName: "López", phone: "+521", email: "ana@x.mx" } })
+    );
   });
 
   it("en curso: el contexto trae las reglas del guion (no cerrar, no pedir CV) antes de la ficha", async () => {

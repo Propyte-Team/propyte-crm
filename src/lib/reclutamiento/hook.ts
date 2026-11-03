@@ -6,7 +6,15 @@ import type { BotMessage } from "@/lib/bot/claude";
 import prisma from "@/lib/db";
 import { extractFields } from "@/lib/bot/playbook/extract";
 import { evaluarActitud } from "./actitud";
-import { asegurarCandidato, guardarHorario, persistirEvaluacion, plazaDeRespuesta, reclamarEvaluacion, type ContactoDelBot } from "./candidato";
+import {
+  asegurarCandidato,
+  guardarHorario,
+  persistirEvaluacion,
+  plazaDeRespuesta,
+  reclamarEvaluacion,
+  sincronizarCandidato,
+  type ContactoDelBot,
+} from "./candidato";
 import type { Veredicto } from "./etapas";
 import { evaluar } from "./evaluar";
 import { desarrollosParaReclutamiento } from "@/lib/hub/reclutamiento-inventario";
@@ -94,6 +102,18 @@ export function contextoEnCurso(ficha: string): string {
   );
 }
 
+/**
+ * Copia a la ficha lo que el bot ya sabe (contacto fresco + respuestas del guion). Se hace en cada
+ * turno para que /reclutamiento muestre teléfono y respuestas aunque el guion nunca termine.
+ */
+async function sincronizarFicha(candidatoId: string, contacto: ContactoConCustom): Promise<void> {
+  await sincronizarCandidato({
+    candidatoId,
+    contacto: { firstName: contacto.firstName, lastName: contacto.lastName, phone: contacto.phone, email: contacto.email },
+    respuestas: leerRespuestas(contacto.custom),
+  });
+}
+
 export interface ResultadoHook {
   /** Reemplaza el objetivo del playbook cuando hay cierre. */
   objetivo?: string;
@@ -115,6 +135,7 @@ export async function hookReclutamiento(input: {
 
     // Ya evaluado: el bot no vuelve a evaluar solo. Si es APTO y falta horario, lo intenta capturar.
     if (cand.botEvaluadoAt !== null) {
+      await sincronizarFicha(cand.id, await recargarContacto(input.contact));
       if (cand.botResultado === "APTO" && !cand.horarioEntrevista) {
         // Solo el último mensaje: ahorra tokens y evita rescatar texto viejo de la charla.
         const ext = await extractFields({
@@ -135,6 +156,7 @@ export async function hookReclutamiento(input: {
     if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
 
     if (input.playbook.status !== "COMPLETED") {
+      await sincronizarFicha(cand.id, await recargarContacto(input.contact));
       // Ficha = base (SystemConfig o default) + oficinas + desarrollos del Hub (nunca lanza; sin Hub → solo base).
       return { contexto: contextoEnCurso(construirFicha(cfg.ficha, await desarrollosParaReclutamiento())) };
     }

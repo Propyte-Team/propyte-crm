@@ -17,7 +17,7 @@ vi.mock("@/server/reclutamiento", () => ({ crearCandidato: (...a: unknown[]) => 
 const askClaude = vi.fn();
 vi.mock("@/lib/bot/claude", () => ({ askClaude: (...a: unknown[]) => askClaude(...a) }));
 
-import { asegurarCandidato, persistirEvaluacion, plazaDeRespuesta, guardarHorario, reclamarEvaluacion } from "./candidato";
+import { asegurarCandidato, persistirEvaluacion, plazaDeRespuesta, guardarHorario, reclamarEvaluacion, sincronizarCandidato } from "./candidato";
 
 const contacto = { id: "k1", firstName: "Ana", lastName: "López", phone: "+5219991112233", email: "ana@x.mx" };
 const filaDb = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, files: [] };
@@ -77,6 +77,49 @@ describe("asegurarCandidato", () => {
   it("sin migrar (P2022) → null sin lanzar", async () => {
     findFirst.mockRejectedValue(Object.assign(new Error("no column"), { code: "P2022" }));
     expect(await asegurarCandidato({ contact: contacto, canal: "WHATSAPP", conversationId: "v1" })).toBeNull();
+  });
+});
+
+describe("sincronizarCandidato (cada turno del bot)", () => {
+  it("copia nombre, teléfono, correo y respuestas a la ficha sin tocar etapa ni evaluación", async () => {
+    updateMany.mockResolvedValue({ count: 1 });
+    await sincronizarCandidato({
+      candidatoId: "c1",
+      contacto: { firstName: "Myriam", lastName: "Pérez", phone: "+5219991112233", email: "my@x.mx" },
+      respuestas: { mayor_edad: "SI", plaza: "PDC", disponibilidad: "TIEMPO_COMPLETO" },
+    });
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    const arg = updateMany.mock.calls[0][0] as { where: unknown; data: Record<string, unknown> };
+    expect(arg.where).toEqual({ id: "c1" });
+    expect(arg.data).toEqual({
+      fullName: "Myriam Pérez",
+      phone: "+5219991112233",
+      email: "my@x.mx",
+      botRespuestas: { mayor_edad: "SI", plaza: "PDC", disponibilidad: "TIEMPO_COMPLETO" },
+    });
+    expect("stage" in arg.data).toBe(false);
+    expect("botResultado" in arg.data).toBe(false);
+    expect("botEvaluadoAt" in arg.data).toBe(false);
+  });
+  it("solo nombre (sin apellido) y sin respuestas: manda fullName y nada más", async () => {
+    updateMany.mockResolvedValue({ count: 1 });
+    await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: " Myriam ", lastName: null, phone: "  ", email: null }, respuestas: {} });
+    expect((updateMany.mock.calls[0][0] as { data: unknown }).data).toEqual({ fullName: "Myriam" });
+  });
+  it("con contacto vacío y sin respuestas no toca la base", async () => {
+    await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "", lastName: "", phone: null, email: null }, respuestas: {} });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+  it("no pisa la ficha con el nombre provisional «Candidato por chat»", async () => {
+    updateMany.mockResolvedValue({ count: 1 });
+    await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "Candidato por chat", lastName: "", phone: "+521", email: null }, respuestas: {} });
+    expect((updateMany.mock.calls[0][0] as { data: unknown }).data).toEqual({ phone: "+521" });
+  });
+  it("nunca lanza", async () => {
+    updateMany.mockRejectedValue(new Error("db"));
+    await expect(
+      sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "A", lastName: "B", phone: null, email: null }, respuestas: {} })
+    ).resolves.toBeUndefined();
   });
 });
 

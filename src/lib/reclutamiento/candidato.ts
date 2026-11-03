@@ -217,6 +217,39 @@ export async function persistirEvaluacion(input: {
   await prisma.recruitCandidate.update({ where: { id: candidatoId }, data });
 }
 
+/** Datos del contacto que se copian a la ficha. Solo se usan los valores no vacíos. */
+export interface ContactoParaFicha {
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+/**
+ * Copia a la ficha del candidato lo que el bot ya sabe en cada turno (prueba 2026-11-03: el guion
+ * nunca llegó a COMPLETED y la ficha quedó sin teléfono ni respuestas). Solo escribe lo que no esté
+ * vacío; no toca etapa ni las columnas bot* de la evaluación. Nunca lanza.
+ */
+export async function sincronizarCandidato(input: {
+  candidatoId: string;
+  contacto: ContactoParaFicha;
+  respuestas: Respuestas;
+}): Promise<void> {
+  const { contacto, respuestas } = input;
+  const data: Prisma.RecruitCandidateUncheckedUpdateInput = {};
+  const nombre = `${contacto.firstName ?? ""} ${contacto.lastName ?? ""}`.trim().replace(/\s+/g, " ");
+  if (nombre && nombre !== NOMBRE_PROVISIONAL) data.fullName = nombre.slice(0, 200);
+  if (contacto.phone?.trim()) data.phone = contacto.phone.trim();
+  if (contacto.email?.trim()) data.email = contacto.email.trim();
+  if (Object.keys(respuestas).length > 0) data.botRespuestas = respuestas as Prisma.InputJsonValue;
+  if (Object.keys(data).length === 0) return;
+  try {
+    await prisma.recruitCandidate.updateMany({ where: { id: input.candidatoId }, data });
+  } catch (err) {
+    console.warn("[reclutamiento] no se pudo sincronizar la ficha del candidato:", err);
+  }
+}
+
 /**
  * Reserva la evaluación: marca botEvaluadoAt solo si aún está en null. Devuelve true para el
  * turno que ganó; false si otro turno ya la reclamó (o si falló la base), y ese turno no evalúa.
