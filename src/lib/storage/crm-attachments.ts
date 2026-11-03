@@ -3,6 +3,7 @@
 // Subida desde el navegador SIEMPRE con signed upload URL directa a Supabase: Hostinger trunca
 // el multipart de más de 1–2 MB si pasa por la API del CRM.
 import { getSupabaseServiceClient } from "@/lib/supabase";
+import { CHAT_MEDIA_BUCKET } from "./chat-media";
 
 export const CRM_ATTACHMENTS_BUCKET = "crm-attachments";
 
@@ -76,5 +77,24 @@ export async function borrarArchivo(path: string): Promise<boolean> {
     return !error;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Copia un objeto del bucket del chat al bucket de adjuntos (CV que llega por mensaje). Devuelve
+ * el tamaño en bytes, o null si falla (nunca lanza). No borra el original: el inbox lo sigue mostrando.
+ */
+export async function copiarDeChatMedia(pathOrigen: string, pathDestino: string, contentType: string): Promise<number | null> {
+  try {
+    const supabase = getSupabaseServiceClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).download(pathOrigen);
+    if (error || !data) return null;
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const up = await supabase.storage.from(CRM_ATTACHMENTS_BUCKET).upload(pathDestino, buffer, { contentType, upsert: false });
+    if (up.error) return null;
+    return buffer.byteLength;
+  } catch {
+    return null;
   }
 }

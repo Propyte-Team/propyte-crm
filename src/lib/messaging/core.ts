@@ -553,6 +553,23 @@ export async function handleInboundMessage(
     throw err;
   }
 
+  // Bot de reclutamiento (spec 2026-11-02 §6): si el contacto es candidato y manda un PDF o Word,
+  // se registra como su CV en Reclutamiento. Best-effort: sin candidato o sin tabla no hace nada.
+  if (message?.mediaUrl) {
+    try {
+      const { ligarCv } = await import("@/lib/reclutamiento/cv");
+      await ligarCv({
+        id: message.id,
+        contactId: message.contactId,
+        mediaUrl: message.mediaUrl,
+        mediaMimeType: message.mediaMimeType,
+        mediaFilename: message.mediaFilename,
+      });
+    } catch (err) {
+      console.warn(`[messaging] ligarCv falló (${message.id}):`, err);
+    }
+  }
+
   // Señal de vida del conector: el mensaje ya está persistido, así que este conector
   // ENTREGÓ. Se marca en cada inbound y no solo en el alta de contacto, para que un
   // conector que solo recibe de gente ya registrada no envejezca como si estuviera
