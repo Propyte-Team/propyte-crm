@@ -12,8 +12,9 @@ módulo Reclutamiento del #926, tabla `recruit_candidates`).
 3. Sembrar el guion nuevo **justo después del deploy**: `npx tsx scripts/seed-bot-playbooks-segmento.ts`
    (reemplaza las tareas del playbook del «Agente Reclutamiento» conservando su id). **No** antes del
    deploy: el seed agrega la opción `OTRO_INGRESO`, que el código viejo evalúa como FALLA, así que un
-   candidato que la eligiera quedaría rechazado por error. Entre el deploy y el seed no hay hueco: el
-   código nuevo no evalúa mientras el guion sembrado sea el viejo (el hook exige la tarea `actitud_3`).
+   candidato que la eligiera quedaría rechazado por error. Entre el deploy y el seed el código nuevo
+   corre con el guion de F1 (ya tiene `actitud_3`): evalúa con el orden y las opciones viejas, sin
+   romper nada; por eso el seed va enseguida.
    Orden: SQL v2 → deploy → seed.
 4. Activar en Ajustes → Agentes del bot el «Agente Reclutamiento».
 5. Confirmar que `bot_config.enabledChannels` incluye INSTAGRAM y MESSENGER (lo hace el SQL).
