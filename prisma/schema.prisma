@@ -56,6 +56,29 @@ enum Plaza {
   @@schema("propyte_crm")
 }
 
+// Reclutamiento de asesores (spec 2026-11-02-bot-reclutamiento-design.md §5.2)
+enum RecruitmentStage {
+  NUEVO
+  PERFILANDO
+  CV_PENDIENTE
+  APTO
+  REVISAR
+  NO_APTO
+  ENTREVISTA
+  CONTRATADO
+  DESCARTADO
+
+  @@schema("propyte_crm")
+}
+
+enum RecruitmentVerdict {
+  APTO
+  REVISAR
+  NO_APTO
+
+  @@schema("propyte_crm")
+}
+
 // Tipo de contacto
 enum ContactType {
   LEAD
@@ -3272,5 +3295,38 @@ model LeadCampaign {
 
   @@index([kind])
   @@map("lead_campaigns")
+  @@schema("propyte_crm")
+}
+
+// Candidato a asesor: una fila por contacto que entra al Agente Reclutamiento.
+// Sin relation a Contact a propósito (mismo criterio que contact_scores): un deploy
+// que salga antes de aplicar la migración no debe tumbar las consultas de contactos.
+model RecruitmentCandidate {
+  id                String              @id @default(uuid())
+  contactId         String              @unique
+  etapa             RecruitmentStage    @default(NUEVO)
+  plaza             Plaza?
+  canal             ConversationChannel
+  respuestas        Json                @default("{}")
+  filtros           Json                @default("{}")
+  puntaje           Int?
+  desglose          Json?
+  resultado         RecruitmentVerdict?
+  motivo            String?
+  cvUrl             String?
+  cvMime            String?
+  cvFilename        String?
+  cvMessageId       String?
+  horarioEntrevista String?
+  entrevistaAt      DateTime?
+  responsableId     String?
+  resumenIA         String?             @db.Text
+  evaluadoAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @default(now()) @updatedAt
+
+  @@index([etapa])
+  @@index([plaza, etapa])
+  @@map("recruitment_candidates")
   @@schema("propyte_crm")
 }
