@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, Pencil, ExternalLink, FileText, Trash2, Loader2, Search, Download } from "lucide-react";
+import { Plus, Pencil, ExternalLink, FileText, Trash2, Loader2, Search, Download, Link2, MessageCircle } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,8 @@ import {
   type CandidatoFila,
   type EtapaCode,
 } from "@/lib/reclutamiento/shared";
+import { FILTROS_VEREDICTO, hrefWhatsApp, origenLabel } from "@/lib/reclutamiento/presentacion";
+import { BadgeBot, EvaluacionBot } from "./evaluacion-bot";
 import { ESTADO_COLORS, ESTADO_VACIO_COLOR, esEstado, etiquetaEstado } from "@/lib/estados";
 
 interface Props {
@@ -47,11 +49,16 @@ interface Props {
   puedeEliminar: boolean;
 }
 
+// Chips del veredicto del bot: mismos tonos que las etapas a las que lleva cada uno.
+const COLOR_VEREDICTO: Record<string, string> = { APTO: "#15803D", REVISAR: "#B45309", NO_APTO: "#6B7280", SIN_EVALUAR: "#94A3B8" };
+
 // Etapa va justo después del nombre (como en la base de Notion): es lo que más se consulta y así
 // no queda escondida al final de una tabla que en laptop necesita scroll horizontal.
 export const COLUMNAS = [
   "Nombre completo",
   "Etapa",
+  "Origen",
+  "Bot",
   "Edad",
   "Correo",
   "Teléfono",
@@ -76,12 +83,13 @@ export function ReclutamientoClient({ initial, sinMigracion = false, puedeElimin
   const [texto, setTexto] = useState("");
   const [filtroEtapa, setFiltroEtapa] = useState("");
   const [filtroUbicacion, setFiltroUbicacion] = useState("");
+  const [filtroVeredicto, setFiltroVeredicto] = useState("");
   const [abierto, setAbierto] = useState(false);
   const [editando, setEditando] = useState<CandidatoFila | null>(null);
 
   const visibles = useMemo(
-    () => filtrarCandidatos(filas, { texto, etapa: filtroEtapa, ubicacion: filtroUbicacion }),
-    [filas, texto, filtroEtapa, filtroUbicacion]
+    () => filtrarCandidatos(filas, { texto, etapa: filtroEtapa, ubicacion: filtroUbicacion, veredicto: filtroVeredicto }),
+    [filas, texto, filtroEtapa, filtroUbicacion, filtroVeredicto]
   );
   const enProceso = filas.filter((f) => !ETAPAS_CERRADAS.includes(f.stage as EtapaCode)).length;
 
@@ -165,6 +173,20 @@ export function ReclutamientoClient({ initial, sinMigracion = false, puedeElimin
               label={e.label}
               n={n}
               color={e.color}
+            />
+          );
+        })}
+        <span className="mx-1 self-stretch border-l" style={{ borderColor: "var(--border-subtle)" }} aria-hidden />
+        {FILTROS_VEREDICTO.map((v) => {
+          const n = filas.filter((f) => (v.code === "SIN_EVALUAR" ? !f.botResultado : f.botResultado === v.code)).length;
+          return (
+            <ChipEtapa
+              key={v.code}
+              activo={filtroVeredicto === v.code}
+              onClick={() => setFiltroVeredicto(filtroVeredicto === v.code ? "" : v.code)}
+              label={`Bot: ${v.label}`}
+              n={n}
+              color={COLOR_VEREDICTO[v.code]}
             />
           );
         })}
@@ -303,6 +325,9 @@ function FilaCandidato({
   const portafolio = hrefSitio(f.portfolioUrl);
   const ubicacion = ubicacionLabel(f.plaza);
   const e = etapa(f.stage);
+  const wa = hrefWhatsApp(f.phone);
+  const enlaceCv = hrefSitio(f.cvUrl);
+  const bot = f.botResultado || f.source === "CHAT";
   return (
     <tr className="border-b align-top last:border-0" style={{ borderColor: "var(--border-subtle)" }}>
       <td className="sticky left-0 z-10 min-w-[180px] max-w-[240px] px-3 py-2.5 font-medium" style={fondo}>
@@ -327,6 +352,8 @@ function FilaCandidato({
         </select>
         {f.contacto && <EstadoEnContactos contacto={f.contacto} nombre={f.fullName} />}
       </td>
+      <td className="whitespace-nowrap px-3 py-2.5">{origenLabel(f)}</td>
+      <td className="whitespace-nowrap px-3 py-2.5">{bot ? <BadgeBot f={f} /> : <Vacio />}</td>
       <td className="num whitespace-nowrap px-3 py-2.5">{f.age != null ? f.age : <Vacio />}</td>
       <td className="px-3 py-2.5">
         {f.email ? (
@@ -336,11 +363,30 @@ function FilaCandidato({
         )}
       </td>
       <td className="whitespace-nowrap px-3 py-2.5">
-        {f.phone ? <a href={`tel:${f.phone.replace(/[^\d+]/g, "")}`} className="hover:underline">{f.phone}</a> : <Vacio />}
+        {f.phone ? (
+          <span className="inline-flex items-center gap-1.5">
+            <a href={`tel:${f.phone.replace(/[^\d+]/g, "")}`} className="hover:underline">{f.phone}</a>
+            {wa && (
+              <a
+                href={wa}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground"
+                title="Abrir en WhatsApp"
+                aria-label={`WhatsApp de ${f.fullName}`}
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+              </a>
+            )}
+          </span>
+        ) : (
+          <Vacio />
+        )}
       </td>
       <td className="whitespace-nowrap px-3 py-2.5">{f.area ? f.area : <Vacio />}</td>
       <td className="whitespace-nowrap px-3 py-2.5">
-        {f.cvs.length > 0 ? (
+        {f.cvs.length === 0 && !enlaceCv && <Vacio />}
+        {f.cvs.length > 0 && (
           <a
             href={urlCv(f.id, f.cvs[0].id)}
             target="_blank"
@@ -351,8 +397,18 @@ function FilaCandidato({
           >
             <FileText className="h-3.5 w-3.5" /> Ver CV{f.cvs.length > 1 ? ` (${f.cvs.length})` : ""}
           </a>
-        ) : (
-          <Vacio />
+        )}
+        {enlaceCv && (
+          <a
+            href={enlaceCv}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1 hover:underline${f.cvs.length > 0 ? " ml-2" : ""}`}
+            style={{ color: "var(--color-teal)" }}
+            title={f.cvUrl ?? undefined}
+          >
+            <Link2 className="h-3.5 w-3.5" /> Ver enlace
+          </a>
         )}
       </td>
       <td className="max-w-[200px] px-3 py-2.5">
@@ -604,6 +660,8 @@ function CandidatoDialog({
               />
             </div>
           </div>
+
+          {editando && <EvaluacionBot f={editando} />}
 
           {/* CV */}
           <div className="space-y-2 rounded-md border p-3" style={{ borderColor: "var(--border-subtle)" }}>

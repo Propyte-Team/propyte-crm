@@ -112,6 +112,14 @@ describe("filtro de la tabla", () => {
     expect(filtrarCandidatos(filas, { ubicacion: "TULUM" }).map((f) => f.id)).toEqual(["1"]);
     expect(filtrarCandidatos(filas, {})).toHaveLength(2);
   });
+
+  it("por veredicto del bot; «sin evaluar» = botResultado vacío", () => {
+    const conBot = [{ ...base, botResultado: "APTO" }, { ...base, id: "2", botResultado: null }, { ...base, id: "3", botResultado: "NO_APTO" }];
+    expect(filtrarCandidatos(conBot, { veredicto: "APTO" }).map((f) => f.id)).toEqual(["1"]);
+    expect(filtrarCandidatos(conBot, { veredicto: "NO_APTO" }).map((f) => f.id)).toEqual(["3"]);
+    expect(filtrarCandidatos(conBot, { veredicto: "SIN_EVALUAR" }).map((f) => f.id)).toEqual(["2"]);
+    expect(filtrarCandidatos(conBot, { veredicto: "" })).toHaveLength(3);
+  });
 });
 
 describe("rutas del CV", () => {
