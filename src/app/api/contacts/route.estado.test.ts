@@ -174,10 +174,20 @@ describe("PUT /api/contacts — estado (#953)", () => {
     expect(escrito()).not.toHaveProperty("estado");
   });
 
-  it("el estado respeta el flujo: F6 Broker no tiene Apartado", async () => {
-    contactoEn("PROPUESTA", { flujo: "F6_BROKER", ticketEstimado: "1" });
-    expect((await put({ estado: "APARTADO" })).status).toBe(400);
-    expect((await put({ estado: "FIRMA" })).status).toBe(200);
+  it("el estado respeta el flujo: F3 Captación MB no tiene Recorrido", async () => {
+    contactoEn("REUNION", { flujo: "F3_CAPTACION_MB" });
+    expect((await put({ estado: "RECORRIDO" })).status).toBe(400);
+    expect((await put({ estado: "DEMO", ticketEstimado: 1 })).status).toBe(200);
+  });
+
+  it("#957: Apartado y Firma no se eligen a mano (los marca la operación)", async () => {
+    contactoEn("PROPUESTA", { ticketEstimado: "1" });
+    for (const estado of ["APARTADO", "FIRMA"]) {
+      const res = await put({ estado });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/operación/);
+    }
+    expect(contactUpdate).not.toHaveBeenCalled();
   });
 
   it("reactivación: de Negocio Perdido a Contactado se permite", async () => {

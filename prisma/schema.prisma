@@ -280,6 +280,37 @@ enum Flujo {
   @@schema("propyte_crm")
 }
 
+// #957: Operaciones (lo que antes era «Negocios»). Listas únicas en src/lib/operaciones.ts; migración
+// prisma/migrations-manual/2026-11-03-operaciones.sql. La etapa vieja (`stage`) la escribe la API a partir
+// de la etapa nueva para que comisiones, inventario y reportes sigan igual.
+enum TipoOperacion {
+  VENTA
+  CONTRATO_INTERMEDIACION
+  CONTRATO_MB
+  CONVENIO_ALIADO
+
+  @@schema("propyte_crm")
+}
+
+enum EtapaOperacion {
+  EN_PREPARACION
+  APARTADO
+  FIRMA
+  ESCRITURA
+  POSTVENTA
+  CANCELADA
+
+  @@schema("propyte_crm")
+}
+
+enum FormaPago {
+  CONTADO
+  CREDITO_BANCARIO
+  FINANCIAMIENTO_DIRECTO
+
+  @@schema("propyte_crm")
+}
+
 // Tipo de operación (determina tabla de comisiones)
 enum DealType {
   NATIVA_CONTADO
@@ -1074,6 +1105,18 @@ model Deal {
 
   // Pipeline
   stage             DealStage @default(NEW_LEAD)
+  // #957: la operación. etapa NULL = negocio de antes del #957 (anterior al apartado, lo mueve la #958).
+  tipoOperacion        TipoOperacion?
+  etapa                EtapaOperacion?
+  subestado            String? // CHECK en la base: de la etapa
+  reapartados          Int             @default(0)
+  formaPago            FormaPago? // F5: contado (V1), crédito bancario (V2), financiamiento directo (V3)
+  contratoFirmado      Boolean         @default(false)
+  enganchePagado       Boolean         @default(false)
+  vigenciaHasta        DateTime?       @db.Date // exclusiva (F1), contrato MB (F3), convenio (F6, F7)
+  porcentajeComision   Decimal?        @db.Decimal(5, 2)
+  nivelMb              String? // MB1 · MB2 · MB3 (F3)
+  propiedadDescripcion String? // F1: la propiedad que se comercializa
   dealType          DealType
   // #948: flujo de ESTE negocio (F1–F8). Al crearse, si viene vacío, un disparador pone F5 si es
   // Nativa y si no el flujo del contacto. Se puede cambiar después (ver src/lib/flujos.ts).
@@ -1134,6 +1177,7 @@ model Deal {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([etapa])
   @@map("deals")
   @@schema("propyte_crm")
 }

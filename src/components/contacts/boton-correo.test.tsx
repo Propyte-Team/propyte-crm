@@ -27,11 +27,11 @@ describe("BotonCorreo", () => {
 })
 
 describe("ficha de contacto — posición del botón", () => {
-  it("va a la derecha de «Llamar» y antes de «Crear Deal»", () => {
+  it("va a la derecha de «Llamar» y antes de «Nueva operación» (#957: antes «Crear Deal»)", () => {
     const src = readFileSync(path.join(__dirname, "contact-detail.tsx"), "utf8")
     const llamar = src.indexOf("/> Llamar")
     const correo = src.indexOf("<BotonCorreo")
-    const deal = src.indexOf("/> Crear Deal")
+    const deal = src.indexOf("/> Nueva operación")
     expect(llamar).toBeGreaterThan(0)
     expect(correo).toBeGreaterThan(llamar)
     expect(deal).toBeGreaterThan(correo)

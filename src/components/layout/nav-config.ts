@@ -63,7 +63,10 @@ export const navGroups: Array<{ title: string | null; items: NavItem[] }> = [
       { label: "Contactos", href: "/contacts", icon: Users, roles: TODOS },
       // "Negocios" (antes "Pipeline"): la ruta /pipeline NO cambia — renombrar la URL
       // rompería enlaces guardados y notificaciones ya emitidas.
-      { label: "Negocios", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MANTENIMIENTO"] },
+      // #957: las operaciones viven en la ficha del contacto. Mientras la #958 mueve los negocios de
+      // antes del apartado, el tablero de Negocios solo lo ven administración y dirección (sistemas@,
+      // 03-nov). La ruta sigue abierta para quien ya tenga el enlace de un negocio.
+      { label: "Negocios", href: "/pipeline", icon: Kanban, roles: ["DIRECTOR"] },
       // #867: MARKETING entra de solo lectura (ve, no modifica) — src/lib/rbac/quote-scope.ts
       { label: "Cotizaciones", href: "/cotizaciones", icon: FileText, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", "BROKER", "MARKETING", ...ASESORES] },
       { label: "Desarrollos y Propiedades", href: "/developments", icon: Building2, roles: ["DIRECTOR", "GERENTE", "TEAM_LEADER", ...ASESORES, "BROKER", "MARKETING", "MANTENIMIENTO", "DEVELOPER_EXT"] },

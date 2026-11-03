@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { DEAL_TYPE_LABELS, CURRENCY_LABELS, LEAD_SOURCE_LABELS } from "@/lib/constants";
 import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_AUTOMATICO_LABEL } from "@/lib/flujos";
+import { TIPO_OPERACION_ORDER, TIPO_OPERACION_LABELS } from "@/lib/operaciones";
 
 // #948: Radix no admite un SelectItem con value="": «Automático» viaja como este centinela y
 // no se manda (el disparador de la base pone F5 si es Nativa y si no el flujo del contacto).
@@ -37,7 +38,12 @@ interface DealFormProps {
   };
   onSuccess: () => void;
   onCancel: () => void;
+  /** #957: desde la ficha se crea una operación «en preparación» (para cotizar; al apartar es la venta). */
+  modoOperacion?: boolean;
 }
+
+// #957: «Automático» = según el flujo (F1 intermediación, F3 contrato MB, F6/F7 convenio, si no venta).
+const TIPO_AUTO = "_auto";
 
 interface ContactOption {
   id: string;
@@ -60,7 +66,7 @@ interface UnitOption {
   status: string;
 }
 
-export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
+export function DealForm({ initialData, onSuccess, onCancel, modoOperacion = false }: DealFormProps) {
   const isEdit = !!initialData?.id;
 
   // Estado del formulario
@@ -69,6 +75,8 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
   const [unitId, setUnitId] = useState(initialData?.unitId || "");
   const [dealType, setDealType] = useState(initialData?.dealType || "");
   const [flujo, setFlujo] = useState<string>(FLUJO_AUTO); // #948
+  const [tipoOperacion, setTipoOperacion] = useState<string>(TIPO_AUTO); // #957
+  const [propiedadDescripcion, setPropiedadDescripcion] = useState(""); // #957: sin unidad del Hub
   const [estimatedValue, setEstimatedValue] = useState(
     initialData?.estimatedValue?.toString() || ""
   );
@@ -190,6 +198,11 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
         leadSourceAtDeal: leadSourceAtDeal || "OTRO",
       };
       if (flujo !== FLUJO_AUTO) body.flujo = flujo; // #948
+      if (modoOperacion) {
+        body.etapa = "EN_PREPARACION";
+        if (tipoOperacion !== TIPO_AUTO) body.tipoOperacion = tipoOperacion;
+        if (propiedadDescripcion.trim()) body.propiedadDescripcion = propiedadDescripcion.trim();
+      }
 
       // Inventario = Hub (SOT). Guardamos los IDs del Hub, no FKs locales.
       if (developmentId) body.hubDevelopmentId = developmentId;
@@ -203,7 +216,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Error al crear deal");
+        throw new Error(data.error || (modoOperacion ? "Error al crear la operación" : "Error al crear deal"));
       }
 
       onSuccess();
@@ -308,6 +321,38 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
         )}
       </div>
 
+      {modoOperacion && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="tipoOperacion">Tipo de operación</Label>
+            <Select value={tipoOperacion} onValueChange={setTipoOperacion}>
+              <SelectTrigger id="tipoOperacion">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TIPO_AUTO}>Automático (según el flujo)</SelectItem>
+                {TIPO_OPERACION_ORDER.map((t) => (
+                  <SelectItem key={t} value={t}>{TIPO_OPERACION_LABELS[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Empieza «en preparación»: sirve para cotizar. Al apartar (o firmar el contrato) se vuelve la operación del cliente.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="propiedadDescripcion">Propiedad (si no está en el inventario)</Label>
+            <Input
+              id="propiedadDescripcion"
+              placeholder="Ej. Casa en Aldea Zamá, lote 12"
+              maxLength={500}
+              value={propiedadDescripcion}
+              onChange={(e) => setPropiedadDescripcion(e.target.value)}
+            />
+          </div>
+        </>
+      )}
+
       {/* #948: flujo del flujograma. Opcional; «Automático» deja que lo ponga la base. */}
       <div className="space-y-2">
         <Label htmlFor="flujo">Flujo</Label>
@@ -399,7 +444,7 @@ export function DealForm({ initialData, onSuccess, onCancel }: DealFormProps) {
           Cancelar
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? "Guardando..." : isEdit ? "Actualizar" : "Crear Deal"}
+          {submitting ? "Guardando..." : isEdit ? "Actualizar" : modoOperacion ? "Crear operación" : "Crear Deal"}
         </Button>
       </div>
     </form>
