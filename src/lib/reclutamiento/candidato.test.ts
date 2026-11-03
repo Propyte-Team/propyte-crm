@@ -34,6 +34,24 @@ describe("asegurarCandidato", () => {
     expect(where).toEqual({ contactId: "k1", deletedAt: null });
     expect(crearCandidato).not.toHaveBeenCalled();
   });
+  it("#959: adopta la ficha que creó el disparador (origen CONTACTO): canal del bot y origen CHAT con la conversación", async () => {
+    findFirst.mockResolvedValue(filaDb);
+    updateMany.mockResolvedValue({ count: 1 });
+    await asegurarCandidato({ contact: contacto, canal: "MESSENGER", conversationId: "v9" });
+    expect(updateMany.mock.calls.map((c) => c[0])).toEqual([
+      { where: { id: "c1", botCanal: null }, data: { botCanal: "MESSENGER" } },
+      // Solo si nació por el disparador y sin referencia: una ficha manual o de Notion conserva su origen.
+      { where: { id: "c1", source: "CONTACTO", sourceRef: null }, data: { source: "CHAT", sourceRef: "v9" } },
+      // Sin puesto capturado (el disparador copia el del contacto, casi siempre vacío): la vacante del agente.
+      { where: { id: "c1", area: null }, data: { area: "Asesor / Ventas" } },
+    ]);
+    expect(crearCandidato).not.toHaveBeenCalled();
+  });
+  it("#959: si anotar el canal falla, igual devuelve la ficha", async () => {
+    findFirst.mockResolvedValue(filaDb);
+    updateMany.mockRejectedValue(new Error("db"));
+    expect((await asegurarCandidato({ contact: contacto, canal: "WHATSAPP", conversationId: "v1" }))?.id).toBe("c1");
+  });
   it("si no existe lo crea con origen CHAT, el contacto y el canal", async () => {
     findFirst.mockResolvedValue(null);
     crearCandidato.mockResolvedValue({ id: "c2", stage: "RECIBIDO" });

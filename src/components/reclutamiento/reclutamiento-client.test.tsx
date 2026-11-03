@@ -89,3 +89,23 @@ describe("Reclutamiento — tabla", () => {
     expect(textoPortafolio("crisdark963.wixsite.com/portafolio")).toBe("crisdark963.wixsite.com/portafolio");
   });
 });
+
+describe("#959 — estado en Contactos", () => {
+  it("con contacto: debajo de la etapa sale su estado en Contactos con enlace a su ficha", () => {
+    const html = renderToStaticMarkup(
+      <TablaCandidatos filas={[{ ...VACIO, contacto: { id: "k1", estado: "SIN_RESPUESTA" } }]} onEditar={noop} onEtapa={noop} />
+    );
+    expect(html).toContain('href="/contacts/k1"');
+    expect(html).toContain("Contactos · Sin respuesta");
+    expect(html).toContain("#F59E0B"); // color de «Sin respuesta» en Contactos
+  });
+  it("sin estado en Contactos: «Por clasificar»; sin contacto: no sale nada", () => {
+    const con = renderToStaticMarkup(
+      <TablaCandidatos filas={[{ ...VACIO, contacto: { id: "k2", estado: null } }]} onEditar={noop} onEtapa={noop} />
+    );
+    expect(con).toContain("Contactos · Por clasificar");
+    const sin = renderToStaticMarkup(<TablaCandidatos filas={[VACIO]} onEditar={noop} onEtapa={noop} />);
+    expect(sin).not.toContain("/contacts/");
+    expect(sin).not.toContain("Contactos ·");
+  });
+});

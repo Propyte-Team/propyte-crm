@@ -3,20 +3,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // #926 — API de Reclutamiento: puerta por rol (datos personales), validación, borrado lógico y
 // los CV (solo rutas de ESTE candidato, que ya estén en el bucket; quién borra).
 
-const cand = { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() };
+const cand = { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), upsert: vi.fn() };
 const file = { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() };
 const users = { findMany: vi.fn() };
+// #959: el alta manual busca o crea el contacto dentro de una transacción interactiva.
+const contact = { findMany: vi.fn(), create: vi.fn(), update: vi.fn() };
+const executeRaw = vi.fn();
 vi.mock("@/lib/db", () => {
   const wrap = (o: Record<string, (...a: unknown[]) => unknown>) =>
     Object.fromEntries(Object.keys(o).map((k) => [k, (...a: unknown[]) => o[k](...a)]));
-  return {
-    default: {
-      get recruitCandidate() { return wrap(cand); },
-      get recruitCandidateFile() { return wrap(file); },
-      get user() { return wrap(users); },
-      $transaction: async (ops: unknown[]) => Promise.all(ops),
-    },
+  const db: Record<string, unknown> = {
+    get recruitCandidate() { return wrap(cand); },
+    get recruitCandidateFile() { return wrap(file); },
+    get user() { return wrap(users); },
+    get contact() { return wrap(contact); },
+    $executeRaw: (...a: unknown[]) => executeRaw(...a),
   };
+  db.$transaction = async (x: unknown) =>
+    typeof x === "function" ? (x as (tx: unknown) => unknown)(db) : Promise.all(x as unknown[]);
+  return { default: db };
 });
 
 const getServerSession = vi.fn();
@@ -60,12 +65,17 @@ const FILA_DB = {
 };
 
 beforeEach(() => {
-  for (const m of [...Object.values(cand), ...Object.values(file), users.findMany, getServerSession, existeArchivo, borrarArchivo, crearUrlDeSubida]) m.mockReset();
+  for (const m of [...Object.values(cand), ...Object.values(file), ...Object.values(contact), executeRaw, users.findMany, getServerSession, existeArchivo, borrarArchivo, crearUrlDeSubida]) m.mockReset();
   getServerSession.mockResolvedValue(ses("GERENTE"));
   cand.findMany.mockResolvedValue([FILA_DB]);
   cand.findFirst.mockResolvedValue({ id: C, stage: "RECIBIDO", files: [] });
   cand.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...FILA_DB, ...data }));
   cand.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...FILA_DB, ...data }));
+  cand.upsert.mockImplementation(async ({ create }: { create: Record<string, unknown> }) => ({ ...FILA_DB, ...create }));
+  contact.findMany.mockResolvedValue([]);
+  contact.create.mockResolvedValue({ id: "k-nuevo" });
+  contact.update.mockResolvedValue({});
+  executeRaw.mockResolvedValue(1);
   file.create.mockResolvedValue({ id: "f1" });
   users.findMany.mockResolvedValue([]);
   existeArchivo.mockResolvedValue(true);
@@ -100,7 +110,7 @@ describe("puerta por rol", () => {
     expect((await l.json()).data[0]).toMatchObject({ id: C, fullName: "Ana", cvs: [] });
     const a = await ALTA(req("POST", { fullName: "Ana", age: "25", plaza: "TULUM" }));
     expect(a.status).toBe(201);
-    expect(cand.create.mock.calls[0][0].data).toMatchObject({ fullName: "Ana", age: 25, plaza: "TULUM", stage: "RECIBIDO", source: "MANUAL", createdById: "u1" });
+    expect(cand.upsert.mock.calls[0][0].create).toMatchObject({ fullName: "Ana", age: 25, plaza: "TULUM", stage: "RECIBIDO", source: "MANUAL", createdById: "u1" });
   });
 });
 
@@ -110,6 +120,8 @@ describe("alta y edición", () => {
     expect((await ALTA(req("POST", { fullName: "A", email: "x" }))).status).toBe(400);
     expect((await ALTA(req("POST", { fullName: "A", source: "CHAT" }))).status).toBe(400);
     expect(cand.create).not.toHaveBeenCalled();
+    expect(cand.upsert).not.toHaveBeenCalled();
+    expect(contact.create).not.toHaveBeenCalled();
   });
 
   it("cambiar la etapa sella stageChangedAt; corregir otro campo no", async () => {
@@ -126,9 +138,131 @@ describe("alta y edición", () => {
 
   it("tabla sin migrar (P2021): la lista responde vacía con aviso, el alta 503", async () => {
     cand.findMany.mockRejectedValue({ code: "P2021" });
-    cand.create.mockRejectedValue({ code: "P2021" });
+    cand.upsert.mockRejectedValue({ code: "P2021" });
     expect(await (await LISTA()).json()).toEqual({ data: [], sinMigracion: true });
     expect((await ALTA(req("POST", { fullName: "A" }))).status).toBe(503);
+  });
+});
+
+describe("#959 — Reclutamiento y Contactos ligados", () => {
+  it("alta de alguien nuevo: crea su contacto Empleo en «Derivado a RH» y liga la ficha a él", async () => {
+    const a = await ALTA(req("POST", {
+      fullName: "Jesús Rafael Torres Lizama", email: "jesus@x.mx", phone: "+52 999 453 3580", area: "Marketing · Diseñador", plaza: "MERIDA",
+    }));
+    expect(a.status).toBe(201);
+    // Se buscó por correo y por los 10 últimos dígitos del teléfono, solo entre contactos vivos.
+    expect(contact.findMany.mock.calls[0][0].where).toEqual({
+      deletedAt: null, mergedIntoId: null,
+      OR: [{ email: { equals: "jesus@x.mx", mode: "insensitive" } }, { phone: { endsWith: "9994533580" } }],
+    });
+    expect(contact.create.mock.calls[0][0].data).toEqual({
+      firstName: "Jesús Rafael", lastName: "Torres Lizama", email: "jesus@x.mx", phone: "+529994533580",
+      contactType: "EMPLEO", leadSource: "OTRO", leadSourceDetail: "Reclutamiento (alta manual)",
+      appliedPosition: "Marketing · Diseñador", targetPlaza: "MERIDA", estado: "DERIVADO_A_RH", tags: ["reclutamiento"],
+    });
+    // Upsert por contacto: si el disparador ya creó la ficha, se llena con lo capturado.
+    const up = cand.upsert.mock.calls[0][0];
+    expect(up.where).toEqual({ contactId: "k-nuevo" });
+    expect(up.create).toMatchObject({ contactId: "k-nuevo", fullName: "Jesús Rafael Torres Lizama", source: "MANUAL", createdById: "u1" });
+    expect(up.update).toMatchObject({ fullName: "Jesús Rafael Torres Lizama", source: "MANUAL", deletedAt: null, stagePrevia: null });
+    // La cronología del contacto queda firmada por quien dio de alta.
+    expect(executeRaw).toHaveBeenCalled();
+  });
+
+  it("ubicación que no es plaza del CRM (Foráneo) no llena la plaza del contacto; sin teléfono queda vacío", async () => {
+    await ALTA(req("POST", { fullName: "Ramón Granados", plaza: "FORANEO" }));
+    // Sin correo ni teléfono no hay con qué cruzar: la única lectura de contactos es la del estado.
+    expect(contact.findMany.mock.calls.map((c) => c[0].where)).toEqual([{ id: { in: ["k-nuevo"] }, deletedAt: null }]);
+    expect(contact.create.mock.calls[0][0].data).toMatchObject({ firstName: "Ramón", lastName: "Granados", targetPlaza: null, phone: "" });
+  });
+
+  it("si ya es contacto (por teléfono), se liga sin crear otro; si no tenía tipo, queda Empleo", async () => {
+    contact.findMany.mockResolvedValue([
+      { id: "k-viejo", contactType: "LEAD_COMPRADOR", createdAt: new Date("2026-01-01") },
+      { id: "k-empleo", contactType: null, createdAt: new Date("2026-02-01") },
+    ]);
+    cand.findFirst.mockResolvedValue(null);
+    await ALTA(req("POST", { fullName: "Ana", phone: "9841112233" }));
+    expect(contact.create).not.toHaveBeenCalled();
+    expect(cand.upsert.mock.calls[0][0].where).toEqual({ contactId: "k-viejo" });
+    // Un tipo elegido por alguien (Lead Comprador) no se cambia.
+    expect(contact.update).not.toHaveBeenCalled();
+
+    contact.findMany.mockResolvedValue([{ id: "k-sin-tipo", contactType: null, createdAt: new Date("2026-02-01") }]);
+    await ALTA(req("POST", { fullName: "Ana", email: "ANA@x.mx" }));
+    expect(contact.update).toHaveBeenCalledWith({ where: { id: "k-sin-tipo" }, data: { contactType: "EMPLEO" } });
+  });
+
+  it("entre varios contactos que coinciden gana el que ya es Empleo", async () => {
+    contact.findMany.mockResolvedValue([
+      { id: "k-viejo", contactType: "LEAD_COMPRADOR", createdAt: new Date("2026-01-01") },
+      { id: "k-empleo", contactType: "EMPLEO", createdAt: new Date("2026-02-01") },
+    ]);
+    cand.findFirst.mockResolvedValue(null);
+    await ALTA(req("POST", { fullName: "Ana", email: "ana@x.mx" }));
+    expect(cand.upsert.mock.calls[0][0].where).toEqual({ contactId: "k-empleo" });
+  });
+
+  it("si su contacto ya tiene ficha viva en Reclutamiento → 409 con el nombre, sin escribir", async () => {
+    contact.findMany.mockResolvedValue([{ id: "k1", contactType: "EMPLEO", createdAt: new Date() }]);
+    cand.findFirst.mockResolvedValue({ fullName: "Luis Loría" });
+    const r = await ALTA(req("POST", { fullName: "Luis", email: "luis@x.mx" }));
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toContain("«Luis Loría»");
+    expect(cand.upsert).not.toHaveBeenCalled();
+    expect(contact.create).not.toHaveBeenCalled();
+    expect(cand.findFirst.mock.calls[0][0].where).toEqual({ contactId: { in: ["k1"] }, deletedAt: null });
+  });
+
+  it("409 también si la ficha viva es de OTRO de los contactos que coinciden (la misma persona dos veces)", async () => {
+    contact.findMany.mockResolvedValue([
+      { id: "k-empleo", contactType: "EMPLEO", createdAt: new Date("2026-02-01") },
+      { id: "k-con-ficha", contactType: "LEAD_COMPRADOR", createdAt: new Date("2026-01-01") },
+    ]);
+    cand.findFirst.mockImplementation(async ({ where }: { where: { contactId: { in: string[] } } }) =>
+      where.contactId.in.includes("k-con-ficha") ? { fullName: "Ana Pérez" } : null
+    );
+    expect((await ALTA(req("POST", { fullName: "Ana", email: "ana@x.mx" }))).status).toBe(409);
+    expect(cand.upsert).not.toHaveBeenCalled();
+  });
+
+  it("si leer el estado del contacto falla después del alta, el alta igual responde 201", async () => {
+    contact.findMany.mockImplementation(async (a: { where: { OR?: unknown } }) => {
+      if (a.where.OR) return [];
+      throw new Error("db");
+    });
+    const r = await ALTA(req("POST", { fullName: "Ana", email: "ana@x.mx" }));
+    expect(r.status).toBe(201);
+    expect((await r.json()).data.contacto).toBeNull();
+  });
+
+  it("mover la etapa a mano limpia el descarte automático pendiente", async () => {
+    await PATCH(req("PATCH", { stage: "FILTRO_CV" }), props);
+    expect(cand.update.mock.calls[0][0].data).toMatchObject({ stage: "FILTRO_CV", stagePrevia: null });
+  });
+
+  it("la lista trae el estado del contacto; sin contacto o con el contacto borrado, null", async () => {
+    cand.findMany.mockResolvedValue([
+      { ...FILA_DB, id: "a", contactId: "k1" },
+      { ...FILA_DB, id: "b", contactId: "k-borrado" },
+      { ...FILA_DB, id: "c", contactId: null },
+    ]);
+    contact.findMany.mockResolvedValue([{ id: "k1", estado: "SIN_RESPUESTA" }]);
+    const data = (await (await LISTA()).json()).data as Array<{ id: string; contacto: unknown }>;
+    expect(contact.findMany.mock.calls[0][0]).toEqual({
+      where: { id: { in: ["k1", "k-borrado"] }, deletedAt: null }, select: { id: true, estado: true },
+    });
+    expect(data.map((d) => [d.id, d.contacto])).toEqual([
+      ["a", { id: "k1", estado: "SIN_RESPUESTA" }], ["b", null], ["c", null],
+    ]);
+  });
+
+  it("si la lectura de contactos falla, la lista sale igual sin la etiqueta", async () => {
+    cand.findMany.mockResolvedValue([{ ...FILA_DB, contactId: "k1" }]);
+    contact.findMany.mockRejectedValue(new Error("db"));
+    const l = await LISTA();
+    expect(l.status).toBe(200);
+    expect((await l.json()).data[0].contacto).toBeNull();
   });
 });
 

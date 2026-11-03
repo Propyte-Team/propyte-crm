@@ -62,8 +62,12 @@ export const AREAS_SUGERIDAS = ["Marketing", "Asesor / Ventas", "Sistemas", "Adm
 
 // --------------- origen (camino para los CV que lleguen por chat) ---------------
 
-/** MANUAL = capturado en la pantalla. CHAT = llegó por el inbox (aún no conectado). */
-export const ORIGENES = ["MANUAL", "CHAT"] as const;
+/**
+ * MANUAL = capturado en la pantalla. CHAT = llegó por el bot de reclutamiento. NOTION = importado de
+ * la base de Notion (#927). CONTACTO = un contacto pasó a tipo Empleo en Contactos (#959, lo crea un
+ * disparador de la base).
+ */
+export const ORIGENES = ["MANUAL", "CHAT", "NOTION", "CONTACTO"] as const;
 export type Origen = (typeof ORIGENES)[number];
 
 // --------------- validación ---------------
@@ -144,6 +148,11 @@ export type CandidatoFila = {
   createdAt: string;
   /** CV vigentes, el más nuevo primero. */
   cvs: CvResumen[];
+  /**
+   * Su contacto en Contactos (#959) y el estado que tiene ahí («Sin respuesta», «Derivado a RH»…).
+   * null si no tiene contacto o el contacto está borrado. Opcional para las filas que arma el cliente.
+   */
+  contacto?: { id: string; estado: string | null } | null;
 };
 
 /** Filtro de la tabla: texto libre (nombre, correo, teléfono, área), etapa y ubicación. */
