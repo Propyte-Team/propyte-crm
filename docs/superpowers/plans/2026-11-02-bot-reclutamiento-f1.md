@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **⚠️ Anexo vigente (2026-11-02, decisión de Luis):** las tareas 1, 6, 8, 9, 10 y 11 de este plan
+> quedan REEMPLAZADAS y las 4, 12 y 14 enmendadas por
+> `2026-11-02-bot-reclutamiento-f1-integracion-926.md`: el bot se integra a la tabla y pantalla del
+> módulo Reclutamiento existente (#926) en vez de crear `recruitment_candidates`.
+
 **Goal:** El bot del CRM perfila a candidatos a asesor por WhatsApp, Instagram y Messenger con el guion nuevo, los evalúa (APTO / REVISAR / NO_APTO) con un modelo configurable, liga el CV que manden, guarda todo en `recruitment_candidates` y avisa al responsable de la plaza.
 
 **Architecture:** Se reescribe el playbook del "Agente Reclutamiento" (captura a `custom.reclutamiento_*` con el motor de playbooks existente, sin tocar `apply.ts`/`engine.ts`). Un módulo nuevo `src/lib/reclutamiento/` evalúa al terminar el playbook (función pura + rúbrica de actitud con Claude), persiste en la tabla nueva, avisa y devuelve al bot el objetivo de cierre según el resultado. `core.ts` liga adjuntos como CV; `bot-respond.ts` pasa los adjuntos al historial y llama al hook de reclutamiento.

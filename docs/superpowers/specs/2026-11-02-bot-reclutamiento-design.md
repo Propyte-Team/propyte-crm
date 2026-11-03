@@ -277,3 +277,31 @@ actualizado, idempotente, reemplaza el de reclutamiento viejo).
 
 Agendar en Google Calendar (OAuth pendiente), transcribir audios, firmar contrato, alta del
 candidato como usuario del CRM al contratarlo, portal público de vacantes.
+
+## 14. Revisión 2026-11-02 — integración con el módulo Reclutamiento (#926)
+
+Al ejecutar F1 se encontró que el CRM ya tiene un módulo Reclutamiento (#926/#927): pantalla
+`/reclutamiento` en Desempeño (roles ADMIN, DIRECTOR, GERENTE), API, tabla `recruit_candidates`
+con las etapas de la base de Notion «Candidatos · Marketing», ubicaciones (PDC, MERIDA, TULUM,
+CANCUN, REMOTO, FORANEO), CV en el bucket `crm-attachments` y ganchos previstos para candidatos
+que lleguen por chat (`source = CHAT`).
+
+**Decisión de Luis:** integrar el bot a ese módulo. Esto sustituye a §5.1, §5.2, §6 y §8:
+
+- **Datos (§5.1):** no hay tabla nueva. `recruit_candidates` gana columnas opcionales `contactId`
+  (único), `botCanal`, `botResultado`, `botPuntaje`, `botMotivo`, `botRespuestas`, `botFiltros`,
+  `botDesglose`, `botResumen`, `botEvaluadoAt` y `horarioEntrevista`. El candidato del bot nace con
+  `source = CHAT`, `sourceRef = conversationId`, área «Asesor / Ventas».
+- **Etapas (§5.2):** se usan las del módulo. El veredicto del bot vive en `botResultado`; la etapa
+  se mueve solo si sigue en RECIBIDO: APTO → CONTACTO_INICIAL, REVISAR → FILTRO_CV,
+  NO_APTO → DESCARTADO. Un humano puede mover cualquier etapa desde la pantalla y el bot lo respeta.
+- **Plaza:** PDC y MERIDA se guardan tal cual; «otra plaza» (con o sin mudanza) se guarda como
+  FORANEO. Los filtros del §3.1 no cambian.
+- **CV (§6):** solo PDF o Word, como la subida manual. El adjunto se copia del bucket del chat a
+  `crm-attachments` y se registra en `recruit_candidate_files` con `source = CHAT` y el id del
+  mensaje (idempotente). El bot pide «PDF o Word».
+- **Pantalla (§8):** ya existe y muestra a los candidatos del bot desde F1. F2 se reduce a mostrar
+  veredicto, puntaje, resumen y horario, filtrar por veredicto y enlazar la conversación.
+- **Avisos (§7):** sin cambios; las notificaciones mencionan `/reclutamiento`.
+
+Detalle de implementación: `docs/superpowers/plans/2026-11-02-bot-reclutamiento-f1-integracion-926.md`.
