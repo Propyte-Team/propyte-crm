@@ -347,9 +347,10 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         enumOptions: [
           // Va ANTES que las numéricas: «Tengo otro trabajo» (prueba 2026-11-03) no casaba con nada y el
           // guion se atoró aquí. Sus sinónimos son frases de dos palabras: no se roban un «12 meses».
+          // Sin «tengo trabajo»/«tengo ingresos»: casan dentro de «no tengo trabajo» (revisión 2026-11-03).
           {
             value: "OTRO_INGRESO",
-            synonyms: ["tengo otro trabajo", "otro trabajo", "otro ingreso", "tengo trabajo", "sigo trabajando", "tengo ingresos", "me mantiene", "mi pareja", "mis papás"],
+            synonyms: ["tengo otro trabajo", "otro trabajo", "otro ingreso", "ingresos aparte", "sigo trabajando", "me mantiene", "mi pareja", "mis papás"],
           },
           {
             value: "MAS_DE_SEIS",

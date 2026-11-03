@@ -271,6 +271,9 @@ describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
       expect(coerce("colchon_meses", "mi pareja me apoya")).toBe("OTRO_INGRESO");
       expect(coerce("colchon_meses", "mis papás me ayudan")).toBe("OTRO_INGRESO");
       expect(coerce("colchon_meses", "tengo ingresos aparte")).toBe("OTRO_INGRESO");
+      // Negaciones: un desempleado sin ahorros no debe pasar el filtro.
+      expect(coerce("colchon_meses", "no tengo trabajo ni ahorros")).not.toBe("OTRO_INGRESO");
+      expect(coerce("colchon_meses", "no tengo ingresos")).not.toBe("OTRO_INGRESO");
       // OTRO_INGRESO va antes que las numéricas, pero no se roba una respuesta en meses.
       expect(coerce("colchon_meses", "tengo como 12 meses cubiertos")).toBe("MAS_DE_SEIS");
       expect(coerce("colchon_meses", "6 meses")).toBe("TRES_A_SEIS");
