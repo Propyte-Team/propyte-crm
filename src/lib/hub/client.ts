@@ -107,7 +107,7 @@ export async function getHubUnit(id: string): Promise<HubUnit | null> {
 
 async function hubInventoryPost(path: string, body: Record<string, unknown>): Promise<HubHoldResult> {
   if (!HUB_BASE || !HUB_KEY) {
-    return { ok: false, error: "Hub API no configurada (HUB_API_BASE_URL / HUB_API_KEY)" };
+    return { ok: false, motivo: "sin_configurar", error: "Hub API no configurada (HUB_API_BASE_URL / HUB_API_KEY)" };
   }
   try {
     const res = await fetch(`${HUB_BASE}${path}`, {
@@ -117,10 +117,12 @@ async function hubInventoryPost(path: string, body: Record<string, unknown>): Pr
       signal: AbortSignal.timeout(10000),
     });
     const json = (await res.json().catch(() => ({}))) as HubHoldResult;
-    if (!res.ok) return { ok: false, error: json?.error ?? `Hub respondió ${res.status}` };
+    if (!res.ok) {
+      return { ok: false, motivo: res.status >= 500 ? "sin_respuesta" : "rechazo", error: json?.error ?? `Hub respondió ${res.status}` };
+    }
     return { ...json, ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Error de red con el Hub" };
+    return { ok: false, motivo: "sin_respuesta", error: err instanceof Error ? err.message : "Error de red con el Hub" };
   }
 }
 
