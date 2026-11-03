@@ -5,7 +5,7 @@ vi.mock("@/lib/audit/change-context", () => ({
   setChangeSource: (...a: unknown[]) => setChangeSource(...a),
 }));
 
-import { classifyContactType, maybeClassifyContact, MAX_CLASSIFY_ATTEMPTS } from "./classify";
+import { classifyContactType, maybeClassifyContact, MAX_CLASSIFY_ATTEMPTS, CLASSIFY_SYSTEM_PROMPT } from "./classify";
 
 function okClassify(type: string) {
   return {
@@ -321,5 +321,13 @@ describe("maybeClassifyContact — contacto sin tipo (#863)", () => {
     expect(r).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(contactUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("pista de EMPLEO (reclutamiento 2026-11-02)", () => {
+  it("el prompt menciona las palabras clave de candidatos", () => {
+    for (const k of ["vacante", "reclutamiento", "quiero ser asesor", "unirme al equipo"]) {
+      expect(CLASSIFY_SYSTEM_PROMPT.toLowerCase()).toContain(k);
+    }
   });
 });
