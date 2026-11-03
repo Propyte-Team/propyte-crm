@@ -21,7 +21,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { setChangeSource, type PrismaTx } from "@/lib/audit/change-context";
 import { normalizePhoneE164 } from "@/lib/phone";
-import { ETAPA_INICIAL, nombreLimpio, type CandidatoEntrada, type CandidatoFila, type Origen } from "@/lib/reclutamiento/shared";
+import { ETAPA_INICIAL, esTablaFaltante, nombreLimpio, type CandidatoEntrada, type CandidatoFila, type Origen } from "@/lib/reclutamiento/shared";
 import {
   CandidatoYaExiste,
   DETALLE_ORIGEN_RECLUTAMIENTO,
@@ -201,6 +201,69 @@ export async function obtenerCandidato(id: string): Promise<CandidatoFila | null
     prisma.recruitCandidate.findFirst({ where: { id, deletedAt: null }, select })
   )) as FilaDb | null;
   return c ? (await conContacto([c]))[0] : null;
+}
+
+/** Lo que la ficha del contacto muestra de su candidato (tarjeta «Reclutamiento», plan 2026-11-03 Task 8). */
+export type CandidatoDeContacto = {
+  id: string;
+  stage: string;
+  source: string;
+  sourceRef: string | null;
+  botResultado: string | null;
+  botPuntaje: number | null;
+  botResumen: string | null;
+  horarioEntrevista: string | null;
+  cvUrl: string | null;
+  /** El CV de archivo más reciente (para /api/reclutamiento/[id]/files/[fileId]). */
+  cvFileId: string | null;
+};
+
+/**
+ * Candidato vigente ligado al contacto, o null. NUNCA lanza: es una tarjeta de apoyo y la ficha
+ * debe abrir aunque falte el SQL del módulo (P2021) o el del bot (P2022) o la lectura falle.
+ */
+export async function candidatoDeContacto(contactId: string): Promise<CandidatoDeContacto | null> {
+  try {
+    const c = await prisma.recruitCandidate.findFirst({
+      where: { contactId, deletedAt: null },
+      select: {
+        id: true,
+        stage: true,
+        source: true,
+        sourceRef: true,
+        botResultado: true,
+        botPuntaje: true,
+        botResumen: true,
+        horarioEntrevista: true,
+        cvUrl: true,
+        files: {
+          where: { kind: "CV", deletedAt: null },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true },
+        },
+      },
+    });
+    if (!c) return null;
+    const { files, ...resto } = c;
+    return {
+      ...resto,
+      sourceRef: resto.sourceRef ?? null,
+      botResultado: resto.botResultado ?? null,
+      botPuntaje: resto.botPuntaje ?? null,
+      botResumen: resto.botResumen ?? null,
+      horarioEntrevista: resto.horarioEntrevista ?? null,
+      cvUrl: resto.cvUrl ?? null,
+      cvFileId: files[0]?.id ?? null,
+    };
+  } catch (err) {
+    if (esColumnaFaltante(err) || esTablaFaltante(err)) {
+      console.warn("[reclutamiento] ficha del contacto sin tarjeta: falta el SQL de reclutamiento");
+    } else {
+      console.warn("[reclutamiento] no se pudo leer el candidato del contacto:", err);
+    }
+    return null;
+  }
 }
 
 /**
