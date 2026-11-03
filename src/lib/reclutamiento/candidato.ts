@@ -177,6 +177,24 @@ export async function persistirEvaluacion(input: {
   await prisma.recruitCandidate.update({ where: { id: candidatoId }, data });
 }
 
+/**
+ * Reserva la evaluación: marca botEvaluadoAt solo si aún está en null. Devuelve true para el
+ * turno que ganó; false si otro turno ya la reclamó (o si falló la base), y ese turno no evalúa.
+ * persistirEvaluacion vuelve a escribir botEvaluadoAt con el valor final.
+ */
+export async function reclamarEvaluacion(candidatoId: string): Promise<boolean> {
+  try {
+    const r = await prisma.recruitCandidate.updateMany({
+      where: { id: candidatoId, botEvaluadoAt: null },
+      data: { botEvaluadoAt: new Date() },
+    });
+    return r.count === 1;
+  } catch (err) {
+    console.error("[reclutamiento] no se pudo reclamar la evaluación:", err);
+    return false;
+  }
+}
+
 export async function guardarHorario(candidatoId: string, horario: string): Promise<void> {
   try {
     await prisma.recruitCandidate.update({ where: { id: candidatoId }, data: { horarioEntrevista: horario.slice(0, 200) } });

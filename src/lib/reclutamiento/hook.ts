@@ -5,7 +5,7 @@ import type { ConversationChannel, PlaybookRunStatus } from "@prisma/client";
 import type { BotMessage } from "@/lib/bot/claude";
 import { extractFields } from "@/lib/bot/playbook/extract";
 import { evaluarActitud } from "./actitud";
-import { asegurarCandidato, guardarHorario, persistirEvaluacion, plazaDeRespuesta, type ContactoDelBot } from "./candidato";
+import { asegurarCandidato, guardarHorario, persistirEvaluacion, plazaDeRespuesta, reclamarEvaluacion, type ContactoDelBot } from "./candidato";
 import type { Veredicto } from "./etapas";
 import { evaluar } from "./evaluar";
 import { cargarConfigReclutamiento } from "./modelo";
@@ -66,14 +66,13 @@ export async function hookReclutamiento(input: {
   try {
     const cand = await asegurarCandidato({ contact: input.contact, canal: input.channel, conversationId: input.conversationId });
     if (!cand) return {};
-    const cfg = await cargarConfigReclutamiento();
-    if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
 
     // Ya evaluado: el bot no vuelve a evaluar solo. Si es APTO y falta horario, lo intenta capturar.
     if (cand.botEvaluadoAt !== null) {
       if (cand.botResultado === "APTO" && !cand.horarioEntrevista) {
+        // Solo el último mensaje: ahorra tokens y evita rescatar texto viejo de la charla.
         const ext = await extractFields({
-          messages: input.messages,
+          messages: input.messages.slice(-1),
           model: input.model,
           tasks: [{ key: "horario_entrevista", captureType: "TEXT", objective: "Qué días y horario le acomodan para la entrevista." }],
         });
@@ -86,11 +85,17 @@ export async function hookReclutamiento(input: {
       return { objetivo: cierreDe(cand) };
     }
 
+    const cfg = await cargarConfigReclutamiento();
+    if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
+
     if (input.playbook.status !== "COMPLETED") {
       return { contexto: `Ficha de la vacante (úsala solo si el candidato pregunta por sueldo, comisiones, horario o la empresa; luego retoma): ${cfg.ficha}` };
     }
 
-    // Playbook completo → evaluar.
+    // Playbook completo → evaluar. Dos mensajes casi simultáneos entrarían aquí a la vez:
+    // solo evalúa el turno que reserva la evaluación; el otro no hace nada y en su siguiente
+    // turno tomará el camino de «ya evaluado».
+    if (!(await reclamarEvaluacion(cand.id))) return {};
     const respuestas = leerRespuestas(input.contact.custom);
     const actitud = await evaluarActitud(respuestas, input.model);
     const ev = evaluar({ respuestas, actitudPuntos: actitud?.puntos ?? null, cvRecibido: cand.tieneCv, modelo: cfg.modelo });

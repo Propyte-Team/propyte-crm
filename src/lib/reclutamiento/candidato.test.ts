@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const findFirst = vi.fn();
 const update = vi.fn();
+const updateMany = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
     recruitCandidate: {
       findFirst: (...a: unknown[]) => findFirst(...a),
       update: (...a: unknown[]) => update(...a),
+      updateMany: (...a: unknown[]) => updateMany(...a),
     },
   },
 }));
@@ -15,12 +17,12 @@ vi.mock("@/server/reclutamiento", () => ({ crearCandidato: (...a: unknown[]) => 
 const askClaude = vi.fn();
 vi.mock("@/lib/bot/claude", () => ({ askClaude: (...a: unknown[]) => askClaude(...a) }));
 
-import { asegurarCandidato, persistirEvaluacion, plazaDeRespuesta, guardarHorario } from "./candidato";
+import { asegurarCandidato, persistirEvaluacion, plazaDeRespuesta, guardarHorario, reclamarEvaluacion } from "./candidato";
 
 const contacto = { id: "k1", firstName: "Ana", lastName: "López", phone: "+5219991112233", email: "ana@x.mx" };
 const filaDb = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, files: [] };
 
-beforeEach(() => { findFirst.mockReset(); update.mockReset(); crearCandidato.mockReset(); askClaude.mockReset(); });
+beforeEach(() => { findFirst.mockReset(); update.mockReset(); updateMany.mockReset(); crearCandidato.mockReset(); askClaude.mockReset(); });
 
 describe("asegurarCandidato", () => {
   it("devuelve el existente (por contactId, no borrado) en forma CandidatoBot", async () => {
@@ -118,5 +120,23 @@ describe("guardarHorario", () => {
     update.mockRejectedValue(new Error("db"));
     await expect(guardarHorario("c1", "x".repeat(300))).resolves.toBeUndefined();
     expect((update.mock.calls[0][0] as { data: { horarioEntrevista: string } }).data.horarioEntrevista).toHaveLength(200);
+  });
+});
+
+describe("reclamarEvaluacion", () => {
+  it("gana la reserva (count 1) → true, condicionado a botEvaluadoAt null", async () => {
+    updateMany.mockResolvedValue({ count: 1 });
+    expect(await reclamarEvaluacion("c1")).toBe(true);
+    const arg = updateMany.mock.calls[0][0] as { where: unknown; data: { botEvaluadoAt: unknown } };
+    expect(arg.where).toEqual({ id: "c1", botEvaluadoAt: null });
+    expect(arg.data.botEvaluadoAt).toBeInstanceOf(Date);
+  });
+  it("otro turno ya la reclamó (count 0) → false", async () => {
+    updateMany.mockResolvedValue({ count: 0 });
+    expect(await reclamarEvaluacion("c1")).toBe(false);
+  });
+  it("si la base falla → false sin lanzar", async () => {
+    updateMany.mockRejectedValue(new Error("db"));
+    expect(await reclamarEvaluacion("c1")).toBe(false);
   });
 });

@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const asegurarCandidato = vi.fn();
 const persistirEvaluacion = vi.fn();
 const guardarHorario = vi.fn();
+const reclamarEvaluacion = vi.fn();
 vi.mock("./candidato", () => ({
+  reclamarEvaluacion: (...a: unknown[]) => reclamarEvaluacion(...a),
   asegurarCandidato: (...a: unknown[]) => asegurarCandidato(...a),
   persistirEvaluacion: (...a: unknown[]) => persistirEvaluacion(...a),
   guardarHorario: (...a: unknown[]) => guardarHorario(...a),
@@ -55,11 +57,12 @@ const contactoApto = {
 const sinEvaluar = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, tieneCv: false };
 
 beforeEach(() => {
-  [asegurarCandidato, persistirEvaluacion, guardarHorario, evaluarActitud, cargarConfigReclutamiento, responsablesDe, avisarResultado, extractFields].forEach((f) =>
+  [asegurarCandidato, persistirEvaluacion, guardarHorario, reclamarEvaluacion, evaluarActitud, cargarConfigReclutamiento, responsablesDe, avisarResultado, extractFields].forEach((f) =>
     f.mockReset()
   );
   cargarConfigReclutamiento.mockResolvedValue({ modelo: MODELO_DEFAULT, ficha: FICHA_DEFAULT, responsables: {} });
   responsablesDe.mockResolvedValue(["u1"]);
+  reclamarEvaluacion.mockResolvedValue(true);
 });
 
 describe("esAgenteReclutamiento", () => {
@@ -93,6 +96,7 @@ describe("hookReclutamiento", () => {
     expect(asegurarCandidato).toHaveBeenCalledWith(
       expect.objectContaining({ canal: "INSTAGRAM", conversationId: "v1", contact: expect.objectContaining({ id: "k1" }) })
     );
+    expect(reclamarEvaluacion).toHaveBeenCalledWith("c1");
     expect(persistirEvaluacion).toHaveBeenCalledWith(expect.objectContaining({ candidatoId: "c1", razonesActitud: ["clara"] }));
     const ev = (persistirEvaluacion.mock.calls[0][0] as { evaluacion: { resultado: string; puntaje: number } }).evaluacion;
     expect(ev.resultado).toBe("APTO");
@@ -133,6 +137,40 @@ describe("hookReclutamiento", () => {
     expect(persistirEvaluacion).not.toHaveBeenCalled();
     expect(guardarHorario).toHaveBeenCalledWith("c1", "martes por la tarde");
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_HORARIO_GUARDADO);
+  });
+
+  it("otro turno ya reclamó la evaluación: no evalúa, no avisa y devuelve {}", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    reclamarEvaluacion.mockResolvedValue(false);
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
+    expect(r).toEqual({});
+    expect(evaluarActitud).not.toHaveBeenCalled();
+    expect(persistirEvaluacion).not.toHaveBeenCalled();
+    expect(avisarResultado).not.toHaveBeenCalled();
+  });
+
+  it("ya evaluado (APTO) sin horario: pasa solo el último mensaje a extractFields con la tarea de horario", async () => {
+    asegurarCandidato.mockResolvedValue({ ...sinEvaluar, botResultado: "APTO", botEvaluadoAt: new Date(), tieneCv: true });
+    extractFields.mockResolvedValue({ horario_entrevista: "jueves" });
+    await hookReclutamiento({
+      ...base,
+      contact: contactoApto,
+      playbook: { status: "COMPLETED" },
+      messages: [{ role: "user", content: "hola" }, { role: "assistant", content: "¿qué horario?" }, { role: "user", content: "jueves" }],
+    });
+    const arg = extractFields.mock.calls[0][0] as { messages: unknown[]; tasks: Array<{ key: string; captureType: string }> };
+    expect(arg.messages).toEqual([{ role: "user", content: "jueves" }]);
+    expect(arg.tasks).toHaveLength(1);
+    expect(arg.tasks[0]).toMatchObject({ key: "horario_entrevista", captureType: "TEXT" });
+  });
+
+  it("ya evaluado (APTO) sin horario y extractFields no saca nada: mantiene el cierre APTO_CON_CV", async () => {
+    asegurarCandidato.mockResolvedValue({ ...sinEvaluar, botResultado: "APTO", botEvaluadoAt: new Date(), tieneCv: true });
+    extractFields.mockResolvedValue({});
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
+    expect(guardarHorario).not.toHaveBeenCalled();
+    expect(cargarConfigReclutamiento).not.toHaveBeenCalled();
+    expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_CON_CV);
   });
 
   it("ya evaluado (APTO) con horario: confirma sin volver a extraer", async () => {
