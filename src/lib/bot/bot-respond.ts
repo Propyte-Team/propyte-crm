@@ -378,6 +378,15 @@ export async function botRespond(
     history.push({ role: "user", content: "(nuevo lead entrante)" });
   }
 
+  // El historial DEBE terminar en el cliente: si dos inbound llegan con segundos de
+  // diferencia, la segunda corrida puede ver el hilo terminando en la respuesta del bot y
+  // Claude responde HTTP 400 ("does not support assistant message prefill"). Ese turno ya
+  // quedó contestado por la corrida anterior: se omite, igual que el guard anti-burst.
+  if (history[history.length - 1].role === "assistant") {
+    console.info("[bot] historial termina en mensaje del bot; se omite el turno", { contactId });
+    return false;
+  }
+
   // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
   // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
   // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
