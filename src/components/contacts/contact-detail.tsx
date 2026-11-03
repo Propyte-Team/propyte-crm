@@ -54,6 +54,8 @@ import { OperacionesDelContacto } from "@/components/contacts/operaciones-del-co
 import { NEGOCIO_ANTERIOR_LABEL, esEtapaOperacion, etiquetaEtapa } from "@/lib/operaciones";
 import { etiquetaEstado } from "@/lib/estados";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
+import { ReclutamientoCard } from "./reclutamiento-card";
+import type { CandidatoDeContacto } from "@/server/reclutamiento";
 import {
   CONTACT_STATUS_LABELS,
   URGENCY_LABELS,
@@ -115,9 +117,11 @@ interface ContactDetailProps {
   /** Lead scoring: último cálculo guardado (contact_scores) y si ya está activo o en sombra. */
   scoreGuardado?: ScoreGuardado | null;
   scoringActivo?: boolean;
+  /** Su candidato en Reclutamiento; null si no tiene o si el rol no puede ver el módulo. */
+  candidatoReclutamiento?: CandidatoDeContacto | null;
 }
 
-export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName, scoreGuardado = null, scoringActivo = false }: ContactDetailProps) {
+export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName, scoreGuardado = null, scoringActivo = false, candidatoReclutamiento = null }: ContactDetailProps) {
   // Acceso por campo core (default EDIT). HIDDEN ya viene removido del server; aquí
   // ocultamos en UI igual por robustez y degradamos READ a solo lectura.
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
@@ -562,6 +566,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               </div>
             </div>
           </Section>
+
+          <ReclutamientoCard candidato={candidatoReclutamiento} />
 
           <CustomFieldsSection object="contact" recordId={contact.id} />
         </div>

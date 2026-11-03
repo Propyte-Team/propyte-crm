@@ -180,9 +180,25 @@ describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
   const pb = SEGMENT_PLAYBOOKS.find((p) => p.agentName === "Agente Reclutamiento")!;
   const claves = pb.tasks.map((t) => t.key);
 
-  it("existe y arranca por nombre y plaza", () => {
+  it("existe y sigue el orden de la prueba del 2026-11-03: mayor de edad primero, luego nombre y plaza", () => {
     expect(pb).toBeTruthy();
-    expect(claves.slice(0, 2)).toEqual(["nombre", "plaza"]);
+    expect(claves).toEqual([
+      "mayor_edad", "nombre", "plaza", "telefono", "acepta_comision", "disponibilidad", "colchon_meses", "movilidad",
+      "experiencia_inmobiliaria", "cartera_clientes", "experiencia_ventas", "ingles", "prospeccion_digital",
+      "actitud_1", "actitud_2", "actitud_3",
+    ]);
+  });
+
+  it("nombre: se pregunta siempre aunque Instagram ya traiga firstName (skipIfFilled=false, apellidos)", () => {
+    const nombre = pb.tasks.find((t) => t.key === "nombre")!;
+    expect(nombre.skipIfFilled).toBe(false);
+    expect(nombre.objective).toMatch(/apellidos/);
+    // El resto no lo declara: el seed lo persiste como true (comportamiento de siempre).
+    for (const t of pb.tasks.filter((t) => t.key !== "nombre")) expect(t.skipIfFilled, t.key).toBeUndefined();
+  });
+
+  it("telefono: pide 10 dígitos con lada", () => {
+    expect(pb.tasks.find((t) => t.key === "telefono")!.objective).toMatch(/10 dígitos/);
   });
 
   it("todo lo específico del candidato va a custom.reclutamiento_<clave>", () => {
@@ -246,6 +262,21 @@ describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
       expect(coerce("colchon_meses", "unos 4 meses")).toBe("TRES_A_SEIS");
       expect(coerce("colchon_meses", "2 meses")).toBe("MENOS_DE_TRES");
       expect(coerce("colchon_meses", "no lo he calculado")).toBe("NO_SE");
+      expect(coerce("colchon_meses", "no sé")).toBe("NO_SE");
+    });
+
+    it("colchon_meses: «Tengo otro trabajo» (la respuesta real de la prueba) cae en OTRO_INGRESO", () => {
+      expect(coerce("colchon_meses", "Tengo otro trabajo")).toBe("OTRO_INGRESO");
+      expect(coerce("colchon_meses", "sigo trabajando mientras")).toBe("OTRO_INGRESO");
+      expect(coerce("colchon_meses", "mi pareja me apoya")).toBe("OTRO_INGRESO");
+      expect(coerce("colchon_meses", "mis papás me ayudan")).toBe("OTRO_INGRESO");
+      expect(coerce("colchon_meses", "tengo ingresos aparte")).toBe("OTRO_INGRESO");
+      // Negaciones: un desempleado sin ahorros no debe pasar el filtro.
+      expect(coerce("colchon_meses", "no tengo trabajo ni ahorros")).not.toBe("OTRO_INGRESO");
+      expect(coerce("colchon_meses", "no tengo ingresos")).not.toBe("OTRO_INGRESO");
+      // OTRO_INGRESO va antes que las numéricas, pero no se roba una respuesta en meses.
+      expect(coerce("colchon_meses", "tengo como 12 meses cubiertos")).toBe("MAS_DE_SEIS");
+      expect(coerce("colchon_meses", "6 meses")).toBe("TRES_A_SEIS");
     });
 
     it("respuestas cortas y negaciones comunes caen en la opción correcta", () => {

@@ -5,12 +5,17 @@ módulo Reclutamiento del #926, tabla `recruit_candidates`).
 
 ## Precondiciones (una vez, en prod, por quien tenga acceso a la BD)
 
-1. Aplicar `prisma/migrations-manual/2026-11-02-reclutamiento-bot.sql`.
-2. Sembrar el guion nuevo: `npx tsx scripts/seed-bot-playbooks-segmento.ts` (reemplaza las tareas del
-   playbook del «Agente Reclutamiento» conservando su id). Es seguro hacerlo **antes** del deploy: el
-   código viejo ignora las claves nuevas. Y el código nuevo no evalúa mientras el guion sembrado sea el
-   viejo (el hook exige la tarea `actitud_3`), así que el orden SQL → seed → deploy no deja huecos.
-3. Mergear y desplegar.
+1. Aplicar `prisma/migrations-manual/2026-11-02-reclutamiento-bot.sql` y después
+   `prisma/migrations-manual/2026-11-03-reclutamiento-bot-v2.sql` (columna `cvUrl` e identidad v2). La v2 va
+   **antes** del deploy: el código nuevo lee `cvUrl` y sin la columna el bot deja de evaluar.
+2. Mergear y desplegar.
+3. Sembrar el guion nuevo **justo después del deploy**: `npx tsx scripts/seed-bot-playbooks-segmento.ts`
+   (reemplaza las tareas del playbook del «Agente Reclutamiento» conservando su id). **No** antes del
+   deploy: el seed agrega la opción `OTRO_INGRESO`, que el código viejo evalúa como FALLA, así que un
+   candidato que la eligiera quedaría rechazado por error. Entre el deploy y el seed el código nuevo
+   corre con el guion de F1 (ya tiene `actitud_3`): evalúa con el orden y las opciones viejas, sin
+   romper nada; por eso el seed va enseguida.
+   Orden: SQL v2 → deploy → seed.
 4. Activar en Ajustes → Agentes del bot el «Agente Reclutamiento».
 5. Confirmar que `bot_config.enabledChannels` incluye INSTAGRAM y MESSENGER (lo hace el SQL).
 6. Opcional: `SystemConfig` `reclutamiento.responsables` = `{"MERIDA":["<userId>"]}` cuando Luis
@@ -18,10 +23,20 @@ módulo Reclutamiento del #926, tabla `recruit_candidates`).
 
 Orden de canales: Instagram, luego Messenger. WhatsApp cuando su conexión con Meta sea estable.
 
+## Orden del guion (v2, 2026-11-03)
+
+mayor de edad → nombre completo (siempre, aunque el perfil traiga nombre) → plaza → teléfono con lada →
+comisión → disponibilidad → colchón (acepta «tengo otro trabajo») → movilidad → experiencia inmobiliaria →
+cartera → experiencia en ventas → inglés → prospección digital → tres preguntas de actitud.
+El bot no cierra ni pide CV hasta completar el guion. Al preguntar por la empresa u oficinas debe decir que
+Propyte es una comercializadora inmobiliaria con producto en Tulum, Playa del Carmen, Cancún, Mérida y Telchac,
+que la oficina de Playa está en Quinta Avenida esquina con calle 40 y la de Mérida es la de Yaxnáh Caucel, y
+distinguir los desarrollos exclusivos (Yaxnáh Caucel, Turena, Nativa Tulum) del inventario co-broker.
+
 ## Caso 1 — APTO (Instagram)
 
 Desde una cuenta de prueba, escribir «Hola, vi la vacante de asesor». Esperado: el clasificador marca
-EMPLEO y el bot pregunta nombre y plaza. Contestar: Playa del Carmen · teléfono · mayor de edad sí ·
+EMPLEO y el bot pregunta primero si es mayor de edad. Contestar: sí · nombre completo · Playa del Carmen · teléfono ·
 «sí, me funciona» la comisión · tiempo completo · «tengo 4 meses de ahorro» · «tengo auto y puedo
 moverme» · «2 años en bienes raíces» · «unos 20 contactos» · «vendí seguros» · «inglés conversacional» ·
 «uso Instagram para prospectar» · tres respuestas de actitud con sustancia.
@@ -31,6 +46,7 @@ En BD (`recruit_candidates`): fila con `source=CHAT`, `sourceRef=<conversationId
 `botResultado=APTO`, `botPuntaje ≥ 65`, `plaza=PDC`, `stage=CONTACTO_INICIAL`, `botResumen` lleno.
 Tarea «Entrevistar candidato … — PDC» para el gerente de PDC y notificación en su campana con
 «Ficha: /reclutamiento». Evento `recruitment.apto` en `workflow_events`.
+En `/reclutamiento` la ficha muestra el teléfono desde que lo da (no hace falta terminar el guion).
 Mandar un PDF → aparece en la columna CV de `/reclutamiento` (fila en `recruit_candidate_files` con
 `source=CHAT`, `sourceRef=<messageId>`). Contestar «martes por la tarde» → `horarioEntrevista` lleno y
 el bot confirma.
@@ -60,6 +76,17 @@ A mitad decir «en realidad quiero comprar un depa en Tulum». Esperado: el clas
 LEAD_COMPRADOR y el siguiente mensaje lo atiende el Agente Lead Comprador. El candidato queda en
 `recruit_candidates` en su etapa (descartarlo a mano en `/reclutamiento`; F2 lo automatiza).
 
+## Caso 7 — CV por enlace (Instagram)
+
+Instagram no deja mandar archivos. Pegar un enlace de Google Drive o Dropbox al CV. Esperado: «Ver enlace»
+en la columna CV de `/reclutamiento` y en la tarjeta Reclutamiento de la ficha del contacto; el bot no
+vuelve a pedir el CV.
+
+## Caso 8 — otro ingreso
+
+Al colchón contestar «tengo otro trabajo». Esperado: el bot sigue con la siguiente pregunta (no se atora) y
+el filtro de colchón pasa. «No tengo trabajo ni ahorros» no debe pasar.
+
 ## Caso 6 — adjunto sin texto
 
 Mandar solo un PDF, sin mensaje. Esperado: el bot lo reconoce («gracias por tu CV») y no lo vuelve a
@@ -80,4 +107,5 @@ pedir; el historial que ve el bot trae `[adjunto: <nombre>]`.
 
 | Fecha | Canal | conversationId | Caso | Resultado |
 |---|---|---|---|---|
+| 2026-11-03 | Instagram | dbf17326-2a00-41cd-8130-c88db210e3ca | 1 | Falló: no preguntó nombre; se atoró en colchón («tengo otro trabajo»), cerró solo y pidió CV; sin evaluación ni teléfono en la ficha; describió mal Ancestral y Gran Coralia; «boutique»; sin dirección de oficina; CV por enlace de Drive no ligado; error 400 por dos mensajes seguidos. Corregido en F1.1 (plan 2026-11-03). |
 | | | | | |

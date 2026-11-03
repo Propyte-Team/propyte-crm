@@ -130,6 +130,7 @@ const VALORES: Record<string, Record<string, string>> = {
     MENOS_DE_TRES: "menos de 3 meses",
     TRES_A_SEIS: "3 a 6 meses",
     MAS_DE_SEIS: "más de 6 meses",
+    OTRO_INGRESO: "otro ingreso",
     NO_SE: "no sabe",
   },
   reclutamiento_movilidad: {

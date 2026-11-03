@@ -554,19 +554,25 @@ export async function handleInboundMessage(
   }
 
   // Bot de reclutamiento (spec 2026-11-02 §6): si el contacto es candidato y manda un PDF o Word,
-  // se registra como su CV en Reclutamiento. Best-effort: sin candidato o sin tabla no hace nada.
-  if (message?.mediaUrl) {
+  // se registra como su CV en Reclutamiento; si manda un enlace (Instagram no admite archivos),
+  // se guarda como cvUrl. Best-effort: sin candidato o sin tabla no hace nada.
+  if (message?.mediaUrl || message?.body) {
     try {
-      const { ligarCv } = await import("@/lib/reclutamiento/cv");
-      await ligarCv({
-        id: message.id,
-        contactId: message.contactId,
-        mediaUrl: message.mediaUrl,
-        mediaMimeType: message.mediaMimeType,
-        mediaFilename: message.mediaFilename,
-      });
+      const { ligarCv, ligarCvPorEnlace } = await import("@/lib/reclutamiento/cv");
+      if (message.mediaUrl) {
+        await ligarCv({
+          id: message.id,
+          contactId: message.contactId,
+          mediaUrl: message.mediaUrl,
+          mediaMimeType: message.mediaMimeType,
+          mediaFilename: message.mediaFilename,
+        });
+      }
+      if (message.body) {
+        await ligarCvPorEnlace({ id: message.id, contactId: message.contactId, body: message.body });
+      }
     } catch (err) {
-      console.warn(`[messaging] ligarCv falló (${message.id}):`, err);
+      console.warn(`[messaging] no se pudo ligar el CV (archivo o enlace) del mensaje ${message.id}:`, err);
     }
   }
 

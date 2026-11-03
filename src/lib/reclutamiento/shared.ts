@@ -153,17 +153,38 @@ export type CandidatoFila = {
    * null si no tiene contacto o el contacto está borrado. Opcional para las filas que arma el cliente.
    */
   contacto?: { id: string; estado: string | null } | null;
+  // --- Bot de reclutamiento (plan 2026-11-03, Task 7). Opcionales: las filas que arma el cliente,
+  // o una base sin el SQL del bot, no los traen. Se leen con `presentacion.ts`.
+  /** CV que llegó como enlace (Instagram no manda archivos). */
+  cvUrl?: string | null;
+  /** WHATSAPP | INSTAGRAM | MESSENGER. */
+  botCanal?: string | null;
+  /** APTO | REVISAR | NO_APTO. null = sin evaluar. */
+  botResultado?: string | null;
+  botPuntaje?: number | null;
+  /** `filtro:<clave>` | `ambiguo:<clave,clave>` | `puntaje`. */
+  botMotivo?: string | null;
+  botResumen?: string | null;
+  botRespuestas?: Record<string, string> | null;
+  botDesglose?: Record<string, unknown> | null;
+  horarioEntrevista?: string | null;
+  /** = sourceRef cuando source === "CHAT". */
+  conversationId?: string | null;
 };
 
-/** Filtro de la tabla: texto libre (nombre, correo, teléfono, área), etapa y ubicación. */
+/**
+ * Filtro de la tabla: texto libre (nombre, correo, teléfono, área), etapa, ubicación y veredicto
+ * del bot (APTO / REVISAR / NO_APTO, o SIN_EVALUAR = botResultado vacío).
+ */
 export function filtrarCandidatos(
   filas: CandidatoFila[],
-  f: { texto?: string; etapa?: string; ubicacion?: string }
+  f: { texto?: string; etapa?: string; ubicacion?: string; veredicto?: string }
 ): CandidatoFila[] {
   const q = normalizar(f.texto ?? "");
   return filas.filter((c) => {
     if (f.etapa && c.stage !== f.etapa) return false;
     if (f.ubicacion && c.plaza !== f.ubicacion) return false;
+    if (f.veredicto === "SIN_EVALUAR" ? !!c.botResultado : f.veredicto && c.botResultado !== f.veredicto) return false;
     if (!q) return true;
     return [c.fullName, c.email, c.phone, c.area].some((v) => v && normalizar(v).includes(q));
   });

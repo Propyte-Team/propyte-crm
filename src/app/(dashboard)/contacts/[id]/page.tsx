@@ -7,6 +7,8 @@ import { resolveCoreFieldAccess, stripHiddenCoreFields } from "@/lib/metadata/co
 import { BrandViewProvider } from "@/components/brands/brand-view";
 import { getBrandViewContext } from "@/lib/brands/view-context";
 import { cargarConfigScoring, obtenerScoreContacto } from "@/lib/scoring/recalcular";
+import { puedeVerReclutamiento } from "@/lib/reclutamiento/roles";
+import { candidatoDeContacto } from "@/server/reclutamiento";
 
 interface ContactPageProps {
   params: Promise<{ id: string }>;
@@ -67,6 +69,11 @@ export default async function ContactDetailPage(props: ContactPageProps) {
         cargarConfigScoring().then((c) => c.activo).catch(() => false),
       ])
     : [null, false];
+  // Tarjeta «Reclutamiento» (datos personales de candidatos): solo se lee para quien puede ver el
+  // módulo; a los demás roles no les llega nada. candidatoDeContacto nunca lanza.
+  const candidatoReclutamiento = puedeVerReclutamiento(session.user.role)
+    ? await candidatoDeContacto(params.id)
+    : null;
 
   return (
     <BrandViewProvider value={brandView}>
@@ -78,6 +85,7 @@ export default async function ContactDetailPage(props: ContactPageProps) {
         currentUserName={session.user.name ?? session.user.email ?? null}
         scoreGuardado={scoreGuardado ? JSON.parse(JSON.stringify(scoreGuardado)) : null}
         scoringActivo={scoringActivo}
+        candidatoReclutamiento={candidatoReclutamiento}
       />
     </BrandViewProvider>
   );

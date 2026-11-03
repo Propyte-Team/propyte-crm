@@ -18,7 +18,7 @@ export interface BotMessage {
 // marca+tono+objetivo+catálogo desde BotConfigResolved). Se deja sin exportar como
 // único fallback interno de askClaude() cuando alguien la llama sin `system` explícito
 // (hoy ningún caller lo hace). No usar en código nuevo: usa buildSystemPrompt().
-const SAGE_SYSTEM_PROMPT = `Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.
+const SAGE_SYSTEM_PROMPT = `Eres el asistente comercial de Propyte, comercializadora inmobiliaria con producto en Tulum, Playa del Carmen, Cancún, Mérida y Telchac.
 Tu voz es Sage: pedagógica, serena, basada en datos. NUNCA usas hype, urgencia artificial,
 ni prometes retornos ("plusvalía garantizada", "oportunidad única" están PROHIBIDOS).
 
@@ -289,7 +289,7 @@ const SPANISH_ONLY_RULE =
   "Responde SIEMPRE en español, sin excepción: aunque el cliente escriba en inglés o en otro idioma, aunque haya llenado el formulario en inglés y aunque mensajes anteriores de esta conversación estén en inglés. Nunca cambies de idioma ni ofrezcas atenderlo en otro idioma.";
 
 // Sin marca, la presentación es la de siempre (byte a byte): el prompt de Propyte no cambia.
-const LEGACY_IDENTITY = "Eres el asistente comercial de Propyte, inmobiliaria boutique de la Riviera Maya.";
+const LEGACY_IDENTITY = "Eres el asistente comercial de Propyte, comercializadora inmobiliaria con producto en Tulum, Playa del Carmen, Cancún, Mérida y Telchac.";
 
 function identityLines(brand?: BrandPromptInput): string[] {
   if (!brand) return [LEGACY_IDENTITY];

@@ -38,6 +38,7 @@ const SELECT_BOT = {
   botResultado: true,
   botEvaluadoAt: true,
   horarioEntrevista: true,
+  cvUrl: true,
   files: { where: { kind: "CV", deletedAt: null }, select: { id: true }, take: 1 },
 } as const;
 
@@ -47,6 +48,7 @@ type FilaBot = {
   botResultado: string | null;
   botEvaluadoAt: Date | null;
   horarioEntrevista: string | null;
+  cvUrl: string | null;
   files: Array<{ id: string }>;
 };
 
@@ -57,7 +59,8 @@ function aCandidatoBot(f: FilaBot): CandidatoBot {
     botResultado: (f.botResultado as Veredicto | null) ?? null,
     botEvaluadoAt: f.botEvaluadoAt,
     horarioEntrevista: f.horarioEntrevista,
-    tieneCv: f.files.length > 0,
+    // Archivo registrado o enlace (Instagram no manda archivos): ambos cuentan como CV recibido.
+    tieneCv: f.files.length > 0 || Boolean(f.cvUrl?.trim()),
   };
 }
 
@@ -186,12 +189,15 @@ export async function persistirEvaluacion(input: {
   evaluacion: Evaluacion;
   razonesActitud: string[];
   model: string;
-  /** Datos frescos del contacto para que la fila deje de decir «Candidato por chat». Solo pisa con valores no vacíos. */
+  /** Datos frescos del contacto para que la fila deje de decir «Candidato por chat». Reglas de camposDeContacto. */
   contacto?: { firstName: string | null; lastName: string | null; phone: string | null; email: string | null };
 }): Promise<void> {
   const { candidatoId, respuestas, evaluacion: ev, contacto } = input;
   const resumen = await resumenIA(respuestas, ev, input.model);
-  const actual = await prisma.recruitCandidate.findFirst({ where: { id: candidatoId }, select: { stage: true } });
+  const actual = await prisma.recruitCandidate.findFirst({
+    where: { id: candidatoId },
+    select: { stage: true, fullName: true, phone: true, email: true },
+  });
   const plaza = plazaDeRespuesta(respuestas.plaza);
   const data: Prisma.RecruitCandidateUncheckedUpdateInput = {
     botRespuestas: respuestas as Prisma.InputJsonValue,
@@ -204,17 +210,83 @@ export async function persistirEvaluacion(input: {
     botEvaluadoAt: new Date(),
   };
   if (plaza) data.plaza = plaza;
+  // Mismas reglas que sincronizarCandidato: no pisa lo que un reclutador corrigió en /reclutamiento.
   if (contacto) {
-    const nombre = `${contacto.firstName ?? ""} ${contacto.lastName ?? ""}`.trim();
-    if (nombre) data.fullName = nombre.slice(0, 200);
-    if (contacto.phone?.trim()) data.phone = contacto.phone.trim();
-    if (contacto.email?.trim()) data.email = contacto.email.trim();
+    Object.assign(data, camposDeContacto({ fullName: actual?.fullName ?? null, phone: actual?.phone ?? null, email: actual?.email ?? null }, contacto));
   }
   if (actual && botPuedeMoverEtapa(actual.stage)) {
     data.stage = etapaDeResultado(ev.resultado);
     data.stageChangedAt = new Date();
   }
   await prisma.recruitCandidate.update({ where: { id: candidatoId }, data });
+}
+
+/** Datos del contacto que se copian a la ficha. Solo se usan los valores no vacíos. */
+export interface ContactoParaFicha {
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/**
+ * Qué datos del contacto se copian a la ficha (los comparten la sincronización de cada turno y la
+ * evaluación). Nombre: si la ficha está vacía, dice «Candidato por chat» o el nuevo extiende al actual
+ * («Myriam» → «Myriam Morales Jiménez»); nunca reemplaza un nombre distinto que escribió un reclutador.
+ * Teléfono y correo: solo si la ficha no los tiene. Pura.
+ */
+export function camposDeContacto(
+  actual: { fullName: string | null; phone: string | null; email: string | null },
+  contacto: ContactoParaFicha
+): { fullName?: string; phone?: string; email?: string } {
+  const vacio = (v: string | null | undefined) => !v || !v.trim();
+  const out: { fullName?: string; phone?: string; email?: string } = {};
+  const nombre = `${contacto.firstName ?? ""} ${contacto.lastName ?? ""}`.trim().replace(/\s+/g, " ").slice(0, 200);
+  if (nombre && nombre !== NOMBRE_PROVISIONAL) {
+    const previo = actual.fullName?.trim() ?? "";
+    const extiende = !!previo && sinAcentos(nombre).startsWith(`${sinAcentos(previo).replace(/\s+/g, " ")} `);
+    if (!previo || previo === NOMBRE_PROVISIONAL || extiende) out.fullName = nombre;
+  }
+  const telefono = contacto.phone?.trim() ?? "";
+  const correo = contacto.email?.trim() ?? "";
+  if (telefono && vacio(actual.phone)) out.phone = telefono;
+  if (correo && vacio(actual.email)) out.email = correo;
+  return out;
+}
+
+/**
+ * Copia a la ficha del candidato lo que el bot ya sabe en cada turno (prueba 2026-11-03: el guion
+ * nunca llegó a COMPLETED y la ficha quedó sin teléfono ni respuestas). Solo escribe lo que no esté
+ * vacío; no toca etapa ni las columnas bot* de la evaluación. Nunca lanza.
+ */
+export async function sincronizarCandidato(input: {
+  candidatoId: string;
+  contacto: ContactoParaFicha;
+  respuestas: Respuestas;
+}): Promise<void> {
+  const { contacto, respuestas } = input;
+  const nombre = `${contacto.firstName ?? ""} ${contacto.lastName ?? ""}`.trim().replace(/\s+/g, " ");
+  const telefono = contacto.phone?.trim() ?? "";
+  const correo = contacto.email?.trim() ?? "";
+  const hayRespuestas = Object.keys(respuestas).length > 0;
+  if (!(nombre && nombre !== NOMBRE_PROVISIONAL) && !telefono && !correo && !hayRespuestas) return;
+  try {
+    // Lo que un reclutador corrige en /reclutamiento no se pisa en el siguiente turno (editarCandidato
+    // no toca el contacto, así que el contacto conserva el dato del chat): ver camposDeContacto.
+    const actual = await prisma.recruitCandidate.findFirst({
+      where: { id: input.candidatoId },
+      select: { fullName: true, phone: true, email: true },
+    });
+    if (!actual) return;
+    const data: Prisma.RecruitCandidateUncheckedUpdateInput = { ...camposDeContacto(actual, contacto) };
+    if (hayRespuestas) data.botRespuestas = respuestas as Prisma.InputJsonValue;
+    if (Object.keys(data).length === 0) return;
+    await prisma.recruitCandidate.updateMany({ where: { id: input.candidatoId }, data });
+  } catch (err) {
+    console.warn("[reclutamiento] no se pudo sincronizar la ficha del candidato:", err);
+  }
 }
 
 /**

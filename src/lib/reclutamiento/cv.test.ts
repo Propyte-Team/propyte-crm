@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const candFindFirst = vi.fn();
+const candUpdateMany = vi.fn();
 const fileFindFirst = vi.fn();
 vi.mock("@/lib/db", () => ({
   default: {
-    recruitCandidate: { findFirst: (...a: unknown[]) => candFindFirst(...a) },
+    recruitCandidate: { findFirst: (...a: unknown[]) => candFindFirst(...a), updateMany: (...a: unknown[]) => candUpdateMany(...a) },
     recruitCandidateFile: { findFirst: (...a: unknown[]) => fileFindFirst(...a) },
   },
 }));
@@ -13,10 +14,11 @@ vi.mock("@/lib/storage/crm-attachments", () => ({ copiarDeChatMedia: (...a: unkn
 const registrarCvDeCandidato = vi.fn();
 vi.mock("@/server/reclutamiento", () => ({ registrarCvDeCandidato: (...a: unknown[]) => registrarCvDeCandidato(...a) }));
 
-import { esMimeDeCv, ligarCv } from "./cv";
+import { esMimeDeCv, enlaceDeCv, ligarCv, ligarCvPorEnlace } from "./cv";
 
 beforeEach(() => {
   candFindFirst.mockReset();
+  candUpdateMany.mockReset();
   fileFindFirst.mockReset();
   copiarDeChatMedia.mockReset();
   registrarCvDeCandidato.mockReset();
@@ -115,5 +117,72 @@ describe("ligarCv", () => {
   it("sin migrar (P2022) → false sin lanzar", async () => {
     candFindFirst.mockRejectedValue(Object.assign(new Error(), { code: "P2022" }));
     expect(await ligarCv(msg)).toBe(false);
+  });
+});
+
+describe("enlaceDeCv", () => {
+  it("saca el enlace de Drive aunque venga con texto alrededor y query string", () => {
+    expect(enlaceDeCv("te envío un drive\nhttps://drive.google.com/file/d/1AbC/view?usp=drivesdk gracias")).toBe(
+      "https://drive.google.com/file/d/1AbC/view?usp=drivesdk"
+    );
+  });
+  it("acepta los hosts de nube (y subdominios) y rutas .pdf/.doc/.docx", () => {
+    for (const u of [
+      "https://docs.google.com/document/d/1/edit",
+      "https://www.dropbox.com/s/abc/cv.pdf?dl=0",
+      "https://onedrive.live.com/?id=1",
+      "https://1drv.ms/w/s!abc",
+      "https://www.icloud.com/iclouddrive/abc",
+      "https://wetransfer.com/downloads/abc",
+      "http://midominio.mx/archivos/CV.PDF?v=2",
+      "https://midominio.mx/cv.docx",
+      "https://midominio.mx/cv.doc",
+    ]) expect(enlaceDeCv(u), u).toBe(u);
+  });
+  it("rechaza texto sin enlace, redes sociales y rutas que no son documento", () => {
+    expect(enlaceDeCv("aquí va mi cv")).toBeNull();
+    expect(enlaceDeCv(null)).toBeNull();
+    expect(enlaceDeCv("https://www.instagram.com/p/abc/")).toBeNull();
+    expect(enlaceDeCv("https://facebook.com/x")).toBeNull();
+    expect(enlaceDeCv("https://midominio.mx/foto.jpg")).toBeNull();
+    expect(enlaceDeCv("https://nodrive.google.com.evil.mx/x")).toBeNull();
+  });
+});
+
+describe("ligarCvPorEnlace", () => {
+  const msg = { id: "m1", contactId: "k1", body: "te envío un drive\nhttps://drive.google.com/file/d/1AbC/view?usp=drivesdk" };
+  it("enlace de Drive → guarda cvUrl en el candidato si estaba vacío", async () => {
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    candUpdateMany.mockResolvedValue({ count: 1 });
+    expect(await ligarCvPorEnlace(msg)).toBe(true);
+    expect(candFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { contactId: "k1", deletedAt: null } }));
+    expect(candUpdateMany).toHaveBeenCalledWith({
+      where: { id: "c1", cvUrl: null },
+      data: { cvUrl: "https://drive.google.com/file/d/1AbC/view?usp=drivesdk" },
+    });
+  });
+  it("si ya tenía cvUrl, no lo pisa (count 0 → false)", async () => {
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    candUpdateMany.mockResolvedValue({ count: 0 });
+    expect(await ligarCvPorEnlace(msg)).toBe(false);
+  });
+  it("texto sin enlace o enlace a instagram.com → nada, sin consultar la base", async () => {
+    expect(await ligarCvPorEnlace({ ...msg, body: "hola, ya lo mando" })).toBe(false);
+    expect(await ligarCvPorEnlace({ ...msg, body: "https://www.instagram.com/p/abc/" })).toBe(false);
+    expect(await ligarCvPorEnlace({ ...msg, body: null })).toBe(false);
+    expect(candFindFirst).not.toHaveBeenCalled();
+    expect(candUpdateMany).not.toHaveBeenCalled();
+  });
+  it("sin candidato → false", async () => {
+    candFindFirst.mockResolvedValue(null);
+    expect(await ligarCvPorEnlace(msg)).toBe(false);
+    expect(candUpdateMany).not.toHaveBeenCalled();
+  });
+  it("sin migrar (P2022) o error de base → false sin lanzar", async () => {
+    candFindFirst.mockRejectedValue(Object.assign(new Error(), { code: "P2022" }));
+    expect(await ligarCvPorEnlace(msg)).toBe(false);
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    candUpdateMany.mockRejectedValue(new Error("db"));
+    expect(await ligarCvPorEnlace(msg)).toBe(false);
   });
 });

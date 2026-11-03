@@ -56,8 +56,9 @@ const botConfig = {
 vi.mock("./config", () => ({ getBotConfig: async () => ({ ...botConfig }) }));
 
 vi.mock("./brand-linter", () => ({ lintBrandVoice: () => ({ ok: true, violations: [] }) }));
+const findMatchingDevelopments = vi.fn();
 vi.mock("./hub-catalog", () => ({
-  findMatchingDevelopments: async () => ({ data: [], error: null }),
+  findMatchingDevelopments: (...a: unknown[]) => findMatchingDevelopments(...a),
   catalogBrief: () => "",
 }));
 
@@ -120,6 +121,7 @@ beforeEach(() => {
   maybeClassifyContact.mockResolvedValue("EMPLEO");
   selectAgentProfile.mockResolvedValue(agenteReclutamiento);
   hookReclutamiento.mockResolvedValue({});
+  findMatchingDevelopments.mockResolvedValue({ data: [], error: null });
 });
 
 describe("bot-respond + reclutamiento", () => {
@@ -143,6 +145,17 @@ describe("bot-respond + reclutamiento", () => {
     expect(sys.objective).toContain("Eres reclutador.");
   });
 
+  it("tras el cierre, objetivo y contexto van juntos: el cierre primero y la ficha después", async () => {
+    runPlaybookStep.mockResolvedValue({ objective: "Ya tienes lo esencial…", status: "COMPLETED" });
+    hookReclutamiento.mockResolvedValue({ objetivo: "CIERRE APTO", contexto: "Ficha de la vacante: oficinas en Mérida" });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    const sys = systemArgs.mock.calls[0][0] as { objective: string };
+    expect(sys.objective).toContain("CIERRE APTO\n\nFicha de la vacante: oficinas en Mérida");
+    expect(sys.objective).not.toContain("Ya tienes lo esencial");
+  });
+
   it("mientras el guion sigue, el contexto del hook se suma al objetivo del playbook", async () => {
     runPlaybookStep.mockResolvedValue({ objective: "Tu meta ahora: pide su nombre", status: "IN_PROGRESS" });
     hookReclutamiento.mockResolvedValue({ contexto: "Ficha: 100 % comisión" });
@@ -152,6 +165,36 @@ describe("bot-respond + reclutamiento", () => {
     const sys = systemArgs.mock.calls[0][0] as { objective: string };
     expect(sys.objective).toContain("pide su nombre");
     expect(sys.objective).toContain("Ficha: 100 % comisión");
+  });
+
+  it("si el playbook no dio objetivo (fallo defensivo), el contexto del hook se anexa igual", async () => {
+    runPlaybookStep.mockResolvedValue({ objective: undefined, status: "IN_PROGRESS" });
+    hookReclutamiento.mockResolvedValue({ contexto: "Reglas del guion: no cierres." });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    const sys = systemArgs.mock.calls[0][0] as { objective: string };
+    expect(sys.objective).toContain("Reglas del guion: no cierres.");
+    expect(sys.objective).toContain("Eres reclutador.");
+  });
+
+  it("al agente de reclutamiento NO se le pasa el catálogo de ventas (así inventó Ancestral y Gran Coralia)", async () => {
+    runPlaybookStep.mockResolvedValue({ objective: "x", status: "IN_PROGRESS" });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    expect(findMatchingDevelopments).not.toHaveBeenCalled();
+    const sys = systemArgs.mock.calls[0][0] as { catalog: unknown[] };
+    expect(sys.catalog).toEqual([]);
+  });
+
+  it("a otro agente sí se le consulta el catálogo de ventas, como siempre", async () => {
+    selectAgentProfile.mockResolvedValue({ ...agenteReclutamiento, name: "Agente Brokers" });
+    runPlaybookStep.mockResolvedValue({ objective: "x", status: "IN_PROGRESS" });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    expect(findMatchingDevelopments).toHaveBeenCalledTimes(1);
   });
 
   it("con el playbook viejo (sin actitud_3) no llama al hook aunque sea el agente de reclutamiento", async () => {

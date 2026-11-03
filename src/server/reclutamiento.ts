@@ -21,7 +21,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { setChangeSource, type PrismaTx } from "@/lib/audit/change-context";
 import { normalizePhoneE164 } from "@/lib/phone";
-import { ETAPA_INICIAL, nombreLimpio, type CandidatoEntrada, type CandidatoFila, type Origen } from "@/lib/reclutamiento/shared";
+import { ETAPA_INICIAL, esTablaFaltante, nombreLimpio, type CandidatoEntrada, type CandidatoFila, type Origen } from "@/lib/reclutamiento/shared";
 import {
   CandidatoYaExiste,
   DETALLE_ORIGEN_RECLUTAMIENTO,
@@ -33,7 +33,12 @@ import {
   telefonoLlave,
 } from "@/lib/reclutamiento/contacto";
 
-const SELECT_CANDIDATO = {
+/**
+ * Columnas de antes del bot. Si la base aún no tiene las del bot (P2022: el código se desplegó
+ * antes que el SQL, p. ej. `cvUrl` de 2026-11-03-reclutamiento-bot-v2.sql) se lee con esta y la
+ * pantalla sale igual, sin lo del bot.
+ */
+const SELECT_BASE = {
   id: true,
   fullName: true,
   age: true,
@@ -54,6 +59,39 @@ const SELECT_CANDIDATO = {
   },
 } as const;
 
+const SELECT_CANDIDATO = {
+  ...SELECT_BASE,
+  sourceRef: true,
+  cvUrl: true,
+  botCanal: true,
+  botResultado: true,
+  botPuntaje: true,
+  botMotivo: true,
+  botResumen: true,
+  botRespuestas: true,
+  botDesglose: true,
+  horarioEntrevista: true,
+} as const;
+
+type SelectCandidato = typeof SELECT_CANDIDATO | typeof SELECT_BASE;
+
+const esColumnaFaltante = (err: unknown) =>
+  typeof err === "object" && err !== null && (err as { code?: string }).code === "P2022";
+
+/**
+ * Corre la operación con todas las columnas y, si falta alguna del bot (P2022), otra vez con las
+ * de base. Seguro también para escrituras: una sola sentencia (o transacción) que falló no dejó nada.
+ */
+async function conSelect<T>(op: (select: SelectCandidato) => Promise<T>): Promise<T> {
+  try {
+    return await op(SELECT_CANDIDATO);
+  } catch (err) {
+    if (!esColumnaFaltante(err)) throw err;
+    console.warn("[reclutamiento] faltan columnas del bot en la base; se lee sin ellas");
+    return op(SELECT_BASE);
+  }
+}
+
 type FilaDb = {
   id: string;
   fullName: string;
@@ -69,7 +107,33 @@ type FilaDb = {
   createdAt: Date;
   contactId?: string | null;
   files: Array<{ id: string; fileName: string; createdAt: Date }>;
+  // Del bot: ausentes si la base no tiene sus columnas.
+  sourceRef?: string | null;
+  cvUrl?: string | null;
+  botCanal?: string | null;
+  botResultado?: string | null;
+  botPuntaje?: number | null;
+  botMotivo?: string | null;
+  botResumen?: string | null;
+  botRespuestas?: unknown;
+  botDesglose?: unknown;
+  horarioEntrevista?: string | null;
 };
+
+/** Json de la base → objeto plano de textos (las respuestas son enums o texto). */
+function aRespuestas(v: unknown): Record<string, string> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof x === "string" && x.trim()) out[k] = x;
+    else if (typeof x === "number" || typeof x === "boolean") out[k] = String(x);
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function aObjeto(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
 
 type ContactoDeFila = NonNullable<CandidatoFila["contacto"]>;
 
@@ -89,6 +153,16 @@ export function aFila(c: FilaDb, contacto: ContactoDeFila | null = null): Candid
     createdAt: c.createdAt.toISOString(),
     cvs: c.files.map((f) => ({ id: f.id, fileName: f.fileName, createdAt: f.createdAt.toISOString() })),
     contacto,
+    cvUrl: c.cvUrl ?? null,
+    botCanal: c.botCanal ?? null,
+    botResultado: c.botResultado ?? null,
+    botPuntaje: c.botPuntaje ?? null,
+    botMotivo: c.botMotivo ?? null,
+    botResumen: c.botResumen ?? null,
+    botRespuestas: aRespuestas(c.botRespuestas),
+    botDesglose: aObjeto(c.botDesglose),
+    horarioEntrevista: c.horarioEntrevista ?? null,
+    conversationId: c.source === "CHAT" ? c.sourceRef ?? null : null,
   };
 }
 
@@ -116,20 +190,80 @@ async function conContacto(filas: FilaDb[]): Promise<CandidatoFila[]> {
 
 /** Candidatos vigentes, el más reciente primero. */
 export async function listarCandidatos(): Promise<CandidatoFila[]> {
-  const filas = (await prisma.recruitCandidate.findMany({
-    where: { deletedAt: null },
-    select: SELECT_CANDIDATO,
-    orderBy: { createdAt: "desc" },
-  })) as FilaDb[];
+  const filas = (await conSelect((select) =>
+    prisma.recruitCandidate.findMany({ where: { deletedAt: null }, select, orderBy: { createdAt: "desc" } })
+  )) as FilaDb[];
   return conContacto(filas);
 }
 
 export async function obtenerCandidato(id: string): Promise<CandidatoFila | null> {
-  const c = (await prisma.recruitCandidate.findFirst({
-    where: { id, deletedAt: null },
-    select: SELECT_CANDIDATO,
-  })) as FilaDb | null;
+  const c = (await conSelect((select) =>
+    prisma.recruitCandidate.findFirst({ where: { id, deletedAt: null }, select })
+  )) as FilaDb | null;
   return c ? (await conContacto([c]))[0] : null;
+}
+
+/** Lo que la ficha del contacto muestra de su candidato (tarjeta «Reclutamiento», plan 2026-11-03 Task 8). */
+export type CandidatoDeContacto = {
+  id: string;
+  stage: string;
+  source: string;
+  sourceRef: string | null;
+  botResultado: string | null;
+  botPuntaje: number | null;
+  botResumen: string | null;
+  horarioEntrevista: string | null;
+  cvUrl: string | null;
+  /** El CV de archivo más reciente (para /api/reclutamiento/[id]/files/[fileId]). */
+  cvFileId: string | null;
+};
+
+/**
+ * Candidato vigente ligado al contacto, o null. NUNCA lanza: es una tarjeta de apoyo y la ficha
+ * debe abrir aunque falte el SQL del módulo (P2021) o el del bot (P2022) o la lectura falle.
+ */
+export async function candidatoDeContacto(contactId: string): Promise<CandidatoDeContacto | null> {
+  try {
+    const c = await prisma.recruitCandidate.findFirst({
+      where: { contactId, deletedAt: null },
+      select: {
+        id: true,
+        stage: true,
+        source: true,
+        sourceRef: true,
+        botResultado: true,
+        botPuntaje: true,
+        botResumen: true,
+        horarioEntrevista: true,
+        cvUrl: true,
+        files: {
+          where: { kind: "CV", deletedAt: null },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true },
+        },
+      },
+    });
+    if (!c) return null;
+    const { files, ...resto } = c;
+    return {
+      ...resto,
+      sourceRef: resto.sourceRef ?? null,
+      botResultado: resto.botResultado ?? null,
+      botPuntaje: resto.botPuntaje ?? null,
+      botResumen: resto.botResumen ?? null,
+      horarioEntrevista: resto.horarioEntrevista ?? null,
+      cvUrl: resto.cvUrl ?? null,
+      cvFileId: files[0]?.id ?? null,
+    };
+  } catch (err) {
+    if (esColumnaFaltante(err) || esTablaFaltante(err)) {
+      console.warn("[reclutamiento] ficha del contacto sin tarjeta: falta el SQL de reclutamiento");
+    } else {
+      console.warn("[reclutamiento] no se pudo leer el candidato del contacto:", err);
+    }
+    return null;
+  }
 }
 
 /**
@@ -201,7 +335,7 @@ export async function crearCandidato(
   // con lo capturado; sin él (migración sin aplicar), se crea. Todo en una transacción: si algo
   // falla no queda un contacto suelto.
   if (!origen.contactId) {
-    const c = await prisma.$transaction(async (tx) => {
+    const c = await conSelect((select) => prisma.$transaction(async (tx) => {
       await setChangeSource(tx, { source: "reclutamiento_alta", actorId: createdById });
       const contactId = await contactoParaCandidato(tx, datos);
       const campos = {
@@ -224,14 +358,14 @@ export async function crearCandidato(
         create: { ...campos, contactId },
         // Una ficha que RH había borrado vuelve: la persona se está registrando de nuevo.
         update: { ...campos, deletedAt: null, deletedById: null, stagePrevia: null },
-        select: SELECT_CANDIDATO,
+        select,
       })) as FilaDb;
-    });
+    }));
     // Fuera de la transacción: si leer el estado del contacto fallara dentro, abortaría el alta.
     return (await conContacto([c]))[0];
   }
 
-  const c = (await prisma.recruitCandidate.create({
+  const c = (await conSelect((select) => prisma.recruitCandidate.create({
     data: {
       fullName: datos.fullName,
       age: datos.age ?? null,
@@ -250,8 +384,8 @@ export async function crearCandidato(
       ...(origen.botCanal ? { botCanal: origen.botCanal } : {}),
       createdById,
     },
-    select: SELECT_CANDIDATO,
-  })) as FilaDb;
+    select,
+  }))) as FilaDb;
   return (await conContacto([c]))[0];
 }
 
@@ -269,7 +403,7 @@ export async function editarCandidato(
     // #959: quien mueve la etapa a mano decide; el descarte automático ya no se revierte solo.
     data.stagePrevia = null;
   }
-  const c = (await prisma.recruitCandidate.update({ where: { id }, data, select: SELECT_CANDIDATO })) as FilaDb;
+  const c = (await conSelect((select) => prisma.recruitCandidate.update({ where: { id }, data, select }))) as FilaDb;
   return (await conContacto([c]))[0];
 }
 

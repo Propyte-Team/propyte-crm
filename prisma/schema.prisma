@@ -3325,6 +3325,8 @@ model RecruitCandidate {
   botEvaluadoAt     DateTime?
   /// Días y horario que el candidato dijo que le acomodan para la entrevista (texto libre).
   horarioEntrevista String?
+  /// CV como enlace (Drive, Dropbox…) cuando el canal no manda archivos (Instagram). Cuenta como CV recibido.
+  cvUrl             String?
   /// #959: etapa en que estaba cuando el disparador la descartó porque su contacto dejó de ser
   /// Empleo; si vuelve a ser Empleo, regresa ahí. Un cambio de etapa desde la pantalla la limpia.
   stagePrevia       String?

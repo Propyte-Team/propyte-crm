@@ -58,7 +58,7 @@ export const MODELO_DEFAULT: ModeloReclutamiento = {
     mayor_edad:      { activo: true, pasa: ["SI"], ambiguo: [] },
     acepta_comision: { activo: true, pasa: ["SI"], ambiguo: ["NO_SE"] },
     disponibilidad:  { activo: true, pasa: ["TIEMPO_COMPLETO", "MEDIO_TIEMPO"], ambiguo: ["NO_SE"] },
-    colchon_meses:   { activo: true, pasa: ["TRES_A_SEIS", "MAS_DE_SEIS"], ambiguo: ["NO_SE"] },
+    colchon_meses:   { activo: true, pasa: ["TRES_A_SEIS", "MAS_DE_SEIS", "OTRO_INGRESO"], ambiguo: ["NO_SE"] },
     plaza:           { activo: true, pasa: ["PDC", "MERIDA", "OTRA_CON_MUDANZA"], ambiguo: [] },
     movilidad:       { activo: true, pasa: ["SI"], ambiguo: ["SOLO_DISPOSICION"] },
   },
@@ -81,10 +81,12 @@ export function resolverModelo(valor: unknown): { modelo: ModeloReclutamiento; e
   return { modelo: MODELO_DEFAULT, error: r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") };
 }
 
+// Texto oficial (2026-11-03). Oficinas y desarrollos del Hub se le suman en `ficha.ts` (construirFicha).
 export const FICHA_DEFAULT =
+  "Propyte es una comercializadora inmobiliaria con producto en Tulum, Playa del Carmen, Cancún, Mérida y Telchac. " +
   "Buscamos asesores inmobiliarios para Playa del Carmen y Mérida. Esquema 100 % comisión (sin sueldo base), " +
-  "comisiones competitivas por venta, capacitación continua, inventario de desarrollos y acompañamiento del equipo. " +
-  "Necesitas vehículo propio y disponibilidad para moverte por la zona. El proceso: una charla aquí, tu CV y una entrevista con el gerente de la plaza.";
+  "comisiones competitivas por venta, capacitación continua, inventario propio y de co-broker, y acompañamiento del equipo. " +
+  "Necesitas vehículo propio y disponibilidad para moverte por la zona. El proceso: una charla aquí, tu CV y una entrevista con el Gerente de Ventas.";
 
 /** Ids de usuario responsables por plaza; `default` aplica cuando la plaza no tiene lista propia. */
 export const responsablesSchema = z

@@ -140,6 +140,9 @@ export async function escalateToHuman(
 // baja, hilo en manos de un humano o con el bot apagado, la ráfaga que contesta otro disparo,
 // el agente de la marca apagado (ya escala) y el contacto que es solo de otra marca.
 
+/** Objetivo mínimo cuando el playbook no dio paso ni hay ruta A, pero sí hay contexto que anexar. */
+const OBJETIVO_SIN_PASO = "Continúa la conversación con naturalidad y retoma la pregunta pendiente del guion.";
+
 const CHANNEL_NAMES: Record<MessagingChannel, string> = {
   WHATSAPP: "WhatsApp",
   INSTAGRAM: "Instagram",
@@ -374,24 +377,34 @@ export async function botRespond(
       return acc;
     }, []);
 
+  // Hilo con mensajes pero SOLO salientes (el reduce descarta los `assistant` iniciales):
+  // no hay nada del cliente que contestar. Sin `goal` se omite; con `goal` (seguimiento
+  // programado) sigue abajo como primer contacto. Se distingue de "cero mensajes" (primer
+  // contacto genuino), que sí debe correr siempre.
+  if (history.length === 0 && msgs.length > 0 && !opts.goal) {
+    console.info("[bot] el hilo solo tiene mensajes del bot; se omite el turno", { contactId });
+    return false;
+  }
+
   if (history.length === 0) {
     history.push({ role: "user", content: "(nuevo lead entrante)" });
   }
 
-  // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
-  // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
-  // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
+  // El historial DEBE terminar en el cliente: si dos inbound llegan con segundos de
+  // diferencia, la segunda corrida puede ver el hilo terminando en la respuesta del bot y
+  // Claude responde HTTP 400 ("does not support assistant message prefill"). Ese turno ya
+  // quedó contestado por la corrida anterior: se omite, igual que el guard anti-burst.
   //
-  // Con marca (2026-10-09): el catálogo es SOLO el de los desarrollos de la marca (sin
-  // filtrar por presupuesto/zona del contacto: ese perfil puede venir de otra marca).
-  const { data: catalog, error: catalogError } = brand
-    ? await findMatchingDevelopments({ developmentIds: brand.developmentIds, limit: 10 })
-    : await findMatchingDevelopments({
-        budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
-        budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
-        zone: contact.preferredZone,
-      });
-  if (catalogError) console.error("[bot-respond] catálogo del Hub no disponible:", catalogError);
+  // Excepción: un seguimiento programado (`opts.goal`, ai-actions.ts) corre POR DEFINICIÓN
+  // cuando el hilo termina en el bot. Ahí no se omite: se agrega un turno sintético del
+  // cliente para que la llamada sea válida y el modelo redacte el seguimiento.
+  if (history[history.length - 1].role === "assistant") {
+    if (!opts.goal) {
+      console.info("[bot] historial termina en mensaje del bot; se omite el turno", { contactId });
+      return false;
+    }
+    history.push({ role: "user", content: "(seguimiento programado: el cliente no ha respondido)" });
+  }
 
   // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente
   // (identidad + playbook + tono propios). Solo gasta clasificación si hay agentes activos.
@@ -428,6 +441,29 @@ export async function botRespond(
       // defensivo: sin agente → comportamiento global
     }
   }
+
+  // Fallo de catálogo ≠ catálogo vacío: si la consulta al Hub falló, omitimos el brief
+  // del prompt (buildSystemPrompt cae a "no cites precios") en vez de fingir que no hay
+  // inventario. NO se escala solo por esto: el bot puede seguir calificando sin catálogo.
+  //
+  // Con marca (2026-10-09): el catálogo es SOLO el de los desarrollos de la marca (sin
+  // filtrar por presupuesto/zona del contacto: ese perfil puede venir de otra marca).
+  //
+  // Agente de reclutamiento (2026-11-03): NO recibe el catálogo de ventas. Con él habló de
+  // Ancestral y Gran Coralia como departamentos a un candidato. Su ficha (oficinas y
+  // desarrollos exclusivos/co-broker) llega por el hook de reclutamiento. Por eso el
+  // catálogo se consulta DESPUÉS de resolver el agente.
+  const { data: catalog, error: catalogError } = brand
+    ? await findMatchingDevelopments({ developmentIds: brand.developmentIds, limit: 10 })
+    : esAgenteReclutamiento(agentProfile)
+      ? { data: [], error: null }
+      : await findMatchingDevelopments({
+          budgetMin: contact.budgetMin ? Number(contact.budgetMin) : null,
+          budgetMax: contact.budgetMax ? Number(contact.budgetMax) : null,
+          zone: contact.preferredZone,
+        });
+  if (catalogError) console.error("[bot-respond] catálogo del Hub no disponible:", catalogError);
+
   // El tono propio de la marca reemplaza al global; sin marca (o sin tono) todo igual.
   const baseConfig = brand?.tonePreset ? { ...config, tonePreset: brand.tonePreset } : config;
   const effectiveConfig = applyAgentTone(baseConfig, agentProfile);
@@ -499,8 +535,14 @@ export async function botRespond(
             messages: history,
             playbook: { status: pr.status },
           });
-          if (hr.objetivo) playbookObjective = hr.objetivo;
-          else if (hr.contexto && playbookObjective) playbookObjective = `${playbookObjective}\n\n${hr.contexto}`;
+          // Tras el cierre llegan los dos: el cierre manda y la ficha va detrás (preguntas por la empresa).
+          if (hr.objetivo) playbookObjective = hr.contexto ? `${hr.objetivo}\n\n${hr.contexto}` : hr.objetivo;
+          else if (hr.contexto) {
+            // También cuando el paso del playbook no dio objetivo (su catch defensivo): sin las
+            // reglas del guion el modelo cerraba la charla por su cuenta (prueba 2026-11-03).
+            const base = playbookObjective ?? fallbackObjective ?? OBJETIVO_SIN_PASO;
+            playbookObjective = `${base}\n\n${hr.contexto}`;
+          }
         }
       }
     } catch {
