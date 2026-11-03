@@ -165,6 +165,25 @@ describe("coerceCapture", () => {
     });
   });
 
+  describe("ENUM: candidatos cortos solo como palabra completa", () => {
+    const opts = [
+      { value: "NO", synonyms: ["no uso redes"] },
+      { value: "SI", synonyms: ["instagram"] },
+    ];
+    it("\"bueno, uso instagram\" no cae en NO por el «no» de «bueno»", () => {
+      const r = coerceCapture(task("ENUM", "x", opts), "bueno, uso instagram");
+      expect(r).toEqual({ ok: true, writes: [{ field: "x", value: "SI" }] });
+    });
+    it("\"casi no\" no cae en SI por el «si» de «casi»", () => {
+      const r = coerceCapture(task("ENUM", "x", opts), "casi no");
+      expect(r).toEqual({ ok: true, writes: [{ field: "x", value: "NO" }] });
+    });
+    it("el valor como palabra completa sí casa", () => {
+      const r = coerceCapture(task("ENUM", "x", opts), "no");
+      expect(r).toEqual({ ok: true, writes: [{ field: "x", value: "NO" }] });
+    });
+  });
+
   describe("ENUM (propertyType con sinónimos)", () => {
     const enumOptions: EnumOption[] = [
       { value: "DEPARTAMENTO", synonyms: ["depa", "departamento"] },

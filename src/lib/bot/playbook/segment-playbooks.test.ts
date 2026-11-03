@@ -248,6 +248,13 @@ describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
       expect(coerce("colchon_meses", "no lo he calculado")).toBe("NO_SE");
     });
 
+    it("respuestas cortas y negaciones comunes caen en la opción correcta", () => {
+      expect(coerce("acepta_comision", "no sé")).toBe("NO_SE");
+      expect(coerce("acepta_comision", "bueno, sin problema")).toBe("SI");
+      expect(coerce("prospeccion_digital", "casi no")).toBe("NO");
+      expect(coerce("prospeccion_digital", "uso instagram")).toBe("SI");
+      expect(coerce("experiencia_inmobiliaria", "nunca")).toBe("SIN_EXPERIENCIA");
+    });
     it("acepta_comision: 'necesito sueldo' no cae en SI por el 'si' de 'necesito'", () => {
       expect(coerce("acepta_comision", "necesito sueldo base")).toBe("NO");
       expect(coerce("acepta_comision", "sí, me funciona")).toBe("SI");

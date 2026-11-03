@@ -308,9 +308,9 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         key: "acepta_comision", targetField: "custom.reclutamiento_acepta_comision", captureType: "ENUM",
         objective: "Explica que el esquema es 100 % comisión, sin sueldo base, y pregunta si le funciona.",
         enumOptions: [
+          { value: "NO_SE", synonyms: ["no sé", "depende", "lo pensaría"] },
           { value: "NO", synonyms: ["necesito sueldo", "necesito base", "no me conviene", "no me funciona", "no podría"] },
           { value: "SI", synonyms: ["me funciona", "sin problema", "ya trabajo así", "está bien", "de acuerdo", "acepto"] },
-          { value: "NO_SE", synonyms: ["no sé", "depende", "lo pensaría"] },
         ],
       },
       {
@@ -353,7 +353,7 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
           { value: "MAS_DE_3_ANOS", synonyms: ["más de 3 años", "más de tres", "4 años", "5 años", "10 años", "varios años", "muchos años"] },
           { value: "DE_1_A_3_ANOS", synonyms: ["1 a 3 años", "más de un año", "2 años", "3 años", "dos años", "tres años", "un par de años"] },
           { value: "MENOS_1_ANO", synonyms: ["menos de un año", "un año", "unos meses", "meses", "recién empecé"] },
-          { value: "SIN_EXPERIENCIA", synonyms: ["ninguna", "sin experiencia", "primera vez", "nada"] },
+          { value: "SIN_EXPERIENCIA", synonyms: ["ninguna", "sin experiencia", "primera vez", "nada", "nunca"] },
         ],
       },
       {
@@ -388,8 +388,8 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         key: "prospeccion_digital", targetField: "custom.reclutamiento_prospeccion_digital", captureType: "ENUM",
         objective: "Pregunta si usa redes sociales para prospectar o publicar contenido.",
         enumOptions: [
+          { value: "NO", synonyms: ["no uso redes", "solo personal", "no publico", "casi no"] },
           { value: "SI", synonyms: ["instagram", "tiktok", "facebook", "publico contenido", "tengo seguidores", "publico en redes", "prospecto en redes"] },
-          { value: "NO", synonyms: ["no uso redes", "solo personal", "no publico"] },
         ],
       },
       {
