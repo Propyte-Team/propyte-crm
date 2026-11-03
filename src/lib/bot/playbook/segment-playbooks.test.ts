@@ -174,3 +174,53 @@ describe("SEGMENT_PLAYBOOKS — contrato con el aplicador", () => {
     }
   });
 });
+
+describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
+  const pb = SEGMENT_PLAYBOOKS.find((p) => p.agentName === "Agente Reclutamiento")!;
+  const claves = pb.tasks.map((t) => t.key);
+
+  it("existe y arranca por nombre y plaza", () => {
+    expect(pb).toBeTruthy();
+    expect(claves.slice(0, 2)).toEqual(["nombre", "plaza"]);
+  });
+
+  it("todo lo específico del candidato va a custom.reclutamiento_<clave>", () => {
+    for (const t of pb.tasks) {
+      if (["firstName", "phone", "email"].includes(t.targetField)) continue;
+      expect(t.targetField, t.key).toBe(`custom.reclutamiento_${t.key}`);
+    }
+  });
+
+  it("tiene los 6 filtros, los 5 puntuables y las 3 de actitud", () => {
+    for (const k of ["mayor_edad", "acepta_comision", "disponibilidad", "colchon_meses", "plaza", "movilidad"]) expect(claves).toContain(k);
+    for (const k of ["experiencia_inmobiliaria", "cartera_clientes", "experiencia_ventas", "ingles", "prospeccion_digital"]) expect(claves).toContain(k);
+    for (const k of ["actitud_1", "actitud_2", "actitud_3"]) expect(claves).toContain(k);
+  });
+
+  it("los filtros van antes que los puntuables y la actitud al final", () => {
+    const i = (k: string) => claves.indexOf(k);
+    expect(i("movilidad")).toBeLessThan(i("experiencia_inmobiliaria"));
+    expect(i("prospeccion_digital")).toBeLessThan(i("actitud_1"));
+    expect(claves[claves.length - 1]).toBe("actitud_3");
+  });
+
+  it("las opciones ENUM coinciden con las claves del modelo default", async () => {
+    const { MODELO_DEFAULT } = await import("@/lib/reclutamiento/modelo");
+    for (const [clave, f] of Object.entries(MODELO_DEFAULT.filtros)) {
+      const t = pb.tasks.find((x) => x.key === clave)!;
+      const valores = t.enumOptions!.map((o) => o.value);
+      for (const v of [...f.pasa, ...f.ambiguo]) expect(valores, clave).toContain(v);
+    }
+    for (const [clave, p] of Object.entries(MODELO_DEFAULT.puntuables)) {
+      const t = pb.tasks.find((x) => x.key === clave)!;
+      const valores = t.enumOptions!.map((o) => o.value);
+      for (const v of Object.keys(p.puntos)) expect(valores, clave).toContain(v);
+    }
+  });
+
+  it("ya no existen las claves viejas puesto/experiencia/ciudad", () => {
+    expect(claves).not.toContain("puesto");
+    expect(claves).not.toContain("experiencia");
+    expect(claves).not.toContain("ciudad");
+  });
+});

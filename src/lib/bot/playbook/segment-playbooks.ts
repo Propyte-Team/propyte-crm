@@ -267,63 +267,133 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
     ],
   },
   {
+    // Spec 2026-11-02 (bot de reclutamiento F1). Todo lo del candidato va a
+    // custom.reclutamiento_<clave>; la evaluación (lib/reclutamiento) lo lee de ahí.
+    // Orden = bloques del spec §4: básicos → filtros eliminatorios → puntuables → actitud.
     agentName: "Agente Reclutamiento",
     name: "Reclutamiento — perfil de candidato",
     description:
-      "Candidatos a unirse al equipo: nombre, puesto de interés, experiencia inmobiliaria, ciudad y contacto. " +
-      "Sin presupuesto ni zona de compra. El agente no promete vacantes ni sueldos.",
+      "Candidatos a asesor inmobiliario en Playa del Carmen o Mérida: datos básicos, filtros (edad, comisión, " +
+      "disponibilidad, colchón, plaza, movilidad), experiencia, cartera, inglés, prospección y tres preguntas de actitud. " +
+      "Sin presupuesto ni zona de compra. El agente no promete contratación.",
     tasks: [
+      { key: "nombre", targetField: "firstName", captureType: "FULL_NAME", objective: "Pide su nombre completo." },
       {
-        key: "nombre",
-        targetField: "firstName",
-        captureType: "FULL_NAME",
-        objective: "Pide su nombre completo.",
+        key: "plaza", targetField: "custom.reclutamiento_plaza", captureType: "ENUM",
+        objective: "Pregunta si quiere trabajar en Playa del Carmen o en Mérida; si vive en otra ciudad, pregunta si se mudaría.",
+        enumOptions: [
+          { value: "PDC", synonyms: ["playa", "playa del carmen", "riviera maya", "solidaridad"] },
+          { value: "MERIDA", synonyms: ["mérida", "merida", "yucatán"] },
+          { value: "OTRA_CON_MUDANZA", synonyms: ["me mudaría", "puedo mudarme", "me cambio de ciudad"] },
+          { value: "OTRA_SIN_MUDANZA", synonyms: ["no me mudaría", "desde mi ciudad", "remoto", "a distancia"] },
+        ],
+      },
+      { key: "telefono", targetField: "phone", captureType: "PHONE", objective: "Pide un teléfono con WhatsApp para coordinar la entrevista." },
+      { key: "correo", targetField: "email", captureType: "EMAIL", required: false, objective: "Pide un correo, por si hay que mandarle información." },
+      {
+        key: "mayor_edad", targetField: "custom.reclutamiento_mayor_edad", captureType: "ENUM",
+        objective: "Confirma con naturalidad que es mayor de edad.",
+        enumOptions: [{ value: "SI", synonyms: ["sí", "si", "mayor de edad", "tengo 2", "tengo 3", "tengo 4", "tengo 5"] }, { value: "NO", synonyms: ["no", "menor", "tengo 17", "tengo 16"] }],
       },
       {
-        key: "puesto",
-        targetField: "custom.puesto_interes",
-        captureType: "ENUM",
-        objective: "Pregunta qué puesto le interesa.",
+        key: "acepta_comision", targetField: "custom.reclutamiento_acepta_comision", captureType: "ENUM",
+        objective: "Explica que el esquema es 100 % comisión, sin sueldo base, y pregunta si le funciona.",
         enumOptions: [
-          { value: "ASESOR_VENTAS", synonyms: ["asesor", "ventas", "vendedor", "asesor inmobiliario", "comercial"] },
-          { value: "TEAM_LEADER", synonyms: ["team leader", "líder de equipo", "gerente de ventas"] },
-          { value: "MARKETING", synonyms: ["marketing", "mercadotecnia", "redes", "diseño", "community"] },
-          { value: "ADMINISTRATIVO", synonyms: ["administrativo", "administración", "contabilidad", "recepción"] },
-          { value: "OTRO", synonyms: ["otro", "cualquiera", "lo que haya"] },
+          { value: "SI", synonyms: ["sí", "si", "me funciona", "sin problema", "ya trabajo así"] },
+          { value: "NO", synonyms: ["no", "necesito sueldo", "necesito base", "no me conviene"] },
+          { value: "NO_SE", synonyms: ["no sé", "depende", "lo pensaría"] },
         ],
       },
       {
-        key: "experiencia",
-        targetField: "custom.experiencia_inmobiliaria",
-        captureType: "ENUM",
-        objective:
-          "Pregunta cuánta experiencia tiene en bienes raíces. Sin experiencia es una respuesta válida: " +
-          "no la trates como un problema.",
+        key: "disponibilidad", targetField: "custom.reclutamiento_disponibilidad", captureType: "ENUM",
+        objective: "Pregunta qué disponibilidad tiene: tiempo completo, medio tiempo o solo fines de semana.",
         enumOptions: [
-          { value: "SIN_EXPERIENCIA", synonyms: ["ninguna", "sin experiencia", "es mi primera vez", "nada"] },
+          { value: "TIEMPO_COMPLETO", synonyms: ["tiempo completo", "todo el día", "completa", "full time"] },
+          { value: "MEDIO_TIEMPO", synonyms: ["medio tiempo", "medio día", "por las tardes", "por las mañanas", "part time"] },
+          { value: "FINES_DE_SEMANA", synonyms: ["fines de semana", "sábados", "solo fines"] },
+          { value: "NO_SE", synonyms: ["no sé", "depende", "lo que se necesite"] },
+        ],
+      },
+      {
+        key: "colchon_meses", targetField: "custom.reclutamiento_colchon_meses", captureType: "ENUM",
+        objective: "Explica que la primera venta suele tardar unos meses y pregunta cuántos meses de gastos tiene cubiertos mientras tanto.",
+        extractionHint: "Convierte meses a rango: menos de 3 → MENOS_DE_TRES; 3 a 6 → TRES_A_SEIS; más de 6 → MAS_DE_SEIS.",
+        enumOptions: [
+          { value: "MENOS_DE_TRES", synonyms: ["1 mes", "2 meses", "menos de tres", "nada", "ninguno", "vivo al día"] },
+          { value: "TRES_A_SEIS", synonyms: ["3 meses", "4 meses", "5 meses", "6 meses", "medio año"] },
+          { value: "MAS_DE_SEIS", synonyms: ["más de 6", "un año", "varios meses", "tengo ahorros suficientes"] },
+          { value: "NO_SE", synonyms: ["no sé", "no lo he calculado"] },
+        ],
+      },
+      {
+        key: "movilidad", targetField: "custom.reclutamiento_movilidad", captureType: "ENUM",
+        objective: "Pregunta si tiene vehículo propio y disposición para moverse por la zona a mostrar propiedades.",
+        enumOptions: [
+          { value: "SI", synonyms: ["sí", "tengo coche", "tengo carro", "tengo auto", "tengo moto y puedo moverme"] },
+          { value: "SOLO_DISPOSICION", synonyms: ["no tengo coche pero", "en transporte", "puedo moverme sin auto", "uber"] },
+          { value: "NO", synonyms: ["no", "no tengo", "no puedo moverme"] },
+        ],
+      },
+      {
+        key: "experiencia_inmobiliaria", targetField: "custom.reclutamiento_experiencia_inmobiliaria", captureType: "ENUM",
+        objective: "Pregunta cuánta experiencia tiene en bienes raíces. Sin experiencia es válido: no lo trates como problema.",
+        enumOptions: [
+          { value: "SIN_EXPERIENCIA", synonyms: ["ninguna", "sin experiencia", "primera vez", "nada"] },
           { value: "MENOS_1_ANO", synonyms: ["menos de un año", "unos meses", "recién empecé"] },
           { value: "DE_1_A_3_ANOS", synonyms: ["1 a 3 años", "dos años", "un par de años"] },
           { value: "MAS_DE_3_ANOS", synonyms: ["más de 3 años", "varios años", "muchos años"] },
         ],
       },
       {
-        key: "ciudad",
-        targetField: "residenceCity",
-        captureType: "TEXT",
-        objective: "Pregunta en qué ciudad vive o dónde busca trabajar, para saber a qué plaza canalizarlo.",
+        key: "cartera_clientes", targetField: "custom.reclutamiento_cartera_clientes", captureType: "ENUM",
+        objective: "Pregunta si ya tiene cartera de clientes o contactos interesados en comprar, y de qué tamaño.",
+        enumOptions: [
+          { value: "NO", synonyms: ["no", "ninguna", "empezaría de cero"] },
+          { value: "MENOS_10", synonyms: ["pocos", "algunos", "menos de 10", "cinco", "unos cuantos"] },
+          { value: "DE_10_A_50", synonyms: ["10 a 50", "veinte", "treinta", "una base mediana"] },
+          { value: "MAS_50_O_INVERSIONISTAS", synonyms: ["más de 50", "muchos", "inversionistas", "cartera grande", "base amplia"] },
+        ],
       },
       {
-        key: "telefono",
-        targetField: "phone",
-        captureType: "PHONE",
-        objective: "Pide un teléfono para que reclutamiento lo contacte.",
+        key: "experiencia_ventas", targetField: "custom.reclutamiento_experiencia_ventas", captureType: "ENUM",
+        objective: "Pregunta si ha vendido algo antes y qué (autos, seguros, servicios, retail…).",
+        enumOptions: [
+          { value: "NINGUNA", synonyms: ["no", "nunca he vendido", "ninguna"] },
+          { value: "OTRO_GIRO", synonyms: ["retail", "tienda", "mostrador", "telemarketing", "ventas en general"] },
+          { value: "CONSULTIVA_ALTO_VALOR", synonyms: ["autos", "seguros", "créditos", "b2b", "servicios financieros", "ventas consultivas", "tiempo compartido"] },
+        ],
       },
       {
-        key: "correo",
-        targetField: "email",
-        captureType: "EMAIL",
-        required: false,
-        objective: "Pide un correo para que pueda enviar su CV.",
+        key: "ingles", targetField: "custom.reclutamiento_ingles", captureType: "ENUM",
+        objective: "Pregunta su nivel de inglés.",
+        enumOptions: [
+          { value: "NO", synonyms: ["no", "nada", "muy poco"] },
+          { value: "BASICO", synonyms: ["básico", "basico", "me defiendo", "intermedio bajo"] },
+          { value: "CONVERSACIONAL", synonyms: ["conversacional", "fluido", "avanzado", "bilingüe", "intermedio alto"] },
+        ],
+      },
+      {
+        key: "prospeccion_digital", targetField: "custom.reclutamiento_prospeccion_digital", captureType: "ENUM",
+        objective: "Pregunta si usa redes sociales para prospectar o publicar contenido.",
+        enumOptions: [
+          { value: "SI", synonyms: ["sí", "si", "instagram", "tiktok", "facebook", "publico contenido", "tengo seguidores"] },
+          { value: "NO", synonyms: ["no", "casi no", "solo personal"] },
+        ],
+      },
+      {
+        key: "actitud_1", targetField: "custom.reclutamiento_actitud_1", captureType: "TEXT",
+        objective: "Pregunta por qué quiere vender bienes raíces y no otra cosa.",
+        extractionHint: "Guarda su respuesta completa tal cual, en una o dos frases.",
+      },
+      {
+        key: "actitud_2", targetField: "custom.reclutamiento_actitud_2", captureType: "TEXT",
+        objective: "Pídele que cuente la última vez que le dijeron que no y qué hizo.",
+        extractionHint: "Guarda su respuesta completa tal cual.",
+      },
+      {
+        key: "actitud_3", targetField: "custom.reclutamiento_actitud_3", captureType: "TEXT",
+        objective: "Pregunta qué meta se pondría a 12 meses dentro del equipo.",
+        extractionHint: "Guarda su respuesta completa tal cual.",
       },
     ],
   },
