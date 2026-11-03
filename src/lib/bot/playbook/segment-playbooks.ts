@@ -270,6 +270,13 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
     // Spec 2026-11-02 (bot de reclutamiento F1). Todo lo del candidato va a
     // custom.reclutamiento_<clave>; la evaluación (lib/reclutamiento) lo lee de ahí.
     // Orden = bloques del spec §4: básicos → filtros eliminatorios → puntuables → actitud.
+    //
+    // OJO con `coerceEnum` (capture.ts): prueba `[value, ...synonyms]` opción por opción y se
+    // queda con el PRIMER substring que encuentre. Por eso aquí:
+    //   - ningún sinónimo suelto "sí"/"si"/"no" (el value "SI" ya cae en "necesito", "casi"…);
+    //   - la opción NO/NINGUNA/NO_SE va al final, con frases específicas;
+    //   - la opción más específica va primero ("12 meses" no debe caer en "2 meses").
+    // Sin `correo`: el motor ignora `required:false` y un correo opcional se vuelve compuerta dura.
     agentName: "Agente Reclutamiento",
     name: "Reclutamiento — perfil de candidato",
     description:
@@ -282,25 +289,27 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         key: "plaza", targetField: "custom.reclutamiento_plaza", captureType: "ENUM",
         objective: "Pregunta si quiere trabajar en Playa del Carmen o en Mérida; si vive en otra ciudad, pregunta si se mudaría.",
         enumOptions: [
+          { value: "OTRA_SIN_MUDANZA", synonyms: ["no me mudaría", "no podría mudarme", "desde mi ciudad", "remoto", "a distancia"] },
+          { value: "OTRA_CON_MUDANZA", synonyms: ["me mudaría", "puedo mudarme", "me cambio de ciudad", "me muevo a"] },
           { value: "PDC", synonyms: ["playa", "playa del carmen", "riviera maya", "solidaridad"] },
-          { value: "MERIDA", synonyms: ["mérida", "merida", "yucatán"] },
-          { value: "OTRA_CON_MUDANZA", synonyms: ["me mudaría", "puedo mudarme", "me cambio de ciudad"] },
-          { value: "OTRA_SIN_MUDANZA", synonyms: ["no me mudaría", "desde mi ciudad", "remoto", "a distancia"] },
+          { value: "MERIDA", synonyms: ["mérida", "yucatán"] },
         ],
       },
       { key: "telefono", targetField: "phone", captureType: "PHONE", objective: "Pide un teléfono con WhatsApp para coordinar la entrevista." },
-      { key: "correo", targetField: "email", captureType: "EMAIL", required: false, objective: "Pide un correo, por si hay que mandarle información." },
       {
         key: "mayor_edad", targetField: "custom.reclutamiento_mayor_edad", captureType: "ENUM",
         objective: "Confirma con naturalidad que es mayor de edad.",
-        enumOptions: [{ value: "SI", synonyms: ["sí", "si", "mayor de edad", "tengo 2", "tengo 3", "tengo 4", "tengo 5"] }, { value: "NO", synonyms: ["no", "menor", "tengo 17", "tengo 16"] }],
+        enumOptions: [
+          { value: "SI", synonyms: ["mayor de edad", "soy mayor", "ya soy mayor de edad", "tengo 18", "tengo 19"] },
+          { value: "NO", synonyms: ["soy menor", "menor de edad", "tengo 17", "tengo 16"] },
+        ],
       },
       {
         key: "acepta_comision", targetField: "custom.reclutamiento_acepta_comision", captureType: "ENUM",
         objective: "Explica que el esquema es 100 % comisión, sin sueldo base, y pregunta si le funciona.",
         enumOptions: [
-          { value: "SI", synonyms: ["sí", "si", "me funciona", "sin problema", "ya trabajo así"] },
-          { value: "NO", synonyms: ["no", "necesito sueldo", "necesito base", "no me conviene"] },
+          { value: "NO", synonyms: ["necesito sueldo", "necesito base", "no me conviene", "no me funciona", "no podría"] },
+          { value: "SI", synonyms: ["me funciona", "sin problema", "ya trabajo así", "está bien", "de acuerdo", "acepto"] },
           { value: "NO_SE", synonyms: ["no sé", "depende", "lo pensaría"] },
         ],
       },
@@ -319,65 +328,68 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         objective: "Explica que la primera venta suele tardar unos meses y pregunta cuántos meses de gastos tiene cubiertos mientras tanto.",
         extractionHint: "Convierte meses a rango: menos de 3 → MENOS_DE_TRES; 3 a 6 → TRES_A_SEIS; más de 6 → MAS_DE_SEIS.",
         enumOptions: [
-          { value: "MENOS_DE_TRES", synonyms: ["1 mes", "2 meses", "menos de tres", "nada", "ninguno", "vivo al día"] },
-          { value: "TRES_A_SEIS", synonyms: ["3 meses", "4 meses", "5 meses", "6 meses", "medio año"] },
-          { value: "MAS_DE_SEIS", synonyms: ["más de 6", "un año", "varios meses", "tengo ahorros suficientes"] },
-          { value: "NO_SE", synonyms: ["no sé", "no lo he calculado"] },
+          {
+            value: "MAS_DE_SEIS",
+            synonyms: ["más de 6", "más de seis", "7 meses", "8 meses", "9 meses", "10 meses", "11 meses", "12 meses", "un año", "más de un año", "varios meses", "ahorros suficientes"],
+          },
+          { value: "TRES_A_SEIS", synonyms: ["3 meses", "4 meses", "5 meses", "6 meses", "tres meses", "cuatro meses", "cinco meses", "seis meses", "medio año"] },
+          { value: "MENOS_DE_TRES", synonyms: ["1 mes", "2 meses", "un mes", "dos meses", "menos de tres", "nada", "no tengo ahorros", "vivo al día"] },
+          { value: "NO_SE", synonyms: ["no sé", "no lo he calculado", "más o menos", "algo", "poco"] },
         ],
       },
       {
         key: "movilidad", targetField: "custom.reclutamiento_movilidad", captureType: "ENUM",
         objective: "Pregunta si tiene vehículo propio y disposición para moverse por la zona a mostrar propiedades.",
         enumOptions: [
-          { value: "SI", synonyms: ["sí", "tengo coche", "tengo carro", "tengo auto", "tengo moto y puedo moverme"] },
-          { value: "SOLO_DISPOSICION", synonyms: ["no tengo coche pero", "en transporte", "puedo moverme sin auto", "uber"] },
-          { value: "NO", synonyms: ["no", "no tengo", "no puedo moverme"] },
+          { value: "SOLO_DISPOSICION", synonyms: ["no tengo coche", "no tengo carro", "no tengo auto", "no tengo vehículo", "sin coche", "sin carro", "en transporte", "puedo moverme sin auto", "uber"] },
+          { value: "SI", synonyms: ["tengo coche", "tengo carro", "tengo auto", "tengo vehículo", "tengo camioneta", "moto", "motocicleta", "vehículo propio"] },
+          { value: "NO", synonyms: ["no tengo", "no puedo moverme", "no me puedo mover"] },
         ],
       },
       {
         key: "experiencia_inmobiliaria", targetField: "custom.reclutamiento_experiencia_inmobiliaria", captureType: "ENUM",
         objective: "Pregunta cuánta experiencia tiene en bienes raíces. Sin experiencia es válido: no lo trates como problema.",
         enumOptions: [
+          { value: "MAS_DE_3_ANOS", synonyms: ["más de 3 años", "más de tres", "4 años", "5 años", "10 años", "varios años", "muchos años"] },
+          { value: "DE_1_A_3_ANOS", synonyms: ["1 a 3 años", "más de un año", "2 años", "3 años", "dos años", "tres años", "un par de años"] },
+          { value: "MENOS_1_ANO", synonyms: ["menos de un año", "un año", "unos meses", "meses", "recién empecé"] },
           { value: "SIN_EXPERIENCIA", synonyms: ["ninguna", "sin experiencia", "primera vez", "nada"] },
-          { value: "MENOS_1_ANO", synonyms: ["menos de un año", "unos meses", "recién empecé"] },
-          { value: "DE_1_A_3_ANOS", synonyms: ["1 a 3 años", "dos años", "un par de años"] },
-          { value: "MAS_DE_3_ANOS", synonyms: ["más de 3 años", "varios años", "muchos años"] },
         ],
       },
       {
         key: "cartera_clientes", targetField: "custom.reclutamiento_cartera_clientes", captureType: "ENUM",
         objective: "Pregunta si ya tiene cartera de clientes o contactos interesados en comprar, y de qué tamaño.",
         enumOptions: [
-          { value: "NO", synonyms: ["no", "ninguna", "empezaría de cero"] },
-          { value: "MENOS_10", synonyms: ["pocos", "algunos", "menos de 10", "cinco", "unos cuantos"] },
-          { value: "DE_10_A_50", synonyms: ["10 a 50", "veinte", "treinta", "una base mediana"] },
           { value: "MAS_50_O_INVERSIONISTAS", synonyms: ["más de 50", "muchos", "inversionistas", "cartera grande", "base amplia"] },
+          { value: "DE_10_A_50", synonyms: ["10 a 50", "veinte", "treinta", "una base mediana"] },
+          { value: "MENOS_10", synonyms: ["pocos", "algunos", "menos de 10", "cinco", "unos cuantos"] },
+          { value: "NO", synonyms: ["no tengo cartera", "ninguna", "empezaría de cero", "desde cero"] },
         ],
       },
       {
         key: "experiencia_ventas", targetField: "custom.reclutamiento_experiencia_ventas", captureType: "ENUM",
         objective: "Pregunta si ha vendido algo antes y qué (autos, seguros, servicios, retail…).",
         enumOptions: [
-          { value: "NINGUNA", synonyms: ["no", "nunca he vendido", "ninguna"] },
-          { value: "OTRO_GIRO", synonyms: ["retail", "tienda", "mostrador", "telemarketing", "ventas en general"] },
           { value: "CONSULTIVA_ALTO_VALOR", synonyms: ["autos", "seguros", "créditos", "b2b", "servicios financieros", "ventas consultivas", "tiempo compartido"] },
+          { value: "OTRO_GIRO", synonyms: ["retail", "tienda", "mostrador", "telemarketing", "ventas en general"] },
+          { value: "NINGUNA", synonyms: ["nunca he vendido", "no he vendido", "sin experiencia en ventas"] },
         ],
       },
       {
         key: "ingles", targetField: "custom.reclutamiento_ingles", captureType: "ENUM",
         objective: "Pregunta su nivel de inglés.",
         enumOptions: [
-          { value: "NO", synonyms: ["no", "nada", "muy poco"] },
-          { value: "BASICO", synonyms: ["básico", "basico", "me defiendo", "intermedio bajo"] },
           { value: "CONVERSACIONAL", synonyms: ["conversacional", "fluido", "avanzado", "bilingüe", "intermedio alto"] },
+          { value: "BASICO", synonyms: ["básico", "me defiendo", "intermedio bajo", "muy poco"] },
+          { value: "NO", synonyms: ["no sé inglés", "nada de inglés", "no hablo inglés"] },
         ],
       },
       {
         key: "prospeccion_digital", targetField: "custom.reclutamiento_prospeccion_digital", captureType: "ENUM",
         objective: "Pregunta si usa redes sociales para prospectar o publicar contenido.",
         enumOptions: [
-          { value: "SI", synonyms: ["sí", "si", "instagram", "tiktok", "facebook", "publico contenido", "tengo seguidores"] },
-          { value: "NO", synonyms: ["no", "casi no", "solo personal"] },
+          { value: "SI", synonyms: ["instagram", "tiktok", "facebook", "publico contenido", "tengo seguidores", "publico en redes", "prospecto en redes"] },
+          { value: "NO", synonyms: ["no uso redes", "solo personal", "no publico"] },
         ],
       },
       {
@@ -392,7 +404,7 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
       },
       {
         key: "actitud_3", targetField: "custom.reclutamiento_actitud_3", captureType: "TEXT",
-        objective: "Pregunta qué meta se pondría a 12 meses dentro del equipo.",
+        objective: "Pregunta qué meta se pondría a 12 meses si entrara al equipo.",
         extractionHint: "Guarda su respuesta completa tal cual.",
       },
     ],

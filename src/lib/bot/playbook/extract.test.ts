@@ -15,6 +15,16 @@ describe("buildExtractionSchema", () => {
     expect(s.properties.nombre.type).toEqual(["string", "null"]);
     expect(s.required.sort()).toEqual(["nombre", "presupuesto"]);
   });
+
+  it("si la tarea trae extractionHint, la pista va en la descripción que ve Claude", () => {
+    const s = buildExtractionSchema([
+      { key: "colchon", objective: "pregunta meses de colchón", captureType: "ENUM", extractionHint: "Convierte meses a rango." },
+      { key: "nombre", objective: "pide nombre", captureType: "FULL_NAME" },
+    ]) as any;
+    expect(s.properties.colchon.description).toContain("pregunta meses de colchón");
+    expect(s.properties.colchon.description).toContain("Convierte meses a rango.");
+    expect(s.properties.nombre.description).toBe("pide nombre");
+  });
 });
 
 describe("parseExtractionResponse", () => {

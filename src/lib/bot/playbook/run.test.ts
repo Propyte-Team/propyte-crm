@@ -134,6 +134,25 @@ describe("runPlaybookStep — hook de detección de duplicados (Caso 1)", () => 
 // Si es de otro playbook (p. ej. el global corrió antes de asignarle una marca a la cuenta), sus
 // tareas cumplidas no son avance del playbook de la marca. Con `ignoreForeignState` se reinicia
 // para este playbook; sin la bandera (camino sin marca) todo queda exactamente igual.
+describe("runPlaybookStep — extractionHint llega al extractor", () => {
+  it("una tarea con pista la manda en ExtractTaskLite; sin pista va null", async () => {
+    const hintTask = { ...textTask, key: "colchon", extractionHint: "Convierte meses a rango." };
+    extractFields.mockResolvedValue({});
+    await runPlaybookStep(makeDb() as any, {
+      playbook: { id: "pb1", tasks: [hintTask, phoneTask] },
+      conversationId: "conv1", contact: { id: "contact1" }, messages: [], model: "m",
+    });
+    expect(extractFields).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tasks: [
+          expect.objectContaining({ key: "colchon", extractionHint: "Convierte meses a rango." }),
+          expect.objectContaining({ key: "capture_phone", extractionHint: null }),
+        ],
+      }),
+    );
+  });
+});
+
 describe("runPlaybookStep — estado de otro playbook (ignoreForeignState)", () => {
   function dbWithState(state: { playbookId: string; completedTaskKeys: string[] }) {
     const db = makeDb(state.completedTaskKeys);

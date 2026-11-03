@@ -18,6 +18,8 @@ export interface PlaybookTaskFull {
   enumOptions: unknown;
   required: boolean;
   skipIfFilled: boolean;
+  /** Pista extra para el extractor (opcional; la mayoría de las tareas no la traen). */
+  extractionHint?: string | null;
 }
 
 export async function runPlaybookStep(
@@ -76,6 +78,7 @@ export async function runPlaybookStep(
         key: t.key,
         objective: t.objective,
         captureType: t.captureType,
+        extractionHint: t.extractionHint ?? null,
         enumOptions: t.enumOptions as { value: string; synonyms?: string[] }[],
       }));
       const extracted = await extractFields({ messages, tasks: extractTasks, model });
