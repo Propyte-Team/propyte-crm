@@ -51,6 +51,21 @@ const ETIQUETAS: Record<string, string> = {
   propiedad_venta_moneda: "Propiedad en venta: moneda",
   propiedad_venta_situacion_legal: "Propiedad en venta: situación legal",
   propiedad_venta_plazo: "Propiedad en venta: plazo para vender",
+  // Bot de reclutamiento (spec 2026-11-02): lo que captura el Agente Reclutamiento.
+  reclutamiento_plaza: "Reclutamiento: plaza",
+  reclutamiento_mayor_edad: "Reclutamiento: mayor de edad",
+  reclutamiento_acepta_comision: "Reclutamiento: acepta 100 % comisión",
+  reclutamiento_disponibilidad: "Reclutamiento: disponibilidad",
+  reclutamiento_colchon_meses: "Reclutamiento: colchón económico",
+  reclutamiento_movilidad: "Reclutamiento: movilidad",
+  reclutamiento_experiencia_inmobiliaria: "Reclutamiento: experiencia inmobiliaria",
+  reclutamiento_cartera_clientes: "Reclutamiento: cartera de clientes",
+  reclutamiento_experiencia_ventas: "Reclutamiento: experiencia en ventas",
+  reclutamiento_ingles: "Reclutamiento: inglés",
+  reclutamiento_prospeccion_digital: "Reclutamiento: prospección digital",
+  reclutamiento_actitud_1: "Reclutamiento: actitud 1",
+  reclutamiento_actitud_2: "Reclutamiento: actitud 2",
+  reclutamiento_actitud_3: "Reclutamiento: actitud 3",
 };
 
 // Valores de los ENUM que captura el bot (segment-playbooks.ts).
@@ -96,6 +111,51 @@ const VALORES: Record<string, Record<string, string>> = {
     DE_1_A_3_ANOS: "De 1 a 3 años",
     MAS_DE_3_ANOS: "Más de 3 años",
   },
+  // Bot de reclutamiento (spec 2026-11-02).
+  reclutamiento_plaza: {
+    PDC: "Playa del Carmen",
+    MERIDA: "Mérida",
+    OTRA_CON_MUDANZA: "otra, con mudanza",
+    OTRA_SIN_MUDANZA: "otra, sin mudanza",
+  },
+  reclutamiento_mayor_edad: { SI: "sí", NO: "no" },
+  reclutamiento_acepta_comision: { SI: "sí", NO: "no", NO_SE: "no sabe" },
+  reclutamiento_disponibilidad: {
+    TIEMPO_COMPLETO: "tiempo completo",
+    MEDIO_TIEMPO: "medio tiempo",
+    FINES_DE_SEMANA: "fines de semana",
+    NO_SE: "no sabe",
+  },
+  reclutamiento_colchon_meses: {
+    MENOS_DE_TRES: "menos de 3 meses",
+    TRES_A_SEIS: "3 a 6 meses",
+    MAS_DE_SEIS: "más de 6 meses",
+    NO_SE: "no sabe",
+  },
+  reclutamiento_movilidad: {
+    SI: "vehículo propio y disposición",
+    SOLO_DISPOSICION: "solo disposición, sin vehículo",
+    NO: "no",
+  },
+  reclutamiento_experiencia_inmobiliaria: {
+    SIN_EXPERIENCIA: "sin experiencia",
+    MENOS_1_ANO: "menos de 1 año",
+    DE_1_A_3_ANOS: "de 1 a 3 años",
+    MAS_DE_3_ANOS: "más de 3 años",
+  },
+  reclutamiento_cartera_clientes: {
+    NO: "sin cartera",
+    MENOS_10: "menos de 10 contactos",
+    DE_10_A_50: "de 10 a 50 contactos",
+    MAS_50_O_INVERSIONISTAS: "más de 50 o inversionistas",
+  },
+  reclutamiento_experiencia_ventas: {
+    NINGUNA: "ninguna",
+    OTRO_GIRO: "en otro giro",
+    CONSULTIVA_ALTO_VALOR: "consultiva / alto valor",
+  },
+  reclutamiento_ingles: { NO: "no", BASICO: "básico", CONVERSACIONAL: "conversacional" },
+  reclutamiento_prospeccion_digital: { SI: "sí", NO: "no" },
 };
 
 /** «experiencia_inmobiliaria» → «Experiencia inmobiliaria»; «budgetCurrency» → «Budget currency». */
