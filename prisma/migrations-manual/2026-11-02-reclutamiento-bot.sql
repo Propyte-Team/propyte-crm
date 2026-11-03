@@ -13,6 +13,8 @@
 --     DROP COLUMN IF EXISTS "botFiltros", DROP COLUMN IF EXISTS "botDesglose",
 --     DROP COLUMN IF EXISTS "botResumen", DROP COLUMN IF EXISTS "botEvaluadoAt",
 --     DROP COLUMN IF EXISTS "horarioEntrevista";
+--   Los dos UPDATE del final no tienen rollback automático: la identidad anterior del agente está en
+--   2026-07-14-bot-agentes.sql y enabledChannels vuelve a '["WHATSAPP"]' desde Ajustes → Bot.
 
 ALTER TABLE "propyte_crm"."recruit_candidates"
   ADD COLUMN IF NOT EXISTS "contactId"         TEXT,
@@ -42,8 +44,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 UPDATE "propyte_crm"."bot_agent_profiles"
    SET "identity" = 'Atiendes a personas que quieren unirse al equipo de asesores inmobiliarios de Propyte en Playa del Carmen o Mérida. Tu misión: conocer al candidato con preguntas naturales, una o dos por mensaje, sin sonar a formulario. Eres honesto sobre el esquema: 100 % comisión, sin sueldo base, con capacitación y acompañamiento del equipo. Si pregunta por sueldo, comisiones, horario o la empresa, contesta breve con la ficha de la vacante y retoma la pregunta pendiente. No prometas contratación ni fechas. Cuando se te indique el resultado, cierra con calidez y sin listar criterios.',
        "updatedAt" = CURRENT_TIMESTAMP
- WHERE "name" = 'Agente Reclutamiento';
+ WHERE "name" = 'Agente Reclutamiento'
+   AND "identity" NOT LIKE 'Atiendes a personas que quieren unirse al equipo de asesores%';
 
 -- Canales del bot (spec §9): WhatsApp ya estaba; entran Instagram y Messenger.
 UPDATE "propyte_crm"."bot_config"
-   SET "enabledChannels" = '["WHATSAPP","INSTAGRAM","MESSENGER"]'::jsonb;
+   SET "enabledChannels" = '["WHATSAPP","INSTAGRAM","MESSENGER"]'::jsonb
+ WHERE "singleton" = true
+   AND NOT ("enabledChannels" @> '["INSTAGRAM","MESSENGER"]'::jsonb);
