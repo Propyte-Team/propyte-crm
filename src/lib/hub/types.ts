@@ -39,7 +39,7 @@ export interface HubHoldResult {
    * `sin_configurar` (faltan HUB_API_BASE_URL / HUB_API_KEY) y `sin_respuesta` (red, tiempo, 5xx)
    * no dicen nada de la unidad: ahí el CRM puede apartar de respaldo (lib/hub/apartado-de-respaldo.ts).
    */
-  motivo?: "rechazo" | "sin_configurar" | "sin_respuesta";
+  motivo?: "rechazo" | "sin_configurar" | "mal_configurado" | "sin_respuesta";
 }
 
 export interface HubUnitFilters {
