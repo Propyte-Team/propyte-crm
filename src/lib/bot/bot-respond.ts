@@ -140,6 +140,9 @@ export async function escalateToHuman(
 // baja, hilo en manos de un humano o con el bot apagado, la ráfaga que contesta otro disparo,
 // el agente de la marca apagado (ya escala) y el contacto que es solo de otra marca.
 
+/** Objetivo mínimo cuando el playbook no dio paso ni hay ruta A, pero sí hay contexto que anexar. */
+const OBJETIVO_SIN_PASO = "Continúa la conversación con naturalidad y retoma la pregunta pendiente del guion.";
+
 const CHANNEL_NAMES: Record<MessagingChannel, string> = {
   WHATSAPP: "WhatsApp",
   INSTAGRAM: "Instagram",
@@ -509,7 +512,12 @@ export async function botRespond(
             playbook: { status: pr.status },
           });
           if (hr.objetivo) playbookObjective = hr.objetivo;
-          else if (hr.contexto && playbookObjective) playbookObjective = `${playbookObjective}\n\n${hr.contexto}`;
+          else if (hr.contexto) {
+            // También cuando el paso del playbook no dio objetivo (su catch defensivo): sin las
+            // reglas del guion el modelo cerraba la charla por su cuenta (prueba 2026-11-03).
+            const base = playbookObjective ?? fallbackObjective ?? OBJETIVO_SIN_PASO;
+            playbookObjective = `${base}\n\n${hr.contexto}`;
+          }
         }
       }
     } catch {

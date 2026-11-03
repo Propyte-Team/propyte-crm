@@ -92,6 +92,16 @@ describe("hookReclutamiento", () => {
     expect(persistirEvaluacion).not.toHaveBeenCalled();
   });
 
+  it("en curso: el contexto trae las reglas del guion (no cerrar, no pedir CV) antes de la ficha", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "IN_PROGRESS" } });
+    expect(r.contexto).toMatch(/^Reglas del guion: /);
+    expect(r.contexto).toContain("NO cierres la conversación, NO pidas CV");
+    expect(r.contexto).toContain("no inventes desarrollos");
+    expect(r.contexto).toContain("Ficha de la vacante: ");
+    expect(r.contexto!.indexOf("Reglas del guion")).toBeLessThan(r.contexto!.indexOf("Ficha de la vacante"));
+  });
+
   it("al completar: evalúa, persiste, avisa y devuelve el cierre APTO pidiendo CV y horario", async () => {
     asegurarCandidato.mockResolvedValue(sinEvaluar);
     evaluarActitud.mockResolvedValue({ puntos: 16, razones: ["clara"] });
@@ -233,5 +243,29 @@ describe("hookReclutamiento", () => {
     persistirEvaluacion.mockRejectedValue(new Error("db"));
     const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
     expect(r).toEqual({});
+  });
+});
+
+describe("OBJETIVOS_CIERRE (decisiones 2026-11-03)", () => {
+  it("hablan del Gerente de Ventas, nunca del «gerente de la plaza»", () => {
+    for (const [k, texto] of Object.entries(OBJETIVOS_CIERRE)) {
+      expect(texto, k).not.toMatch(/gerente de la plaza/i);
+      if (/gerente/i.test(texto)) expect(texto, k).toContain("Gerente de Ventas");
+    }
+  });
+
+  it("el contacto es por WhatsApp al número que dejó, no «por este chat»", () => {
+    for (const [k, texto] of Object.entries(OBJETIVOS_CIERRE)) {
+      expect(texto, k).not.toMatch(/por este chat/i);
+      if (/contacta/i.test(texto)) expect(texto, k).toContain("por WhatsApp al número que dejó");
+    }
+  });
+
+  it("al pedir CV aceptan archivo o enlace (Instagram no manda archivos)", () => {
+    for (const k of ["APTO_SIN_CV", "REVISAR_SIN_CV"] as const) {
+      expect(OBJETIVOS_CIERRE[k]).toContain("archivo PDF o Word");
+      expect(OBJETIVOS_CIERRE[k]).toContain("enlace (Drive, Dropbox)");
+      expect(OBJETIVOS_CIERRE[k]).not.toContain("aquí mismo");
+    }
   });
 });

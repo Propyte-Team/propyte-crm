@@ -36,7 +36,8 @@ function toTaskCreate(tasks: SegmentTaskSpec[]) {
     captureType: t.captureType,
     objective: t.objective,
     required: t.required ?? true,
-    skipIfFilled: true,
+    // Omitido en el spec = true (lo de siempre). Solo `nombre` del reclutamiento lo pone en false.
+    skipIfFilled: t.skipIfFilled ?? true,
     isActive: true,
     enumOptions: t.enumOptions ?? [],
     ...(t.extractionHint ? { extractionHint: t.extractionHint } : {}),

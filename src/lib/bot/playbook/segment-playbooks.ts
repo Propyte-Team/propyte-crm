@@ -20,6 +20,12 @@ export interface SegmentTaskSpec {
   captureType: CaptureType;
   objective: string;
   required?: boolean;
+  /**
+   * Si la tarea se salta cuando el campo ya está lleno. Omitido = true (lo que el seed siempre
+   * persistió). `false` solo donde el dato previo no vale: el nombre de perfil de Instagram no es
+   * el nombre completo del candidato (2026-11-03).
+   */
+  skipIfFilled?: boolean;
   enumOptions?: { value: string; synonyms?: string[] }[];
   extractionHint?: string;
 }
@@ -283,8 +289,22 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
       "Candidatos a asesor inmobiliario en Playa del Carmen o Mérida: datos básicos, filtros (edad, comisión, " +
       "disponibilidad, colchón, plaza, movilidad), experiencia, cartera, inglés, prospección y tres preguntas de actitud. " +
       "Sin presupuesto ni zona de compra. El agente no promete contratación.",
+    // Orden (decisión de Luis, 2026-11-03, tras la prueba real): primero mayor de edad, luego nombre
+    // completo (SIEMPRE: Instagram ya trae un firstName de perfil y skipIfFilled lo saltaba), plaza y
+    // teléfono; después los filtros, los puntuables y la actitud.
     tasks: [
-      { key: "nombre", targetField: "firstName", captureType: "FULL_NAME", objective: "Pide su nombre completo." },
+      {
+        key: "mayor_edad", targetField: "custom.reclutamiento_mayor_edad", captureType: "ENUM",
+        objective: "Confirma con naturalidad que es mayor de edad.",
+        enumOptions: [
+          { value: "SI", synonyms: ["mayor de edad", "soy mayor", "ya soy mayor de edad", "tengo 18", "tengo 19"] },
+          { value: "NO", synonyms: ["soy menor", "menor de edad", "tengo 17", "tengo 16"] },
+        ],
+      },
+      {
+        key: "nombre", targetField: "firstName", captureType: "FULL_NAME", skipIfFilled: false,
+        objective: "Pide su nombre completo (nombre y apellidos), aunque ya conozcas su nombre de perfil.",
+      },
       {
         key: "plaza", targetField: "custom.reclutamiento_plaza", captureType: "ENUM",
         objective: "Pregunta si quiere trabajar en Playa del Carmen o en Mérida; si vive en otra ciudad, pregunta si se mudaría.",
@@ -295,14 +315,9 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
           { value: "MERIDA", synonyms: ["mérida", "yucatán"] },
         ],
       },
-      { key: "telefono", targetField: "phone", captureType: "PHONE", objective: "Pide un teléfono con WhatsApp para coordinar la entrevista." },
       {
-        key: "mayor_edad", targetField: "custom.reclutamiento_mayor_edad", captureType: "ENUM",
-        objective: "Confirma con naturalidad que es mayor de edad.",
-        enumOptions: [
-          { value: "SI", synonyms: ["mayor de edad", "soy mayor", "ya soy mayor de edad", "tengo 18", "tengo 19"] },
-          { value: "NO", synonyms: ["soy menor", "menor de edad", "tengo 17", "tengo 16"] },
-        ],
+        key: "telefono", targetField: "phone", captureType: "PHONE",
+        objective: "Pide un teléfono con WhatsApp a 10 dígitos, con lada (por ejemplo 984 o 999).",
       },
       {
         key: "acepta_comision", targetField: "custom.reclutamiento_acepta_comision", captureType: "ENUM",
@@ -326,8 +341,16 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
       {
         key: "colchon_meses", targetField: "custom.reclutamiento_colchon_meses", captureType: "ENUM",
         objective: "Explica que la primera venta suele tardar unos meses y pregunta cuántos meses de gastos tiene cubiertos mientras tanto.",
-        extractionHint: "Convierte meses a rango: menos de 3 → MENOS_DE_TRES; 3 a 6 → TRES_A_SEIS; más de 6 → MAS_DE_SEIS.",
+        extractionHint:
+          "Convierte meses a rango: menos de 3 → MENOS_DE_TRES; 3 a 6 → TRES_A_SEIS; más de 6 → MAS_DE_SEIS. " +
+          "Si dice que tiene otro trabajo, otro ingreso o alguien lo mantiene → OTRO_INGRESO.",
         enumOptions: [
+          // Va ANTES que las numéricas: «Tengo otro trabajo» (prueba 2026-11-03) no casaba con nada y el
+          // guion se atoró aquí. Sus sinónimos son frases de dos palabras: no se roban un «12 meses».
+          {
+            value: "OTRO_INGRESO",
+            synonyms: ["tengo otro trabajo", "otro trabajo", "otro ingreso", "tengo trabajo", "sigo trabajando", "tengo ingresos", "me mantiene", "mi pareja", "mis papás"],
+          },
           {
             value: "MAS_DE_SEIS",
             synonyms: ["más de 6", "más de seis", "7 meses", "8 meses", "9 meses", "10 meses", "11 meses", "12 meses", "un año", "más de un año", "varios meses", "ahorros suficientes"],

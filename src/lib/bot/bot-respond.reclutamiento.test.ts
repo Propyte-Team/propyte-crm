@@ -154,6 +154,17 @@ describe("bot-respond + reclutamiento", () => {
     expect(sys.objective).toContain("Ficha: 100 % comisión");
   });
 
+  it("si el playbook no dio objetivo (fallo defensivo), el contexto del hook se anexa igual", async () => {
+    runPlaybookStep.mockResolvedValue({ objective: undefined, status: "IN_PROGRESS" });
+    hookReclutamiento.mockResolvedValue({ contexto: "Reglas del guion: no cierres." });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    const sys = systemArgs.mock.calls[0][0] as { objective: string };
+    expect(sys.objective).toContain("Reglas del guion: no cierres.");
+    expect(sys.objective).toContain("Eres reclutador.");
+  });
+
   it("con el playbook viejo (sin actitud_3) no llama al hook aunque sea el agente de reclutamiento", async () => {
     selectAgentProfile.mockResolvedValue({
       ...agenteReclutamiento,

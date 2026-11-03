@@ -19,18 +19,25 @@ export function esAgenteReclutamiento(agente: { name: string } | null | undefine
   return agente?.name === NOMBRE_AGENTE_RECLUTAMIENTO;
 }
 
+// Decisiones 2026-11-03: «Gerente de Ventas» (no «gerente de la plaza»); el contacto es por WhatsApp al
+// número capturado, no «por este chat»; el CV puede ser enlace porque Instagram no manda archivos.
+const PIDE_CV =
+  "Pide su CV: como archivo PDF o Word si puede adjuntarlo, o un enlace (Drive, Dropbox) si el canal no permite archivos.";
+const CONTACTO_WHATSAPP = "Dile que el Gerente de Ventas lo contacta por WhatsApp al número que dejó.";
+
 export const OBJETIVOS_CIERRE = {
   APTO_SIN_CV:
     "El candidato quedó APTO. Felicítalo en una línea y dile por qué encaja (sin números ni criterios). " +
-    "Pídele su CV (PDF o Word, aquí mismo) y pregúntale qué días y horario le acomodan para una entrevista con el gerente de la plaza. Dile que el gerente lo contacta.",
+    PIDE_CV + " Pregúntale qué días y horario le acomodan para una entrevista con el Gerente de Ventas. " + CONTACTO_WHATSAPP,
   APTO_CON_CV:
-    "El candidato quedó APTO y ya mandó su CV. Felicítalo en una línea, agradece el CV y pregúntale qué días y horario le acomodan para una entrevista con el gerente de la plaza. Dile que el gerente lo contacta.",
+    "El candidato quedó APTO y ya mandó su CV. Felicítalo en una línea, agradece el CV y pregúntale qué días y horario le acomodan para una entrevista con el Gerente de Ventas. " +
+    CONTACTO_WHATSAPP,
   APTO_HORARIO_GUARDADO:
-    "Ya tienes su horario preferido. Confírmalo en una línea, dile que el gerente de la plaza lo contacta para fijar la entrevista y despídete con calidez. Si pregunta algo más, responde breve.",
+    "Ya tienes su horario preferido. Confírmalo en una línea, dile que el Gerente de Ventas lo contacta por WhatsApp al número que dejó para fijar la entrevista y despídete con calidez. Si pregunta algo más, responde breve.",
   REVISAR_SIN_CV:
-    "El equipo va a revisar su perfil. Agradécele, pídele su CV (PDF o Word, aquí mismo) y dile que lo contactan en dos días hábiles. No prometas entrevista.",
+    "El equipo va a revisar su perfil. Agradécele. " + PIDE_CV + " Dile que el Gerente de Ventas lo contacta por WhatsApp al número que dejó en dos días hábiles. No prometas entrevista.",
   REVISAR_CON_CV:
-    "El equipo va a revisar su perfil. Agradécele el CV y dile que lo contactan en dos días hábiles. No prometas entrevista.",
+    "El equipo va a revisar su perfil. Agradécele el CV y dile que el Gerente de Ventas lo contacta por WhatsApp al número que dejó en dos días hábiles. No prometas entrevista.",
   NO_APTO:
     "Hoy el perfil no coincide con lo que busca el equipo. Agradécele con tacto, dilo sin listar criterios ni motivos, deja la puerta abierta para más adelante y despídete. No ofrezcas entrevista ni pidas CV. " +
     "Si después pregunta algo más, responde breve y amable sin reabrir la evaluación.",
@@ -68,6 +75,21 @@ async function recargarContacto(c: ContactoConCustom): Promise<ContactoConCustom
     console.warn("[reclutamiento] no se pudo releer el contacto; se evalúa con el cargado al inicio:", err);
     return c;
   }
+}
+
+/**
+ * Contexto mientras el guion sigue (prueba 2026-11-03: el modelo cerró la charla y pidió el CV por su
+ * cuenta cuando una respuesta no casó con el enum). Las reglas van ANTES de la ficha para que pesen más.
+ */
+export function contextoEnCurso(ficha: string): string {
+  return (
+    "Reglas del guion: estás en medio de una entrevista por chat. NO cierres la conversación, NO pidas CV, " +
+    "NO ofrezcas ni prometas entrevista y NO des por terminado nada hasta que el sistema te lo indique. " +
+    "Si el candidato pregunta algo o se desvía, contesta breve con la ficha y retoma la pregunta pendiente en el mismo mensaje. " +
+    "Si una respuesta no fue clara, vuelve a preguntar de otra forma. " +
+    "Solo describe productos y oficinas con la ficha; no inventes desarrollos. " +
+    `Ficha de la vacante: ${ficha}`
+  );
 }
 
 export interface ResultadoHook {
@@ -111,7 +133,7 @@ export async function hookReclutamiento(input: {
     if (cfg.errorModelo) console.warn(`[reclutamiento] reclutamiento.modelo inválido, se usa el default: ${cfg.errorModelo}`);
 
     if (input.playbook.status !== "COMPLETED") {
-      return { contexto: `Ficha de la vacante (úsala solo si el candidato pregunta por sueldo, comisiones, horario o la empresa; luego retoma): ${cfg.ficha}` };
+      return { contexto: contextoEnCurso(cfg.ficha) };
     }
 
     // Playbook completo → evaluar. Dos mensajes casi simultáneos entrarían aquí a la vez:

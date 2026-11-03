@@ -17,6 +17,16 @@ describe("modelo de reclutamiento", () => {
     );
   });
 
+  it("colchon_meses: tener otro ingreso pasa el filtro (prueba 2026-11-03: «Tengo otro trabajo»)", () => {
+    expect(MODELO_DEFAULT.filtros.colchon_meses.pasa).toContain("OTRO_INGRESO");
+  });
+
+  it("la ficha default habla del Gerente de Ventas, no del «gerente de la plaza»", async () => {
+    const { FICHA_DEFAULT } = await import("./modelo");
+    expect(FICHA_DEFAULT).toContain("Gerente de Ventas");
+    expect(FICHA_DEFAULT).not.toMatch(/gerente de la plaza/i);
+  });
+
   it("sin valor en SystemConfig usa el default sin error", () => {
     expect(resolverModelo(undefined)).toEqual({ modelo: MODELO_DEFAULT });
   });
