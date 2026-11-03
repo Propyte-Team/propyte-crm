@@ -284,6 +284,7 @@ export async function getContact(id: string) {
           lastName: true,
           contactType: true,
           contactStatus: true,
+          estado: true, // #953
           createdAt: true,
           assignedToId: true,
           assignedTo: { select: { id: true, name: true } },
@@ -352,6 +353,7 @@ export async function getContact(id: string) {
       nombre: nombreDeContacto(r),
       contactType: r.contactType,
       contactStatus: r.contactStatus,
+      estado: r.estado, // #953
       createdAt: r.createdAt,
       asesor: r.assignedTo?.name ?? null,
     })),

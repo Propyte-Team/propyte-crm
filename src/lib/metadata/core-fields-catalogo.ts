@@ -31,7 +31,11 @@ export const CORE_FIELDS: Record<string, CoreFieldDef[]> = {
     { key: "preferredZone", label: "Zona preferida", group: "Perfil de inversión" },
     { key: "purchaseModality", label: "Modalidad de compra", group: "Perfil de inversión" },
     { key: "rentalStrategy", label: "Estrategia de renta", group: "Perfil de inversión" },
-    { key: "contactStatus", label: "Estado del contacto", group: "Clasificación" },
+    // #953: el estado del flujograma v0.2. Su permiso cubre también subestado y razón de salida.
+    { key: "estado", label: "Estado", group: "Clasificación" },
+    { key: "ticketEstimado", label: "Ticket estimado", group: "Clasificación" },
+    // El estado viejo (Zoho): ya no se edita en la ficha; lo mantiene un disparador de la base.
+    { key: "contactStatus", label: "Estado anterior (Zoho)", group: "Clasificación" },
     { key: "temperature", label: "Temperatura", group: "Clasificación" },
     { key: "contactType", label: "Tipo de contacto", group: "Clasificación" },
     // #948: flujo del flujograma (F1–F8). Gateable por rol como los demás.

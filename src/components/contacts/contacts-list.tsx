@@ -54,7 +54,9 @@ import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } fro
 import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
 import { COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
 import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_SIN_FLUJO, etiquetaFlujo, opcionesFlujo } from "@/lib/flujos";
-import { CONTACT_STATUS_LABELS, CONTACT_STATUS_COLORS, CONTACT_STATUS_ORDER, CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_VACIO_LABEL, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { ESTADO_ORDER, ESTADO_LABELS, ESTADO_SIN_ESTADO, ESTADO_VACIO_LABEL } from "@/lib/estados";
+import { EstadoDelContacto } from "@/components/contacts/estado-del-contacto";
+import { CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_VACIO_LABEL, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 // --- Tipos ---
 interface ContactData {
@@ -68,6 +70,12 @@ interface ContactData {
   contactType: string | null; // null = sin tipo (#863): «—» hasta que alguien lo elija
   flujo?: string | null; // #951: null = «Sin flujo» (#948)
   contactStatus: string;
+  // #953: estado del flujograma v0.2 (null = «Por clasificar») y lo que el chip necesita.
+  estado?: string | null;
+  subestado?: string | null;
+  ticketEstimado?: number | string | null;
+  ticketMoneda?: string | null;
+  razonSalida?: string | null;
   lifecycleStage: string | null;
   createdAt: string;
   // Solo para las columnas opcionales de "Gestionar columnas"; la API ya las manda (include
@@ -309,14 +317,13 @@ export function ContactsList({
     fetchContacts(s, src, tmp, typ, st, 1, lc);
   };
 
-  // Cambio rápido de estado de contacto desde la lista (edición inline)
-  const updateStatus = async (id: string, contactStatus: string) => {
-    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, contactStatus } : c)));
-    await fetch(`/api/contacts?id=${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactStatus }),
-    }).catch(() => null);
+  // #953: el chip de estado guarda por su cuenta (y abre el formulario si el cambio pide razón o
+  // ticket); aquí solo se refleja en la fila lo que respondió el servidor.
+  const updateEstado = (id: string, guardado: Record<string, unknown>) => {
+    const campos = ["estado", "subestado", "contactStatus", "razonSalida", "ticketEstimado", "ticketMoneda"] as const;
+    const cambios: Partial<ContactData> = {};
+    for (const k of campos) if (k in guardado) (cambios as Record<string, unknown>)[k] = guardado[k];
+    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, ...cambios } : c)));
   };
 
   // Cambio rápido del tipo de contacto desde la lista. Si el servidor lo rechaza (permisos,
@@ -495,8 +502,10 @@ export function ContactsList({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Todos los estados</SelectItem>
-                {CONTACT_STATUS_ORDER.map((s) => (
-                  <SelectItem key={s} value={s}>{CONTACT_STATUS_LABELS[s]}</SelectItem>
+                {/* #953: «Por clasificar» = todavía sin estado del flujograma. */}
+                <SelectItem value={ESTADO_SIN_ESTADO}>{ESTADO_VACIO_LABEL}</SelectItem>
+                {ESTADO_ORDER.map((s) => (
+                  <SelectItem key={s} value={s}>{ESTADO_LABELS[s]}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -652,7 +661,8 @@ export function ContactsList({
                           col={c.key}
                           align={c.align ?? "center"}
                           contact={contact}
-                          onStatus={updateStatus}
+                          onEstado={updateEstado}
+                          puedeCorregir={userRole === "ADMIN"}
                           onType={updateType}
                           onFlujo={updateFlujo}
                         />
@@ -820,7 +830,6 @@ function PastillaEditable({
   );
 }
 
-const STATUS_OPTIONS = CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }));
 // #951: "" = «Sin flujo» (un <select> nativo no admite null). Mismo ámbar que el chip de la ficha.
 const FLUJO_OPTIONS = opcionesFlujo();
 const FLUJO_SIN_ELEGIR_COLOR = "#D97706";
@@ -834,14 +843,16 @@ function CeldaContacto({
   col,
   align,
   contact,
-  onStatus,
+  onEstado,
+  puedeCorregir,
   onType,
   onFlujo,
 }: {
   col: string;
   align: "left" | "center";
   contact: ContactData;
-  onStatus: (id: string, v: string) => void;
+  onEstado: (id: string, guardado: Record<string, unknown>) => void;
+  puedeCorregir: boolean;
   onType: (id: string, v: string | null) => void;
   onFlujo: (id: string, v: string | null) => void;
 }) {
@@ -867,13 +878,20 @@ function CeldaContacto({
       // Estado de contacto — edición rápida inline, con la etapa del ciclo debajo.
       return (
         <td className={`${base}`} onClick={(e) => e.stopPropagation()}>
-          <PastillaEditable
-            label={CONTACT_STATUS_LABELS[contact.contactStatus] ?? "Nuevo"}
-            color={CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF"}
-            value={contact.contactStatus ?? "NUEVO"}
-            options={STATUS_OPTIONS}
-            ariaLabel="Cambiar estado"
-            onChange={(v) => onStatus(contact.id, v)}
+          {/* #953: estado del flujograma; solo los cambios permitidos desde el actual. */}
+          <EstadoDelContacto
+            compacto
+            contacto={{
+              id: contact.id,
+              estado: contact.estado ?? null,
+              subestado: contact.subestado ?? null,
+              flujo: contact.flujo ?? null,
+              ticketEstimado: contact.ticketEstimado ?? null,
+              ticketMoneda: contact.ticketMoneda ?? null,
+              razonSalida: contact.razonSalida ?? null,
+            }}
+            puedeCorregir={puedeCorregir}
+            onGuardado={(d) => onEstado(contact.id, d)}
           />
           {contact.lifecycleStage && (
             <span

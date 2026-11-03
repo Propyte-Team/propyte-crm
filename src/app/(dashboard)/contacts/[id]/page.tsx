@@ -41,6 +41,13 @@ export default async function ContactDetailPage(props: ContactPageProps) {
     delete visibleContact.referidos;
     delete visibleContact.referidosNoListados;
   }
+  // #953: «Estado» oculto para el rol → tampoco lo que lo acompaña (subestado, razón, etapa previa).
+  if (fieldAccess.estado === "HIDDEN") {
+    for (const k of ["subestado", "razonSalida", "razonSalidaDetalle", "fechaRecontacto", "etapaPrevia", "reactivaciones"]) {
+      delete visibleContact[k];
+    }
+  }
+  if (fieldAccess.ticketEstimado === "HIDDEN") delete visibleContact.ticketMoneda;
   // #949: «Empresa» oculta para el rol → tampoco el nombre ya resuelto.
   if (fieldAccess.developerPartnerId === "HIDDEN") {
     delete visibleContact.developerPartner;

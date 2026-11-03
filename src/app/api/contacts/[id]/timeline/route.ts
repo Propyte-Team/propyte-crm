@@ -48,6 +48,9 @@ const SOURCE_LABELS: Record<string, string> = {
   flujo_llenado_2026_10_29: "Llenado de flujo (29-oct)",
   // #938: la migración pasó Lead, Comprador e Inversionista a «Lead Comprador».
   tipos_lead_comprador_938: "Cambio de tipos (Lead Comprador)",
+  // #953: la migración llenó el estado nuevo en los casos 1:1; y la corrección de un administrador.
+  estado_llenado_953: "Llenado de estado (#953)",
+  ui_correccion_estado: "Corrección de estado (administrador)",
 };
 
 /** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */
@@ -134,6 +137,13 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             if (visibles >= limit) break;
           }
           if (pagina.length < LOTE) break;
+        }
+
+        // #953: cada cambio de estado arrastra el del estado viejo en la misma transacción (lo
+        // sincroniza el disparador). Ese eco no se muestra: el renglón que cuenta es el de «Estado».
+        const conEstado = new Set(changes.filter((c) => c.field === "estado").map((c) => c.changedAt.getTime()));
+        for (let i = changes.length - 1; i >= 0; i--) {
+          if (changes[i].field === "contactStatus" && conEstado.has(changes[i].changedAt.getTime())) changes.splice(i, 1);
         }
 
         // Batch de nombres: actorId + (para assignedToId) los ids old/new.

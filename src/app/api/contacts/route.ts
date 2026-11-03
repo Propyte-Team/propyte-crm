@@ -27,6 +27,16 @@ import { errorDeCampana } from "@/lib/contacts/campanas";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
 import { FLUJO_ORDER, whereFlujo } from "@/lib/flujos";
+import {
+  ESTADO_ORDER,
+  ESTADOS_CON_TICKET,
+  RAZON_SALIDA_ORDER,
+  CLAVES_DEL_ESTADO,
+  validarCambioDeEstado,
+  whereEstado,
+  esEstado,
+  type DatosDeEstado,
+} from "@/lib/estados";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import {
   FULL_ACCESS_ROLES,
@@ -147,6 +157,30 @@ async function errorDeEmpresa(developerPartnerId: string): Promise<string | null
   return empresa ? null : "La empresa elegida no existe";
 }
 
+// #953: estado del flujograma v0.2 y lo que pide cada cambio (razón, fecha, ticket). Solo en PUT: un
+// contacto nuevo nace en «Nuevo» (default de la base). Las reglas viven en lib/estados.ts.
+const estadoFields = z.object({
+  estado: z.enum(ESTADO_ORDER).nullable().optional(),
+  subestado: z.string().trim().max(60).nullable().optional(),
+  razonSalida: z.enum(RAZON_SALIDA_ORDER).nullable().optional(),
+  razonSalidaDetalle: z.string().trim().max(500).nullable().optional(),
+  fechaRecontacto: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (AAAA-MM-DD)")
+    .nullable()
+    .optional(),
+  ticketEstimado: z.number().positive("El ticket tiene que ser mayor que cero").max(1e12).nullable().optional(),
+  ticketMoneda: z.enum(["MXN", "USD"]).optional(),
+  // Corrección de un administrador: se salta la tabla de transiciones (no los datos obligatorios).
+  forzarCambio: z.boolean().optional(),
+});
+/** Clave de permiso de cada campo del estado (el panel de visibilidad gatea «estado» y «ticketEstimado»). */
+const PERMISO_DE: Record<string, string> = {
+  ...Object.fromEntries(CLAVES_DEL_ESTADO.map((k) => [k, "estado"])),
+  forzarCambio: "estado",
+  ticketMoneda: "ticketEstimado",
+};
+
 // Usado tal cual por POST (exige al menos un identificador de contacto). PUT usa
 // `contactCoreFields.partial()` en vez de este — un ZodEffects (lo que deja `.refine`)
 // no tiene `.partial()`, y de cualquier forma una edición parcial no siempre toca
@@ -250,8 +284,11 @@ export async function GET(request: NextRequest) {
     if (porFlujo) {
       where.flujo = porFlujo.flujo;
     }
-    if (contactStatus) {
-      where.contactStatus = contactStatus as any;
+    // #953: el filtro «Estado» busca por el estado nuevo; «Por clasificar» = sin estado. Un valor del
+    // estado viejo (vistas guardadas antes, p. ej. «PROSPECTO») sigue filtrando por contactStatus.
+    const porEstado = whereEstado(contactStatus, CONTACT_STATUS_ORDER);
+    if (porEstado) {
+      Object.assign(where, porEstado);
     }
     if (lifecycleStage && (LIFECYCLE_ORDER as readonly string[]).includes(lifecycleStage)) {
       where.lifecycleStage = lifecycleStage as never;
@@ -585,7 +622,7 @@ export async function PUT(request: NextRequest) {
 
     // Parsear y validar el body (parcial)
     const body = await request.json();
-    const validation = contactCoreFields.partial().safeParse(body);
+    const validation = contactCoreFields.partial().merge(estadoFields).safeParse(body);
 
     if (!validation.success) {
       return NextResponse.json(
@@ -600,12 +637,58 @@ export async function PUT(request: NextRequest) {
     // La UI no es la frontera de seguridad — se valida también aquí.
     const access = await resolveCoreFieldAccess("contact", session.user.role);
     const locked = nonEditableKeys("contact", access);
-    const attempted = Object.keys(data).filter((k) => locked.has(k));
+    const attempted = Object.keys(data).filter((k) => locked.has(PERMISO_DE[k] ?? k));
     if (attempted.length > 0) {
       return NextResponse.json(
         { error: "No tienes permiso para editar estos campos", fields: attempted },
         { status: 403 }
       );
+    }
+
+    // #953: el estado sigue la tabla de transiciones del flujograma y pide lo que le toca (razón,
+    // detalle, fecha de recontacto, ticket). `forzarCambio` es solo para administradores.
+    if (data.forzarCambio && session.user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Solo un administrador puede corregir el estado fuera del flujograma", fields: ["estado"] },
+        { status: 403 }
+      );
+    }
+    let datosDeEstado: DatosDeEstado = {};
+    const tocaElEstado = CLAVES_DEL_ESTADO.some((k) => data[k] !== undefined);
+    if (tocaElEstado) {
+      const r = validarCambioDeEstado(
+        {
+          estado: existing.estado ?? null,
+          subestado: existing.subestado ?? null,
+          flujo: data.flujo !== undefined ? data.flujo : existing.flujo ?? null,
+          ticketEstimado: existing.ticketEstimado ?? null,
+          razonSalida: existing.razonSalida ?? null,
+          razonSalidaDetalle: existing.razonSalidaDetalle ?? null,
+          fechaRecontacto: existing.fechaRecontacto ?? null,
+        },
+        {
+          estado: data.estado,
+          subestado: data.subestado,
+          razonSalida: data.razonSalida,
+          razonSalidaDetalle: data.razonSalidaDetalle,
+          fechaRecontacto: data.fechaRecontacto,
+          ticketEstimado: data.ticketEstimado,
+        },
+        { forzar: data.forzarCambio === true }
+      );
+      if (!r.ok) {
+        return NextResponse.json({ error: r.error, fields: [r.campo] }, { status: 400 });
+      }
+      datosDeEstado = r.datos;
+    }
+    if (data.ticketEstimado === null) {
+      const estadoFinal = datosDeEstado.estado !== undefined ? datosDeEstado.estado : existing.estado;
+      if (esEstado(estadoFinal) && ESTADOS_CON_TICKET.includes(estadoFinal)) {
+        return NextResponse.json(
+          { error: "Desde Demo el ticket estimado es obligatorio", fields: ["ticketEstimado"] },
+          { status: 400 }
+        );
+      }
     }
 
     // #830: no se puede usar el `.refine` de createContactSchema aquí (PUT valida con
@@ -697,6 +780,9 @@ export async function PUT(request: NextRequest) {
     if (data.contactType !== undefined) updateData.contactType = data.contactType;
     if (data.flujo !== undefined) updateData.flujo = data.flujo; // #948
     if (data.contactStatus !== undefined) updateData.contactStatus = data.contactStatus;
+    Object.assign(updateData, datosDeEstado); // #953
+    if (data.ticketEstimado !== undefined) updateData.ticketEstimado = data.ticketEstimado;
+    if (data.ticketMoneda !== undefined) updateData.ticketMoneda = data.ticketMoneda;
     if (data.urgency !== undefined) updateData.urgency = data.urgency;
     if (data.leadSource !== undefined) updateData.leadSource = data.leadSource;
     if (data.leadSourceDetail !== undefined) updateData.leadSourceDetail = data.leadSourceDetail || null;
@@ -754,7 +840,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const contact = await withChangeSource(
-      { source: "ui", actorId: session.user.id },
+      // #953: una corrección de estado fuera del flujograma queda marcada en la cronología.
+      { source: data.forzarCambio ? "ui_correccion_estado" : "ui", actorId: session.user.id },
       (tx) =>
         tx.contact.update({
           where: { id },

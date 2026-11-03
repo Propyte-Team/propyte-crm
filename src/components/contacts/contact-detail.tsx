@@ -49,11 +49,11 @@ import { BrokerDelContacto } from "@/components/contacts/broker-del-contacto";
 import { RegistrarEnBroker } from "@/components/contacts/registrar-en-broker";
 import { tituloRegistros } from "@/lib/contacts/referidos";
 import { opcionesFlujo } from "@/lib/flujos";
+import { EstadoDelContacto } from "@/components/contacts/estado-del-contacto";
+import { etiquetaEstado } from "@/lib/estados";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
 import {
   CONTACT_STATUS_LABELS,
-  CONTACT_STATUS_COLORS,
-  CONTACT_STATUS_ORDER,
   URGENCY_LABELS,
   URGENCY_COLORS,
   CONTACT_TYPE_LABELS,
@@ -255,8 +255,6 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
     if (res.ok) router.push("/contacts");
   };
 
-  const statusColor = CONTACT_STATUS_COLORS[contact.contactStatus] ?? "#9CA3AF";
-
   // #907: referidos del broker. La sección se muestra en todo Broker (aunque aún no tenga) y en
   // cualquier contacto que ya tenga referidos ligados, para que no queden ligas invisibles si
   // alguien le cambia el tipo.
@@ -290,14 +288,25 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
             {acc("referredById") !== "HIDDEN" && <ReferidoPorEncabezado referredBy={contact.referredBy} />}
             {/* Chips editables inline */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {acc("contactStatus") !== "HIDDEN" && (
-                <ChipSelect
-                  value={contact.contactStatus ?? "NUEVO"}
-                  options={CONTACT_STATUS_ORDER.map((s) => ({ value: s, label: CONTACT_STATUS_LABELS[s] }))}
-                  dotColor={statusColor}
-                  loading={busy === "contactStatus"}
-                  readOnly={acc("contactStatus") !== "EDIT"}
-                  onChange={(v) => changeField("contactStatus", v)}
+              {/* #953: estado del flujograma v0.2 (con subestado, razón de salida y ticket). El
+                  estado viejo (contactStatus) ya no se edita aquí: lo sigue un disparador. */}
+              {acc("estado") !== "HIDDEN" && (
+                <EstadoDelContacto
+                  contacto={{
+                    id: contact.id,
+                    estado: contact.estado ?? null,
+                    subestado: contact.subestado ?? null,
+                    flujo: contact.flujo ?? null,
+                    ticketEstimado: contact.ticketEstimado ?? null,
+                    ticketMoneda: contact.ticketMoneda ?? null,
+                    razonSalida: contact.razonSalida ?? null,
+                    razonSalidaDetalle: contact.razonSalidaDetalle ?? null,
+                    fechaRecontacto: contact.fechaRecontacto ?? null,
+                  }}
+                  readOnly={acc("estado") !== "EDIT"}
+                  sinTicket={acc("ticketEstimado") === "HIDDEN"}
+                  puedeCorregir={userRole === "ADMIN"}
+                  onGuardado={() => router.refresh()}
                 />
               )}
               {acc("temperature") !== "HIDDEN" && (
@@ -730,7 +739,10 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
                       <td className="py-2">
                         {r.contactType ? CONTACT_TYPE_LABELS[r.contactType] ?? r.contactType : CONTACT_TYPE_VACIO_LABEL}
                       </td>
-                      <td className="py-2">{CONTACT_STATUS_LABELS[r.contactStatus] ?? r.contactStatus ?? "—"}</td>
+                      {/* #953: el estado nuevo; si aún no tiene, el viejo como referencia. */}
+                      <td className="py-2">
+                        {r.estado ? etiquetaEstado(r.estado) : CONTACT_STATUS_LABELS[r.contactStatus] ?? etiquetaEstado(null)}
+                      </td>
                       <td className="py-2">{r.asesor ?? "Sin asignar"}</td>
                       <td className="py-2 text-[color:var(--text-tertiary)]">{formatShort(r.createdAt)}</td>
                     </tr>
@@ -794,6 +806,7 @@ interface Referido {
   nombre: string;
   contactType: string | null;
   contactStatus: string;
+  estado?: string | null; // #953
   createdAt: string;
   asesor: string | null;
 }
