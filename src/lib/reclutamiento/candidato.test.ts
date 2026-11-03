@@ -20,7 +20,7 @@ vi.mock("@/lib/bot/claude", () => ({ askClaude: (...a: unknown[]) => askClaude(.
 import { asegurarCandidato, persistirEvaluacion, plazaDeRespuesta, guardarHorario, reclamarEvaluacion, sincronizarCandidato } from "./candidato";
 
 const contacto = { id: "k1", firstName: "Ana", lastName: "López", phone: "+5219991112233", email: "ana@x.mx" };
-const filaDb = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, files: [] };
+const filaDb = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, cvUrl: null, files: [] };
 
 beforeEach(() => { findFirst.mockReset(); update.mockReset(); updateMany.mockReset(); crearCandidato.mockReset(); askClaude.mockReset(); });
 
@@ -33,6 +33,13 @@ describe("asegurarCandidato", () => {
     const where = (findFirst.mock.calls[0][0] as { where: unknown }).where;
     expect(where).toEqual({ contactId: "k1", deletedAt: null });
     expect(crearCandidato).not.toHaveBeenCalled();
+  });
+  it("el CV como enlace (cvUrl) cuenta como CV recibido; sin archivo ni enlace, no", async () => {
+    findFirst.mockResolvedValue({ ...filaDb, cvUrl: "https://drive.google.com/file/d/1/view" });
+    expect((await asegurarCandidato({ contact: contacto, canal: "INSTAGRAM", conversationId: "v1" }))?.tieneCv).toBe(true);
+    findFirst.mockResolvedValue(filaDb);
+    expect((await asegurarCandidato({ contact: contacto, canal: "INSTAGRAM", conversationId: "v1" }))?.tieneCv).toBe(false);
+    expect((findFirst.mock.calls[0][0] as { select: { cvUrl?: boolean } }).select.cvUrl).toBe(true);
   });
   it("#959: adopta la ficha que creó el disparador (origen CONTACTO): canal del bot y origen CHAT con la conversación", async () => {
     findFirst.mockResolvedValue(filaDb);

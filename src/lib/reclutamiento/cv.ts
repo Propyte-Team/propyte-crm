@@ -2,6 +2,8 @@
 // Reclutamiento y se registra con la MISMA función que la subida manual (registrarCvDeCandidato),
 // con origen CHAT y el id del mensaje como referencia (idempotente por el índice único).
 // Se llama desde la ingesta (messaging/core.ts) tras guardar el mensaje. Nunca lanza.
+// Instagram no manda archivos (prueba 2026-11-03): el CV también puede llegar como enlace en el
+// texto (Drive, Dropbox…) y se guarda en recruit_candidates.cvUrl (ligarCvPorEnlace).
 import prisma from "@/lib/db";
 import { CV_TIPOS, extension } from "@/lib/contacts/archivos";
 import { isStoragePath } from "@/lib/storage/chat-media";
@@ -84,6 +86,56 @@ export async function ligarCv(msg: {
   } catch (err) {
     const code = (err as { code?: string } | null)?.code;
     if (!code || !SIN_MIGRAR.has(code)) console.warn("[reclutamiento] ligarCv falló:", err);
+    return false;
+  }
+}
+
+/** Hosts (y sus subdominios) donde la gente comparte un CV cuando el canal no admite archivos. */
+const HOSTS_CV = ["drive.google.com", "docs.google.com", "dropbox.com", "onedrive.live.com", "1drv.ms", "icloud.com", "wetransfer.com"];
+const EXT_CV_EN_RUTA = /\.(pdf|docx?)$/i;
+
+function esHostDeCv(host: string): boolean {
+  const h = host.toLowerCase();
+  return HOSTS_CV.some((d) => h === d || h.endsWith(`.${d}`));
+}
+
+/**
+ * Primer enlace del texto que parece un CV: host de nube conocido, o ruta que termina en
+ * .pdf/.doc/.docx (sin contar el query string). Cualquier otro (instagram.com, fotos…) → null.
+ */
+export function enlaceDeCv(texto: string | null | undefined): string | null {
+  if (!texto) return null;
+  for (const m of texto.match(/https?:\/\/[^\s<>"']+/gi) ?? []) {
+    const limpio = m.replace(/[.,;:)\]]+$/, "");
+    let url: URL;
+    try {
+      url = new URL(limpio);
+    } catch {
+      continue;
+    }
+    if (esHostDeCv(url.hostname) || EXT_CV_EN_RUTA.test(url.pathname)) return limpio;
+  }
+  return null;
+}
+
+/**
+ * Mensaje INBOUND con un enlace a CV → `cvUrl` del candidato del contacto, solo si estaba vacío
+ * (el primero gana; el gerente puede cambiarlo a mano). Devuelve true si lo guardó. Nunca lanza.
+ */
+export async function ligarCvPorEnlace(msg: { id: string; contactId: string; body: string | null }): Promise<boolean> {
+  const url = enlaceDeCv(msg.body);
+  if (!url) return false;
+  try {
+    const cand = await prisma.recruitCandidate.findFirst({
+      where: { contactId: msg.contactId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!cand) return false;
+    const r = await prisma.recruitCandidate.updateMany({ where: { id: cand.id, cvUrl: null }, data: { cvUrl: url.slice(0, 2000) } });
+    return r.count === 1;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (!code || !SIN_MIGRAR.has(code)) console.warn(`[reclutamiento] ligarCvPorEnlace falló (${msg.id}):`, err);
     return false;
   }
 }

@@ -38,6 +38,7 @@ const SELECT_BOT = {
   botResultado: true,
   botEvaluadoAt: true,
   horarioEntrevista: true,
+  cvUrl: true,
   files: { where: { kind: "CV", deletedAt: null }, select: { id: true }, take: 1 },
 } as const;
 
@@ -47,6 +48,7 @@ type FilaBot = {
   botResultado: string | null;
   botEvaluadoAt: Date | null;
   horarioEntrevista: string | null;
+  cvUrl: string | null;
   files: Array<{ id: string }>;
 };
 
@@ -57,7 +59,8 @@ function aCandidatoBot(f: FilaBot): CandidatoBot {
     botResultado: (f.botResultado as Veredicto | null) ?? null,
     botEvaluadoAt: f.botEvaluadoAt,
     horarioEntrevista: f.horarioEntrevista,
-    tieneCv: f.files.length > 0,
+    // Archivo registrado o enlace (Instagram no manda archivos): ambos cuentan como CV recibido.
+    tieneCv: f.files.length > 0 || Boolean(f.cvUrl?.trim()),
   };
 }
 
