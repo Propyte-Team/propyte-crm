@@ -572,7 +572,7 @@ export async function handleInboundMessage(
         await ligarCvPorEnlace({ id: message.id, contactId: message.contactId, body: message.body });
       }
     } catch (err) {
-      console.warn(`[messaging] ligarCv falló (${message.id}):`, err);
+      console.warn(`[messaging] no se pudo ligar el CV (archivo o enlace) del mensaje ${message.id}:`, err);
     }
   }
 

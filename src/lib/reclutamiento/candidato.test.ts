@@ -88,14 +88,16 @@ describe("asegurarCandidato", () => {
 });
 
 describe("sincronizarCandidato (cada turno del bot)", () => {
-  it("copia nombre, teléfono, correo y respuestas a la ficha sin tocar etapa ni evaluación", async () => {
+  const fichaVacia = { fullName: "Candidato por chat", phone: null, email: null };
+  it("llena nombre, teléfono, correo y respuestas en una ficha vacía, sin tocar etapa ni evaluación", async () => {
+    findFirst.mockResolvedValue(fichaVacia);
     updateMany.mockResolvedValue({ count: 1 });
     await sincronizarCandidato({
       candidatoId: "c1",
       contacto: { firstName: "Myriam", lastName: "Pérez", phone: "+5219991112233", email: "my@x.mx" },
       respuestas: { mayor_edad: "SI", plaza: "PDC", disponibilidad: "TIEMPO_COMPLETO" },
     });
-    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect((findFirst.mock.calls[0][0] as { where: unknown }).where).toEqual({ id: "c1" });
     const arg = updateMany.mock.calls[0][0] as { where: unknown; data: Record<string, unknown> };
     expect(arg.where).toEqual({ id: "c1" });
     expect(arg.data).toEqual({
@@ -106,24 +108,41 @@ describe("sincronizarCandidato (cada turno del bot)", () => {
     });
     expect("stage" in arg.data).toBe(false);
     expect("botResultado" in arg.data).toBe(false);
-    expect("botEvaluadoAt" in arg.data).toBe(false);
+  });
+  it("no pisa lo que el reclutador corrigió: solo actualiza las respuestas", async () => {
+    findFirst.mockResolvedValue({ fullName: "Myriam Morales Jiménez", phone: "+529841234567", email: "real@x.mx" });
+    updateMany.mockResolvedValue({ count: 1 });
+    await sincronizarCandidato({
+      candidatoId: "c1",
+      contacto: { firstName: "Myriam", lastName: "MJ", phone: "+523221227932", email: "ig@x.mx" },
+      respuestas: { plaza: "PDC" },
+    });
+    expect((updateMany.mock.calls[0][0] as { data: unknown }).data).toEqual({ botRespuestas: { plaza: "PDC" } });
   });
   it("solo nombre (sin apellido) y sin respuestas: manda fullName y nada más", async () => {
+    findFirst.mockResolvedValue(fichaVacia);
     updateMany.mockResolvedValue({ count: 1 });
     await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: " Myriam ", lastName: null, phone: "  ", email: null }, respuestas: {} });
     expect((updateMany.mock.calls[0][0] as { data: unknown }).data).toEqual({ fullName: "Myriam" });
   });
   it("con contacto vacío y sin respuestas no toca la base", async () => {
     await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "", lastName: "", phone: null, email: null }, respuestas: {} });
+    expect(findFirst).not.toHaveBeenCalled();
     expect(updateMany).not.toHaveBeenCalled();
   });
-  it("no pisa la ficha con el nombre provisional «Candidato por chat»", async () => {
+  it("no escribe el nombre provisional «Candidato por chat»", async () => {
+    findFirst.mockResolvedValue(fichaVacia);
     updateMany.mockResolvedValue({ count: 1 });
     await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "Candidato por chat", lastName: "", phone: "+521", email: null }, respuestas: {} });
     expect((updateMany.mock.calls[0][0] as { data: unknown }).data).toEqual({ phone: "+521" });
   });
+  it("sin nada nuevo que llenar no actualiza", async () => {
+    findFirst.mockResolvedValue({ fullName: "Ana López", phone: "+52999", email: "a@x.mx" });
+    await sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "Ana", lastName: "L", phone: "+52111", email: null }, respuestas: {} });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
   it("nunca lanza", async () => {
-    updateMany.mockRejectedValue(new Error("db"));
+    findFirst.mockRejectedValue(new Error("db"));
     await expect(
       sincronizarCandidato({ candidatoId: "c1", contacto: { firstName: "A", lastName: "B", phone: null, email: null }, respuestas: {} })
     ).resolves.toBeUndefined();

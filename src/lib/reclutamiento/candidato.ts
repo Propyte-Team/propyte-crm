@@ -239,14 +239,28 @@ export async function sincronizarCandidato(input: {
   respuestas: Respuestas;
 }): Promise<void> {
   const { contacto, respuestas } = input;
-  const data: Prisma.RecruitCandidateUncheckedUpdateInput = {};
   const nombre = `${contacto.firstName ?? ""} ${contacto.lastName ?? ""}`.trim().replace(/\s+/g, " ");
-  if (nombre && nombre !== NOMBRE_PROVISIONAL) data.fullName = nombre.slice(0, 200);
-  if (contacto.phone?.trim()) data.phone = contacto.phone.trim();
-  if (contacto.email?.trim()) data.email = contacto.email.trim();
-  if (Object.keys(respuestas).length > 0) data.botRespuestas = respuestas as Prisma.InputJsonValue;
-  if (Object.keys(data).length === 0) return;
+  const telefono = contacto.phone?.trim() ?? "";
+  const correo = contacto.email?.trim() ?? "";
+  const hayRespuestas = Object.keys(respuestas).length > 0;
+  if (!(nombre && nombre !== NOMBRE_PROVISIONAL) && !telefono && !correo && !hayRespuestas) return;
   try {
+    // Solo llena lo vacío: lo que un reclutador corrige en /reclutamiento no se pisa en el siguiente
+    // turno (editarCandidato no toca el contacto, así que el contacto conserva el dato del chat).
+    const actual = await prisma.recruitCandidate.findFirst({
+      where: { id: input.candidatoId },
+      select: { fullName: true, phone: true, email: true },
+    });
+    if (!actual) return;
+    const vacio = (v: string | null | undefined) => !v || !v.trim();
+    const data: Prisma.RecruitCandidateUncheckedUpdateInput = {};
+    if (nombre && nombre !== NOMBRE_PROVISIONAL && (vacio(actual.fullName) || actual.fullName === NOMBRE_PROVISIONAL)) {
+      data.fullName = nombre.slice(0, 200);
+    }
+    if (telefono && vacio(actual.phone)) data.phone = telefono;
+    if (correo && vacio(actual.email)) data.email = correo;
+    if (hayRespuestas) data.botRespuestas = respuestas as Prisma.InputJsonValue;
+    if (Object.keys(data).length === 0) return;
     await prisma.recruitCandidate.updateMany({ where: { id: input.candidatoId }, data });
   } catch (err) {
     console.warn("[reclutamiento] no se pudo sincronizar la ficha del candidato:", err);
