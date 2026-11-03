@@ -9,6 +9,9 @@ import { MappingEditor } from "./mapping-editor";
 import { BrandSelect, useBrandOptions } from "./brand-select";
 import { WhatsAppCoexConnect } from "./whatsapp-coex-connect";
 import { formatDate } from "@/lib/format-date";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { leerError } from "@/lib/api-errors";
+import { estadoDeConexion, traducirErrorConexion, type TonoEstado } from "./connection-status";
 import { coexStatusOf, type CoexStatusKind } from "@/lib/whatsapp/coex/status";
 import type { EmbeddedSignupAvailability } from "@/lib/whatsapp/coex/public-config";
 
@@ -36,7 +39,38 @@ const TOKEN_PROVIDERS = new Set(["INSTAGRAM", "MESSENGER"]);
 // tiene su Messenger y solo falta el IG.
 const META_DMS_PROVIDER = "MESSENGER";
 
-const STATUS_DOT: Record<string, string> = { ACTIVE: "bg-green-600", PAUSED: "bg-neutral-300", ERROR: "bg-red-600" };
+const TONO_DOT: Record<TonoEstado, string> = { ok: "bg-green-600", error: "bg-red-600", pausa: "bg-neutral-300", neutro: "bg-amber-500" };
+const TONO_TEXTO: Record<TonoEstado, string> = { ok: "text-green-700", error: "text-destructive", pausa: "text-muted-foreground", neutro: "text-muted-foreground" };
+
+/** Punto + texto del estado, para que no dependa solo del color. */
+function EstadoChip({ c }: { c: Conn }) {
+  const e = estadoDeConexion(c);
+  return (
+    <span className={`flex shrink-0 items-center gap-1 text-[11px] ${TONO_TEXTO[e.tono]}`}>
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${TONO_DOT[e.tono]}`} />
+      {e.texto}
+    </span>
+  );
+}
+
+/** Último error traducido; el texto crudo del proveedor queda bajo «Detalle técnico». */
+function ErrorDeConexion({ c, conNombre }: { c: Conn; conNombre?: boolean }) {
+  const t = traducirErrorConexion(c.lastError);
+  if (!t) return null;
+  return (
+    <div className="mt-1 text-[11px] text-destructive">
+      <p>
+        {conNombre ? `${c.name}: ` : ""}
+        {t.mensaje}
+        {c.errorCount > 0 ? ` (${c.errorCount} ${c.errorCount === 1 ? "error" : "errores"})` : ""}
+      </p>
+      <details className="text-muted-foreground">
+        <summary className="cursor-pointer">Detalle técnico</summary>
+        <p className="mt-0.5 break-words font-mono text-[10px]">{t.detalle}</p>
+      </details>
+    </div>
+  );
+}
 // 2026-10-14: WhatsApp conectado por Embedded Signup (coexistencia) — ver whatsapp-coex-connect.tsx.
 const WHATSAPP_PROVIDER = "WHATSAPP";
 const COEX_BADGE: Record<CoexStatusKind, string> = {
@@ -59,6 +93,7 @@ export function ConnectionsView({
   /** ¿Se puede lanzar Embedded Signup? Lo decide el servidor leyendo el entorno (2026-10-14). */
   embeddedSignup?: EmbeddedSignupAvailability;
 }) {
+  const confirmar = useConfirm();
   const [connectors, setConnectors] = useState<Conn[]>(initial);
   const [wizardProvider, setWizardProvider] = useState<string | null>(null);
   const [metaDmsOpen, setMetaDmsOpen] = useState(false);
@@ -159,11 +194,18 @@ export function ConnectionsView({
   }, [tokenDraft, tokenBusy, reload]);
 
   const remove = useCallback(async (c: Conn) => {
-    if (!confirm(`¿Eliminar conexión "${c.name}"?`)) return;
+    const ok = await confirmar({
+      titulo: `¿Eliminar la conexión "${c.name}"?`,
+      descripcion:
+        "Dejará de recibir prospectos y mensajes por esta cuenta, y se pierde su configuración (credenciales y mapeo de campos). Los prospectos que ya llegaron se conservan. Para volver a usarla tendrás que conectarla de nuevo. Si solo quieres detenerla un tiempo, mejor usa Pausar.",
+      confirmar: "Eliminar conexión",
+      peligroso: true,
+    });
+    if (!ok) return;
     const res = await fetch(`/api/admin/connectors/${c.id}`, { method: "DELETE" });
-    if (!res.ok) { setError(`No se pudo eliminar "${c.name}".`); return; }
+    if (!res.ok) { setError(`No se pudo eliminar "${c.name}": ${await leerError(res, "intenta de nuevo")}`); return; }
     reload();
-  }, [reload]);
+  }, [reload, confirmar]);
 
   const byGroup = GROUP_ORDER.map((g) => ({
     group: g,
@@ -174,10 +216,10 @@ export function ConnectionsView({
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
       <header className="mb-6">
-        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Admin</p>
+        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Canales conectados</p>
         <h1 className="text-[28px] font-semibold tracking-tight">Conexiones</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Conecta tus cuentas para jalar leads al CRM. Multicuenta por plataforma.
+          Conecta tus cuentas para que los prospectos lleguen al CRM. Puedes tener varias por plataforma.
         </p>
         {/* Entrega 3 de marcas: lo que se puede estar perdiendo (sin dueño, dueño técnico,
             mensajes a cuentas sin registrar). */}
@@ -185,7 +227,7 @@ export function ConnectionsView({
           href="/conexiones/huerfanos"
           className="mt-3 inline-flex items-center gap-2 rounded-md border px-2 py-1 text-[12px] hover:bg-muted/50"
         >
-          Leads huérfanos
+          Prospectos sin atender
           {typeof orphanCount === "number" && (
             <span className="rounded-full bg-foreground px-1.5 font-mono text-[10px] text-background">
               {orphanCount}
@@ -214,14 +256,14 @@ export function ConnectionsView({
                   <span className="text-[13px] font-medium">{p.label}</span>
                   <span className="font-mono text-[11px] text-muted-foreground">
                     {pushOnly
-                      ? "push-only · v2"
-                      : `${accounts.filter((a) => a.status === "ACTIVE").length}/${accounts.length}`}
+                      ? "Próximamente"
+                      : `${accounts.filter((a) => a.status === "ACTIVE").length} activas de ${accounts.length}`}
                   </span>
                 </div>
 
                 {pushOnly ? (
                   <p className="mt-1 rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
-                    {p.note}
+                    Esta conexión todavía no está disponible.
                   </p>
                 ) : (
                   <>
@@ -229,10 +271,8 @@ export function ConnectionsView({
                       <div key={c.id} className="mt-1.5 rounded-md border p-2 text-[12px]">
                         <div className="flex items-center justify-between">
                           <span className="flex min-w-0 items-center gap-2">
-                            <span
-                              className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[c.status] ?? "bg-neutral-300"}`}
-                            />
                             <span className="truncate">{c.name}</span>
+                            <EstadoChip c={c} />
                             {c.brand && (
                               <span className="shrink-0 rounded-full border px-1.5 text-[10px] text-muted-foreground">
                                 {c.brand.name}
@@ -252,7 +292,7 @@ export function ConnectionsView({
                           </span>
                           <span className="flex shrink-0 items-center gap-3">
                             <span className="font-mono text-[11px] text-muted-foreground">
-                              {c._count.leadLogs} ·{" "}
+                              {c._count.leadLogs} {c._count.leadLogs === 1 ? "prospecto" : "prospectos"} · último:{" "}
                               {c.lastLeadAt ? formatDate(c.lastLeadAt) : "—"}
                             </span>
                             <button className="text-[11px] underline" onClick={() => toggle(c)}>
@@ -299,7 +339,7 @@ export function ConnectionsView({
                               htmlFor={`token-${c.id}`}
                               className="text-[10px] uppercase tracking-wide text-muted-foreground"
                             >
-                              Nuevo Page Access Token
+                              Nuevo token de acceso de la Página
                             </label>
                             <input
                               id={`token-${c.id}`}
@@ -347,9 +387,7 @@ export function ConnectionsView({
                       </div>
                     ))}
                     {accounts.filter((c) => c.lastError).map((c) => (
-                      <p key={`err-${c.id}`} className="mt-1 truncate text-[11px] text-destructive">
-                        {c.name}: {c.lastError}
-                      </p>
+                      <ErrorDeConexion key={`err-${c.id}`} c={c} conNombre />
                     ))}
                     {p.id === WHATSAPP_PROVIDER && (
                       <WhatsAppCoexConnect
@@ -430,8 +468,8 @@ export function ConnectionsView({
                 <div key={c.id} className="mt-1.5 rounded-md border p-2 text-[12px]">
                   <div className="flex items-center justify-between">
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[c.status] ?? "bg-neutral-300"}`} />
-                      <span className="truncate">{c.owner?.name ?? "Sin dueño"}</span>
+                      <span className="truncate">{c.owner?.name ?? "Asesor no asignado"}</span>
+                      <EstadoChip c={c} />
                       <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{display}</span>
                       {coex && (
                         <span
@@ -451,7 +489,7 @@ export function ConnectionsView({
                       </button>
                     </span>
                   </div>
-                  {c.lastError && <p className="mt-1 truncate text-[11px] text-destructive">{c.lastError}</p>}
+                  <ErrorDeConexion c={c} />
                 </div>
               );
             })}

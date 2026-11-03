@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { leerError } from "@/lib/api-errors";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/use-toast";
 
-interface Ct {
+export interface Ct {
   id: string;
   firstName: string;
   lastName: string;
@@ -20,6 +24,15 @@ type MatchType = "strong" | "name";
 interface DupGroup {
   matchType: MatchType;
   contacts: Ct[];
+}
+
+// Sugerido: el contacto con más negocios + actividades; a igualdad, el más antiguo.
+export function elegirPrincipal(contacts: Ct[]): Ct {
+  return [...contacts].sort(
+    (a, b) =>
+      b._count.deals + b._count.activities - (a._count.deals + a._count.activities) ||
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  )[0];
 }
 
 function channelLabel(c: Ct): string {
@@ -40,6 +53,7 @@ function MatchBadge({ matchType }: { matchType: MatchType }) {
 }
 
 export function DuplicadosClient() {
+  const confirmar = useConfirm();
   const [groups, setGroups] = useState<DupGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [survivors, setSurvivors] = useState<Record<number, string>>({});
@@ -48,18 +62,16 @@ export function DuplicadosClient() {
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/contacts/duplicates");
-    const json = await res.json();
+    if (!res.ok) {
+      toast({ title: "No se pudieron cargar los duplicados", description: await leerError(res), variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+    const json = await res.json().catch(() => ({}));
     const data: DupGroup[] = json.data ?? [];
     const def: Record<number, string> = {};
     data.forEach((g, idx) => {
-      const best = [...g.contacts].sort(
-        (a, b) =>
-          b._count.deals +
-          b._count.activities -
-          (a._count.deals + a._count.activities) ||
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      )[0];
-      def[idx] = best.id;
+      def[idx] = elegirPrincipal(g.contacts).id;
     });
     setGroups(data);
     setSurvivors(def);
@@ -74,12 +86,14 @@ export function DuplicadosClient() {
     const survivorId = survivors[idx];
     if (!survivorId) return;
     const losers = group.filter((c) => c.id !== survivorId);
-    if (
-      !window.confirm(
-        `¿Fusionar ${losers.length} contacto(s) en el seleccionado? Es reversible (soft-delete).`
-      )
-    )
-      return;
+    const ok = await confirmar({
+      titulo: `¿Fusionar ${losers.length} ${losers.length === 1 ? "contacto" : "contactos"} en el contacto principal?`,
+      descripcion:
+        "Los demás contactos se archivan y no se pueden recuperar desde la pantalla. Sus negocios y actividades pasan al contacto principal.",
+      confirmar: "Fusionar",
+      peligroso: true,
+    });
+    if (!ok) return;
     setBusy(true);
     for (const l of losers) {
       const res = await fetch("/api/contacts/merge", {
@@ -88,8 +102,7 @@ export function DuplicadosClient() {
         body: JSON.stringify({ survivorId, loserId: l.id }),
       });
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        alert(j.error ?? "Error al fusionar");
+        toast({ title: "No se pudo fusionar", description: await leerError(res, "Error al fusionar"), variant: "destructive" });
         break;
       }
     }
@@ -104,7 +117,7 @@ export function DuplicadosClient() {
           Contactos duplicados
         </h1>
         <p className="text-[13px] text-[color:var(--text-tertiary)]">
-          Agrupados por email/teléfono (fuerte) o por nombre (débil). Elige el sobreviviente y fusiona.
+          Agrupados por email/teléfono (fuerte) o por nombre (débil). Elige el contacto principal y fusiona.
         </p>
       </div>
 
@@ -137,7 +150,7 @@ export function DuplicadosClient() {
                   disabled={busy}
                   onClick={() => mergeGroup(idx, g.contacts)}
                 >
-                  Fusionar en el seleccionado
+                  Fusionar en el contacto principal
                 </button>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -160,6 +173,11 @@ export function DuplicadosClient() {
                       <span className="font-medium text-[color:var(--text-primary)]">
                         {c.firstName} {c.lastName}
                       </span>{" "}
+                      {elegirPrincipal(g.contacts).id === c.id && (
+                        <span className="mr-1 rounded bg-[color:var(--color-teal,#0D9488)] px-1.5 py-0.5 text-[10px] font-medium text-white">
+                          Sugerido
+                        </span>
+                      )}
                       <span
                         className="rounded border px-1 text-[10px] text-[color:var(--text-tertiary)]"
                         style={{ borderColor: "var(--border-subtle)" }}
@@ -170,9 +188,18 @@ export function DuplicadosClient() {
                         {c.email ?? "sin email"} · {c.phone}
                       </span>
                       <span className="block text-[color:var(--text-tertiary)]">
-                        {c._count.deals} deals · {c._count.activities} act. ·{" "}
+                        {c._count.deals} negocios · {c._count.activities} actividades ·{" "}
                         {c.assignedTo?.name ?? "sin asesor"}
                       </span>
+                      <Link
+                        href={`/contacts/${c.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-0.5 inline-block text-[12px] underline text-[color:var(--text-secondary)]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Ver ficha
+                      </Link>
                     </span>
                   </label>
                 ))}

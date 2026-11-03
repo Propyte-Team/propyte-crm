@@ -6,6 +6,16 @@ import { useState, useEffect, useCallback } from "react";
 import { QrCode, Save, Trash2, Plus, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { telefonoSinEspacios } from "@/lib/phone";
+import { erroresPorCampo, leerError, mensajeDeError } from "@/lib/api-errors";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/use-toast";
+import { etiqueta, PREFERRED_LANGUAGE_LABELS } from "@/lib/labels";
+
+const CHANNEL_LABELS_PLANTILLA: Record<string, string> = { WHATSAPP: "WhatsApp", EMAIL: "Correo", SMS: "SMS" };
+
+// Campos que la API acepta vaciar (cadena vacía). El resto (agenda, alias, slug) valida formato
+// y rechaza "": si están vacíos no se mandan.
+const VACIABLES = new Set<string>(["jobTitle", "bioEs", "bioEn", "phoneDirect", "whatsappNumber", "emailSignatureHtml"]);
 
 const TABS = [
   { key: "perfil", label: "Perfil" },
@@ -40,12 +50,13 @@ interface Template {
   isGlobal: boolean;
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
       <label className="form-label !mb-0">{label}</label>
       {children}
       {hint && <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{hint}</p>}
+      {error && <p role="alert" className="text-[12px] text-destructive">{error}</p>}
     </div>
   );
 }
@@ -56,6 +67,8 @@ export function SettingsView() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const confirmar = useConfirm();
   const [newTpl, setNewTpl] = useState({ channel: "WHATSAPP", name: "", shortcut: "", body: "", language: "ES" });
 
   const load = useCallback(async () => {
@@ -87,7 +100,17 @@ export function SettingsView() {
   }, [])
 
   async function disconnectGoogle() {
-    await fetch("/api/google/oauth/disconnect", { method: "DELETE" })
+    const ok = await confirmar({
+      titulo: "¿Desconectar tu cuenta de Gmail?",
+      descripcion:
+        "Dejarás de enviar correos desde el CRM con tu Gmail y ya no se registrarán tus conversaciones en el historial de cada contacto. Los correos ya registrados se conservan. Puedes volver a conectarla cuando quieras.",
+      confirmar: "Desconectar",
+      peligroso: true,
+    })
+    if (!ok) return
+    const res = await fetch("/api/google/oauth/disconnect", { method: "DELETE" })
+    if (res.ok) toast({ title: "Gmail desconectado" })
+    else toast({ title: "No se pudo desconectar", description: await leerError(res), variant: "destructive" })
     await loadGw()
   }
 
@@ -109,10 +132,14 @@ export function SettingsView() {
   async function save(fields: (keyof ProfileData)[]) {
     setSaving(true);
     setMsg("");
+    setFieldErrors({});
     const payload: Record<string, unknown> = {};
     for (const f of fields) {
       const v = profile[f];
-      if (v !== undefined && v !== "" && f !== "user") payload[f] = v;
+      if (f === "user" || v === undefined) continue;
+      // Un campo vaciado se manda como "" para poder borrar el valor guardado (antes se omitía).
+      if (v === "" && !VACIABLES.has(f)) continue;
+      payload[f] = v;
     }
     const res = await fetch("/api/profile", {
       method: "PATCH",
@@ -122,7 +149,8 @@ export function SettingsView() {
     if (res.ok) setMsg("Guardado ✓");
     else {
       const data = await res.json().catch(() => ({}));
-      setMsg(typeof data.error === "string" ? data.error : "Revisa los campos (formato inválido)");
+      setFieldErrors(erroresPorCampo(data));
+      setMsg(mensajeDeError(data, "No se pudo guardar. Revisa los campos marcados."));
     }
     setSaving(false);
   }
@@ -142,13 +170,22 @@ export function SettingsView() {
       } else setMsg("Plantilla creada ✓");
       load();
     } else {
-      setMsg(typeof data.error === "string" ? data.error : "Error al crear (¿atajo /algo en minúsculas?)");
+      setMsg(mensajeDeError(data, "No se pudo crear la plantilla"));
     }
   }
 
   async function deleteTemplate(id: string) {
-    if (!confirm("¿Eliminar plantilla?")) return;
-    await fetch(`/api/profile/templates?id=${id}`, { method: "DELETE" });
+    const t = templates.find((x) => x.id === id);
+    const ok = await confirmar({
+      titulo: t ? `¿Eliminar la plantilla "${t.name}"?` : "¿Eliminar plantilla?",
+      descripcion: "Se borra para siempre y no se puede recuperar. Los mensajes que ya enviaste con ella no cambian.",
+      confirmar: "Eliminar",
+      peligroso: true,
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/profile/templates?id=${id}`, { method: "DELETE" });
+    if (res.ok) toast({ title: "Plantilla eliminada" });
+    else toast({ title: "No se pudo eliminar", description: await leerError(res), variant: "destructive" });
     load();
   }
 
@@ -180,24 +217,24 @@ export function SettingsView() {
       {/* ── Perfil ── */}
       {tab === "perfil" && (
         <div className="crm-card max-w-2xl space-y-4">
-          <Field label="Puesto">
+          <Field label="Puesto" error={fieldErrors.jobTitle}>
             <input className="form-input" value={profile.jobTitle ?? ""} onChange={(e) => set("jobTitle", e.target.value)} placeholder="Asesor Senior" />
           </Field>
-          <Field label="Bio (español)" hint="Aparece en tu tarjeta digital">
+          <Field label="Bio (español)" hint="Aparece en tu tarjeta digital" error={fieldErrors.bioEs}>
             <textarea className="form-input" rows={3} value={profile.bioEs ?? ""} onChange={(e) => set("bioEs", e.target.value)} />
           </Field>
-          <Field label="Bio (inglés)">
+          <Field label="Bio (inglés)" error={fieldErrors.bioEn}>
             <textarea className="form-input" rows={3} value={profile.bioEn ?? ""} onChange={(e) => set("bioEn", e.target.value)} />
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Teléfono directo" hint="Se guarda sin espacios; en tus fichas se muestra separado.">
+            <Field label="Teléfono directo" hint="Se guarda sin espacios; en tus fichas se muestra separado." error={fieldErrors.phoneDirect}>
               <input className="form-input" type="tel" inputMode="tel" autoComplete="tel" value={profile.phoneDirect ?? ""} onChange={(e) => set("phoneDirect", telefonoSinEspacios(e.target.value))} placeholder="+529841234567" />
             </Field>
-            <Field label="WhatsApp">
+            <Field label="WhatsApp" error={fieldErrors.whatsappNumber}>
               <input className="form-input" type="tel" inputMode="tel" value={profile.whatsappNumber ?? ""} onChange={(e) => set("whatsappNumber", telefonoSinEspacios(e.target.value))} placeholder="+529841234567" />
             </Field>
           </div>
-          <Field label="Link de agenda" hint="Google Appointment Schedules / Calendly">
+          <Field label="Link de agenda" hint="Google Calendar (citas) o Calendly. Si lo dejas vacío no se modifica el que ya tengas." error={fieldErrors.calendarUrl}>
             <input className="form-input" value={profile.calendarUrl ?? ""} onChange={(e) => set("calendarUrl", e.target.value)} placeholder="https://calendar.app.google/..." />
           </Field>
           <button className="btn-primary" disabled={saving} onClick={() => save(["jobTitle", "bioEs", "bioEn", "phoneDirect", "whatsappNumber", "calendarUrl"])}>
@@ -209,10 +246,10 @@ export function SettingsView() {
       {/* ── Correo ── */}
       {tab === "correo" && (
         <div className="crm-card max-w-2xl space-y-4">
-          <Field label="Alias de envío" hint="Debe ser @propyte.com — el envío sale del SMTP central con tu nombre">
+          <Field label="Tu correo de envío" hint="Debe terminar en @propyte.com. Tus correos saldrán con tu nombre desde esta dirección." error={fieldErrors.emailFromAlias}>
             <input className="form-input" value={profile.emailFromAlias ?? ""} onChange={(e) => set("emailFromAlias", e.target.value)} placeholder="tunombre@propyte.com" />
           </Field>
-          <Field label="Firma (HTML)" hint="Se agrega al final de tus correos y cadencias">
+          <Field label="Firma del correo" hint="Se agrega al final de tus correos y secuencias automáticas. Acepta formato HTML." error={fieldErrors.emailSignatureHtml}>
             <textarea className="form-input font-mono text-[12px]" rows={8} value={profile.emailSignatureHtml ?? ""} onChange={(e) => set("emailSignatureHtml", e.target.value)} placeholder="<p>Nombre — Propyte</p>" />
           </Field>
           {profile.emailSignatureHtml && (
@@ -230,7 +267,7 @@ export function SettingsView() {
       {/* ── Tarjeta ── */}
       {tab === "tarjeta" && (
         <div className="crm-card max-w-2xl space-y-4">
-          <Field label="Slug de tu tarjeta" hint="kebab-case; INMUTABLE una vez publicado (se imprime en QR)">
+          <Field label="Dirección de tu tarjeta" hint="Solo minúsculas, números y guiones (ej. nombre-apellido). No se podrá cambiar una vez publicada, porque se imprime en el QR." error={fieldErrors.cardSlug}>
             <input className="form-input" value={profile.cardSlug ?? ""} onChange={(e) => set("cardSlug", e.target.value)} placeholder={suggestedSlug} />
           </Field>
           <button className="btn-primary" disabled={saving} onClick={() => save(["cardSlug"])}>
@@ -243,10 +280,10 @@ export function SettingsView() {
                   <ExternalLink className="h-3.5 w-3.5" /> Ver tarjeta pública
                 </a>
                 <a href={`/t/${profile.cardSlug}/qr`} target="_blank" className="btn-secondary text-[13px]">
-                  <QrCode className="h-3.5 w-3.5" /> QR para imprimir (SVG)
+                  <QrCode className="h-3.5 w-3.5" /> QR para imprimir
                 </a>
                 <a href={`/t/${profile.cardSlug}/vcard`} className="btn-secondary text-[13px]">
-                  vCard (.vcf)
+                  Guardar contacto
                 </a>
               </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -328,8 +365,8 @@ export function SettingsView() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>{t.name}</span>
-                    <span className="badge badge-neutral">{t.channel}</span>
-                    <span className="badge badge-neutral">{t.language}</span>
+                    <span className="badge badge-neutral">{etiqueta(CHANNEL_LABELS_PLANTILLA, t.channel)}</span>
+                    <span className="badge badge-neutral">{etiqueta(PREFERRED_LANGUAGE_LABELS, t.language)}</span>
                     {t.shortcut && <span className="badge badge-teal">{t.shortcut}</span>}
                     {t.isGlobal && <span className="badge badge-neutral">Marca</span>}
                   </div>

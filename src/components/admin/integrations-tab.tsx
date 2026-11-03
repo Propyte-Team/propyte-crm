@@ -24,16 +24,17 @@ import {
 } from "@/server/admin";
 import Link from "next/link";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // Eventos disponibles para webhooks
 const WEBHOOK_EVENTS = [
   { value: "contact.created", label: "Contacto creado" },
   { value: "contact.updated", label: "Contacto actualizado" },
-  { value: "deal.created", label: "Deal creado" },
-  { value: "deal.stage_changed", label: "Deal cambio de etapa" },
-  { value: "deal.won", label: "Deal ganado" },
-  { value: "deal.lost", label: "Deal perdido" },
-  { value: "deal.updated", label: "Deal actualizado" },
+  { value: "deal.created", label: "Oportunidad creada" },
+  { value: "deal.stage_changed", label: "Oportunidad cambió de etapa" },
+  { value: "deal.won", label: "Oportunidad ganada" },
+  { value: "deal.lost", label: "Oportunidad perdida" },
+  { value: "deal.updated", label: "Oportunidad actualizada" },
   { value: "activity.created", label: "Actividad creada" },
 ];
 
@@ -67,6 +68,7 @@ export function IntegrationsTab({
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
 
+  const confirmar = useConfirm();
   const [webhooks, setWebhooks] = useState(initialWebhooks);
   const [apiKeys, setApiKeys] = useState(initialApiKeys);
 
@@ -105,7 +107,7 @@ export function IntegrationsTab({
         setWebhooks((prev) => [...prev, config as WebhookData]);
         setNewWebhookEvent("");
         setNewWebhookUrl("");
-        toast({ title: "Webhook creado", description: `Secret: ${(config as any).secret.substring(0, 16)}...` });
+        toast({ title: "Webhook creado", description: "Ya está activo. Puedes copiar su clave secreta desde la lista." });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -128,6 +130,14 @@ export function IntegrationsTab({
   }
 
   async function handleDeleteWebhook(id: string) {
+    const w = webhooks.find((x) => x.id === id);
+    const ok = await confirmar({
+      titulo: "¿Borrar este webhook?",
+      descripcion: `${w ? `Dejará de enviarse a ${w.url}. ` : ""}Se pierde su clave secreta y no se puede recuperar: si lo vuelves a crear, el servicio que lo recibe tendrá que configurarse con la clave nueva. Si solo quieres detenerlo un tiempo, desactívalo.`,
+      confirmar: "Borrar webhook",
+      peligroso: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       try {
         await deleteWebhookConfig(id);
@@ -158,6 +168,15 @@ export function IntegrationsTab({
   }
 
   async function handleRevokeApiKey(id: string) {
+    const k = apiKeys.find((x) => x.id === id);
+    const ok = await confirmar({
+      titulo: k ? `¿Revocar la API key "${k.name}"?` : "¿Revocar esta API key?",
+      descripcion:
+        "Los servicios que la usan (por ejemplo Zapier) dejarán de poder crear datos en el CRM de inmediato. No se puede deshacer: tendrías que generar una llave nueva y actualizarla en cada servicio.",
+      confirmar: "Revocar llave",
+      peligroso: true,
+    });
+    if (!ok) return;
     startTransition(async () => {
       try {
         await revokeApiKey(id);

@@ -7,6 +7,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { parseRules, type MappingRule } from "@/lib/intake/map-lead";
 import { TARGET_FIELDS, METADATA_KEYS, ENUM_OPTIONS } from "@/lib/intake/mapping-model";
+import { erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
+import { etiquetaDestino, etiquetaValorEnum, METADATA_LABELS } from "./mapping-labels";
 
 const DIACRITICS_RE = new RegExp("[\\u0300-\\u036f]", "g");
 
@@ -14,18 +16,22 @@ function normalize(s: string): string {
   return s.normalize("NFD").replace(DIACRITICS_RE, "").toLowerCase();
 }
 
-const SORTED_TARGETS = [...TARGET_FIELDS].sort((a, b) => normalize(a).localeCompare(normalize(b)));
+const SORTED_TARGETS = [...TARGET_FIELDS].sort((a, b) => normalize(etiquetaDestino(a)).localeCompare(normalize(etiquetaDestino(b))));
 
-function extractError(d: any): string {
-  if (typeof d?.error === "string") return d.error;
-  if (Array.isArray(d?.error?.formErrors) && d.error.formErrors.length) return d.error.formErrors.join(", ");
-  if (d?.error?.fieldErrors) {
-    const msgs = Object.entries(d.error.fieldErrors as Record<string, string[]>).flatMap(([k, v]) =>
-      (v ?? []).map((m) => `${k}: ${m}`)
-    );
-    if (msgs.length) return msgs.join("; ");
-  }
-  return "Error al guardar";
+// Errores de la API en español. Las reglas se validan por posición («rules.0.target»): se traducen a
+// «Regla 1: Campo destino no válido» para que se sepa qué fila corregir.
+function extractError(d: unknown): string {
+  const porCampo = erroresPorCampo(d);
+  const filas = Object.entries(porCampo)
+    .map(([k, m]) => {
+      const f = k.match(/^rules\.(\d+)\.(\w+)$/);
+      if (!f) return null;
+      const campo = f[2] === "target" ? "Campo destino" : f[2] === "metaField" ? "Campo origen" : "Valor";
+      return `Regla ${Number(f[1]) + 1}: ${campo} ${m === "target inválido" ? "no válido" : m.toLowerCase()}`;
+    })
+    .filter((x): x is string => !!x);
+  if (filas.length) return filas.join(" · ");
+  return mensajeDeError(d, "No se pudo guardar el mapeo");
 }
 
 function emptyRule(): MappingRule {
@@ -51,7 +57,7 @@ function ValueMapEditor({ rule, onChange }: { rule: MappingRule; onChange: (r: M
   return (
     <div className="mt-2 space-y-1.5 rounded-md border p-2" style={{ borderColor: "var(--border-subtle)" }}>
       <p className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
-        Traducción de valores · {rule.target}
+        Traducción de valores · {etiquetaDestino(rule.target)}
       </p>
       {entries.map(([k, v], i) => (
         <div key={i} className="flex items-center gap-2">
@@ -65,7 +71,7 @@ function ValueMapEditor({ rule, onChange }: { rule: MappingRule; onChange: (r: M
           <select className="form-input !w-auto text-[12px]" value={v} onChange={(e) => updatePair(i, k, e.target.value)}>
             <option value="">—</option>
             {options.map((o) => (
-              <option key={o} value={o}>{o}</option>
+              <option key={o} value={o}>{etiquetaValorEnum(rule.target, o)}</option>
             ))}
           </select>
           <button type="button" onClick={() => removePair(i)} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600">
@@ -83,8 +89,8 @@ function ValueMapEditor({ rule, onChange }: { rule: MappingRule; onChange: (r: M
           value={rule.fallback ?? "omit"}
           onChange={(e) => onChange({ ...rule, fallback: e.target.value as MappingRule["fallback"] })}
         >
-          <option value="omit">omitir</option>
-          <option value="passthrough">dejar valor original</option>
+          <option value="omit">no guardar el dato</option>
+          <option value="passthrough">guardar tal como llegó</option>
           <option value="fixed">valor fijo</option>
         </select>
         {rule.fallback === "fixed" && (
@@ -110,6 +116,7 @@ function RuleRow({
   onDelete: () => void;
 }) {
   const hasEnum = rule.target in ENUM_OPTIONS;
+  const esPersonalizado = rule.target.startsWith("custom.");
   return (
     <div className="rounded-md border p-2.5" style={{ borderColor: "var(--border-subtle)" }}>
       <div className="flex flex-wrap items-center gap-2">
@@ -122,14 +129,14 @@ function RuleRow({
           }}
         >
           <option value="question">Pregunta</option>
-          <option value="metadata">Metadata</option>
+          <option value="metadata">Dato de la campaña</option>
           <option value="constant">Valor fijo</option>
         </select>
 
         {rule.source === "question" && (
           <input
             className="form-input text-[12px]"
-            placeholder="nombre de la pregunta (ej. full_name)"
+            placeholder="pregunta del formulario (ej. full_name)"
             value={rule.metaField ?? ""}
             onChange={(e) => onChange({ ...rule, metaField: e.target.value })}
           />
@@ -142,7 +149,7 @@ function RuleRow({
           >
             <option value="">— elige —</option>
             {METADATA_KEYS.map((k) => (
-              <option key={k} value={k}>{k}</option>
+              <option key={k} value={k}>{METADATA_LABELS[k] ?? k}</option>
             ))}
           </select>
         )}
@@ -157,13 +164,25 @@ function RuleRow({
 
         <span style={{ color: "var(--text-tertiary)" }}>→</span>
 
-        <input
-          list="mapping-target-suggestions"
-          className="form-input text-[12px]"
-          placeholder="campo destino (ej. fullName, custom.presupuesto)"
-          value={rule.target}
-          onChange={(e) => onChange({ ...rule, target: e.target.value })}
-        />
+        <select
+          className="form-input !w-auto text-[12px]"
+          value={esPersonalizado ? "__custom__" : rule.target}
+          onChange={(e) => onChange({ ...rule, target: e.target.value === "__custom__" ? "custom." : e.target.value })}
+        >
+          <option value="">— campo del contacto —</option>
+          {SORTED_TARGETS.map((t) => (
+            <option key={t} value={t}>{etiquetaDestino(t)}</option>
+          ))}
+          <option value="__custom__">Campo personalizado…</option>
+        </select>
+        {esPersonalizado && (
+          <input
+            className="form-input text-[12px]"
+            placeholder="nombre del campo personalizado (ej. presupuesto)"
+            value={rule.target.slice(7)}
+            onChange={(e) => onChange({ ...rule, target: `custom.${e.target.value}` })}
+          />
+        )}
 
         <button type="button" onClick={onDelete} className="ml-auto shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600">
           <Trash2 className="h-4 w-4" />
@@ -209,9 +228,9 @@ export function MappingEditor({
 
   function validate(): string | null {
     for (const r of rules) {
-      if (!r.target.trim()) return "Cada regla necesita un campo destino.";
+      if (!r.target.trim() || r.target === "custom.") return "Cada regla necesita elegir a qué campo del contacto va el dato.";
       if ((r.source === "question" || r.source === "metadata") && !r.metaField?.trim()) {
-        return "Las reglas de pregunta/metadata necesitan el campo origen.";
+        return "Falta indicar de dónde sale el dato (la pregunta o el dato de campaña).";
       }
       if (r.source === "constant" && !r.value?.trim()) {
         return "Las reglas de valor fijo necesitan un valor.";
@@ -274,15 +293,9 @@ export function MappingEditor({
           <DialogTitle>Editar mapeo · {name}</DialogTitle>
         </DialogHeader>
 
-        <datalist id="mapping-target-suggestions">
-          {SORTED_TARGETS.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
-
         <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
           Define cómo se traducen las preguntas del formulario y los metadatos de campaña a los campos del contacto.
-          Los destinos con enum (ej. contactType, temperature) permiten traducir valores.
+          Los campos con opciones fijas (ej. tipo de contacto, temperatura) permiten traducir valores.
         </p>
 
         <div className="space-y-2">
@@ -293,7 +306,7 @@ export function MappingEditor({
 
         {rules.length === 0 && (
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            Sin reglas propias todavía. Se seguirán aplicando los defaults (nombre, teléfono, email) más lo que agregues aquí.
+            Sin reglas propias todavía. Se seguirán usando las predeterminadas (nombre, teléfono, correo) más lo que agregues aquí.
           </p>
         )}
 
@@ -308,9 +321,20 @@ export function MappingEditor({
         {testResult && (
           <div className="rounded-md border p-3" style={{ borderColor: "var(--border-subtle)", background: "var(--bg-card)" }}>
             <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
-              Resultado {testResult.usedLastLead ? "· último lead recibido" : "· sin datos de muestra"}
+              Resultado {testResult.usedLastLead ? "· con el último prospecto recibido" : "· sin datos de muestra"}
             </p>
-            <pre className="mt-1 overflow-x-auto text-[12px]">{JSON.stringify(testResult.mapped, null, 2)}</pre>
+            <table className="mt-1 w-full text-[12px]">
+              <tbody>
+                {Object.entries(testResult.mapped).map(([k, v]) => (
+                  <tr key={k} className="border-t" style={{ borderColor: "var(--border-subtle)" }}>
+                    <td className="py-1 pr-3 font-medium">{etiquetaDestino(k)}</td>
+                    <td className="break-words py-1">
+                      {typeof v === "string" ? etiquetaValorEnum(k, v) : v === null || v === undefined ? "—" : JSON.stringify(v)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             {testResult.warnings && testResult.warnings.length > 0 && (
               <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
                 <p className="font-medium">Valores que se descartarían por no ser válidos para el campo:</p>

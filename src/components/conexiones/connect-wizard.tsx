@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { mensajeDeError } from "@/lib/api-errors";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { providerById, splitConnectorFields } from "@/lib/connectors/registry";
 import { BrandSelect, useBrandOptions } from "./brand-select";
@@ -48,7 +49,7 @@ export function ConnectWizard({
     });
     const created = await create.json().catch(() => null);
     if (!create.ok || !created?.data?.id) {
-      setTestState("fail"); setMsg("Error al guardar la cuenta");
+      setTestState("fail"); setMsg(mensajeDeError(created, "No se pudo guardar la cuenta"));
       return;
     }
     const patch = await fetch(`/api/admin/connectors/${created.data.id}`, {

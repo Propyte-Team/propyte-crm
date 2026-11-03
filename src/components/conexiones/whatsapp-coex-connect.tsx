@@ -227,9 +227,15 @@ export function WhatsAppCoexConnect({
       <div className="mt-1.5 rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
         <p className="font-medium text-foreground">{buttonLabel} · no disponible</p>
         <p className="mt-0.5">
-          Falta configurar en el servidor: <span className="font-mono">{availability.missing.join(", ")}</span>.
-          Ver docs/whatsapp-coexistencia-meta-setup.md.
+          WhatsApp oficial aún no está habilitado. Pide a tu administrador que lo active.
         </p>
+        <details className="mt-1">
+          <summary className="cursor-pointer">Detalle técnico (para el administrador)</summary>
+          <p className="mt-0.5">
+            Falta configurar en el servidor: <span className="font-mono">{availability.missing.join(", ")}</span>.
+            Guía: docs/whatsapp-coexistencia-meta-setup.md.
+          </p>
+        </details>
       </div>
     );
   }

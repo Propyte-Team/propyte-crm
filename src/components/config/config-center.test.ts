@@ -64,11 +64,47 @@ describe("CONFIG_GROUPS", () => {
     expect(allCards.map((c) => c.key)).not.toContain("agents");
   });
 
-  it("'Agentes conversacionales' sigue presente", () => {
-    expect(allCards.map((c) => c.title)).toContain("Agentes conversacionales");
+  // E1: los perfiles por tipo de cliente y las marcas siguen, con nombre de negocio.
+  it("los perfiles del asistente y las marcas siguen presentes (mismo destino)", () => {
+    const hrefs = allCards.map((c) => c.href);
+    expect(hrefs).toContain("/admin?tab=botAgents");
+    expect(hrefs).toContain("/admin?tab=botBrands");
   });
 
-  it("'Marcas del agente' sigue presente", () => {
-    expect(allCards.map((c) => c.title)).toContain("Marcas del agente");
+  it("los destinos de las pantallas no cambian en E1", () => {
+    const hrefs = allCards.map((c) => c.href).filter(Boolean);
+    for (const h of ["/settings", "/admin?tab=users", "/journey", "/duplicados", "/conexiones", "/conexiones/huerfanos", "/admin?tab=integrations"]) {
+      expect(hrefs).toContain(h);
+    }
+    expect(allCards.map((c) => c.key).filter(Boolean).sort()).toEqual(["automation", "corefields", "fields", "teams"]);
+  });
+
+  it("ninguna tarjeta manda al inbox operativo de WhatsApp", () => {
+    expect(allCards.map((c) => c.href)).not.toContain("/inbox");
+    expect(allCards.map((c) => c.title)).not.toContain("WhatsApp");
+  });
+
+  it("títulos, subtítulos y grupos no contienen jerga técnica", () => {
+    const jerga = /anti-sprawl|enforcement|L0-L[0-3]|8 canónicas|humano-en-loop|takeover|cloud api|\.local|push-only|presets/i;
+    const textos = CONFIG_GROUPS.flatMap((g) => [g.title, ...g.cards.flatMap((c) => [c.title, ...c.items])]);
+    for (const t of textos) expect(t).not.toMatch(jerga);
+  });
+
+  it("Duplicados y Leads sin asesor viven en 'Calidad de datos' para gerencia", () => {
+    const grupo = CONFIG_GROUPS.find((g) => g.title === "Calidad de datos");
+    expect(grupo?.cards.map((c) => c.href)).toEqual(["/duplicados", "/conexiones/huerfanos"]);
+    for (const c of grupo!.cards) expect([...c.roles!].sort()).toEqual(["ADMIN", "DIRECTOR", "GERENTE"]);
+    const visiblesGerente = visibleCards(allCards, "GERENTE").map((c) => c.href);
+    expect(visiblesGerente).toContain("/duplicados");
+    expect(visibleCards(allCards, "ASESOR").map((c) => c.href)).not.toContain("/duplicados");
+  });
+
+  it("toda tarjeta que no es 'Mi perfil' declara roles", () => {
+    for (const c of allCards) if (c.href !== "/settings") expect(c.roles?.length).toBeGreaterThan(0);
+  });
+
+  it("un ASESOR solo ve 'Mi perfil'; ADMIN ve todas", () => {
+    expect(visibleCards(allCards, "ASESOR").map((c) => c.href)).toEqual(["/settings"]);
+    expect(visibleCards(allCards, "ADMIN")).toHaveLength(allCards.length);
   });
 });

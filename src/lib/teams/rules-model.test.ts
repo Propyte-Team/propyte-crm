@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { describeConditions, describeTargets, buildTargets, parseTargets, nextPriority } from "./rules-model";
+import {
+  describeConditions, describeTargets, buildTargets, parseTargets, nextPriority,
+  strategyOptions, hasIncompleteCondition, STRATEGY_LABELS,
+} from "./rules-model";
 
 describe("describeConditions", () => {
   it("sin condiciones → siempre", () => {
@@ -8,7 +11,7 @@ describe("describeConditions", () => {
     expect(describeConditions({ all: [] })).toBe("siempre");
   });
   it("hoja con etiqueta legible", () => {
-    expect(describeConditions({ field: "contact.leadSource", op: "eq", value: "META_ADS" })).toBe("fuente = META_ADS");
+    expect(describeConditions({ field: "contact.leadSource", op: "eq", value: "META_ADS" })).toBe("fuente = Meta Ads");
     expect(describeConditions({ field: "contact.budgetMax", op: "gte", value: 250000 })).toBe("presupuesto máx. ≥ 250000");
     expect(describeConditions({ field: "contact.preferredZone", op: "exists" })).toBe("zona preferida existe");
   });
@@ -18,8 +21,14 @@ describe("describeConditions", () => {
         { field: "contact.targetPlaza", op: "eq", value: "TULUM" },
         { any: [{ field: "contact.preferredLanguage", op: "eq", value: "EN" }, { field: "contact.score", op: "gt", value: 50 }] },
       ],
-    })).toBe("plaza = TULUM y (idioma = EN o score > 50)");
-    expect(describeConditions({ field: "contact.leadSource", op: "in", value: ["META_ADS", "INSTAGRAM"] })).toBe("fuente en META_ADS, INSTAGRAM");
+    })).toBe("plaza = Tulum y (idioma = Inglés o score > 50)");
+    expect(describeConditions({ field: "contact.leadSource", op: "in", value: ["META_ADS", "INSTAGRAM"] })).toBe("fuente en Meta Ads, Instagram");
+  });
+  it("valores con etiqueta según el campo; sin diccionario se dejan tal cual", () => {
+    expect(describeConditions({ field: "contact.contactType", op: "eq", value: "LEAD_COMPRADOR" })).toBe("tipo de contacto = Lead Comprador");
+    expect(describeConditions({ field: "contact.temperature", op: "eq", value: "HOT" })).toBe("temperatura = Caliente");
+    expect(describeConditions({ field: "adAttribution.campaignName", op: "contains", value: "META_ADS" })).toBe("campaña contiene META_ADS");
+    expect(describeConditions({ field: "contact.targetPlaza", op: "in", value: ["PDC", "MERIDA"] })).toBe("plaza en Playa del Carmen, Mérida");
   });
   it("campo desconocido se muestra sin el prefijo contact.", () => {
     expect(describeConditions({ field: "contact.custom.idioma", op: "eq", value: "pt" })).toBe("custom.idioma = pt");
@@ -31,7 +40,8 @@ describe("describeTargets", () => {
     expect(describeTargets({ userIds: ["aaaaaaaa-1", "bbbbbbbb-2"] }, { "aaaaaaaa-1": "Ana" })).toBe("Usuarios: Ana, bbbbbbbb");
   });
   it("roles con o sin plaza", () => {
-    expect(describeTargets({ roles: ["ASESOR_SR"], plaza: "PDC" })).toBe("ASESOR_SR de PDC");
+    expect(describeTargets({ roles: ["ASESOR_SR"], plaza: "PDC" })).toBe("Asesor Senior de Playa del Carmen");
+    expect(describeTargets({ roles: ["ASESOR", "TEAM_LEADER"] })).toBe("Asesor, Líder de equipo de la plaza del lead");
     expect(describeTargets({})).toBe("asesores de la plaza del lead");
     expect(describeTargets(undefined)).toBe("asesores de la plaza del lead");
   });
@@ -58,5 +68,36 @@ describe("nextPriority", () => {
     expect(nextPriority([])).toBe(100);
     expect(nextPriority([{ priority: 100 }, { priority: 230 }])).toBe(240);
     expect(nextPriority([{ priority: 995 }])).toBe(1000);
+  });
+});
+
+describe("strategyOptions", () => {
+  it("ofrece solo Turno y Menor carga", () => {
+    expect(strategyOptions().map((o) => o.label)).toEqual(["Turno", "Menor carga"]);
+  });
+  it("conserva una estrategia retirada si la regla ya la tiene", () => {
+    expect(strategyOptions("GUARDIA")).toEqual([
+      { value: "ROUND_ROBIN", label: "Turno" },
+      { value: "PERFORMANCE", label: "Menor carga" },
+      { value: "GUARDIA", label: "Guardia" },
+    ]);
+    expect(STRATEGY_LABELS.MANUAL).toBe("Manual");
+  });
+});
+
+describe("hasIncompleteCondition", () => {
+  const leaf = (field: string, op: string, value: string) => ({ field, op, value });
+  it("árbol vacío o completo → false", () => {
+    expect(hasIncompleteCondition({ combinator: "all", items: [] })).toBe(false);
+    expect(hasIncompleteCondition({ combinator: "all", items: [leaf("contact.leadSource", "eq", "META_ADS"), leaf("contact.score", "exists", "")] })).toBe(false);
+  });
+  it("campo, operador o valor vacío → true", () => {
+    expect(hasIncompleteCondition({ combinator: "all", items: [leaf("", "eq", "x")] })).toBe(true);
+    expect(hasIncompleteCondition({ combinator: "all", items: [leaf("contact.score", "", "1")] })).toBe(true);
+    expect(hasIncompleteCondition({ combinator: "all", items: [leaf("contact.score", "gt", "  ")] })).toBe(true);
+  });
+  it("revisa dentro de los grupos", () => {
+    expect(hasIncompleteCondition({ combinator: "all", items: [{ combinator: "any", conditions: [leaf("contact.score", "gt", "")] }] })).toBe(true);
+    expect(hasIncompleteCondition({ combinator: "all", items: [{ combinator: "any", conditions: [leaf("contact.score", "gt", "5")] }] })).toBe(false);
   });
 });

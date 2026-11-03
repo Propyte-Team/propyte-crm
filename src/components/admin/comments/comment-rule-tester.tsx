@@ -1,6 +1,7 @@
 // Probador en seco: qué regla ganaría y con qué textos. No llama a Graph.
 "use client";
 
+import { mensajeDeError } from "@/lib/api-errors";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ export function CommentRuleTester({ connectors }: { connectors: ConnectorOption[
     }
     setResult(null);
     const data = await res.json().catch(() => ({}));
-    setError(typeof data.error === "string" ? data.error : "No se pudo probar la regla");
+    setError(mensajeDeError(data, "No se pudo probar la regla"));
   }
 
   return (

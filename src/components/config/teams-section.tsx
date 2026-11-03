@@ -6,6 +6,9 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, UserMinus, Pencil } from "lucide-react";
 import { RoutingRulesBlock } from "./routing-rules-block";
 import { TerritoryEditor } from "./territory-editor";
+import { toast } from "@/components/ui/use-toast";
+import { leerError } from "@/lib/api-errors";
+import { PLAZA_LABELS, TEAM_ROLE_LABELS, etiqueta, opciones } from "@/lib/labels";
 
 interface TeamData {
   id: string;
@@ -13,7 +16,6 @@ interface TeamData {
   plaza: string;
   isActive: boolean;
   leader: { id: string; name: string } | null;
-  forecastManager: { id: string; name: string } | null;
   members: Array<{ id: string; roleInTeam: string; user: { id: string; name: string; isActive: boolean } }>;
 }
 interface TerritoryData {
@@ -24,7 +26,7 @@ interface TerritoryData {
   zones: string[];
   isActive: boolean;
   parentTerritory: { name: string } | null;
-  members: Array<{ accessLevel: string; user: { id: string; name: string } }>;
+  members: Array<{ accessLevel?: string; user: { id: string; name: string } }>;
   rules: Array<{ id: string; priority: number; isActive: boolean; conditions?: unknown }>;
 }
 interface UserOpt { id: string; name: string; role: string; plaza?: string | null }
@@ -38,7 +40,8 @@ export function TeamsSection({ userRole }: { userRole: string }) {
   const [newTerritory, setNewTerritory] = useState({ name: "", plaza: "TULUM", zones: "" });
   const [addMember, setAddMember] = useState<Record<string, string>>({});
   const [openTerritory, setOpenTerritory] = useState<string | null>(null);
-  const [msg, setMsg] = useState("");
+  const ok = (title: string, description?: string) => toast({ title, description });
+  const fallo = (description: string) => toast({ title: "No se pudo completar", description, variant: "destructive" });
 
   const load = useCallback(async () => {
     const [t, te, u] = await Promise.all([
@@ -59,9 +62,11 @@ export function TeamsSection({ userRole }: { userRole: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...newTeam, leaderId: newTeam.leaderId || undefined }),
     });
-    const data = await res.json().catch(() => ({}));
-    setMsg(res.ok ? (data.warning ?? "Equipo creado ✓") : (typeof data.error === "string" ? data.error : "Error"));
-    if (res.ok) setNewTeam({ name: "", plaza: "TULUM", leaderId: "" });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      ok("Equipo creado", typeof data.warning === "string" ? data.warning : undefined);
+      setNewTeam({ name: "", plaza: "TULUM", leaderId: "" });
+    } else fallo(await leerError(res, "No se pudo crear el equipo"));
     load();
   }
 
@@ -76,9 +81,11 @@ export function TeamsSection({ userRole }: { userRole: string }) {
         zones: newTerritory.zones.split(",").map((z) => z.trim()).filter(Boolean),
       }),
     });
-    const data = await res.json().catch(() => ({}));
-    setMsg(res.ok ? (data.warning ?? "Territorio creado ✓") : (typeof data.error === "string" ? data.error : "Error"));
-    if (res.ok) setNewTerritory({ name: "", plaza: "TULUM", zones: "" });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      ok("Territorio creado", typeof data.warning === "string" ? data.warning : undefined);
+      setNewTerritory({ name: "", plaza: "TULUM", zones: "" });
+    } else fallo(await leerError(res, "No se pudo crear el territorio"));
     load();
   }
 
@@ -90,13 +97,14 @@ export function TeamsSection({ userRole }: { userRole: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
-    if (!res.ok) setMsg((await res.json().catch(() => ({})))?.error ?? "Error");
+    if (!res.ok) fallo(await leerError(res, "No se pudo agregar al miembro"));
     setAddMember({ ...addMember, [teamId]: "" });
     load();
   }
 
   async function removeMember(teamId: string, userId: string) {
-    await fetch(`/api/admin/teams/${teamId}?userId=${userId}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/teams/${teamId}?userId=${userId}`, { method: "DELETE" });
+    if (!res.ok) fallo(await leerError(res, "No se pudo sacar al miembro"));
     load();
   }
 
@@ -104,9 +112,8 @@ export function TeamsSection({ userRole }: { userRole: string }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Equipos & Territorios</h1>
-        <p className="text-muted-foreground">El ruteo asigna PRIMERO por territorio, luego por estrategia dentro de él</p>
+        <p className="text-muted-foreground">Los leads nuevos se reparten con las reglas de reparto (abajo); si ninguna aplica, entran al turno general de asesores.</p>
       </div>
-      {msg && <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>{msg}</p>}
 
       {/* Equipos */}
       <div className="crm-card !p-0 overflow-hidden">
@@ -116,7 +123,7 @@ export function TeamsSection({ userRole }: { userRole: string }) {
             <div className="flex flex-wrap items-center gap-2">
               <input className="form-input !w-44 !py-1.5 text-[13px]" placeholder="Nombre del equipo" value={newTeam.name} onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })} />
               <select className="form-input !w-28 !py-1.5 text-[13px]" value={newTeam.plaza} onChange={(e) => setNewTeam({ ...newTeam, plaza: e.target.value })}>
-                <option value="TULUM">Tulum</option><option value="PDC">PDC</option><option value="MERIDA">Mérida</option>
+                {opciones(PLAZA_LABELS).map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
               <select className="form-input !w-44 !py-1.5 text-[13px]" value={newTeam.leaderId} onChange={(e) => setNewTeam({ ...newTeam, leaderId: e.target.value })}>
                 <option value="">Líder (opcional)</option>
@@ -131,14 +138,13 @@ export function TeamsSection({ userRole }: { userRole: string }) {
           <div key={t.id} className="px-4 py-3 hairline-b">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[13px] font-medium">{t.name}</span>
-              <span className="badge badge-neutral">{t.plaza}</span>
+              <span className="badge badge-neutral">{etiqueta(PLAZA_LABELS, t.plaza)}</span>
               {t.leader && <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>Líder: {t.leader.name}</span>}
-              {!t.forecastManager && <span className="badge badge-warning">sin forecast manager</span>}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {t.members.map((m) => (
                 <span key={m.id} className="badge badge-neutral inline-flex items-center gap-1">
-                  {m.user.name} · {m.roleInTeam}
+                  {m.user.name} · {etiqueta(TEAM_ROLE_LABELS, m.roleInTeam)}
                   {canEdit && (
                     <button title="Sacar del equipo" onClick={() => removeMember(t.id, m.user.id)}>
                       <UserMinus className="h-3 w-3" />
@@ -167,19 +173,24 @@ export function TeamsSection({ userRole }: { userRole: string }) {
       {/* Territorios */}
       <div className="crm-card !p-0 overflow-hidden">
         <div className="flex flex-wrap items-end justify-between gap-3 px-4 py-3 hairline-b">
-          <p className="text-[13px] font-semibold">Territorios</p>
+          <div>
+            <p className="text-[13px] font-semibold">Territorios</p>
+            <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+              Por ahora la plaza y las zonas son informativas; el reparto solo usa las reglas de entrada.
+            </p>
+          </div>
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2">
               <input className="form-input !w-44 !py-1.5 text-[13px]" placeholder="Nombre" value={newTerritory.name} onChange={(e) => setNewTerritory({ ...newTerritory, name: e.target.value })} />
               <select className="form-input !w-28 !py-1.5 text-[13px]" value={newTerritory.plaza} onChange={(e) => setNewTerritory({ ...newTerritory, plaza: e.target.value })}>
-                <option value="TULUM">Tulum</option><option value="PDC">PDC</option><option value="MERIDA">Mérida</option>
+                {opciones(PLAZA_LABELS).map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
-              <input className="form-input !w-52 !py-1.5 text-[13px]" placeholder="Zonas (coma): Aldea Zama, Centro" value={newTerritory.zones} onChange={(e) => setNewTerritory({ ...newTerritory, zones: e.target.value })} />
+              <input className="form-input !w-52 !py-1.5 text-[13px]" placeholder="Zonas (separadas por coma): Aldea Zama, Centro" value={newTerritory.zones} onChange={(e) => setNewTerritory({ ...newTerritory, zones: e.target.value })} />
               <button className="btn-primary !py-1.5 !px-3 text-[12px]" onClick={createTerritory}><Plus className="h-3.5 w-3.5" /> Crear</button>
             </div>
           )}
         </div>
-        {territories.length === 0 && <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>Sin territorios. Sin ellos, el ruteo usa round-robin global (válido).</p>}
+        {territories.length === 0 && <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>Sin territorios. Es válido: los leads se reparten con las reglas de reparto o, si no hay, por turno general.</p>}
         {territories.map((t) => (
           <div key={t.id} className="px-4 py-3 hairline-b">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -187,7 +198,7 @@ export function TeamsSection({ userRole }: { userRole: string }) {
                 <span className="text-[13px] font-medium">{t.name}</span>
                 {t.parentTerritory && <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}> ⊂ {t.parentTerritory.name}</span>}
                 <div className="mt-1 flex flex-wrap gap-1.5">
-                  {t.plaza && <span className="badge badge-neutral">{t.plaza}</span>}
+                  {t.plaza && <span className="badge badge-neutral">{etiqueta(PLAZA_LABELS, t.plaza)}</span>}
                   {t.zones.map((z) => <span key={z} className="badge badge-neutral">{z}</span>)}
                   <span className="badge badge-neutral">{t.members.length} miembros</span>
                   <span className={`badge ${t.rules.filter((r) => r.isActive).length > 0 ? "badge-success" : "badge-warning"}`}>
@@ -197,7 +208,7 @@ export function TeamsSection({ userRole }: { userRole: string }) {
               </div>
               {canEdit && openTerritory !== t.id && (
                 <button className="btn-secondary !py-1 !px-2 text-[12px]" onClick={() => setOpenTerritory(t.id)}>
-                  <Pencil className="h-3.5 w-3.5" /> Miembros y reglas
+                  <Pencil className="h-3.5 w-3.5" /> Miembros y reglas de entrada
                 </button>
               )}
             </div>
@@ -207,7 +218,7 @@ export function TeamsSection({ userRole }: { userRole: string }) {
                 members={t.members}
                 rules={t.rules}
                 users={users}
-                onSaved={(m) => { setMsg(m); setOpenTerritory(null); load(); }}
+                onSaved={() => { setOpenTerritory(null); load(); }}
                 onCancel={() => setOpenTerritory(null)}
               />
             )}

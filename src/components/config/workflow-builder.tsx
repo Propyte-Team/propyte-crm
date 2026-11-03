@@ -9,9 +9,11 @@ import {
   DEAL_STAGES, LIFECYCLE_STAGES,
   type ConditionTree, type ActionRow,
 } from "@/lib/workflows/builder-model";
-import { LIFECYCLE_LABELS } from "@/lib/constants";
+import { LIFECYCLE_LABELS, STAGE_LABELS } from "@/lib/constants";
+import { erroresPorCampo } from "@/lib/api-errors";
 import { RULE_TEMPLATES } from "@/lib/workflows/builder-templates";
 import { ConditionTreeEditor } from "./condition-tree";
+import { DelayInput, mensajeAutomatizacion } from "./cadence-editor";
 import {
   NODE_CATALOG, TRIGGER_CATALOG, coerceFieldConfig, labelFor, type FieldDef,
 } from "@/lib/journey/node-catalog";
@@ -44,6 +46,45 @@ export function shouldGuardRule(rule: { actions?: unknown } | null | undefined):
 export const DECISION_GUARD_MESSAGE =
   "Esta regla usa ramas de decisión; edítala en el canvas de Journey para no perder su estructura.";
 
+// Eventos del sistema que hoy emite el motor (fuente: reporte 02 §5.1). Solo texto de ayuda:
+// el selector real llega en E3.
+export const EVENTOS_DEL_SISTEMA: { key: string; label: string }[] = [
+  { key: "lead.captured", label: "entra un lead nuevo" },
+  { key: "contact.created", label: "se crea un contacto a mano" },
+  { key: "contact.scored", label: "cambia el score de un contacto" },
+  { key: "contact.opted_out", label: "el contacto pide no ser contactado" },
+  { key: "lead.orphaned", label: "un lead se queda sin asesor" },
+  { key: "sla.breach", label: "se vence el tiempo de respuesta" },
+  { key: "payment.overdue", label: "un pago se atrasa" },
+  { key: "deal.stage_changed", label: "una operación cambia de etapa" },
+];
+
+const DELAY_PRESETS = [
+  { label: "Inmediata", minutes: 0 },
+  { label: "15 min", minutes: 15 },
+  { label: "1 h", minutes: 60 },
+  { label: "1 día", minutes: 1440 },
+];
+const COOLDOWN_PRESETS = [
+  { label: "Sin límite", minutes: 0 },
+  { label: "1 h", minutes: 60 },
+  { label: "1 día", minutes: 1440 },
+  { label: "7 días", minutes: 10080 },
+];
+
+// Ayuda contextual de campos técnicos de acciones que aún no tienen selector real (E3).
+const AYUDA_CAMPO: Record<string, string> = {
+  "ENROLL_PLAN.planId": "Identificador de la cadencia (aún no se elige por nombre; llegará en una etapa próxima).",
+  "SEND_WHATSAPP.template": "Nombre de la plantilla aprobada, p. ej. bienvenida_es. Si lo dejas vacío se usa el mensaje.",
+  "NOTIFY.type": "Déjalo como workflow salvo que sepas que necesitas otro tipo.",
+  "AI_REPLY.goal": "Objetivo de la respuesta del bot, p. ej. saludo_calificacion.",
+  "AI_DRAFT.goal": "Objetivo del borrador para el asesor.",
+};
+
+function Hint({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>{children}</p>;
+}
+
 interface Props {
   rule?: any;
   onSaved: () => void;
@@ -70,6 +111,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const [cooldown, setCooldown] = useState(String(rule?.cooldownMinutes ?? ""));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrs, setFieldErrs] = useState<Record<string, string>>({});
 
 
   function applyTemplate(key: string) {
@@ -89,6 +131,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
     // regla con ramas de decisión (sub-task 3).
     if (guarded) return;
     setError(null);
+    setFieldErrs({});
     if (!name || name.length < 3) { setError("El nombre debe tener al menos 3 caracteres."); return; }
     if (actions.length === 0) { setError("Agrega al menos una acción."); return; }
     setSaving(true);
@@ -115,7 +158,8 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
     if (res.ok) onSaved();
     else {
       const d = await res.json().catch(() => ({}));
-      setError(typeof d.error === "string" ? d.error : "No se pudo guardar la regla");
+      setFieldErrs(erroresPorCampo(d));
+      setError(mensajeAutomatizacion(d, "No se pudo guardar la regla"));
     }
   }
 
@@ -138,11 +182,16 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
 
   const showTriggerValue = ["EVENT", "STAGE_CHANGE", "LIFECYCLE_CHANGE", "SCORE_THRESHOLD", "INACTIVITY"].includes(triggerType);
   const triggerValuePlaceholder =
-    triggerType === "EVENT" ? "ej. lead.captured, deal.stage_changed"
-    : triggerType === "STAGE_CHANGE" ? "etapa (ej. RESERVED)"
-    : triggerType === "LIFECYCLE_CHANGE" ? "etapa del ciclo de vida"
-    : triggerType === "SCORE_THRESHOLD" ? "score mínimo (ej. 70)"
-    : triggerType === "INACTIVITY" ? "horas sin actividad (ej. 48)" : "";
+    triggerType === "EVENT" ? "Evento del sistema, p. ej. lead.captured"
+    : triggerType === "STAGE_CHANGE" ? "Etapa (ej. RESERVED)"
+    : triggerType === "LIFECYCLE_CHANGE" ? "Etapa del ciclo de vida"
+    : triggerType === "SCORE_THRESHOLD" ? "Score mínimo de 0 a 100, p. ej. 70"
+    : triggerType === "INACTIVITY" ? "Horas sin actividad, p. ej. 48 (= 2 días)" : "";
+  const triggerHelp =
+    triggerType === "SCORE_THRESHOLD" ? "Se dispara cuando el score del contacto llega a este número o lo supera."
+    : triggerType === "INACTIVITY" ? "Se cuenta en horas: 24 = 1 día, 72 = 3 días."
+    : !showTriggerValue ? "Este disparador no necesita un valor adicional."
+    : null;
 
   return (
     <div className="space-y-5">
@@ -162,10 +211,13 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       {/* Identidad */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Field label="Nombre">
-          <input className="form-input text-[13px]" value={name} onChange={(e) => setName(e.target.value)} placeholder="ej. SLA primer toque" />
+          <input className="form-input text-[13px]" value={name} onChange={(e) => setName(e.target.value)} placeholder="ej. Bienvenida a leads de Meta" />
+          {fieldErrs.name && <p className="text-[11px] text-red-600">{fieldErrs.name}</p>}
         </Field>
         <Field label="Prioridad (menor = primero)">
-          <input className="form-input text-[13px]" type="number" value={priority} onChange={(e) => setPriority(e.target.value)} />
+          <input className="form-input text-[13px]" type="number" value={priority} onChange={(e) => setPriority(e.target.value)} placeholder="100" />
+          <Hint>Si varias reglas aplican, se evalúa primero la de número menor. 100 es lo normal.</Hint>
+          {fieldErrs.priority && <p className="text-[11px] text-red-600">{fieldErrs.priority}</p>}
         </Field>
       </div>
       <Field label="Descripción">
@@ -183,7 +235,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
             triggerType === "STAGE_CHANGE" ? (
               <select className="form-input text-[13px]" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)}>
                 <option value="">Selecciona etapa…</option>
-                {DEAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                {DEAL_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s] ?? s}</option>)}
               </select>
             ) : triggerType === "LIFECYCLE_CHANGE" ? (
               <select className="form-input text-[13px]" value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)}>
@@ -195,18 +247,31 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
             )
           )}
         </div>
+        {triggerHelp && <Hint>{triggerHelp}</Hint>}
+        {triggerType === "EVENT" && (
+          <div className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+            <p>Eventos disponibles (escribe la clave tal cual):</p>
+            <ul className="mt-0.5 list-disc pl-4">
+              {EVENTOS_DEL_SISTEMA.map((e) => <li key={e.key}><code>{e.key}</code> — {e.label}</li>)}
+            </ul>
+          </div>
+        )}
+        {(fieldErrs.triggerType || fieldErrs.triggerConfig) && (
+          <p className="text-[11px] text-red-600">{fieldErrs.triggerType ?? fieldErrs.triggerConfig}</p>
+        )}
       </div>
 
       {/* Condiciones */}
       <ConditionTreeEditor
         tree={tree}
         onChange={setTree}
-        emptyText="Sin condiciones = la regla aplica siempre que dispare el trigger."
+        emptyText="Sin condiciones = la regla aplica siempre que ocurra el disparador."
       />
 
       {/* Acciones */}
       <div className="crm-card !p-4 space-y-3">
         <h3 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Acciones</h3>
+        {fieldErrs.actions && <p className="text-[11px] text-red-600">{fieldErrs.actions}</p>}
         {actions.map((a, i) => (
           <div key={i} className="rounded-md border p-3" style={{ borderColor: "var(--border-subtle)" }}>
             <div className="flex items-center justify-between gap-2">
@@ -218,32 +283,38 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
             </div>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
               {(BUILDER_ACTION_FIELDS[a.type] ?? []).map((f) => (
-                f.kind === "select" ? (
-                  <select key={f.configKey} className="form-input text-[13px]" value={a.config[f.configKey] ?? ""}
+                <div key={f.configKey} className="space-y-0.5">
+                {f.kind === "select" ? (
+                  <select className="form-input text-[13px]" value={a.config[f.configKey] ?? ""}
                     onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))}>
                     <option value="">{f.label}…</option>
                     {(f.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 ) : f.kind === "checkbox" ? (
-                  <select key={f.configKey} className="form-input text-[13px]" value={a.config[f.configKey] ?? "false"}
+                  <select className="form-input text-[13px]" value={a.config[f.configKey] ?? "false"}
                     onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))}>
                     <option value="false">No</option>
                     <option value="true">Sí</option>
                   </select>
                 ) : f.kind === "textarea" ? (
-                  <textarea key={f.configKey} className="form-input text-[13px]" placeholder={f.placeholder ?? f.label} value={a.config[f.configKey] ?? ""}
+                  <textarea className="form-input text-[13px]" placeholder={f.placeholder ?? f.label} value={a.config[f.configKey] ?? ""}
                     onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))} />
                 ) : (
-                  <input key={f.configKey} className="form-input text-[13px]" type={f.kind === "number" ? "number" : "text"} placeholder={f.placeholder ?? f.label} value={a.config[f.configKey] ?? ""}
+                  <input className="form-input text-[13px]" type={f.kind === "number" ? "number" : "text"} placeholder={f.placeholder ?? f.label} value={a.config[f.configKey] ?? ""}
                     onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, config: { ...x.config, [f.configKey]: e.target.value } } : x))} />
-                )
+                )}
+                {AYUDA_CAMPO[`${a.type}.${f.configKey}`] && <Hint>{AYUDA_CAMPO[`${a.type}.${f.configKey}`]}</Hint>}
+                </div>
               ))}
             </div>
-            <div className="mt-2">
-              <label className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Retrasar (min)</label>
-              <input className="form-input max-w-[160px] text-[13px]" type="number" min={0} placeholder="0 = inmediata"
+            <div className="mt-2 space-y-1">
+              <label className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Ejecutar después de</label>
+              <DelayInput
                 value={a.delayMinutes ?? ""}
-                onChange={(e) => setActions(actions.map((x, j) => j === i ? { ...x, delayMinutes: e.target.value } : x))} />
+                onChange={(v) => setActions(actions.map((x, j) => j === i ? { ...x, delayMinutes: v } : x))}
+                presets={DELAY_PRESETS}
+                emptyText="Inmediata"
+              />
             </div>
           </div>
         ))}
@@ -253,8 +324,9 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       </div>
 
       {/* Cooldown */}
-      <Field label="Cooldown (minutos, opcional — evita re-disparos)">
-        <input className="form-input max-w-[200px] text-[13px]" type="number" value={cooldown} onChange={(e) => setCooldown(e.target.value)} placeholder="ej. 1440" />
+      <Field label="No repetir para el mismo contacto durante (opcional)">
+        <DelayInput value={cooldown} onChange={setCooldown} presets={COOLDOWN_PRESETS} emptyText="Sin límite: la regla puede repetirse cada vez que ocurra el disparador" />
+        {fieldErrs.cooldownMinutes && <p className="text-[11px] text-red-600">{fieldErrs.cooldownMinutes}</p>}
       </Field>
 
       {/* Acciones del form */}

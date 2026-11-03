@@ -21,17 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DEAL_TYPE_LABELS,
-  LEAD_SOURCE_CATEGORY_LABELS,
-  ROLE_LABELS,
-} from "@/lib/constants";
+import { DEAL_TYPE_LABELS, ROLE_LABELS } from "@/lib/labels";
+import { LEAD_SOURCE_CATEGORY_LABELS } from "@/lib/constants";
 import { z } from "zod";
 
 // Esquema de validacion
 const ruleFormSchema = z.object({
   dealType: z.string().min(1, "Selecciona un tipo de operación"),
-  leadSourceCategory: z.string().min(1, "Selecciona una categoría de fuente"),
+  leadSourceCategory: z.string().min(1, "Selecciona el origen del lead"),
   role: z.string().min(1, "Selecciona un rol"),
   percentage: z.number().min(0, "Mínimo 0%").max(100, "Máximo 100%"),
   isActive: z.boolean(),
@@ -50,6 +47,8 @@ interface CommissionRuleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rule: CommissionRuleData | null;
+  /** Error del último intento de guardar (p. ej. regla duplicada); el diálogo sigue abierto. */
+  serverError?: { field?: string; message: string } | null;
   onSubmit: (data: Record<string, unknown>) => Promise<void>;
   isPending: boolean;
 }
@@ -58,6 +57,7 @@ export function CommissionRuleDialog({
   open,
   onOpenChange,
   rule,
+  serverError = null,
   onSubmit,
   isPending,
 }: CommissionRuleDialogProps) {
@@ -94,6 +94,15 @@ export function CommissionRuleDialog({
     }
     setErrors({});
   }, [rule, open]);
+
+
+  // Error devuelto por el servidor (p. ej. correo repetido): se pinta junto al campo, o arriba
+  // si no se sabe cuál es. Se limpia solo al editar ese campo.
+  useEffect(() => {
+    if (serverError) {
+      setErrors((prev) => ({ ...prev, [serverError.field ?? "_form"]: serverError.message }));
+    }
+  }, [serverError]);
 
   // Manejar cambios
   function handleChange(field: string, value: string | boolean) {
@@ -146,14 +155,23 @@ export function CommissionRuleDialog({
           <DialogDescription>
             {isEditing
               ? "Modifica los parámetros de la regla seleccionada"
-              : "Configura una nueva regla de comisión"}
+              : "Define cuánto cobra un rol por cada combinación de operación y origen del lead. No puede haber dos reglas iguales."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {errors._form && (
+            <p
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {errors._form}
+            </p>
+          )}
+
           {/* Tipo de operacion */}
           <div className="space-y-2">
-            <Label>Tipo de Operación</Label>
+            <Label>Tipo de operación</Label>
             <Select
               value={formData.dealType}
               onValueChange={(v) => handleChange("dealType", v)}
@@ -176,13 +194,13 @@ export function CommissionRuleDialog({
 
           {/* Categoria de fuente */}
           <div className="space-y-2">
-            <Label>Categoría de Fuente</Label>
+            <Label>Origen del lead</Label>
             <Select
               value={formData.leadSourceCategory}
               onValueChange={(v) => handleChange("leadSourceCategory", v)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar categoría" />
+                <SelectValue placeholder="Seleccionar origen" />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(LEAD_SOURCE_CATEGORY_LABELS).map(([key, label]) => (
@@ -222,7 +240,7 @@ export function CommissionRuleDialog({
 
           {/* Porcentaje */}
           <div className="space-y-2">
-            <Label htmlFor="percentage">Porcentaje (%)</Label>
+            <Label htmlFor="percentage">Porcentaje de comisión (%)</Label>
             <Input
               id="percentage"
               type="number"

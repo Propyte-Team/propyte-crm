@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format-date";
 import { RefreshCw, Copy } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { leerError } from "@/lib/api-errors";
 
 interface LogRow {
   id: string;
@@ -23,6 +25,14 @@ interface LogRow {
   contact: { id: string; firstName: string; lastName: string } | null;
 }
 
+// Estados del envío en palabras de negocio (antes se veía SENT / FAILED en crudo).
+const STATUS_LABEL: Record<string, string> = {
+  SENT: "enviado",
+  FAILED: "falló",
+  SKIPPED: "omitido",
+  PENDING: "pendiente",
+};
+
 const STATUS_BADGE: Record<string, string> = {
   SENT: "badge-success",
   FAILED: "badge-error",
@@ -38,6 +48,7 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,7 +58,7 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
     const res = await fetch(`/api/admin/comment-rules/logs?${params}`);
     setLoading(false);
     if (!res.ok) {
-      setError("No se pudo cargar el historial");
+      setError(await leerError(res, "No se pudo cargar el historial"));
       return;
     }
     const data = await res.json();
@@ -59,8 +70,13 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
 
   async function retry(id: string) {
     setRetryingId(id);
-    await fetch(`/api/admin/comment-rules/logs/${id}/retry`, { method: "POST" });
+    const res = await fetch(`/api/admin/comment-rules/logs/${id}/retry`, { method: "POST" });
     setRetryingId(null);
+    if (res.ok) {
+      toast({ title: "Reintento enviado" });
+    } else {
+      toast({ title: "No se pudo reintentar", description: await leerError(res, "Intenta de nuevo."), variant: "destructive" });
+    }
     load();
   }
 
@@ -95,7 +111,7 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
           // recibido la llamada, así que puede duplicar el envío.
           const hasPending = r.publicReplyStatus === "PENDING" || r.dmStatus === "PENDING";
           const retryTitle = hasPending
-            ? "Puede duplicar el envío: el proceso original pudo haber llegado a llamar a Graph antes de morir."
+            ? "Puede duplicar el envío: el intento original pudo haber llegado a Meta antes de interrumpirse."
             : "Reintenta solo lo que falló; no reenvía lo que ya se publicó o mandó.";
           return (
           <div key={r.id} className="rounded-lg border p-3 text-[12px]" style={{ borderColor: "var(--border-default)" }}>
@@ -103,9 +119,9 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
               <span className="badge badge-neutral">{r.platform === "INSTAGRAM" ? "IG" : "FB"}</span>
               <span className="font-semibold">{r.authorHandle ?? "sin nombre"}</span>
               <span className="text-muted-foreground">{formatDateTime(r.createdAt)}</span>
-              <span className="badge badge-neutral">{r.rule?.name ?? "regla borrada"}</span>
-              <span className={`badge ${STATUS_BADGE[r.publicReplyStatus]}`}>público: {r.publicReplyStatus}</span>
-              <span className={`badge ${STATUS_BADGE[r.dmStatus]}`}>DM: {r.dmStatus}</span>
+              <span className="badge badge-neutral">{r.rule?.name ?? "regla eliminada"}</span>
+              <span className={`badge ${STATUS_BADGE[r.publicReplyStatus]}`}>respuesta pública: {STATUS_LABEL[r.publicReplyStatus] ?? r.publicReplyStatus}</span>
+              <span className={`badge ${STATUS_BADGE[r.dmStatus]}`}>mensaje privado: {STATUS_LABEL[r.dmStatus] ?? r.dmStatus}</span>
               {r.contact && (
                 <a className="underline" href={`/contacts/${r.contact.id}`}>
                   {r.contact.firstName} {r.contact.lastName}
@@ -120,8 +136,13 @@ export function CommentRuleLogs({ reloadKey }: { reloadKey: number }) {
             )}
             <div className="mt-2 flex items-center gap-2">
               <Button variant="outline" size="sm"
-                onClick={() => navigator.clipboard.writeText(r.postId)} title="Copiar ID de la publicación">
-                <Copy className="mr-1 h-3 w-3" /> ID del post
+                onClick={() => {
+                  navigator.clipboard.writeText(r.postId).then(
+                    () => toast({ title: "Identificador copiado" }),
+                    () => toast({ title: "No se pudo copiar", variant: "destructive" }),
+                  );
+                }} title="Copiar el identificador de la publicación">
+                <Copy className="mr-1 h-3 w-3" /> Identificador de la publicación
               </Button>
               {/* Solo Facebook: la URL de un post de IG usa shortcode, no el media_id
                   que manda el webhook, así que no hay link construible. */}

@@ -1,7 +1,7 @@
 // Alta y edición de una marca del agente (2026-10-09, spec marcas-agente).
 // Tres modos: crear (el agente nace APAGADO; se enciende al editar, tras revisar el conocimiento),
 // editar, y editar la predeterminada (solo el nombre: usa la configuración global del bot).
-// La lógica sin React (slug, cuerpo del POST/PATCH, validación) vive en brand-helpers.ts.
+// La lógica sin React (identificador interno, cuerpo del POST/PATCH, validación) vive en brand-helpers.ts.
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -16,10 +16,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { mensajeDeError, erroresPorCampo } from "@/lib/api-errors";
 import { PLAZA_LABELS } from "@/lib/constants";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import {
-  NONE, BRAND_CHANNEL_OPTIONS, BRAND_LIMITS, apiErrorMessage, brandToForm, buildBrandPayload,
+  NONE, BRAND_CHANNEL_OPTIONS, BRAND_LIMITS, brandToForm, buildBrandPayload,
   emptyBrandForm, suggestSlug, validateBrandForm,
   type BrandFormMode, type BrandFormState, type BrandRow,
 } from "./brand-helpers";
@@ -29,8 +31,16 @@ import {
 const TEXTAREA_CLASS = "form-input w-full resize-y text-[13px]";
 
 const DEFAULT_BRAND_NOTE =
-  "La marca predeterminada usa la configuración global del bot (pestaña Bot). Sus cuentas son todas las que no tienen marca asignada.";
-const EMPTY_KNOWLEDGE_CONFIRM = "Esta marca no tiene conocimiento cargado. ¿Encender de todos modos?";
+  "La marca predeterminada usa la configuración general del bot (pestaña Bot). Sus cuentas son todas las que no tienen marca asignada.";
+const EMPTY_KNOWLEDGE_CONFIRM = {
+  titulo: "¿Encender el agente sin conocimiento?",
+  descripcion:
+    "Esta marca no tiene conocimiento cargado: sin él, el bot solo saluda y pasa la conversación a una persona.",
+  confirmar: "Encender de todos modos",
+  cancelar: "Cancelar",
+} as const;
+// Texto único para "heredar" el valor del bot general (antes: «Usar el global», «Ninguno», «El global»).
+const SAME_AS_GLOBAL = "Igual que el bot general";
 
 interface DevelopmentHit {
   id: string;
@@ -50,10 +60,15 @@ export interface BrandFormDialogProps {
 
 export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, onSaved }: BrandFormDialogProps) {
   const { toast } = useToast();
+  const confirmar = useConfirm();
   const mode: BrandFormMode = !brand ? "create" : brand.isDefault ? "edit-default" : "edit";
 
   const [form, setForm] = useState<BrandFormState>(emptyBrandForm);
   const [error, setError] = useState("");
+  // Errores de validación del servidor por campo (name, persona, knowledge…), junto a cada campo.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // "Avanzado" (identificador interno) se abre solo si el error es de ese campo.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Buscador de desarrollos del Hub. `devNames` recuerda el nombre de todo lo que se ha visto en
@@ -74,6 +89,8 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
     if (!open) return;
     setForm(brand ? brandToForm(brand) : emptyBrandForm());
     setError("");
+    setFieldErrors({});
+    setAdvancedOpen(false);
     setSaving(false);
     setQuery("");
     setResults([]);
@@ -97,7 +114,7 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
         if (cancelled) return;
         if (!res.ok) {
           setResults([]);
-          setSearchError(apiErrorMessage(data, "No se pudo consultar el catálogo del Hub"));
+          setSearchError(mensajeDeError(data, "No se pudo consultar el catálogo del Hub"));
           return;
         }
         const rows: DevelopmentHit[] = Array.isArray(data.data) ? data.data : [];
@@ -122,6 +139,7 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
   function set<K extends keyof BrandFormState>(key: K, value: BrandFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (error) setError("");
+    if (fieldErrors[key as string]) setFieldErrors(({ [key as string]: _quitado, ...resto }) => resto);
   }
 
   function changeName(name: string) {
@@ -146,9 +164,9 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
     set("developmentIds", [...form.developmentIds, id]);
   }
 
-  function toggleBot(checked: boolean) {
+  async function toggleBot(checked: boolean) {
     if (checked && !form.knowledge.trim() && !emptyKnowledgeAck.current) {
-      if (!window.confirm(EMPTY_KNOWLEDGE_CONFIRM)) return;
+      if (!(await confirmar({ ...EMPTY_KNOWLEDGE_CONFIRM }))) return;
       emptyKnowledgeAck.current = true;
     }
     set("botEnabled", checked);
@@ -159,16 +177,18 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
     const problem = validateBrandForm(form, mode);
     if (problem) {
       setError(problem);
+      if (/identificador/i.test(problem)) setAdvancedOpen(true);
       return;
     }
     // Segunda red: el conocimiento pudo vaciarse DESPUÉS de prender el agente.
     if (mode === "edit" && form.botEnabled && !form.knowledge.trim() && !emptyKnowledgeAck.current) {
-      if (!window.confirm(EMPTY_KNOWLEDGE_CONFIRM)) return;
+      if (!(await confirmar({ ...EMPTY_KNOWLEDGE_CONFIRM }))) return;
       emptyKnowledgeAck.current = true;
     }
 
     setSaving(true);
     setError("");
+    setFieldErrors({});
     try {
       const res = await fetch(brand ? `/api/admin/brands/${brand.id}` : "/api/admin/brands", {
         method: brand ? "PATCH" : "POST",
@@ -177,9 +197,12 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const porCampo = erroresPorCampo(data);
+        setFieldErrors(porCampo);
+        if ("slug" in porCampo) setAdvancedOpen(true);
         toast({
           title: "No se pudo guardar la marca",
-          description: apiErrorMessage(data, "Error al guardar la marca"),
+          description: mensajeDeError(data, "Revisa los datos e intenta de nuevo."),
           variant: "destructive",
         });
         return;
@@ -188,7 +211,11 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
       onOpenChange(false);
       onSaved();
     } catch {
-      toast({ title: "No se pudo guardar la marca", description: "Error de red", variant: "destructive" });
+      toast({
+        title: "No se pudo guardar la marca",
+        description: "No hay conexión con el servidor. Revisa tu internet e intenta de nuevo.",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -198,6 +225,8 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
   // Si lo guardado ya no existe en la lista (usuario dado de baja, playbook borrado) el Select
   // quedaría en blanco y parecería "sin valor": se muestra con una opción aparte.
   const playbookMissing = !!form.playbookId && !playbooks.some((p) => p.id === form.playbookId);
+  const errorCampo = (campo: string) =>
+    fieldErrors[campo] ? <p className="text-[11px] text-destructive">{fieldErrors[campo]}</p> : null;
   const ownerMissing = !!form.marketingOwnerUserId && !users.some((u) => u.id === form.marketingOwnerUserId);
 
   return (
@@ -233,32 +262,13 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
               onChange={(e) => changeName(e.target.value)}
               placeholder="Nativa Tulum"
             />
+            {errorCampo("name")}
           </div>
 
           {mode !== "edit-default" && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="brand-slug">Identificador (slug)</Label>
-                <Input
-                  id="brand-slug"
-                  value={form.slug}
-                  maxLength={40}
-                  disabled={mode !== "create"}
-                  onChange={(e) => {
-                    set("slug", e.target.value);
-                    set("slugTouched", true);
-                  }}
-                  placeholder="nativa-tulum"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {mode === "create"
-                    ? "Minúsculas, números y guiones. Se sugiere a partir del nombre y no se puede cambiar después."
-                    : "No se puede cambiar después de crear la marca."}
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="brand-persona">Presentación</Label>
+                <Label htmlFor="brand-persona">Cómo se presenta</Label>
                 <textarea
                   id="brand-persona"
                   className={TEXTAREA_CLASS}
@@ -266,12 +276,16 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   maxLength={BRAND_LIMITS.persona}
                   value={form.persona}
                   onChange={(e) => set("persona", e.target.value)}
-                  placeholder="Eres el asistente comercial de {Marca}, …"
+                  placeholder="Ej.: Asistente comercial de Nativa Tulum. Cálido y claro; ayuda a conocer los desarrollos y a agendar una visita."
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Quién es el asistente y cómo trata a la gente. Usa el mismo estilo que escribirías para una persona nueva del equipo.
+                </p>
+                {errorCampo("persona")}
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="brand-knowledge">Conocimiento</Label>
+                <Label htmlFor="brand-knowledge">Qué sabe la marca</Label>
                 <textarea
                   id="brand-knowledge"
                   className={TEXTAREA_CLASS}
@@ -281,9 +295,10 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   onChange={(e) => set("knowledge", e.target.value)}
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Precios y promociones vigentes, crédito, horario, contacto oficial y QUÉ NO SE PUEDE DECIR. El agente
+                  Precios y promociones vigentes, crédito, horario, contacto oficial y lo que no se puede decir. El agente
                   solo cita lo que está aquí o en el catálogo.
                 </p>
+                {errorCampo("knowledge")}
                 <p className="text-right text-[10px] font-mono text-muted-foreground">
                   {form.knowledge.length}/{BRAND_LIMITS.knowledge}
                 </p>
@@ -295,10 +310,10 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   <div className="flex flex-wrap gap-1.5">
                     {form.developmentIds.map((id) => (
                       <Badge key={id} variant="secondary" className="gap-1.5">
-                        <span className="max-w-[16rem] truncate">{devNames[id] ?? id}</span>
+                        <span className="max-w-[16rem] truncate">{devNames[id] ?? "Desarrollo guardado"}</span>
                         <button
                           type="button"
-                          aria-label={`Quitar ${devNames[id] ?? id}`}
+                          aria-label={`Quitar ${devNames[id] ?? "desarrollo"}`}
                           className="leading-none hover:text-destructive"
                           onClick={() => set("developmentIds", form.developmentIds.filter((d) => d !== id))}
                         >
@@ -377,14 +392,14 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Tono</Label>
+                  <Label>Estilo de conversación</Label>
                   <Select
                     value={form.tonePreset || NONE}
                     onValueChange={(v) => set("tonePreset", v === NONE ? "" : v)}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NONE}>Usar el global</SelectItem>
+                      <SelectItem value={NONE}>{SAME_AS_GLOBAL}</SelectItem>
                       {Object.values(TONE_PRESETS).map((t) => (
                         <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
                       ))}
@@ -400,7 +415,7 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NONE}>Ninguno</SelectItem>
+                      <SelectItem value={NONE}>{SAME_AS_GLOBAL}</SelectItem>
                       {playbooks.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                       ))}
@@ -417,7 +432,7 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NONE}>El global</SelectItem>
+                      <SelectItem value={NONE}>{SAME_AS_GLOBAL}</SelectItem>
                       {users.map((u) => (
                         <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                       ))}
@@ -435,7 +450,7 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                     checked={form.useGlobalChannels}
                     onChange={(e) => set("useGlobalChannels", e.target.checked)}
                   />
-                  Usar los globales
+                  {SAME_AS_GLOBAL}
                 </label>
                 <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                   {BRAND_CHANNEL_OPTIONS.map((c) => (
@@ -469,6 +484,36 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                 </p>
               </div>
             </>
+          )}
+
+          {mode !== "edit-default" && (
+            <details
+              open={advancedOpen}
+              onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
+              className="rounded-md border p-3"
+            >
+              <summary className="cursor-pointer select-none text-sm font-medium">Avanzado</summary>
+              <div className="mt-3 space-y-1.5">
+                <Label htmlFor="brand-slug">Identificador interno</Label>
+                <Input
+                  id="brand-slug"
+                  value={form.slug}
+                  maxLength={40}
+                  disabled={mode !== "create"}
+                  onChange={(e) => {
+                    set("slug", e.target.value);
+                    set("slugTouched", true);
+                  }}
+                  placeholder="nativa-tulum"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {mode === "create"
+                    ? "Se arma solo a partir del nombre; normalmente no hace falta cambiarlo. Minúsculas, números y guiones, y no se puede cambiar después."
+                    : "Código interno de la marca. No se puede cambiar después de crearla."}
+                </p>
+                {errorCampo("slug")}
+              </div>
+            </details>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}

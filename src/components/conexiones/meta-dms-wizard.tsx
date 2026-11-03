@@ -10,6 +10,7 @@
 // Graph), y «Guardar» crea las dos cuentas en una transacción en /meta-dms, que vuelve a
 // comprobarlo todo. Aquí solo se capturan valores y se muestran respuestas.
 import { useState } from "react";
+import { mensajeDeError } from "@/lib/api-errors";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { providerById } from "@/lib/connectors/registry";
 import { metaDmBaseName, metaDmNames } from "@/lib/connectors/meta-dms";
@@ -50,8 +51,7 @@ const STEPS = [
 const SHARED_FIELDS = providerById("MESSENGER")?.credFields ?? [];
 const IG_LABEL = providerById("INSTAGRAM")?.credFields.find((f) => f.key === "igBusinessId")?.label ?? "Instagram Business ID";
 
-const errorText = (data: { error?: unknown }, fallback: string) =>
-  typeof data.error === "string" ? data.error : fallback;
+const errorText = (data: { error?: unknown }, fallback: string) => mensajeDeError(data, fallback);
 
 export function MetaDmsWizard({
   open, onOpenChange, onConnected,

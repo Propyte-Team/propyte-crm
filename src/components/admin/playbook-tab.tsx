@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import { upsertPlaybook, setActivePlaybook, deletePlaybook } from "@/server/bot-playbook";
 import { CAPTURE_TYPES } from "@/server/bot-playbook.schema";
@@ -92,15 +93,42 @@ interface TaskRowState {
 const CAPTURE_TYPE_LABELS: Record<string, string> = {
   TEXT: "Texto",
   FULL_NAME: "Nombre completo",
-  EMAIL: "Email",
+  EMAIL: "Correo",
   PHONE: "Teléfono",
   MONEY: "Monto",
   BUDGET_RANGE: "Rango de presupuesto",
-  ENUM: "Enumeración (opciones)",
+  ENUM: "Elegir de una lista",
   ZONE: "Zona",
   BOOLEAN: "Sí / No",
   NUMBER: "Número",
 };
+
+// Etiquetas en español de los datos del contacto que el bot puede llenar. La clave técnica
+// queda solo como tooltip; un campo sin etiqueta aquí se muestra con su clave.
+const FIELD_LABELS: Record<string, string> = {
+  firstName: "Nombre",
+  lastName: "Apellido",
+  email: "Correo",
+  phone: "Teléfono",
+  residenceCity: "Ciudad de residencia",
+  budgetMin: "Presupuesto mínimo",
+  budgetMax: "Presupuesto máximo",
+  preferredZone: "Zona de interés",
+  propertyType: "Tipo de propiedad",
+  purchaseTimeline: "Cuándo piensa comprar",
+  paymentMethod: "Forma de pago",
+  purchaseModality: "Modalidad de compra",
+  rentalStrategy: "Estrategia de renta",
+  investmentProfile: "Perfil de inversión",
+  contactType: "Tipo de contacto",
+};
+
+function fieldLabel(key: string): string {
+  return FIELD_LABELS[key] ?? key;
+}
+
+const MAX_TASKS = 30;
+const MAX_OBJECTIVE = 500;
 
 // --- Helpers de conversión -------------------------------------------------
 
@@ -173,6 +201,13 @@ function tasksToRows(tasks: PlaybookTaskData[]): TaskRowState[] {
     }));
 }
 
+// Mensaje de un error lanzado por una server action; nunca "Error" a secas ni JSON de validación.
+function errorLegible(error: unknown): string {
+  const msg = error instanceof Error ? error.message : "";
+  if (!msg || msg.startsWith("[") || msg.startsWith("{")) return "Revisa los datos e intenta de nuevo.";
+  return msg;
+}
+
 // --- Fila de tarea (sortable) ---------------------------------------------
 
 function TaskRowItem({
@@ -209,7 +244,7 @@ function TaskRowItem({
         <button
           type="button"
           className="mt-1 shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground"
-          aria-label="Reordenar tarea"
+          aria-label="Reordenar pregunta"
           {...attributes}
           {...listeners}
         >
@@ -221,14 +256,18 @@ function TaskRowItem({
             <Label>Objetivo</Label>
             <Input
               value={row.objective}
+              maxLength={MAX_OBJECTIVE}
               onChange={(e) => onChange({ objective: e.target.value })}
               placeholder="Ej. Obtener el correo electrónico del contacto"
             />
+            <p className="text-right text-[10px] text-muted-foreground">
+              {row.objective.length}/{MAX_OBJECTIVE}
+            </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Campo destino</Label>
+              <Label>Dónde se guarda el dato</Label>
               <Select
                 value={row.captureType === "FULL_NAME" ? "firstName" : row.targetField || undefined}
                 onValueChange={onTargetFieldChange}
@@ -239,16 +278,16 @@ function TaskRowItem({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>Nativos</SelectLabel>
+                    <SelectLabel>Del contacto</SelectLabel>
                     {nativeFieldKeys.map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {f}
+                      <SelectItem key={f} value={f} title={f}>
+                        {fieldLabel(f)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
                   {customFields.length > 0 && (
                     <SelectGroup>
-                      <SelectLabel>Custom</SelectLabel>
+                      <SelectLabel>Personalizados</SelectLabel>
                       {customFields.map((f) => (
                         <SelectItem key={f} value={f}>
                           {f}
@@ -260,13 +299,13 @@ function TaskRowItem({
               </Select>
               {row.captureType === "FULL_NAME" && (
                 <p className="text-xs text-muted-foreground">
-                  Nombre completo siempre escribe a firstName (y lastName si aplica).
+                  Con «Nombre completo» el bot guarda el nombre y, si lo dan, el apellido.
                 </p>
               )}
             </div>
 
             <div className="space-y-1.5">
-              <Label>Tipo de captura</Label>
+              <Label>Cómo interpreta la respuesta</Label>
               <Select
                 value={row.captureType}
                 onValueChange={(v) => {
@@ -297,13 +336,16 @@ function TaskRowItem({
 
           {row.captureType === "ENUM" && (
             <div className="space-y-1.5">
-              <Label>Opciones (una por línea: valor:sinónimo1,sinónimo2)</Label>
+              <Label>Opciones (una por línea)</Label>
               <textarea
                 className="form-input min-h-[80px] resize-y font-mono text-xs"
                 value={row.enumOptionsText}
                 onChange={(e) => onChange({ enumOptionsText: e.target.value })}
                 placeholder={"DEPARTAMENTO:depa,depto\nCASA"}
               />
+              <p className="text-xs text-muted-foreground">
+                Escribe la opción y, después de dos puntos, otras formas en que el cliente la dice, separadas por comas.
+              </p>
             </div>
           )}
 
@@ -316,18 +358,21 @@ function TaskRowItem({
               />
               Obligatoria
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            <label
+              className="flex items-center gap-2 text-sm"
+              title="Si el contacto ya tiene este dato guardado, el bot no vuelve a preguntarlo."
+            >
               <input
                 type="checkbox"
                 checked={row.skipIfFilled}
                 onChange={(e) => onChange({ skipIfFilled: e.target.checked })}
               />
-              Omitir si ya está lleno
+              No preguntar si ya lo sabemos
             </label>
           </div>
         </div>
 
-        <Button variant="ghost" size="sm" onClick={onRemove} aria-label="Eliminar tarea">
+        <Button variant="ghost" size="sm" onClick={onRemove} aria-label="Eliminar pregunta" title="Eliminar pregunta">
           <Trash2 className="h-3.5 w-3.5 text-red-500" />
         </Button>
       </div>
@@ -339,6 +384,7 @@ function TaskRowItem({
 
 export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }: PlaybookTabProps) {
   const { toast } = useToast();
+  const confirmar = useConfirm();
   const [pending, startTransition] = useTransition();
 
   // Lista local de playbooks (v1 ya no edita solo initialPlaybooks[0]: soporta
@@ -381,16 +427,23 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         setRows(tasksToRows(created.tasks ?? []));
         toast({ title: "Playbook creado" });
       } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({ title: "No se pudo crear el playbook", description: errorLegible(error), variant: "destructive" });
       }
     });
   }
 
-  function handleDeletePlaybook() {
+  async function handleDeletePlaybook() {
     if (!playbook) return;
-    if (!window.confirm(`¿Eliminar el playbook "${playbook.name}"? Esta acción no se puede deshacer.`)) {
-      return;
-    }
+    const ok = await confirmar({
+      titulo: `¿Eliminar el playbook "${playbook.name}"?`,
+      descripcion:
+        playbook.id === activeId
+          ? "Es el playbook activo: si lo eliminas, el bot dejará de calificar contactos hasta que actives otro. No se puede deshacer."
+          : "Revisa antes que ninguna marca o agente lo esté usando. No se puede deshacer.",
+      confirmar: "Eliminar playbook",
+      peligroso: true,
+    });
+    if (!ok) return;
     const deletedId = playbook.id;
     startTransition(async () => {
       try {
@@ -404,7 +457,7 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         setRows(next ? tasksToRows(next.tasks) : []);
         toast({ title: "Playbook eliminado" });
       } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({ title: "No se pudo eliminar el playbook", description: errorLegible(error), variant: "destructive" });
       }
     });
   }
@@ -460,6 +513,33 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
   }
 
   function save() {
+    // Validación antes de mandar: así el aviso dice qué pregunta falla, no un error técnico.
+    if (rows.length > MAX_TASKS) {
+      toast({
+        title: "Demasiadas preguntas",
+        description: `Un playbook admite máximo ${MAX_TASKS} preguntas; tienes ${rows.length}. Quita algunas.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const sinObjetivo = rows.findIndex((r) => !r.objective.trim());
+    if (sinObjetivo !== -1) {
+      toast({
+        title: "Falta el objetivo",
+        description: `La pregunta ${sinObjetivo + 1} no tiene objetivo. Escribe qué debe averiguar el bot.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const sinCampo = rows.findIndex((r) => r.captureType !== "FULL_NAME" && !r.targetField);
+    if (sinCampo !== -1) {
+      toast({
+        title: "Falta dónde guardar el dato",
+        description: `La pregunta ${sinCampo + 1} no tiene un campo elegido en «Dónde se guarda el dato».`,
+        variant: "destructive",
+      });
+      return;
+    }
     startTransition(async () => {
       try {
         // Keys ya asignadas (filas cargadas de DB) van primero al set para que
@@ -518,21 +598,34 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         setRows(tasksToRows(savedData.tasks));
         toast({ title: "Playbook guardado" });
       } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({ title: "No se pudo guardar el playbook", description: errorLegible(error), variant: "destructive" });
       }
     });
   }
 
-  function toggleActive() {
+  async function toggleActive() {
     if (!playbook) return;
+    if (isActive) {
+      const ok = await confirmar({
+        titulo: `¿Desactivar el playbook "${playbook.name}"?`,
+        descripcion: "El bot dejará de calificar con este playbook hasta que actives otro.",
+        confirmar: "Desactivar",
+        peligroso: true,
+      });
+      if (!ok) return;
+    }
+    const nextId = isActive ? null : playbook.id;
     startTransition(async () => {
       try {
-        const nextId = isActive ? null : playbook.id;
         await setActivePlaybook(nextId);
         setActiveId(nextId);
         toast({ title: nextId ? "Playbook activado" : "Playbook desactivado" });
       } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({
+          title: nextId ? "No se pudo activar el playbook" : "No se pudo desactivar el playbook",
+          description: errorLegible(error),
+          variant: "destructive",
+        });
       }
     });
   }
@@ -543,8 +636,8 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         <CardHeader>
           <CardTitle className="text-lg">Playbook</CardTitle>
           <CardDescription>
-            Aún no existe un playbook de calificación. Crea uno base para empezar a definir
-            las tareas que el bot debe cumplir con cada contacto.
+            Aún no existe un playbook de calificación (la lista de preguntas con las que el bot conoce a cada
+            contacto). Crea uno base para empezar a definirlas.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -561,7 +654,7 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Playbooks</CardTitle>
-          <CardDescription>Elige cuál playbook editar. Sólo uno puede estar activo a la vez.</CardDescription>
+          <CardDescription>Elige cuál playbook editar. Solo uno puede ser el general (activo); marcas y agentes pueden usar otro.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="min-w-[240px] flex-1 space-y-1.5">
@@ -592,7 +685,7 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
           <div>
             <CardTitle className="text-lg">{name || "Playbook"}</CardTitle>
             <CardDescription>
-              Secuencia de tareas que el bot ejecuta para calificar a un contacto.
+              Preguntas que el bot hace, en orden, para conocer a un contacto. Activar no guarda los cambios de abajo: guarda primero.
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -613,8 +706,8 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Tareas</CardTitle>
-          <CardDescription>Arrastra el ícono para reordenar. El bot las ejecuta en este orden.</CardDescription>
+          <CardTitle className="text-lg">Preguntas del bot</CardTitle>
+          <CardDescription>Arrastra el ícono para reordenar. El bot las hace en este orden (máximo 30).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
@@ -637,13 +730,13 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
 
           {rows.length === 0 && (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Este playbook no tiene tareas todavía.
+              Este playbook todavía no tiene preguntas.
             </p>
           )}
 
           <Button variant="outline" onClick={addRow} disabled={pending}>
             <Plus className="mr-2 h-4 w-4" />
-            Agregar tarea
+            Agregar pregunta
           </Button>
         </CardContent>
       </Card>

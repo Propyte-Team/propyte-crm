@@ -21,7 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ROLE_LABELS, PLAZA_LABELS, CAREER_REQUIREMENTS } from "@/lib/constants";
+import { CAREER_REQUIREMENTS } from "@/lib/constants";
+import { ROLE_LABELS, ROLE_LABELS_COMPLETO, PLAZA_LABELS, etiqueta } from "@/lib/labels";
 import { z } from "zod";
 import { UserBrandsField } from "./user-brands-field";
 import { effectiveBrandIds, sameBrandSet, type BrandOption } from "./user-brands-helpers";
@@ -70,6 +71,8 @@ interface TeamLeaderOption {
 }
 
 interface UserFormDialogProps {
+  /** Error del último intento de guardar (lo pone admin-content); el diálogo sigue abierto. */
+  serverError?: { field?: string; message: string } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user: UserData | null;
@@ -94,6 +97,7 @@ export function UserFormDialog({
   brandOptions = null,
   explicitBrandIds = null,
   canEditBrands = false,
+  serverError = null,
 }: UserFormDialogProps) {
   const isEditing = !!user;
   // Conjunto efectivo con que abre el formulario: si no cambia, no se manda (y un usuario sin
@@ -152,6 +156,15 @@ export function UserFormDialog({
     // brandOptions/explicitBrandIds salen de la misma prop de /admin: no cambian con el diálogo
     // abierto, así que no reinician lo que el admin está editando.
   }, [user, open, brandOptions, explicitBrandIds]);
+
+
+  // Error devuelto por el servidor (p. ej. correo repetido): se pinta junto al campo, o arriba
+  // si no se sabe cuál es. Se limpia solo al editar ese campo.
+  useEffect(() => {
+    if (serverError) {
+      setErrors((prev) => ({ ...prev, [serverError.field ?? "_form"]: serverError.message }));
+    }
+  }, [serverError]);
 
   // Manejar cambios en campos de texto
   function handleChange(field: string, value: string) {
@@ -243,6 +256,15 @@ export function UserFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {errors._form && (
+            <p
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {errors._form}
+            </p>
+          )}
+
           {/* Nombre */}
           <div className="space-y-2">
             <Label htmlFor="name">Nombre completo</Label>
@@ -339,7 +361,7 @@ export function UserFormDialog({
           {/* Nivel de carrera y Team Leader */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Nivel de Carrera</Label>
+              <Label>Nivel de carrera</Label>
               <Select
                 value={formData.careerLevel}
                 onValueChange={(v) => handleChange("careerLevel", v)}
@@ -358,7 +380,7 @@ export function UserFormDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Team Leader</Label>
+              <Label>Líder de equipo</Label>
               <Select
                 value={formData.teamLeaderId}
                 onValueChange={(v) => handleChange("teamLeaderId", v)}
@@ -370,7 +392,7 @@ export function UserFormDialog({
                   <SelectItem value="none">Sin asignar</SelectItem>
                   {teamLeaderUsers.map((tl) => (
                     <SelectItem key={tl.id} value={tl.id}>
-                      {tl.name} ({ROLE_LABELS[tl.role] ?? tl.role})
+                      {tl.name} ({etiqueta(ROLE_LABELS_COMPLETO, tl.role)})
                     </SelectItem>
                   ))}
                 </SelectContent>

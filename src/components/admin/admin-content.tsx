@@ -5,7 +5,7 @@
 // regreso al hub; la lógica interna de cada sección no cambia.
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,14 +19,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, KeyRound, History } from "lucide-react";
+import { Plus, Pencil, Trash2, KeyRound, History, RotateCcw, Info } from "lucide-react";
 import {
-  ROLE_LABELS,
   DEAL_TYPE_LABELS,
   LEAD_SOURCE_CATEGORY_LABELS,
   PLAZA_LABELS,
   ACTIVITY_AGREEMENT_DEFAULTS,
 } from "@/lib/constants";
+import { ROLE_LABELS_COMPLETO, etiqueta } from "@/lib/labels";
+import { leerError, mensajeDeError } from "@/lib/api-errors";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import {
+  buscarReglaDuplicada,
+  campoDeMensaje,
+  CAMPOS_ACUERDO,
+  construirFilaUsuario,
+  describirClaveRegla,
+  leerEnteroNoNegativo,
+  mensajeReglaDuplicada,
+} from "./admin-helpers";
 import {
   createUser,
   updateUser,
@@ -158,6 +169,15 @@ function esErrorDeNegocio<T>(resultado: T | { error: string }): resultado is { e
   return typeof resultado === "object" && resultado !== null && "error" in resultado;
 }
 
+/** Resultado de guardar desde un diálogo: si falla, el diálogo sigue abierto y muestra el mensaje. */
+type ResultadoGuardado = { ok: true } | { ok: false; error: SubmitError };
+interface SubmitError {
+  field?: string;
+  message: string;
+}
+
+const ERROR_INESPERADO = "Ocurrió un problema inesperado. Intenta de nuevo.";
+
 /** Roles que pueden restablecer contraseñas — pareado con PASSWORD_RESET_ROLES
  *  de @/server/admin. Esto solo decide si se DIBUJA el botón; el permiso real
  *  lo aplica el server action. */
@@ -200,7 +220,24 @@ export function AdminContent({
   brandAccess,
 }: AdminContentProps) {
   const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
+  const confirmar = useConfirm();
+  // Sin useTransition: los handlers devuelven el resultado para que el diálogo solo se cierre
+  // si se guardó (antes se cerraba aunque fallara y se perdía lo capturado).
+  const [isPending, setIsPending] = useState(false);
+  async function conPendiente<T>(fn: () => Promise<T>): Promise<T> {
+    setIsPending(true);
+    try {
+      return await fn();
+    } finally {
+      setIsPending(false);
+    }
+  }
+  const [userSubmitError, setUserSubmitError] = useState<SubmitError | null>(null);
+  const [ruleSubmitError, setRuleSubmitError] = useState<SubmitError | null>(null);
+  // «Marcas que ve» explícitas: se actualizan al guardar para no depender de recargar la página.
+  const [explicitByUser, setExplicitByUser] = useState<Record<string, string[]>>(
+    brandAccess?.explicitByUser ?? {},
+  );
 
   // Sección activa: viene del query param `tab` (server-side). Si es
   // invalida o no viene, cae al default (Usuarios).
@@ -259,34 +296,41 @@ export function AdminContent({
 
   // --- Handlers de usuarios ---
 
-  async function handleCreateUser(data: Record<string, unknown>) {
-    startTransition(async () => {
+  function falla(mensaje: string, field?: string): ResultadoGuardado {
+    return { ok: false, error: { message: mensajeDeError({ error: mensaje }), field } };
+  }
+
+  async function handleCreateUser(data: Record<string, unknown>): Promise<ResultadoGuardado> {
+    return conPendiente(async () => {
       try {
         const result = await createUser(data as any);
         if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
-          return;
+          const msg = mensajeDeError({ error: result.error });
+          return falla(msg, campoDeMensaje(msg));
         }
-        // Recargar datos refrescando la pagina
-        window.location.reload();
+        setUsers((prev) => [construirFilaUsuario(result, data, teamLeaderUsers), ...prev]);
         toast({ title: "Usuario creado", description: `${result.name} fue creado exitosamente` });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        return { ok: true };
+      } catch {
+        return falla(ERROR_INESPERADO);
       }
     });
   }
 
-  async function handleUpdateUser(id: string, data: Record<string, unknown>) {
+  async function handleUpdateUser(id: string, data: Record<string, unknown>): Promise<ResultadoGuardado> {
     // brandIds no es un campo de User (no hay columna en users: el Hub comparte la tabla). Va por
     // su propia ruta, que solo acepta ADMIN — ver user-form-dialog.tsx (2026-10-12).
     const { brandIds, ...userData } = data;
-    startTransition(async () => {
+    return conPendiente(async () => {
       try {
         const result = await updateUser(id, userData as any);
         if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
-          return;
+          const msg = mensajeDeError({ error: result.error });
+          return falla(msg, campoDeMensaje(msg));
         }
+        setUsers((prev) =>
+          prev.map((u) => (u.id === id ? construirFilaUsuario(result, userData, teamLeaderUsers, u) : u)),
+        );
         if (Array.isArray(brandIds)) {
           const res = await fetch(`/api/admin/users/${id}/brands`, {
             method: "PUT",
@@ -294,29 +338,33 @@ export function AdminContent({
             body: JSON.stringify({ brandIds }),
           });
           if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
             toast({
               title: "Usuario actualizado, pero sus marcas no se guardaron",
-              description: typeof body.error === "string" ? body.error : "Intenta de nuevo",
+              description: await leerError(res, "Intenta de nuevo"),
               variant: "destructive",
             });
-            return;
+            return { ok: true };
           }
+          setExplicitByUser((prev) => ({ ...prev, [id]: brandIds as string[] }));
         }
-        window.location.reload();
         toast({ title: "Usuario actualizado" });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        return { ok: true };
+      } catch {
+        return falla(ERROR_INESPERADO);
       }
     });
   }
 
   async function handleResetPassword(userId: string, password: string) {
-    startTransition(async () => {
+    await conPendiente(async () => {
       try {
         const target = await resetUserPassword(userId, password);
         if (esErrorDeNegocio(target)) {
-          toast({ title: "Error", description: target.error, variant: "destructive" });
+          toast({
+            title: "No se pudo restablecer la contraseña",
+            description: mensajeDeError({ error: target.error }),
+            variant: "destructive",
+          });
           return;
         }
         setResetPasswordUser(null);
@@ -324,20 +372,36 @@ export function AdminContent({
           title: "Contraseña restablecida",
           description: `${target.name} ya puede entrar con la contraseña nueva.`,
         });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } catch {
+        toast({ title: "No se pudo restablecer la contraseña", description: ERROR_INESPERADO, variant: "destructive" });
       }
     });
   }
 
   async function handleToggleActive(user: UserData) {
-    startTransition(async () => {
+    if (user.isActive) {
+      const ok = await confirmar({
+        titulo: `¿Desactivar a ${user.name}?`,
+        descripcion:
+          `${user.name} perderá el acceso al CRM de inmediato y se cerrará su sesión. ` +
+          "Sus contactos y deals siguen asignados a esta persona. " +
+          "Solo un Administrador puede volver a activarla.",
+        confirmar: "Desactivar",
+        peligroso: true,
+      });
+      if (!ok) return;
+    }
+    await conPendiente(async () => {
       try {
         const result = user.isActive
           ? await deactivateUser(user.id)
           : await updateUser(user.id, { isActive: true });
         if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
+          toast({
+            title: user.isActive ? "No se pudo desactivar" : "No se pudo activar",
+            description: mensajeDeError({ error: result.error }),
+            variant: "destructive",
+          });
           return;
         }
         // Actualizar estado local
@@ -362,26 +426,35 @@ export function AdminContent({
         toast({
           title: user.isActive ? "Usuario desactivado" : "Usuario activado",
         });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } catch {
+        toast({ title: "No se pudo completar la acción", description: ERROR_INESPERADO, variant: "destructive" });
       }
     });
   }
 
   async function handleDeleteUser(user: UserData) {
-    // A diferencia de desactivar (reversible con un clic), esto es definitivo desde
-    // esta pantalla — por eso, y solo aquí, se pide confirmación explícita antes de
-    // llamar al servidor.
-    const confirmado = window.confirm(
-      `¿Eliminar definitivamente a ${user.name}? Su sesión (si tiene una abierta) se cerrará en cuanto vuelva a pedir datos al CRM. Esta acción no se puede deshacer desde aquí.`
-    );
+    // A diferencia de desactivar (reversible), esto es definitivo desde esta pantalla — por eso
+    // se pide confirmación explícita antes de llamar al servidor.
+    const confirmado = await confirmar({
+      titulo: `¿Eliminar definitivamente a ${user.name}?`,
+      descripcion:
+        `${user.name} dejará de aparecer en la lista de usuarios y no podrá volver a entrar al CRM ` +
+        "(si tiene una sesión abierta, se cierra en cuanto vuelva a pedir datos). " +
+        "No se puede deshacer desde aquí. Si solo quieres quitarle el acceso por un tiempo, usa Desactivar.",
+      confirmar: "Eliminar definitivamente",
+      peligroso: true,
+    });
     if (!confirmado) return;
 
-    startTransition(async () => {
+    await conPendiente(async () => {
       try {
         const result = await deleteUserPermanently(user.id);
         if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
+          toast({
+            title: "No se pudo eliminar",
+            description: mensajeDeError({ error: result.error }),
+            variant: "destructive",
+          });
           return;
         }
         setUsers((prev) => prev.filter((u) => u.id !== user.id));
@@ -412,58 +485,86 @@ export function AdminContent({
           title: "Usuario eliminado",
           description: `${user.name} ya no tiene acceso al CRM.`,
         });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } catch {
+        toast({ title: "No se pudo eliminar", description: ERROR_INESPERADO, variant: "destructive" });
       }
     });
   }
 
   // --- Handlers de reglas de comision ---
 
-  async function handleCreateRule(data: Record<string, unknown>) {
-    startTransition(async () => {
+  /** Fila local a partir de lo que devolvió el servidor (el Decimal llega como texto o número). */
+  function filaRegla(result: any, data: Record<string, unknown>): CommissionRuleData {
+    return {
+      id: result.id,
+      dealType: result.dealType ?? (data.dealType as string),
+      leadSourceCategory: result.leadSourceCategory ?? (data.leadSourceCategory as string),
+      role: result.role ?? (data.role as string),
+      percentage: Number(result.percentage ?? data.percentage),
+      isActive: result.isActive ?? (data.isActive as boolean),
+      createdAt: result.createdAt ? new Date(result.createdAt) : new Date(),
+      updatedAt: result.updatedAt ? new Date(result.updatedAt) : new Date(),
+    };
+  }
+
+  async function handleCreateRule(data: Record<string, unknown>): Promise<ResultadoGuardado> {
+    // Sin esto, la API crearía una segunda regla igual y nadie sabría cuál aplica.
+    const duplicada = buscarReglaDuplicada(commissionRules, data as any);
+    if (duplicada) return falla(mensajeReglaDuplicada(duplicada));
+    return conPendiente(async () => {
       try {
         const result = await createCommissionRule(data as any);
-        if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
-          return;
-        }
-        window.location.reload();
-        toast({ title: "Regla de comisión creada" });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        if (esErrorDeNegocio(result)) return falla(result.error);
+        setCommissionRules((prev) => [...prev, filaRegla(result, data)]);
+        toast({ title: "Regla de comisión creada", description: describirClaveRegla(data as any) });
+        return { ok: true };
+      } catch {
+        return falla(ERROR_INESPERADO);
       }
     });
   }
 
-  async function handleUpdateRule(id: string, data: Record<string, unknown>) {
-    startTransition(async () => {
+  async function handleUpdateRule(id: string, data: Record<string, unknown>): Promise<ResultadoGuardado> {
+    const duplicada = buscarReglaDuplicada(commissionRules, data as any, id);
+    if (duplicada) return falla(mensajeReglaDuplicada(duplicada));
+    return conPendiente(async () => {
       try {
         const result = await updateCommissionRule(id, data as any);
-        if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
-          return;
-        }
-        window.location.reload();
-        toast({ title: "Regla actualizada" });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        if (esErrorDeNegocio(result)) return falla(result.error);
+        setCommissionRules((prev) => prev.map((r) => (r.id === id ? filaRegla(result, data) : r)));
+        toast({ title: "Regla actualizada", description: describirClaveRegla(data as any) });
+        return { ok: true };
+      } catch {
+        return falla(ERROR_INESPERADO);
       }
     });
   }
 
-  async function handleDeleteRule(id: string) {
-    startTransition(async () => {
+  async function handleDeleteRule(rule: CommissionRuleData) {
+    const ok = await confirmar({
+      titulo: "¿Eliminar esta regla de comisión?",
+      descripcion:
+        `Se quitará la regla ${describirClaveRegla(rule)} (${Number(rule.percentage)}%). ` +
+        "No se puede deshacer. Si solo quieres dejar de usarla por un tiempo, edítala y desmarca «Regla activa».",
+      confirmar: "Eliminar regla",
+      peligroso: true,
+    });
+    if (!ok) return;
+    await conPendiente(async () => {
       try {
-        const result = await deleteCommissionRule(id);
+        const result = await deleteCommissionRule(rule.id);
         if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
+          toast({
+            title: "No se pudo eliminar la regla",
+            description: mensajeDeError({ error: result.error }),
+            variant: "destructive",
+          });
           return;
         }
-        setCommissionRules((prev) => prev.filter((r) => r.id !== id));
+        setCommissionRules((prev) => prev.filter((r) => r.id !== rule.id));
         toast({ title: "Regla eliminada" });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+      } catch {
+        toast({ title: "No se pudo eliminar la regla", description: ERROR_INESPERADO, variant: "destructive" });
       }
     });
   }
@@ -471,18 +572,27 @@ export function AdminContent({
   // --- Handler de configuracion ---
 
   async function handleSaveConfig() {
-    startTransition(async () => {
+    await conPendiente(async () => {
       try {
         const result = await updateSystemConfig("activity_agreement", configValues);
         if (esErrorDeNegocio(result)) {
-          toast({ title: "Error", description: result.error, variant: "destructive" });
+          toast({
+            title: "No se pudo guardar",
+            description: mensajeDeError({ error: result.error }),
+            variant: "destructive",
+          });
           return;
         }
-        toast({ title: "Configuración guardada exitosamente" });
-      } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({ title: "Acuerdo de actividad guardado" });
+      } catch {
+        toast({ title: "No se pudo guardar", description: ERROR_INESPERADO, variant: "destructive" });
       }
     });
+  }
+
+  function handleResetConfig() {
+    setConfigValues({ ...ACTIVITY_AGREEMENT_DEFAULTS });
+    toast({ title: "Valores recomendados cargados", description: "Pulsa «Guardar» para aplicarlos." });
   }
 
   // Agrupar reglas de comision por dealType
@@ -517,7 +627,7 @@ export function AdminContent({
               <div>
                 <CardTitle className="text-lg">Usuarios del Sistema</CardTitle>
                 <CardDescription>
-                  Gestiona los usuarios y sus roles asignados
+                  Quién puede entrar al CRM, con qué rol y en qué plaza
                 </CardDescription>
               </div>
               <div className="flex gap-2">
@@ -528,6 +638,7 @@ export function AdminContent({
                 <Button
                   onClick={() => {
                     setEditingUser(null);
+                    setUserSubmitError(null);
                     setUserDialogOpen(true);
                   }}
                 >
@@ -546,7 +657,7 @@ export function AdminContent({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todos los roles</SelectItem>
-                      {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                      {Object.entries(ROLE_LABELS_COMPLETO).map(([key, label]) => (
                         <SelectItem key={key} value={key}>
                           {label}
                         </SelectItem>
@@ -586,10 +697,10 @@ export function AdminContent({
                   <thead>
                     <tr className="border-b text-left text-muted-foreground">
                       <th className="pb-3 font-medium">Nombre</th>
-                      <th className="pb-3 font-medium">Email</th>
+                      <th className="pb-3 font-medium">Correo</th>
                       <th className="pb-3 font-medium">Rol</th>
                       <th className="pb-3 font-medium">Plaza</th>
-                      <th className="pb-3 font-medium">Team Leader</th>
+                      <th className="pb-3 font-medium">Líder de equipo</th>
                       <th className="pb-3 font-medium">Estado</th>
                       <th className="pb-3 font-medium">Acciones</th>
                     </tr>
@@ -606,11 +717,11 @@ export function AdminContent({
                           <td className="py-3">{user.email}</td>
                           <td className="py-3">
                             <Badge variant="outline">
-                              {ROLE_LABELS[user.role] ?? user.role}
+                              {etiqueta(ROLE_LABELS_COMPLETO, user.role)}
                             </Badge>
                           </td>
                           <td className="py-3">
-                            {PLAZA_LABELS[user.plaza] ?? user.plaza}
+                            {etiqueta(PLAZA_LABELS, user.plaza)}
                           </td>
                           <td className="py-3">
                             {user.teamLeader?.name || "-"}
@@ -627,8 +738,11 @@ export function AdminContent({
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                title="Editar"
+                                aria-label={`Editar a ${user.name}`}
                                 onClick={() => {
                                   setEditingUser(user);
+                                  setUserSubmitError(null);
                                   setUserDialogOpen(true);
                                 }}
                               >
@@ -688,11 +802,11 @@ export function AdminContent({
                           <td className="py-3">{user.email}</td>
                           <td className="py-3">
                             <Badge variant="outline">
-                              {ROLE_LABELS[user.role] ?? user.role}
+                              {etiqueta(ROLE_LABELS_COMPLETO, user.role)}
                             </Badge>
                           </td>
                           <td className="py-3">
-                            {PLAZA_LABELS[user.plaza] ?? user.plaza}
+                            {etiqueta(PLAZA_LABELS, user.plaza)}
                           </td>
                           <td className="py-3">-</td>
                           <td className="py-3">
@@ -734,12 +848,13 @@ export function AdminContent({
               <div>
                 <CardTitle className="text-lg">Reglas de Comisiones</CardTitle>
                 <CardDescription>
-                  Configura los porcentajes de comisión por tipo de operación, fuente y rol
+                  Qué porcentaje de comisión recibe cada rol, según el tipo de operación y el origen del lead
                 </CardDescription>
               </div>
               <Button
                 onClick={() => {
                   setEditingRule(null);
+                  setRuleSubmitError(null);
                   setRuleDialogOpen(true);
                 }}
               >
@@ -751,13 +866,13 @@ export function AdminContent({
               {Object.entries(groupedRules).map(([dealType, rules]) => (
                 <div key={dealType} className="mb-6 last:mb-0">
                   <h3 className="mb-3 text-sm font-semibold text-muted-foreground uppercase">
-                    {DEAL_TYPE_LABELS[dealType] ?? dealType}
+                    {etiqueta(DEAL_TYPE_LABELS, dealType)}
                   </h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-2 font-medium">Categoría de Fuente</th>
+                          <th className="pb-2 font-medium">Origen del lead</th>
                           <th className="pb-2 font-medium">Rol</th>
                           <th className="pb-2 font-medium">Porcentaje</th>
                           <th className="pb-2 font-medium">Activa</th>
@@ -771,12 +886,11 @@ export function AdminContent({
                             className="border-b last:border-0 hover:bg-muted/50"
                           >
                             <td className="py-2">
-                              {LEAD_SOURCE_CATEGORY_LABELS[rule.leadSourceCategory] ??
-                                rule.leadSourceCategory}
+                              {etiqueta(LEAD_SOURCE_CATEGORY_LABELS, rule.leadSourceCategory)}
                             </td>
                             <td className="py-2">
                               <Badge variant="outline">
-                                {ROLE_LABELS[rule.role] ?? rule.role}
+                                {etiqueta(ROLE_LABELS_COMPLETO, rule.role)}
                               </Badge>
                             </td>
                             <td className="py-2 font-medium">
@@ -795,8 +909,11 @@ export function AdminContent({
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  title="Editar regla"
+                                  aria-label="Editar regla"
                                   onClick={() => {
                                     setEditingRule(rule);
+                                    setRuleSubmitError(null);
                                     setRuleDialogOpen(true);
                                   }}
                                 >
@@ -805,7 +922,9 @@ export function AdminContent({
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleDeleteRule(rule.id)}
+                                  title="Eliminar regla"
+                                  aria-label="Eliminar regla"
+                                  onClick={() => handleDeleteRule(rule)}
                                   disabled={isPending}
                                 >
                                   <Trash2 className="h-3.5 w-3.5 text-red-500" />
@@ -834,116 +953,54 @@ export function AdminContent({
             <CardHeader>
               <CardTitle className="text-lg">Acuerdo de Actividad</CardTitle>
               <CardDescription>
-                Configura los mínimos de actividad esperados por asesor
+                Mínimos de actividad que se espera de cada asesor
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Nada en el CRM lee estos valores todavía (ni alertas, ni reportes, ni SLA). */}
+              <div
+                className="mb-6 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                role="note"
+              >
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  <strong>Estos mínimos todavía no generan alertas ni afectan reportes.</strong>{" "}
+                  Puedes dejarlos capturados como referencia del equipo; cuando se conecten, se
+                  aplicarán tal como estén guardados.
+                </p>
+              </div>
               <div className="grid gap-6 md:grid-cols-2">
-                {/* Llamadas diarias */}
-                <div className="space-y-2">
-                  <Label htmlFor="minCalls">Llamadas diarias mínimas</Label>
-                  <Input
-                    id="minCalls"
-                    type="number"
-                    value={configValues.minDailyCalls}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({
-                        ...prev,
-                        minDailyCalls: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* WhatsApps diarios */}
-                <div className="space-y-2">
-                  <Label htmlFor="minWhatsapps">WhatsApps diarios mínimos</Label>
-                  <Input
-                    id="minWhatsapps"
-                    type="number"
-                    value={configValues.minDailyWhatsapps}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({
-                        ...prev,
-                        minDailyWhatsapps: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Visitas semanales */}
-                <div className="space-y-2">
-                  <Label htmlFor="minVisits">Visitas semanales mínimas</Label>
-                  <Input
-                    id="minVisits"
-                    type="number"
-                    value={configValues.minWeeklyVisits}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({
-                        ...prev,
-                        minWeeklyVisits: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Seguimientos diarios */}
-                <div className="space-y-2">
-                  <Label htmlFor="minFollowUps">Seguimientos diarios mínimos</Label>
-                  <Input
-                    id="minFollowUps"
-                    type="number"
-                    value={configValues.minDailyFollowUps}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({
-                        ...prev,
-                        minDailyFollowUps: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Tiempo de respuesta */}
-                <div className="space-y-2">
-                  <Label htmlFor="maxResponse">
-                    Tiempo máximo de respuesta (minutos)
-                  </Label>
-                  <Input
-                    id="maxResponse"
-                    type="number"
-                    value={configValues.maxFirstResponseMinutes}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({
-                        ...prev,
-                        maxFirstResponseMinutes: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Dias de inactividad */}
-                <div className="space-y-2">
-                  <Label htmlFor="maxInactivity">
-                    Máximo días sin actividad
-                  </Label>
-                  <Input
-                    id="maxInactivity"
-                    type="number"
-                    value={configValues.maxInactivityDays}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({
-                        ...prev,
-                        maxInactivityDays: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
+                {CAMPOS_ACUERDO.map((campo) => (
+                  <div key={campo.key} className="space-y-2">
+                    <Label htmlFor={campo.id}>{campo.label}</Label>
+                    <Input
+                      id={campo.id}
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={configValues[campo.key]}
+                      onChange={(e) =>
+                        setConfigValues((prev) => ({
+                          ...prev,
+                          [campo.key]: leerEnteroNoNegativo(e.target.value),
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Recomendado: {ACTIVITY_AGREEMENT_DEFAULTS[campo.key]} {campo.unidad}
+                    </p>
+                  </div>
+                ))}
               </div>
 
               {/* Boton de guardar */}
-              <div className="mt-6">
+              <div className="mt-6 flex flex-wrap gap-2">
                 <Button onClick={handleSaveConfig} disabled={isPending}>
-                  {isPending ? "Guardando..." : "Guardar Configuración"}
+                  {isPending ? "Guardando..." : "Guardar cambios"}
+                </Button>
+                <Button variant="outline" onClick={handleResetConfig} disabled={isPending}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restablecer recomendados
                 </Button>
               </div>
             </CardContent>
@@ -1000,15 +1057,20 @@ export function AdminContent({
         user={editingUser}
         teamLeaderUsers={teamLeaderUsers}
         brandOptions={brandAccess?.brands ?? null}
-        explicitBrandIds={editingUser ? brandAccess?.explicitByUser[editingUser.id] ?? null : null}
+        explicitBrandIds={editingUser ? explicitByUser[editingUser.id] ?? null : null}
         canEditBrands={currentUserRole === "ADMIN"}
+        serverError={userSubmitError}
         onSubmit={async (data) => {
-          if (editingUser) {
-            await handleUpdateUser(editingUser.id, data);
+          const res = editingUser
+            ? await handleUpdateUser(editingUser.id, data)
+            : await handleCreateUser(data);
+          if (res.ok) {
+            setUserSubmitError(null);
+            setUserDialogOpen(false);
           } else {
-            await handleCreateUser(data);
+            // Nuevo objeto en cada intento para que el diálogo vuelva a mostrar el mensaje
+            setUserSubmitError({ ...res.error });
           }
-          setUserDialogOpen(false);
         }}
         isPending={isPending}
       />
@@ -1036,13 +1098,17 @@ export function AdminContent({
         open={ruleDialogOpen}
         onOpenChange={setRuleDialogOpen}
         rule={editingRule}
+        serverError={ruleSubmitError}
         onSubmit={async (data) => {
-          if (editingRule) {
-            await handleUpdateRule(editingRule.id, data);
+          const res = editingRule
+            ? await handleUpdateRule(editingRule.id, data)
+            : await handleCreateRule(data);
+          if (res.ok) {
+            setRuleSubmitError(null);
+            setRuleDialogOpen(false);
           } else {
-            await handleCreateRule(data);
+            setRuleSubmitError({ ...res.error });
           }
-          setRuleDialogOpen(false);
         }}
         isPending={isPending}
       />
