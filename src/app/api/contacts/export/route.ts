@@ -34,6 +34,12 @@ const SELECT_EXPORT = {
   contactType: true,
   flujo: true, // #948
   contactStatus: true,
+  estado: true, // #953
+  subestado: true,
+  razonSalida: true,
+  razonSalidaDetalle: true,
+  ticketEstimado: true,
+  ticketMoneda: true,
   lifecycleStage: true,
   temperature: true,
   score: true,

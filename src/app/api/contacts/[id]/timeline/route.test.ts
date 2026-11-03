@@ -142,3 +142,33 @@ describe("GET /api/contacts/[id]/timeline — empresa (#949)", () => {
     ]);
   });
 });
+
+describe("GET /api/contacts/[id]/timeline — estado (#953)", () => {
+  it("el cambio de estado sale con su nombre y el eco del estado viejo (misma transacción) no se repite", async () => {
+    const enLaMismaTransaccion = new Date(Date.UTC(2026, 10, 3, 15, 0, 0));
+    const estado = { ...fila("estado", "PROPUESTA", "NEGOCIO_PERDIDO", "ui"), changedAt: enLaMismaTransaccion };
+    const eco = { ...fila("contactStatus", "PROSPECTO", "PERDIDO", "ui"), changedAt: enLaMismaTransaccion };
+    const razon = { ...fila("razonSalida", null, "PRECIO", "ui"), changedAt: enLaMismaTransaccion };
+    // Un cambio del estado viejo de antes del #953 (sin renglón de estado) sí se sigue viendo.
+    const viejo = fila("contactStatus", "NUEVO", "CONTACTADO", "ui");
+    rfcFindMany.mockResolvedValueOnce([estado, eco, razon, viejo]);
+    const body = await pedir("kinds=field_change&limit=10");
+    expect(body.items.map((i: { title: string }) => i.title)).toEqual([
+      "Estado se actualizó de Propuesta a Negocio Perdido",
+      "Razón de salida se actualizó de — a Precio",
+      "Estado de contacto se actualizó de Nuevo a Contactado",
+    ]);
+  });
+
+  it("el llenado de la migración y la corrección de un administrador tienen nombre", async () => {
+    rfcFindMany.mockResolvedValueOnce([
+      fila("estado", null, "NUEVO", "estado_llenado_953"),
+      fila("estado", "NUEVO", "FIRMA", "ui_correccion_estado"),
+    ]);
+    const body = await pedir();
+    expect(body.items.map((i: { source: string }) => i.source)).toEqual([
+      "Llenado de estado (#953)",
+      "Corrección de estado (administrador)",
+    ]);
+  });
+});

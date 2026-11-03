@@ -428,6 +428,54 @@ enum LeadAssignmentMode {
 // ENUMS REBUILD F1 (Anexo Técnico §B/§D + Anexo B §H/§I/§J)
 // =====================================================================
 
+// #953: estado del contacto del flujograma v0.2 (11 activos + 3 salidas + 2 especiales). Lista única
+// y reglas en src/lib/estados.ts; migración prisma/migrations-manual/2026-11-03-estado-subestado.sql.
+// `contactStatus` (abajo) se queda como estado viejo: un disparador lo mantiene en sincronía.
+enum EstadoContacto {
+  NUEVO
+  SIN_RESPUESTA
+  CONTACTADO
+  REUNION
+  DEMO
+  RECORRIDO
+  PROPUESTA
+  APARTADO
+  FIRMA
+  ESCRITURA
+  POSTVENTA
+  PERDIDO
+  CONTACTADO_PERDIDO
+  NEGOCIO_PERDIDO
+  REGISTRADO_POR_BROKER
+  DERIVADO_A_RH
+
+  @@schema("propyte_crm")
+}
+
+// #953: razón de descarte (Perdido, Contactado perdido) o de pérdida (Negocio Perdido).
+enum RazonSalida {
+  DATOS_INCORRECTOS
+  SIN_RESPUESTA_TRAS_CADENCIA
+  DUPLICADO
+  SPAM
+  PROTEGIDO_POR_BROKER
+  NO_CALIFICA
+  NO_LE_INTERESA
+  POSPUSO
+  DEJO_DE_RESPONDER
+  ELIGIO_OTRA_OPCION
+  PRECIO
+  FINANCIAMIENTO
+  PRODUCTO
+  CONFIANZA
+  SITUACION_PERSONAL
+  CANCELO_APARTADO
+  NO_CONTACTAR
+  OTRO
+
+  @@schema("propyte_crm")
+}
+
 // Ciclo del contacto (Zoho: Nuevo/Sin respuesta/Contactado) — distinto de ContactType
 enum ContactStatus {
   NUEVO
@@ -835,6 +883,17 @@ model Contact {
 
   // Ciclo de contacto y cumplimiento (Anexo Técnico §B.2)
   contactStatus     ContactStatus   @default(NUEVO)
+  // #953: estado del flujograma v0.2. NULL = «Por clasificar» (lo mueve la entrega 3). El subestado
+  // depende del estado (CHECK en la base). Las salidas llevan razón en vez de subestado.
+  estado             EstadoContacto? @default(NUEVO)
+  subestado          String?
+  razonSalida        RazonSalida?
+  razonSalidaDetalle String?
+  fechaRecontacto    DateTime?       @db.Date
+  etapaPrevia        EstadoContacto? // la pone el disparador al entrar a una salida
+  reactivaciones     Int             @default(0)
+  ticketEstimado     Decimal?        @db.Decimal(14, 2)
+  ticketMoneda       Currency        @default(MXN)
   lifecycleStage    LifecycleStage?
   targetPlaza       Plaza?          // reparto por plaza — lib/intake/campaign-plaza.ts
   urgency           Urgency?
@@ -921,6 +980,7 @@ model Contact {
 
   @@index([referredById])
   @@index([flujo])
+  @@index([estado])
   @@index([developerPartnerId])
   @@index([campaignId])
   @@map("contacts")

@@ -10,6 +10,7 @@ import {
 import { ETIQUETAS_CAMPOS_ADICIONALES } from "@/lib/contacts/campos-adicionales";
 import { CORE_FIELDS } from "@/lib/metadata/core-fields-catalogo";
 import { FLUJO_LABELS } from "@/lib/flujos";
+import { ESTADO_LABELS, SUBESTADO_LABELS, RAZON_SALIDA_LABELS } from "@/lib/estados";
 import {
   INVESTMENT_LABEL,
   MODALITY_LABEL,
@@ -75,6 +76,14 @@ const CAMPOS_SOLO_CRONOLOGIA: Record<string, string> = {
   originalCreatedAt: "Fecha de creación original",
   zohoId: "ID de Zoho",
   hubContactId: "ID del Hub",
+  // #953: lo que acompaña al estado (subestado y razón se gatean con el permiso de «Estado»).
+  subestado: "Subestado",
+  razonSalida: "Razón de salida",
+  razonSalidaDetalle: "Detalle de la razón",
+  fechaRecontacto: "Fecha de recontacto",
+  etapaPrevia: "Etapa previa a la salida",
+  reactivaciones: "Reactivaciones",
+  ticketMoneda: "Moneda del ticket",
 };
 
 const ETIQUETAS_CORE: Record<string, string> = Object.fromEntries(
@@ -111,10 +120,15 @@ const VALUE_LABEL_MAPS: Record<string, Record<string, string>> = {
   rentalStrategy: RENTAL_LABEL,
   targetPlaza: PLAZA_LABELS,
   flujo: FLUJO_LABELS, // #948
+  // #953
+  estado: ESTADO_LABELS,
+  etapaPrevia: ESTADO_LABELS,
+  subestado: SUBESTADO_LABELS,
+  razonSalida: RAZON_SALIDA_LABELS,
 };
 
 /** Montos: se leen con separador de miles («2,000,000»), sin inventar la moneda. */
-const CAMPOS_MONTO = new Set(["budgetMin", "budgetMax"]);
+const CAMPOS_MONTO = new Set(["budgetMin", "budgetMax", "ticketEstimado"]);
 
 export function fieldLabel(field: string): string {
   return FIELD_LABELS[field] ?? ETIQUETAS_CORE[field] ?? CAMPOS_SOLO_CRONOLOGIA[field] ?? aPalabras(field);
