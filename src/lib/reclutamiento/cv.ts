@@ -3,7 +3,7 @@
 // con origen CHAT y el id del mensaje como referencia (idempotente por el índice único).
 // Se llama desde la ingesta (messaging/core.ts) tras guardar el mensaje. Nunca lanza.
 import prisma from "@/lib/db";
-import { CV_TIPOS } from "@/lib/contacts/archivos";
+import { CV_TIPOS, extension } from "@/lib/contacts/archivos";
 import { isStoragePath } from "@/lib/storage/chat-media";
 import { copiarDeChatMedia } from "@/lib/storage/crm-attachments";
 import { registrarCvDeCandidato } from "@/server/reclutamiento";
@@ -20,13 +20,28 @@ const EXT_POR_MIME: Record<string, string> = Object.fromEntries(
   Object.entries(CV_TIPOS).map(([ext, mimes]) => [mimes[0], ext])
 );
 
-/** Mismos tipos que la subida manual (#917/#926): PDF, DOC y DOCX. */
-export function esMimeDeCv(mime: string | null | undefined): boolean {
-  return !!mime && mime in EXT_POR_MIME;
+/** `Application/PDF; charset=binary` → `application/pdf` (mismo criterio que `motivoRechazo`). */
+function mimeNormalizado(mime: string | null | undefined): string {
+  return (mime ?? "").split(";")[0].trim().toLowerCase();
 }
 
-function nombrePorDefecto(mime: string): string {
-  return `cv.${EXT_POR_MIME[mime] ?? "pdf"}`;
+/** Mismos tipos que la subida manual (#917/#926): PDF, DOC y DOCX. */
+export function esMimeDeCv(mime: string | null | undefined): boolean {
+  return mimeNormalizado(mime) in EXT_POR_MIME;
+}
+
+/**
+ * Nombre con la extensión que corresponde al MIME. Los canales de chat a veces mandan el nombre
+ * sin extensión ("CV Ana") o con una ajena ("cv.bin"); como `rutaCvCandidato` toma la extensión
+ * del nombre, aquí se garantiza que nombre y ruta terminen en .pdf/.doc/.docx según el MIME.
+ */
+function nombreConExtension(fileName: string | null | undefined, mime: string): string {
+  const ext = EXT_POR_MIME[mime];
+  const base = fileName?.trim() || "cv";
+  if (extension(base) === ext) return base;
+  const i = base.lastIndexOf(".");
+  const sinExt = i > 0 ? base.slice(0, i) : base;
+  return `${sinExt}.${ext}`;
 }
 
 export async function ligarCv(msg: {
@@ -36,8 +51,8 @@ export async function ligarCv(msg: {
   mediaMimeType: string | null;
   mediaFilename: string | null;
 }): Promise<boolean> {
-  const mime = msg.mediaMimeType;
-  if (!msg.mediaUrl || !isStoragePath(msg.mediaUrl) || !mime || !esMimeDeCv(mime)) return false;
+  const mime = mimeNormalizado(msg.mediaMimeType);
+  if (!msg.mediaUrl || !isStoragePath(msg.mediaUrl) || !esMimeDeCv(mime)) return false;
   try {
     const cand = await prisma.recruitCandidate.findFirst({
       where: { contactId: msg.contactId, deletedAt: null },
@@ -50,7 +65,7 @@ export async function ligarCv(msg: {
     });
     if (yaRegistrado) return false;
 
-    const fileName = msg.mediaFilename?.trim() || nombrePorDefecto(mime);
+    const fileName = nombreConExtension(msg.mediaFilename, mime);
     const destino = rutaCvCandidato(cand.id, fileName);
     const sizeBytes = await copiarDeChatMedia(msg.mediaUrl, destino, mime);
     if (sizeBytes == null) return false;

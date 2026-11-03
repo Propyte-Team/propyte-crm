@@ -32,6 +32,9 @@ describe("esMimeDeCv", () => {
     expect(esMimeDeCv("video/mp4")).toBe(false);
     expect(esMimeDeCv(null)).toBe(false);
   });
+  it("normaliza mayúsculas y parámetros del MIME", () => {
+    expect(esMimeDeCv("Application/PDF; charset=binary")).toBe(true);
+  });
 });
 
 describe("ligarCv", () => {
@@ -59,6 +62,33 @@ describe("ligarCv", () => {
     await ligarCv({ ...msg, mediaFilename: null, mediaMimeType: "application/msword" });
     expect((registrarCvDeCandidato.mock.calls[0][0] as { fileName: string }).fileName).toBe("cv.doc");
     expect((copiarDeChatMedia.mock.calls[0] as string[])[1]).toMatch(/\.doc$/);
+  });
+  it("nombre sin extensión: la toma del MIME (ruta y nombre terminan en .pdf)", async () => {
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    fileFindFirst.mockResolvedValue(null);
+    copiarDeChatMedia.mockResolvedValue(1);
+    registrarCvDeCandidato.mockResolvedValue({ id: "f1", duplicado: false });
+    await ligarCv({ ...msg, mediaFilename: "CV Ana" });
+    expect((copiarDeChatMedia.mock.calls[0] as string[])[1]).toMatch(/^candidates\/c1\/cv\/[0-9a-f-]{36}\.pdf$/);
+    expect((registrarCvDeCandidato.mock.calls[0][0] as { fileName: string }).fileName).toBe("CV Ana.pdf");
+  });
+  it("extensión ajena al MIME (cv.bin con PDF): se reemplaza por .pdf", async () => {
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    fileFindFirst.mockResolvedValue(null);
+    copiarDeChatMedia.mockResolvedValue(1);
+    registrarCvDeCandidato.mockResolvedValue({ id: "f1", duplicado: false });
+    await ligarCv({ ...msg, mediaFilename: "cv.bin" });
+    expect((copiarDeChatMedia.mock.calls[0] as string[])[1]).toMatch(/\.pdf$/);
+    expect((registrarCvDeCandidato.mock.calls[0][0] as { fileName: string }).fileName).toBe("cv.pdf");
+  });
+  it("MIME con mayúsculas y parámetros: se acepta y se guarda normalizado", async () => {
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    fileFindFirst.mockResolvedValue(null);
+    copiarDeChatMedia.mockResolvedValue(1);
+    registrarCvDeCandidato.mockResolvedValue({ id: "f1", duplicado: false });
+    expect(await ligarCv({ ...msg, mediaMimeType: "Application/PDF; charset=binary" })).toBe(true);
+    expect((copiarDeChatMedia.mock.calls[0] as string[])[2]).toBe("application/pdf");
+    expect((registrarCvDeCandidato.mock.calls[0][0] as { mimeType: string }).mimeType).toBe("application/pdf");
   });
   it("el mismo mensaje no se registra dos veces (no copia de nuevo)", async () => {
     candFindFirst.mockResolvedValue({ id: "c1" });
