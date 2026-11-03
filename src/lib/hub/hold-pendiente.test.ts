@@ -5,6 +5,7 @@ describe("hold pendiente en el Hub (#961)", () => {
   it("solo se aparta de respaldo si el Hub no dijo que no", () => {
     expect(permiteRespaldo({ ok: false, motivo: "sin_configurar" })).toBe(true);
     expect(permiteRespaldo({ ok: false, motivo: "sin_respuesta" })).toBe(true);
+    expect(permiteRespaldo({ ok: false, motivo: "mal_configurado" })).toBe(true);
     expect(permiteRespaldo({ ok: false, motivo: "rechazo" })).toBe(false);
     expect(permiteRespaldo({ ok: false })).toBe(false); // sin motivo: se respeta como rechazo
     expect(permiteRespaldo({ ok: true })).toBe(false);

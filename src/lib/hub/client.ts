@@ -21,8 +21,26 @@ import type {
   HubDevelopmentFilters,
 } from "./types";
 
-const HUB_BASE = process.env.HUB_API_BASE_URL?.replace(/\/$/, "") ?? "";
-const HUB_KEY = process.env.HUB_API_KEY?.trim() ?? "";
+// #961: las variables se leen en CADA llamada y por nombre (`env[nombre]`), no una vez al cargar el
+// módulo ni con la referencia literal: así basta con ponerlas en hPanel y reiniciar, y el mensaje
+// dice cuál falta. Se toleran espacios y comillas pegadas al copiar el valor en el panel.
+export const ENV_HUB_BASE = "HUB_API_BASE_URL";
+export const ENV_HUB_KEY = "HUB_API_KEY";
+
+function leerVariable(env: Record<string, string | undefined>, nombre: string): string {
+  return (env[nombre] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+}
+
+/** Configuración del REST del Hub en este momento. `faltan` = nombres vacíos (nunca los valores). */
+export function hubApiConfig(env: Record<string, string | undefined> = process.env): {
+  base: string;
+  key: string;
+  faltan: string[];
+} {
+  const base = leerVariable(env, ENV_HUB_BASE).replace(/\/+$/, "");
+  const key = leerVariable(env, ENV_HUB_KEY);
+  return { base, key, faltan: [...(base ? [] : [ENV_HUB_BASE]), ...(key ? [] : [ENV_HUB_KEY])] };
+}
 
 // ───────────────────────── Lectura (delega en catalog.ts) ─────────────────────────
 // El gate público vive en catalog.ts. Aquí solo se adapta al shape legado HubDevelopment /
@@ -106,19 +124,31 @@ export async function getHubUnit(id: string): Promise<HubUnit | null> {
 // ───────────────────── Mutación de inventario (REST al Hub) ─────────────────────
 
 async function hubInventoryPost(path: string, body: Record<string, unknown>): Promise<HubHoldResult> {
-  if (!HUB_BASE || !HUB_KEY) {
-    return { ok: false, motivo: "sin_configurar", error: "Hub API no configurada (HUB_API_BASE_URL / HUB_API_KEY)" };
+  const { base, key, faltan } = hubApiConfig();
+  if (faltan.length) {
+    return { ok: false, motivo: "sin_configurar", error: `Hub API no configurada: el servidor no tiene ${faltan.join(" ni ")}` };
   }
   try {
-    const res = await fetch(`${HUB_BASE}${path}`, {
+    const res = await fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-hub-api-key": HUB_KEY },
+      headers: { "Content-Type": "application/json", "x-hub-api-key": key },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
     });
     const json = (await res.json().catch(() => ({}))) as HubHoldResult;
     if (!res.ok) {
-      return { ok: false, motivo: res.status >= 500 ? "sin_respuesta" : "rechazo", error: json?.error ?? `Hub respondió ${res.status}` };
+      // 401/403 = la clave no es la del Hub; 404/405 = la URL no lleva a la ruta de inventario. Eso es
+      // configuración, no la unidad: se puede apartar de respaldo. El resto de 4xx es el Hub diciendo
+      // que no (unidad ocupada, 409) y se respeta.
+      const motivo =
+        res.status >= 500 ? "sin_respuesta" : [401, 403, 404, 405].includes(res.status) ? "mal_configurado" : "rechazo";
+      const pista =
+        res.status === 401 || res.status === 403
+          ? " (revisa HUB_API_KEY: tiene que ser la HUB_INTERNAL_API_KEY del Hub)"
+          : res.status === 404 || res.status === 405
+            ? " (revisa HUB_API_BASE_URL)"
+            : "";
+      return { ok: false, motivo, error: `${json?.error ?? `Hub respondió ${res.status}`}${pista}` };
     }
     return { ...json, ok: true };
   } catch (err) {
