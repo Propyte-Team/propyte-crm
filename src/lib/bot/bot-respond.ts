@@ -487,7 +487,10 @@ export async function botRespond(
         if (pr.objective) playbookObjective = pr.objective;
         // Reclutamiento (spec 2026-11-02): al terminar el guion se evalúa al candidato y el
         // cierre reemplaza al objetivo genérico; mientras sigue, se suma la ficha de la vacante.
-        if (!brand && esAgenteReclutamiento(agentProfile)) {
+        // Solo con el guion nuevo (tiene actitud_3): si el playbook sembrado sigue siendo el viejo
+        // (puesto/experiencia/ciudad/correo), evaluar daría NO_APTO sin ninguna respuesta.
+        const guionNuevo = pb.tasks.some((t: { key: string }) => t.key === "actitud_3");
+        if (!brand && guionNuevo && esAgenteReclutamiento(agentProfile)) {
           const hr = await hookReclutamiento({
             contact,
             conversationId: conv.id,

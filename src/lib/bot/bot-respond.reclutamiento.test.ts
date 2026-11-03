@@ -100,7 +100,11 @@ const agenteReclutamiento = {
   id: "a1", name: "Agente Reclutamiento", identity: "Eres reclutador.", tonePreset: null, priority: 30,
   playbook: {
     id: "p1", deletedAt: null,
-    tasks: [{ key: "nombre", order: 0, objective: "nombre", targetField: "firstName", captureType: "FULL_NAME", enumOptions: [], required: true, skipIfFilled: true, isActive: true }],
+    tasks: [
+      { key: "nombre", order: 0, objective: "nombre", targetField: "firstName", captureType: "FULL_NAME", enumOptions: [], required: true, skipIfFilled: true, isActive: true },
+      // Marca del guion nuevo: sin esta tarea el hook no corre (ver test «playbook viejo»).
+      { key: "actitud_3", order: 1, objective: "actitud", targetField: "custom.reclutamiento_actitud_3", captureType: "TEXT", enumOptions: [], required: true, skipIfFilled: true, isActive: true },
+    ],
   },
 };
 
@@ -148,6 +152,18 @@ describe("bot-respond + reclutamiento", () => {
     const sys = systemArgs.mock.calls[0][0] as { objective: string };
     expect(sys.objective).toContain("pide su nombre");
     expect(sys.objective).toContain("Ficha: 100 % comisión");
+  });
+
+  it("con el playbook viejo (sin actitud_3) no llama al hook aunque sea el agente de reclutamiento", async () => {
+    selectAgentProfile.mockResolvedValue({
+      ...agenteReclutamiento,
+      playbook: { ...agenteReclutamiento.playbook, tasks: agenteReclutamiento.playbook.tasks.filter((t) => t.key !== "actitud_3") },
+    });
+    runPlaybookStep.mockResolvedValue({ objective: "x", status: "COMPLETED" });
+
+    await botRespond("k1", { channel: "INSTAGRAM" });
+
+    expect(hookReclutamiento).not.toHaveBeenCalled();
   });
 
   it("con otro agente no llama al hook", async () => {

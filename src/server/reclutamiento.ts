@@ -107,8 +107,10 @@ export async function crearCandidato(
       stage: datos.stage ?? ETAPA_INICIAL,
       source: origen.source,
       sourceRef: origen.sourceRef ?? null,
-      contactId: origen.contactId ?? null,
-      botCanal: origen.botCanal ?? null,
+      // Solo se mandan cuando vienen: así el alta manual sigue funcionando si el código se
+      // despliega antes que el SQL que agrega estas columnas (2026-11-02-reclutamiento-bot.sql).
+      ...(origen.contactId ? { contactId: origen.contactId } : {}),
+      ...(origen.botCanal ? { botCanal: origen.botCanal } : {}),
       createdById,
     },
     select: SELECT_CANDIDATO,

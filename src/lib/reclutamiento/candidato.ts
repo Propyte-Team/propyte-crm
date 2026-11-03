@@ -154,8 +154,10 @@ export async function persistirEvaluacion(input: {
   evaluacion: Evaluacion;
   razonesActitud: string[];
   model: string;
+  /** Datos frescos del contacto para que la fila deje de decir «Candidato por chat». Solo pisa con valores no vacíos. */
+  contacto?: { firstName: string | null; lastName: string | null; phone: string | null; email: string | null };
 }): Promise<void> {
-  const { candidatoId, respuestas, evaluacion: ev } = input;
+  const { candidatoId, respuestas, evaluacion: ev, contacto } = input;
   const resumen = await resumenIA(respuestas, ev, input.model);
   const actual = await prisma.recruitCandidate.findFirst({ where: { id: candidatoId }, select: { stage: true } });
   const plaza = plazaDeRespuesta(respuestas.plaza);
@@ -170,6 +172,12 @@ export async function persistirEvaluacion(input: {
     botEvaluadoAt: new Date(),
   };
   if (plaza) data.plaza = plaza;
+  if (contacto) {
+    const nombre = `${contacto.firstName ?? ""} ${contacto.lastName ?? ""}`.trim();
+    if (nombre) data.fullName = nombre.slice(0, 200);
+    if (contacto.phone?.trim()) data.phone = contacto.phone.trim();
+    if (contacto.email?.trim()) data.email = contacto.email.trim();
+  }
   if (actual && botPuedeMoverEtapa(actual.stage)) {
     data.stage = etapaDeResultado(ev.resultado);
     data.stageChangedAt = new Date();

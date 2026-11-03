@@ -106,6 +106,31 @@ describe("persistirEvaluacion", () => {
     expect("plaza" in data).toBe(false);
     expect(data.botResultado).toBe("NO_APTO");
   });
+  it("con contacto sincroniza nombre, teléfono y correo; sin contacto o con valores vacíos no los toca", async () => {
+    askClaude.mockResolvedValue("x");
+    findFirst.mockResolvedValue({ stage: "RECIBIDO" });
+    update.mockResolvedValue({});
+    await persistirEvaluacion({
+      candidatoId: "c1",
+      respuestas: {},
+      evaluacion,
+      razonesActitud: [],
+      model: "m",
+      contacto: { firstName: "Ana", lastName: "López", phone: "+5219991112233", email: "  " },
+    });
+    const data = (update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ fullName: "Ana López", phone: "+5219991112233" });
+    expect("email" in data).toBe(false);
+
+    await persistirEvaluacion({ candidatoId: "c1", respuestas: {}, evaluacion, razonesActitud: [], model: "m" });
+    const data2 = (update.mock.calls[1][0] as { data: Record<string, unknown> }).data;
+    expect("fullName" in data2).toBe(false);
+    expect("phone" in data2).toBe(false);
+
+    await persistirEvaluacion({ candidatoId: "c1", respuestas: {}, evaluacion, razonesActitud: [], model: "m", contacto: { firstName: "", lastName: null, phone: null, email: null } });
+    const data3 = (update.mock.calls[2][0] as { data: Record<string, unknown> }).data;
+    expect("fullName" in data3).toBe(false);
+  });
   it("si el resumen falla, igual persiste con resumen null", async () => {
     askClaude.mockRejectedValue(new Error("x"));
     findFirst.mockResolvedValue({ stage: "RECIBIDO" });

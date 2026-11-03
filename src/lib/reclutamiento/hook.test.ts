@@ -26,6 +26,8 @@ vi.mock("./avisos", () => ({
 }));
 const extractFields = vi.fn();
 vi.mock("@/lib/bot/playbook/extract", () => ({ extractFields: (...a: unknown[]) => extractFields(...a) }));
+const contactFindUnique = vi.fn();
+vi.mock("@/lib/db", () => ({ default: { contact: { findUnique: (...a: unknown[]) => contactFindUnique(...a) } } }));
 
 import { hookReclutamiento, esAgenteReclutamiento, OBJETIVOS_CIERRE } from "./hook";
 import { MODELO_DEFAULT, FICHA_DEFAULT } from "./modelo";
@@ -57,9 +59,10 @@ const contactoApto = {
 const sinEvaluar = { id: "c1", stage: "RECIBIDO", botResultado: null, botEvaluadoAt: null, horarioEntrevista: null, tieneCv: false };
 
 beforeEach(() => {
-  [asegurarCandidato, persistirEvaluacion, guardarHorario, reclamarEvaluacion, evaluarActitud, cargarConfigReclutamiento, responsablesDe, avisarResultado, extractFields].forEach((f) =>
-    f.mockReset()
+  [asegurarCandidato, persistirEvaluacion, guardarHorario, reclamarEvaluacion, evaluarActitud, cargarConfigReclutamiento, responsablesDe, avisarResultado, extractFields, contactFindUnique].forEach(
+    (f) => f.mockReset()
   );
+  contactFindUnique.mockResolvedValue(null); // sin fila releída → se usa el contacto de entrada
   cargarConfigReclutamiento.mockResolvedValue({ modelo: MODELO_DEFAULT, ficha: FICHA_DEFAULT, responsables: {} });
   responsablesDe.mockResolvedValue(["u1"]);
   reclamarEvaluacion.mockResolvedValue(true);
@@ -114,6 +117,35 @@ describe("hookReclutamiento", () => {
     const ev = (persistirEvaluacion.mock.calls[0][0] as { evaluacion: { puntaje: number } }).evaluacion;
     expect(ev.puntaje).toBe(74); // 69 + 5
     expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_CON_CV);
+  });
+
+  it("al completar relee el contacto: evalúa con las capturas del turno, no con el contacto cargado al inicio", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    evaluarActitud.mockResolvedValue(null);
+    // El contacto que llegó al hook trae movilidad NO (viejo); la base ya tiene SI (capturado este turno).
+    const contactoViejo = { ...contactoApto, firstName: "Candidato", lastName: "", custom: { ...contactoApto.custom, reclutamiento_movilidad: "NO" } };
+    contactFindUnique.mockResolvedValue({ firstName: "Ana", lastName: "López", phone: "+522", email: "ana2@x.mx", custom: contactoApto.custom });
+    const r = await hookReclutamiento({ ...base, contact: contactoViejo, playbook: { status: "COMPLETED" } });
+    expect(contactFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "k1" }, select: { firstName: true, lastName: true, phone: true, email: true, custom: true } })
+    );
+    const ev = (persistirEvaluacion.mock.calls[0][0] as { evaluacion: { resultado: string } }).evaluacion;
+    expect(ev.resultado).toBe("APTO");
+    expect(persistirEvaluacion).toHaveBeenCalledWith(
+      expect.objectContaining({ contacto: { firstName: "Ana", lastName: "López", phone: "+522", email: "ana2@x.mx" } })
+    );
+    expect(avisarResultado).toHaveBeenCalledWith(expect.objectContaining({ nombre: "Ana López" }));
+    expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_SIN_CV);
+  });
+
+  it("si releer el contacto falla, evalúa con el contacto de entrada", async () => {
+    asegurarCandidato.mockResolvedValue(sinEvaluar);
+    evaluarActitud.mockResolvedValue(null);
+    contactFindUnique.mockRejectedValue(new Error("db"));
+    const r = await hookReclutamiento({ ...base, contact: contactoApto, playbook: { status: "COMPLETED" } });
+    const ev = (persistirEvaluacion.mock.calls[0][0] as { evaluacion: { resultado: string } }).evaluacion;
+    expect(ev.resultado).toBe("APTO");
+    expect(r.objetivo).toBe(OBJETIVOS_CIERRE.APTO_SIN_CV);
   });
 
   it("NO_APTO: cierre amable sin pedir nada", async () => {

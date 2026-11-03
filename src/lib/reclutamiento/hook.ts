@@ -3,6 +3,7 @@
 // de cierre que reemplaza al del playbook y un contexto (la ficha de la vacante). Nunca lanza.
 import type { ConversationChannel, PlaybookRunStatus } from "@prisma/client";
 import type { BotMessage } from "@/lib/bot/claude";
+import prisma from "@/lib/db";
 import { extractFields } from "@/lib/bot/playbook/extract";
 import { evaluarActitud } from "./actitud";
 import { asegurarCandidato, guardarHorario, persistirEvaluacion, plazaDeRespuesta, reclamarEvaluacion, type ContactoDelBot } from "./candidato";
@@ -31,7 +32,8 @@ export const OBJETIVOS_CIERRE = {
   REVISAR_CON_CV:
     "El equipo va a revisar su perfil. Agradécele el CV y dile que lo contactan en dos días hábiles. No prometas entrevista.",
   NO_APTO:
-    "Hoy el perfil no coincide con lo que busca el equipo. Agradécele con tacto, dilo sin listar criterios ni motivos, deja la puerta abierta para más adelante y despídete. No ofrezcas entrevista ni pidas CV.",
+    "Hoy el perfil no coincide con lo que busca el equipo. Agradécele con tacto, dilo sin listar criterios ni motivos, deja la puerta abierta para más adelante y despídete. No ofrezcas entrevista ni pidas CV. " +
+    "Si después pregunta algo más, responde breve y amable sin reabrir la evaluación.",
 } as const;
 
 function cierreDe(c: { botResultado: Veredicto | null; tieneCv: boolean; horarioEntrevista: string | null }): string | undefined {
@@ -48,6 +50,26 @@ function cierreDe(c: { botResultado: Veredicto | null; tieneCv: boolean; horario
   }
 }
 
+type ContactoConCustom = ContactoDelBot & { custom: unknown };
+
+/**
+ * Relee el contacto. botRespond lo carga antes de correr el playbook, y runPlaybookStep guarda las
+ * capturas del turno en la base: sin releer, la evaluación no vería las últimas respuestas (al menos
+ * actitud_3) y fallaría filtros como AMBIGUO. Si la lectura falla, se usa lo que llegó.
+ */
+async function recargarContacto(c: ContactoConCustom): Promise<ContactoConCustom> {
+  try {
+    const f = await prisma.contact.findUnique({
+      where: { id: c.id },
+      select: { firstName: true, lastName: true, phone: true, email: true, custom: true },
+    });
+    return f ? { id: c.id, ...f } : c;
+  } catch (err) {
+    console.warn("[reclutamiento] no se pudo releer el contacto; se evalúa con el cargado al inicio:", err);
+    return c;
+  }
+}
+
 export interface ResultadoHook {
   /** Reemplaza el objetivo del playbook cuando hay cierre. */
   objetivo?: string;
@@ -56,7 +78,7 @@ export interface ResultadoHook {
 }
 
 export async function hookReclutamiento(input: {
-  contact: ContactoDelBot & { custom: unknown };
+  contact: ContactoConCustom;
   conversationId: string;
   channel: ConversationChannel;
   model: string;
@@ -96,10 +118,18 @@ export async function hookReclutamiento(input: {
     // solo evalúa el turno que reserva la evaluación; el otro no hace nada y en su siguiente
     // turno tomará el camino de «ya evaluado».
     if (!(await reclamarEvaluacion(cand.id))) return {};
-    const respuestas = leerRespuestas(input.contact.custom);
+    const contacto = await recargarContacto(input.contact);
+    const respuestas = leerRespuestas(contacto.custom);
     const actitud = await evaluarActitud(respuestas, input.model);
     const ev = evaluar({ respuestas, actitudPuntos: actitud?.puntos ?? null, cvRecibido: cand.tieneCv, modelo: cfg.modelo });
-    await persistirEvaluacion({ candidatoId: cand.id, respuestas, evaluacion: ev, razonesActitud: actitud?.razones ?? [], model: input.model });
+    await persistirEvaluacion({
+      candidatoId: cand.id,
+      respuestas,
+      evaluacion: ev,
+      razonesActitud: actitud?.razones ?? [],
+      model: input.model,
+      contacto: { firstName: contacto.firstName, lastName: contacto.lastName, phone: contacto.phone, email: contacto.email },
+    });
 
     const plaza = plazaDeRespuesta(respuestas.plaza);
     const responsables = await responsablesDe(plaza, cfg.responsables);
@@ -107,7 +137,7 @@ export async function hookReclutamiento(input: {
       candidatoId: cand.id,
       contactId: input.contact.id,
       conversationId: input.conversationId,
-      nombre: `${input.contact.firstName} ${input.contact.lastName}`.trim(),
+      nombre: `${contacto.firstName} ${contacto.lastName}`.trim(),
       plaza,
       puntaje: ev.puntaje,
       resultado: ev.resultado,
