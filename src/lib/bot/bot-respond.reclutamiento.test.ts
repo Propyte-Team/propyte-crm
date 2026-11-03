@@ -170,4 +170,16 @@ describe("bot-respond + reclutamiento", () => {
     const llamada = askClaude.mock.calls[0][0] as { messages: { content: string }[] };
     expect(llamada.messages[0].content).toBe("[adjunto: cv.pdf]");
   });
+
+  it("un adjunto sin nombre de archivo (IG/Messenger) aparece como [adjunto: tipo]", async () => {
+    msgFindMany.mockResolvedValue([
+      { direction: "INBOUND", body: "", mediaFilename: null, mediaUrl: "2026-11/x.pdf", mediaType: "document", createdAt: new Date() },
+    ]);
+    runPlaybookStep.mockResolvedValue({ objective: "x", status: "IN_PROGRESS" });
+
+    await botRespond("k1", { channel: "MESSENGER" });
+
+    const llamada = askClaude.mock.calls[0][0] as { messages: { content: string }[] };
+    expect(llamada.messages[0].content).toBe("[adjunto: document]");
+  });
 });

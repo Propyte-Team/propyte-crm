@@ -356,7 +356,13 @@ export async function botRespond(
     // el bot no sabía que ya había CV. Se marca el nombre para que no lo vuelva a pedir.
     .map((m): BotMessage => ({
       role: m.direction === "INBOUND" ? "user" : "assistant",
-      content: m.body?.trim() ? m.body : m.mediaFilename ? `[adjunto: ${m.mediaFilename}]` : m.body,
+      content: m.body?.trim()
+        ? m.body
+        : m.mediaFilename
+          ? `[adjunto: ${m.mediaFilename}]`
+          : m.mediaUrl
+            ? `[adjunto: ${m.mediaType ?? "archivo"}]` // IG/Messenger suelen venir sin nombre
+            : m.body,
     }))
     .reduce<BotMessage[]>((acc, m) => {
       if (acc.length === 0 && m.role === "assistant") return acc;
