@@ -9,7 +9,8 @@ import type { ResponsablesReclutamiento } from "./modelo";
 import type { UbicacionCode } from "./shared";
 import type { Veredicto } from "./etapas";
 
-const DOS_DIAS_HABILES_MS = 2 * 24 * 60 * 60 * 1000;
+/** Vence en 48 h de calendario (no se calculan días hábiles). */
+const DOS_DIAS_MS = 2 * 24 * 60 * 60 * 1000;
 
 // La ubicación del candidato (#927) es más amplia que la plaza del CRM: la gerencia solo
 // existe para estas tres.
@@ -52,6 +53,8 @@ export async function avisarResultado(input: {
   // Para que el gerente sepa dónde ver el perfil completo del candidato.
   const ficha = " · Ficha: /reclutamiento";
   try {
+    // A propósito no se llama a avisarAsignacion (#915): la notificación recruitment_apto de abajo
+    // ya avisa al mismo usuario y evita el aviso duplicado.
     if (resultado === "APTO" && responsables.length > 0) {
       await prisma.activity.create({
         data: {
@@ -60,7 +63,7 @@ export async function avisarResultado(input: {
           activityType: "TASK",
           subject: `Entrevistar candidato ${input.nombre} — ${plazaTxt}`.slice(0, 200),
           description: `El bot evaluó al candidato como APTO (${input.puntaje}/100). Conversación: ${link}${ficha}`,
-          dueDate: new Date(Date.now() + DOS_DIAS_HABILES_MS),
+          dueDate: new Date(Date.now() + DOS_DIAS_MS),
           status: "PENDIENTE",
         },
       });
