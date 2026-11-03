@@ -22,10 +22,10 @@ const OPS = [
   { value: "changed_to", label: "cambió a" },
 ];
 
-function CondRowFields({ c, onChange, onDelete }: { c: CondLeaf; onChange: (c: CondLeaf) => void; onDelete: () => void }) {
+function CondRowFields({ c, onChange, onDelete, listId }: { c: CondLeaf; onChange: (c: CondLeaf) => void; onDelete: () => void; listId: string }) {
   return (
     <div className="flex items-center gap-2">
-      <input list="field-suggestions" className="form-input text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
+      <input list={listId} className="form-input text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
         onChange={(e) => onChange({ ...c, field: e.target.value })} />
       <select className="form-input !w-auto text-[13px]" value={c.op} onChange={(e) => onChange({ ...c, op: e.target.value })}>
         {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -46,9 +46,16 @@ interface ConditionTreeEditorProps {
   label?: string;
   /** Texto vacío. Por defecto describe "sin condiciones = aplica siempre". */
   emptyText?: string;
+  /** Campos sugeridos en el autocompletado. Por defecto los del builder de workflows. */
+  fieldSuggestions?: readonly string[];
+  /** Id del datalist (único por página si hay editores con sugerencias distintas). */
+  listId?: string;
 }
 
-export function ConditionTreeEditor({ tree, onChange, label = "Condiciones", emptyText }: ConditionTreeEditorProps) {
+export function ConditionTreeEditor({
+  tree, onChange, label = "Condiciones", emptyText,
+  fieldSuggestions = FIELD_SUGGESTIONS, listId = "field-suggestions",
+}: ConditionTreeEditorProps) {
   const setRoot = (combinator: "all" | "any") => onChange({ ...tree, combinator });
   const addLeaf = () => onChange({ ...tree, items: [...tree.items, { field: "", op: "eq", value: "" }] });
   const addGroup = () => onChange({ ...tree, items: [...tree.items, { combinator: "all" as const, conditions: [{ field: "", op: "eq", value: "" }] }] });
@@ -67,7 +74,7 @@ export function ConditionTreeEditor({ tree, onChange, label = "Condiciones", emp
           </select>
         </div>
       </div>
-      <datalist id="field-suggestions">{FIELD_SUGGESTIONS.map((f) => <option key={f} value={f} />)}</datalist>
+      <datalist id={listId}>{fieldSuggestions.map((f) => <option key={f} value={f} />)}</datalist>
       {tree.items.map((item, i) => isGroup(item) ? (
         <div key={i} className="rounded-md border p-3" style={{ borderColor: "var(--border-subtle)" }}>
           <div className="flex items-center justify-between">
@@ -81,7 +88,7 @@ export function ConditionTreeEditor({ tree, onChange, label = "Condiciones", emp
             <button type="button" onClick={() => delItem(i)} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
           </div>
           {(item as CondGroup).conditions.map((c, k) => (
-            <CondRowFields key={k} c={c}
+            <CondRowFields key={k} c={c} listId={listId}
               onChange={(nc) => updItem(i, { ...(item as CondGroup), conditions: (item as CondGroup).conditions.map((x, m) => m === k ? nc : x) })}
               onDelete={() => updItem(i, { ...(item as CondGroup), conditions: (item as CondGroup).conditions.filter((_, m) => m !== k) })} />
           ))}
@@ -90,7 +97,7 @@ export function ConditionTreeEditor({ tree, onChange, label = "Condiciones", emp
           </button>
         </div>
       ) : (
-        <CondRowFields key={i} c={item as CondLeaf} onChange={(nc) => updItem(i, nc)} onDelete={() => delItem(i)} />
+        <CondRowFields key={i} c={item as CondLeaf} listId={listId} onChange={(nc) => updItem(i, nc)} onDelete={() => delItem(i)} />
       ))}
       <div className="flex gap-2">
         <button type="button" onClick={addLeaf} className="btn-secondary text-[12px]"><Plus className="h-3.5 w-3.5" /> Condición</button>
