@@ -377,6 +377,15 @@ export async function botRespond(
       return acc;
     }, []);
 
+  // Hilo con mensajes pero SOLO salientes (el reduce descarta los `assistant` iniciales):
+  // no hay nada del cliente que contestar. Sin `goal` se omite; con `goal` (seguimiento
+  // programado) sigue abajo como primer contacto. Se distingue de "cero mensajes" (primer
+  // contacto genuino), que sí debe correr siempre.
+  if (history.length === 0 && msgs.length > 0 && !opts.goal) {
+    console.info("[bot] el hilo solo tiene mensajes del bot; se omite el turno", { contactId });
+    return false;
+  }
+
   if (history.length === 0) {
     history.push({ role: "user", content: "(nuevo lead entrante)" });
   }
@@ -385,9 +394,16 @@ export async function botRespond(
   // diferencia, la segunda corrida puede ver el hilo terminando en la respuesta del bot y
   // Claude responde HTTP 400 ("does not support assistant message prefill"). Ese turno ya
   // quedó contestado por la corrida anterior: se omite, igual que el guard anti-burst.
+  //
+  // Excepción: un seguimiento programado (`opts.goal`, ai-actions.ts) corre POR DEFINICIÓN
+  // cuando el hilo termina en el bot. Ahí no se omite: se agrega un turno sintético del
+  // cliente para que la llamada sea válida y el modelo redacte el seguimiento.
   if (history[history.length - 1].role === "assistant") {
-    console.info("[bot] historial termina en mensaje del bot; se omite el turno", { contactId });
-    return false;
+    if (!opts.goal) {
+      console.info("[bot] historial termina en mensaje del bot; se omite el turno", { contactId });
+      return false;
+    }
+    history.push({ role: "user", content: "(seguimiento programado: el cliente no ha respondido)" });
   }
 
   // Agentes por segmento (Frente 4): clasificar tipo de conversación y elegir el agente

@@ -28,7 +28,14 @@ vi.mock("@/lib/db", () => ({
     botAgentProfile: { count: (...a: unknown[]) => agentCount(...a) },
     botPlaybook: { findFirst: (...a: unknown[]) => playbookFindFirst(...a) },
     recruitCandidate: {},
+    contactBrand: { findFirst: vi.fn(async () => null) }, // createConversation: contacto sin otra marca
   },
+}));
+
+// createConversation: true (ruta de ai-actions.ts) abre/busca el hilo por aquí.
+vi.mock("@/lib/messaging/conversations", () => ({
+  ensureConversation: async () => CONV,
+  findConversationForChannel: (...a: unknown[]) => convFindFirst(...a),
 }));
 
 const askClaude = vi.fn();
@@ -137,5 +144,53 @@ describe("bot-respond — el historial siempre termina en el cliente", () => {
     const llamada = askClaude.mock.calls[0][0] as { messages: { role: string; content: string }[] };
     expect(llamada.messages.at(-1)).toEqual({ role: "user", content: "hola" });
     expect(out).toBe(true);
+  });
+});
+
+describe("bot-respond — seguimientos programados (opts.goal) y hilos solo salientes", () => {
+  it("con goal y el hilo terminando en el bot, agrega un turno sintético del cliente y llama a Claude", async () => {
+    msgFindMany.mockResolvedValue([
+      { direction: "OUTBOUND", body: "respuesta", createdAt: new Date(2026, 0, 1, 10, 0, 5), mediaFilename: null },
+      { direction: "INBOUND", body: "hola", createdAt: new Date(2026, 0, 1, 10, 0, 0), mediaFilename: null },
+    ]);
+
+    // Igual que ai-actions.ts: goal: String(config.goal ?? "seguimiento"), createConversation: true
+    const out = await botRespond("k1", { goal: "seguimiento", createConversation: true, channel: "WHATSAPP" });
+
+    expect(out).toBe(true);
+    expect(askClaude).toHaveBeenCalledTimes(1);
+    const llamada = askClaude.mock.calls[0][0] as { messages: { role: string; content: string }[] };
+    expect(llamada.messages.at(-1)).toEqual({
+      role: "user",
+      content: "(seguimiento programado: el cliente no ha respondido)",
+    });
+    expect(llamada.messages.at(-2)).toEqual({ role: "assistant", content: "respuesta" });
+    expect(sendChannelMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin goal y con mensajes SOLO salientes, omite el turno (no hay nada del cliente que contestar)", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    msgFindMany.mockResolvedValue([
+      { direction: "OUTBOUND", body: "segundo", createdAt: new Date(2026, 0, 1, 10, 0, 5), mediaFilename: null },
+      { direction: "OUTBOUND", body: "primero", createdAt: new Date(2026, 0, 1, 10, 0, 0), mediaFilename: null },
+    ]);
+
+    const out = await botRespond("k1", { channel: "WHATSAPP" });
+
+    expect(out).toBe(false);
+    expect(askClaude).not.toHaveBeenCalled();
+    expect(sendChannelMessage).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+
+  it("sin mensajes y sin goal, el primer contacto sigue llamando a Claude con «(nuevo lead entrante)»", async () => {
+    msgFindMany.mockResolvedValue([]);
+
+    const out = await botRespond("k1", { channel: "WHATSAPP" });
+
+    expect(out).toBe(true);
+    expect(askClaude).toHaveBeenCalledTimes(1);
+    const llamada = askClaude.mock.calls[0][0] as { messages: { role: string; content: string }[] };
+    expect(llamada.messages).toEqual([{ role: "user", content: "(nuevo lead entrante)" }]);
   });
 });
