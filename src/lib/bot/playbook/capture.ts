@@ -134,8 +134,13 @@ function escapeRegex(s: string): string {
 // palabra (ej. "casa" -> "casita"), donde el CONTAINS literal falla porque
 // el diminutivo reemplaza la vocal final ("cas" + "it" + vocal + "s"?).
 // Anclado con \b para no generar falsos positivos (ej. "castillo" NO matchea).
+// Candidatos cortos (≤ 3 letras, p. ej. "si"/"no"/"pdc") solo casan como palabra completa:
+// "no" dentro de "bueno" o "si" dentro de "casi" no es una respuesta.
 function isEnumMatch(normRaw: string, normCandidate: string): boolean {
   if (!normCandidate) return false;
+  if (normCandidate.length <= 3 && !normCandidate.includes(" ")) {
+    return new RegExp(`\\b${escapeRegex(normCandidate)}\\b`).test(normRaw);
+  }
   if (normRaw.includes(normCandidate)) return true;
   if (!normCandidate.includes(" ") && normCandidate.length > 3) {
     const stem = escapeRegex(normCandidate.slice(0, -1));

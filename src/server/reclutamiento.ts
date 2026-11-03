@@ -1,12 +1,14 @@
 // ============================================================
 // #926 — Reclutamiento: acceso a datos (servidor).
 //
-// CAMINO PARA LOS CV QUE LLEGUEN POR LOS CHATS (futuro; hoy la subida es manual):
-//   1. El inbox detecta (o alguien marca) un adjunto PDF/Word de un candidato.
-//   2. Si la persona aún no está en Reclutamiento: `crearCandidato({ fullName, phone, … },
-//      null, { source: "CHAT", sourceRef: <conversationId> })`.
-//   3. Copiar el objeto del bucket del chat a `rutaCvCandidato(id, fileName)` en crm-attachments.
-//   4. `registrarCvDeCandidato({ …, source: "CHAT", sourceRef: <messageId>, uploadedById: null })`.
+// CAMINO PARA LOS CV QUE LLEGAN POR LOS CHATS (conectado por el bot de reclutamiento, spec 2026-11-02):
+//   1. Alta: `src/lib/reclutamiento/candidato.ts` (`asegurarCandidato`) llama a
+//      `crearCandidato({ fullName, phone, … }, null, { source: "CHAT", sourceRef: <conversationId>,
+//      contactId, botCanal })` cuando el contacto aún no está en Reclutamiento.
+//   2. CV: `src/lib/reclutamiento/cv.ts` (`ligarCv`), llamado desde `messaging/core.ts` tras guardar un
+//      inbound con adjunto PDF/Word, copia el objeto del bucket del chat a
+//      `rutaCvCandidato(id, fileName)` en crm-attachments y lo registra con
+//      `registrarCvDeCandidato({ …, source: "CHAT", sourceRef: <messageId>, uploadedById: null })`.
 //      Es la MISMA función que usa la subida manual, y el índice único (source, sourceRef) hace
 //      que reintentar el mismo mensaje no duplique el CV (devuelve { duplicado: true }).
 // ============================================================
@@ -88,7 +90,9 @@ export async function obtenerCandidato(id: string): Promise<CandidatoFila | null
 export async function crearCandidato(
   datos: CandidatoEntrada,
   createdById: string | null,
-  origen: { source: Origen; sourceRef?: string | null } = { source: "MANUAL" }
+  origen: { source: Origen; sourceRef?: string | null; contactId?: string | null; botCanal?: string | null } = {
+    source: "MANUAL",
+  }
 ): Promise<CandidatoFila> {
   const c = (await prisma.recruitCandidate.create({
     data: {
@@ -103,6 +107,10 @@ export async function crearCandidato(
       stage: datos.stage ?? ETAPA_INICIAL,
       source: origen.source,
       sourceRef: origen.sourceRef ?? null,
+      // Solo se mandan cuando vienen: así el alta manual sigue funcionando si el código se
+      // despliega antes que el SQL que agrega estas columnas (2026-11-02-reclutamiento-bot.sql).
+      ...(origen.contactId ? { contactId: origen.contactId } : {}),
+      ...(origen.botCanal ? { botCanal: origen.botCanal } : {}),
       createdById,
     },
     select: SELECT_CANDIDATO,

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SEGMENT_PLAYBOOKS } from "./segment-playbooks";
+import { coerceCapture, type EnumOption } from "./capture";
 import { NATIVE_TARGET_FIELDS, isCustomTarget, isNativeTarget } from "./fields";
 import { etiquetaCustom, valorCustom } from "@/lib/timeline/custom";
 import { readFileSync } from "node:fs";
@@ -172,5 +173,133 @@ describe("SEGMENT_PLAYBOOKS — contrato con el aplicador", () => {
         .map((t) => t.key);
       expect(intrusos, `"${p.name}" pregunta cosas de comprador`).toEqual([]);
     }
+  });
+});
+
+describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
+  const pb = SEGMENT_PLAYBOOKS.find((p) => p.agentName === "Agente Reclutamiento")!;
+  const claves = pb.tasks.map((t) => t.key);
+
+  it("existe y arranca por nombre y plaza", () => {
+    expect(pb).toBeTruthy();
+    expect(claves.slice(0, 2)).toEqual(["nombre", "plaza"]);
+  });
+
+  it("todo lo específico del candidato va a custom.reclutamiento_<clave>", () => {
+    for (const t of pb.tasks) {
+      if (["firstName", "phone", "email"].includes(t.targetField)) continue;
+      expect(t.targetField, t.key).toBe(`custom.reclutamiento_${t.key}`);
+    }
+  });
+
+  it("tiene los 6 filtros, los 5 puntuables y las 3 de actitud", () => {
+    for (const k of ["mayor_edad", "acepta_comision", "disponibilidad", "colchon_meses", "plaza", "movilidad"]) expect(claves).toContain(k);
+    for (const k of ["experiencia_inmobiliaria", "cartera_clientes", "experiencia_ventas", "ingles", "prospeccion_digital"]) expect(claves).toContain(k);
+    for (const k of ["actitud_1", "actitud_2", "actitud_3"]) expect(claves).toContain(k);
+  });
+
+  it("los filtros van antes que los puntuables y la actitud al final", () => {
+    const i = (k: string) => claves.indexOf(k);
+    expect(i("movilidad")).toBeLessThan(i("experiencia_inmobiliaria"));
+    expect(i("prospeccion_digital")).toBeLessThan(i("actitud_1"));
+    expect(claves[claves.length - 1]).toBe("actitud_3");
+  });
+
+  it("las opciones ENUM coinciden con las claves del modelo default", async () => {
+    const { MODELO_DEFAULT } = await import("@/lib/reclutamiento/modelo");
+    for (const [clave, f] of Object.entries(MODELO_DEFAULT.filtros)) {
+      const t = pb.tasks.find((x) => x.key === clave)!;
+      const valores = t.enumOptions!.map((o) => o.value);
+      for (const v of [...f.pasa, ...f.ambiguo]) expect(valores, clave).toContain(v);
+    }
+    for (const [clave, p] of Object.entries(MODELO_DEFAULT.puntuables)) {
+      const t = pb.tasks.find((x) => x.key === clave)!;
+      const valores = t.enumOptions!.map((o) => o.value);
+      for (const v of Object.keys(p.puntos)) expect(valores, clave).toContain(v);
+    }
+  });
+
+  it("ya no existen las claves viejas puesto/experiencia/ciudad", () => {
+    expect(claves).not.toContain("puesto");
+    expect(claves).not.toContain("experiencia");
+    expect(claves).not.toContain("ciudad");
+  });
+
+  it("no pide correo: el motor ignora required:false y lo volvería compuerta dura", () => {
+    expect(claves).not.toContain("correo");
+    expect(pb.tasks.some((t) => t.targetField === "email")).toBe(false);
+  });
+
+  // coerceEnum se queda con el PRIMER substring que encuentre, opción por opción,
+  // y el value mismo cuenta ("SI" cae en "necesito", "NO" en "menos"). Estas frases
+  // reales fijan el orden de opciones y los sinónimos del bloque.
+  describe("coerción con las opciones reales del guion", () => {
+    const coerce = (clave: string, frase: string) => {
+      const t = pb.tasks.find((x) => x.key === clave)!;
+      const r = coerceCapture({ targetField: t.targetField, captureType: "ENUM", enumOptions: t.enumOptions as EnumOption[] }, frase);
+      return r.ok ? r.writes[0].value : null;
+    };
+
+    it("colchon_meses: 12 meses no cae en MENOS_DE_TRES por el '2 meses'", () => {
+      expect(coerce("colchon_meses", "tengo como 12 meses cubiertos")).toBe("MAS_DE_SEIS");
+      expect(coerce("colchon_meses", "un año")).toBe("MAS_DE_SEIS");
+      expect(coerce("colchon_meses", "unos 4 meses")).toBe("TRES_A_SEIS");
+      expect(coerce("colchon_meses", "2 meses")).toBe("MENOS_DE_TRES");
+      expect(coerce("colchon_meses", "no lo he calculado")).toBe("NO_SE");
+    });
+
+    it("respuestas cortas y negaciones comunes caen en la opción correcta", () => {
+      expect(coerce("acepta_comision", "no sé")).toBe("NO_SE");
+      expect(coerce("acepta_comision", "bueno, sin problema")).toBe("SI");
+      expect(coerce("prospeccion_digital", "casi no")).toBe("NO");
+      expect(coerce("prospeccion_digital", "uso instagram")).toBe("SI");
+      expect(coerce("experiencia_inmobiliaria", "nunca")).toBe("SIN_EXPERIENCIA");
+    });
+    it("acepta_comision: 'necesito sueldo' no cae en SI por el 'si' de 'necesito'", () => {
+      expect(coerce("acepta_comision", "necesito sueldo base")).toBe("NO");
+      expect(coerce("acepta_comision", "sí, me funciona")).toBe("SI");
+      expect(coerce("acepta_comision", "SI")).toBe("SI");
+      expect(coerce("acepta_comision", "lo pensaría")).toBe("NO_SE");
+    });
+
+    it("mayor_edad: edades concretas, sin el truco de 'tengo 2/3/4/5'", () => {
+      expect(coerce("mayor_edad", "tengo 18")).toBe("SI");
+      expect(coerce("mayor_edad", "tengo 17")).toBe("NO");
+      expect(coerce("mayor_edad", "soy menor")).toBe("NO");
+    });
+
+    it("movilidad: sin vehículo pero con disposición no cae en SI", () => {
+      expect(coerce("movilidad", "no tengo coche pero me muevo en transporte")).toBe("SOLO_DISPOSICION");
+      expect(coerce("movilidad", "tengo moto")).toBe("SI");
+      expect(coerce("movilidad", "no puedo moverme")).toBe("NO");
+    });
+
+    it("experiencia_inmobiliaria: números de años", () => {
+      expect(coerce("experiencia_inmobiliaria", "llevo 10 años")).toBe("MAS_DE_3_ANOS");
+      expect(coerce("experiencia_inmobiliaria", "2 años")).toBe("DE_1_A_3_ANOS");
+      expect(coerce("experiencia_inmobiliaria", "más de un año")).toBe("DE_1_A_3_ANOS");
+      expect(coerce("experiencia_inmobiliaria", "unos meses")).toBe("MENOS_1_ANO");
+      expect(coerce("experiencia_inmobiliaria", "ninguna")).toBe("SIN_EXPERIENCIA");
+    });
+
+    it("las opciones negativas van al final y con frases específicas", () => {
+      expect(coerce("ingles", "no sé inglés")).toBe("NO");
+      expect(coerce("ingles", "básico")).toBe("BASICO");
+      expect(coerce("cartera_clientes", "no tengo cartera")).toBe("NO");
+      expect(coerce("cartera_clientes", "menos de 10")).toBe("MENOS_10");
+      expect(coerce("experiencia_ventas", "nunca he vendido")).toBe("NINGUNA");
+      expect(coerce("prospeccion_digital", "no uso redes")).toBe("NO");
+      expect(coerce("prospeccion_digital", "instagram")).toBe("SI");
+    });
+
+    it("ningún sinónimo suelto 'sí'/'si'/'no' en el bloque", () => {
+      for (const t of pb.tasks) {
+        for (const o of t.enumOptions ?? []) {
+          expect(o.synonyms ?? [], `${t.key}=${o.value}`).not.toContain("si");
+          expect(o.synonyms ?? [], `${t.key}=${o.value}`).not.toContain("sí");
+          expect(o.synonyms ?? [], `${t.key}=${o.value}`).not.toContain("no");
+        }
+      }
+    });
   });
 });

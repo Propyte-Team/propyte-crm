@@ -25,6 +25,7 @@ import { resolveBrandForConnector, isBrandScoped, type BrandResolution } from "@
 import { brandEnabledChannels } from "@/lib/brands/settings";
 import { resolveActorUserId } from "@/lib/users/actor-sistema";
 import { isAdvisorLine } from "@/lib/whatsapp/coex/advisor-line";
+import { esAgenteReclutamiento, hookReclutamiento } from "@/lib/reclutamiento/hook";
 
 /**
  * `enabledChannelsOverride` (2026-10-09, marcas del agente): los canales propios de la marca
@@ -351,7 +352,18 @@ export async function botRespond(
   const watermark = msgs[0]?.createdAt ?? null;
   const history: BotMessage[] = msgs
     .reverse()
-    .map((m): BotMessage => ({ role: m.direction === "INBOUND" ? "user" : "assistant", content: m.body }))
+    // Adjuntos (spec reclutamiento §6): un mensaje que es solo archivo llegaba con body vacío y
+    // el bot no sabía que ya había CV. Se marca el nombre para que no lo vuelva a pedir.
+    .map((m): BotMessage => ({
+      role: m.direction === "INBOUND" ? "user" : "assistant",
+      content: m.body?.trim()
+        ? m.body
+        : m.mediaFilename
+          ? `[adjunto: ${m.mediaFilename}]`
+          : m.mediaUrl
+            ? `[adjunto: ${m.mediaType ?? "archivo"}]` // IG/Messenger suelen venir sin nombre
+            : m.body,
+    }))
     .reduce<BotMessage[]>((acc, m) => {
       if (acc.length === 0 && m.role === "assistant") return acc;
       if (acc.length > 0 && acc[acc.length - 1].role === m.role) {
@@ -473,6 +485,23 @@ export async function botRespond(
           ...(brand ? { ignoreForeignState: true } : {}),
         });
         if (pr.objective) playbookObjective = pr.objective;
+        // Reclutamiento (spec 2026-11-02): al terminar el guion se evalúa al candidato y el
+        // cierre reemplaza al objetivo genérico; mientras sigue, se suma la ficha de la vacante.
+        // Solo con el guion nuevo (tiene actitud_3): si el playbook sembrado sigue siendo el viejo
+        // (puesto/experiencia/ciudad/correo), evaluar daría NO_APTO sin ninguna respuesta.
+        const guionNuevo = pb.tasks.some((t: { key: string }) => t.key === "actitud_3");
+        if (!brand && guionNuevo && esAgenteReclutamiento(agentProfile)) {
+          const hr = await hookReclutamiento({
+            contact,
+            conversationId: conv.id,
+            channel,
+            model: config.model,
+            messages: history,
+            playbook: { status: pr.status },
+          });
+          if (hr.objetivo) playbookObjective = hr.objetivo;
+          else if (hr.contexto && playbookObjective) playbookObjective = `${playbookObjective}\n\n${hr.contexto}`;
+        }
       }
     } catch {
       // defensivo: cae al objective de la ruta A

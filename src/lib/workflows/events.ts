@@ -26,6 +26,10 @@ export type DomainEventType =
   | "payment.overdue"
   | "visit.completed"
   | "sla.breach"
+  // Bot de reclutamiento (spec 2026-11-02 §7): el candidato terminó el perfilado.
+  | "recruitment.apto"
+  | "recruitment.revisar"
+  | "recruitment.no_apto"
   | (string & {});
 
 export async function emitEvent(

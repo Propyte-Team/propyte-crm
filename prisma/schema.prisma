@@ -3261,6 +3261,26 @@ model RecruitCandidate {
   /// MANUAL | CHAT — por dónde llegó (CHAT queda listo para la ingesta desde el inbox)
   source         String                 @default("MANUAL")
   sourceRef      String?
+  /// Contacto del CRM cuando el candidato llegó por el bot (spec 2026-11-02). Único: un contacto, un candidato.
+  contactId         String?   @unique
+  /// Canal por el que habló con el bot (ConversationChannel como texto: WHATSAPP | INSTAGRAM | MESSENGER).
+  botCanal          String?
+  /// Veredicto del bot: APTO | REVISAR | NO_APTO. null = aún no evaluado.
+  botResultado      String?
+  botPuntaje        Int?
+  /// filtro:<clave> | ambiguo:<claves> | puntaje | null
+  botMotivo         String?
+  /// Respuestas del guion (copia de Contact.custom.reclutamiento_* al evaluar).
+  botRespuestas     Json?
+  /// Resultado de cada filtro eliminatorio: PASA | AMBIGUO | FALLA.
+  botFiltros        Json?
+  /// Puntos por criterio, incluida la actitud y sus razones.
+  botDesglose       Json?
+  /// Resumen de 2-3 líneas para el gerente, generado por IA.
+  botResumen        String?
+  botEvaluadoAt     DateTime?
+  /// Días y horario que el candidato dijo que le acomodan para la entrevista (texto libre).
+  horarioEntrevista String?
   createdById    String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt

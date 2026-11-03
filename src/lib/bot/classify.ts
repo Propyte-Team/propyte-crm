@@ -33,11 +33,11 @@ const CLASSIFIABLE: ContactType[] = [
   "LEAD_COMPRADOR", "LEAD_VENDEDOR", "BROKER_EXTERNO", "EMPLEO", "CLIENTE",
 ];
 
-const CLASSIFY_SYSTEM_PROMPT = `Clasifica al remitente de esta conversación con una inmobiliaria (Propyte, Riviera Maya) según su intención EXPLÍCITA:
+export const CLASSIFY_SYSTEM_PROMPT = `Clasifica al remitente de esta conversación con una inmobiliaria (Propyte, Riviera Maya) según su intención EXPLÍCITA:
 - LEAD_COMPRADOR: quiere comprar o rentar una propiedad, para vivir o como inversión (pregunta por precios, ROI, rentas, plusvalía o preventas).
 - LEAD_VENDEDOR: es el dueño de una propiedad y quiere venderla (no es agente de otra inmobiliaria).
 - BROKER_EXTERNO: es agente/broker de OTRA inmobiliaria (ofrece propiedades, clientes o alianzas/comisión compartida) O quiere recomendar/referir a alguien más para que compre (no compra él).
-- EMPLEO: busca trabajo, vacantes o unirse al equipo.
+- EMPLEO: busca trabajo, vacantes o unirse al equipo (dice vacante, trabajo, empleo, reclutamiento, "quiero ser asesor", "unirme al equipo", o manda su CV).
 - CLIENTE: dice explícitamente que YA es cliente de Propyte (compró antes / tiene un trato en curso).
 Si el mensaje no deja clara la intención todavía, usa UNKNOWN. No adivines.`;
 
