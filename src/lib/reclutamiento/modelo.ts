@@ -17,27 +17,39 @@ export type ClaveFiltro = (typeof CLAVES_FILTRO)[number];
 export type ClavePuntuable = (typeof CLAVES_PUNTUABLE)[number];
 
 /** Un filtro eliminatorio: qué valores PASAN y cuáles son AMBIGUOS (ni pasa ni falla claro). */
-const filtroSchema = z.object({
-  activo: z.boolean().default(true),
-  pasa: z.array(z.string().min(1)).min(1),
-  ambiguo: z.array(z.string()).default([]),
-});
+const filtroSchema = z
+  .object({
+    activo: z.boolean().default(true),
+    pasa: z.array(z.string().min(1)).min(1),
+    ambiguo: z.array(z.string()).default([]),
+  })
+  .refine((f) => !f.pasa.some((v) => f.ambiguo.includes(v)), {
+    message: "un valor no puede estar en `pasa` y en `ambiguo` a la vez",
+    path: ["ambiguo"],
+  });
 
 /** Un puntuable: puntos por valor de la opción. */
 const puntuableSchema = z.object({
   puntos: z.record(z.string(), z.number().min(0)),
 });
 
-export const modeloSchema = z.object({
-  version: z.number().int().positive(),
-  filtros: z.record(z.enum(CLAVES_FILTRO), filtroSchema),
-  puntuables: z.record(z.enum(CLAVES_PUNTUABLE), puntuableSchema),
-  /** Puntos máximos de la rúbrica de actitud (3 preguntas situacionales). */
-  actitudMax: z.number().min(0),
-  /** Puntos por haber mandado CV. */
-  cvPuntos: z.number().min(0),
-  umbrales: z.object({ apto: z.number().min(0).max(100), revisar: z.number().min(0).max(100) }),
-});
+/** Umbrales del score: REVISAR debe quedar por debajo de APTO para que las bandas no se crucen. */
+const umbralesSchema = z
+  .object({ apto: z.number().min(0).max(100), revisar: z.number().min(0).max(100) })
+  .refine((u) => u.revisar < u.apto, { message: "`revisar` debe ser menor que `apto`", path: ["revisar"] });
+
+export const modeloSchema = z
+  .object({
+    version: z.number().int().positive(),
+    filtros: z.record(z.enum(CLAVES_FILTRO), filtroSchema),
+    puntuables: z.record(z.enum(CLAVES_PUNTUABLE), puntuableSchema),
+    /** Puntos máximos de la rúbrica de actitud (3 preguntas situacionales). */
+    actitudMax: z.number().min(0),
+    /** Puntos por haber mandado CV. */
+    cvPuntos: z.number().min(0),
+    umbrales: umbralesSchema,
+  })
+  .strict();
 export type ModeloReclutamiento = z.infer<typeof modeloSchema>;
 
 export const MODELO_DEFAULT: ModeloReclutamiento = {
@@ -74,10 +86,20 @@ export const FICHA_DEFAULT =
   "comisiones competitivas por venta, capacitación continua, inventario de desarrollos y acompañamiento del equipo. " +
   "Necesitas vehículo propio y disponibilidad para moverte por la zona. El proceso: una charla aquí, tu CV y una entrevista con el gerente de la plaza.";
 
-export interface ResponsablesReclutamiento {
-  PDC?: string[];
-  MERIDA?: string[];
-  default?: string[];
+/** Ids de usuario responsables por plaza; `default` aplica cuando la plaza no tiene lista propia. */
+export const responsablesSchema = z
+  .object({
+    PDC: z.array(z.string()).optional(),
+    MERIDA: z.array(z.string()).optional(),
+    default: z.array(z.string()).optional(),
+  })
+  .strict();
+export type ResponsablesReclutamiento = z.infer<typeof responsablesSchema>;
+
+/** Inválido o ausente → {} (sin responsables), igual que el modelo cae al default. */
+export function resolverResponsables(valor: unknown): ResponsablesReclutamiento {
+  const r = responsablesSchema.safeParse(valor);
+  return r.success ? r.data : {};
 }
 
 export async function cargarConfigReclutamiento(): Promise<{
@@ -91,10 +113,8 @@ export async function cargarConfigReclutamiento(): Promise<{
   });
   const valor = (k: string) => filas.find((f) => f.key === k)?.value;
   const { modelo, error } = resolverModelo(valor(CLAVE_MODELO));
-  const ficha = typeof valor(CLAVE_FICHA) === "string" && (valor(CLAVE_FICHA) as string).trim()
-    ? (valor(CLAVE_FICHA) as string)
-    : FICHA_DEFAULT;
-  const resp = valor(CLAVE_RESPONSABLES);
-  const responsables = resp && typeof resp === "object" && !Array.isArray(resp) ? (resp as ResponsablesReclutamiento) : {};
+  const fichaGuardada = valor(CLAVE_FICHA);
+  const ficha = typeof fichaGuardada === "string" && fichaGuardada.trim() ? fichaGuardada : FICHA_DEFAULT;
+  const responsables = resolverResponsables(valor(CLAVE_RESPONSABLES));
   return { modelo, ficha, responsables, ...(error ? { errorModelo: error } : {}) };
 }
