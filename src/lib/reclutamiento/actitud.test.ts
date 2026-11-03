@@ -8,6 +8,10 @@ import { evaluarActitud, parsearActitud } from "./actitud";
 beforeEach(() => askClaude.mockReset());
 
 describe("parsearActitud", () => {
+  it("tolera prosa alrededor del JSON", () => {
+    const r = parsearActitud('Aquí va mi evaluación: {"ejes":{"motivacion":4,"rechazo":3,"ambicion":5,"claridad":2},"razones":["x"]} Espero que sirva.');
+    expect(r).toEqual({ puntos: 14, razones: ["x"] });
+  });
   it("acepta JSON limpio y con fences", () => {
     expect(parsearActitud('{"ejes":{"motivacion":4,"rechazo":3,"ambicion":5,"claridad":4},"razones":["clara"]}'))
       .toEqual({ puntos: 16, razones: ["clara"] });

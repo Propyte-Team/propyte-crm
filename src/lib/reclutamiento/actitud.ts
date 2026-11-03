@@ -18,8 +18,10 @@ const SYSTEM =
 
 export function parsearActitud(texto: string): Actitud | null {
   const limpio = texto.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  // Si el modelo rodea el JSON con prosa («Aquí está: {...}»), nos quedamos con el objeto.
+  const objeto = limpio.startsWith("{") ? limpio : (limpio.match(/\{[\s\S]*\}/)?.[0] ?? limpio);
   try {
-    const j = JSON.parse(limpio) as { ejes?: Record<string, unknown>; razones?: unknown };
+    const j = JSON.parse(objeto) as { ejes?: Record<string, unknown>; razones?: unknown };
     if (!j || typeof j !== "object" || !j.ejes) return null;
     let puntos = 0;
     let vistos = 0;
