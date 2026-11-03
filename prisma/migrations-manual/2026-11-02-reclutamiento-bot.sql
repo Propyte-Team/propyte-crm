@@ -1,9 +1,13 @@
 -- Bot de reclutamiento F1 (spec docs/superpowers/specs/2026-11-02-bot-reclutamiento-design.md,
 -- anexo docs/superpowers/plans/2026-11-02-bot-reclutamiento-f1-integracion-926.md).
 -- El bot escribe en la tabla del módulo Reclutamiento (#926): columnas nuevas, todas opcionales.
--- Aditiva e idempotente. Aplicar vía execute_sql a oaijxdpevakashxshhvm (schema propyte_crm)
--- ANTES de desplegar el código. Si el código se despliega antes, el bot responde sin evaluar
--- (candidato.ts trata P2022 como «sin migrar») y nada más se rompe.
+-- Aditiva e idempotente. Aplicar vía execute_sql a oaijxdpevakashxshhvm (schema propyte_crm).
+-- Orden de salida a prod: 1) este SQL, 2) sembrar el guion nuevo con
+-- `npx tsx scripts/seed-bot-playbooks-segmento.ts` (seguro antes del deploy: el código viejo ignora
+-- las claves nuevas), 3) mergear/desplegar, 4) activar el «Agente Reclutamiento».
+-- Si el código se despliega antes que este SQL, el bot responde sin evaluar (candidato.ts trata
+-- P2022 como «sin migrar») y el alta manual de /reclutamiento sigue funcionando (crearCandidato solo
+-- manda contactId/botCanal cuando vienen del bot).
 --
 -- Rollback:
 --   ALTER TABLE "propyte_crm"."recruit_candidates"

@@ -5,12 +5,15 @@ módulo Reclutamiento del #926, tabla `recruit_candidates`).
 
 ## Precondiciones (una vez, en prod, por quien tenga acceso a la BD)
 
-1. Aplicar `prisma/migrations-manual/2026-11-02-reclutamiento-bot.sql` **antes** de mergear.
-2. Tras el deploy, sembrar el playbook: `npx tsx scripts/seed-bot-playbooks-segmento.ts`
-   (reemplaza las tareas del playbook del «Agente Reclutamiento» conservando su id).
-3. Confirmar en Ajustes → Agentes del bot que «Agente Reclutamiento» está **activo**.
-4. Confirmar que `bot_config.enabledChannels` incluye INSTAGRAM y MESSENGER (lo hace el SQL).
-5. Opcional: `SystemConfig` `reclutamiento.responsables` = `{"MERIDA":["<userId>"]}` cuando Luis
+1. Aplicar `prisma/migrations-manual/2026-11-02-reclutamiento-bot.sql`.
+2. Sembrar el guion nuevo: `npx tsx scripts/seed-bot-playbooks-segmento.ts` (reemplaza las tareas del
+   playbook del «Agente Reclutamiento» conservando su id). Es seguro hacerlo **antes** del deploy: el
+   código viejo ignora las claves nuevas. Y el código nuevo no evalúa mientras el guion sembrado sea el
+   viejo (el hook exige la tarea `actitud_3`), así que el orden SQL → seed → deploy no deja huecos.
+3. Mergear y desplegar.
+4. Activar en Ajustes → Agentes del bot el «Agente Reclutamiento».
+5. Confirmar que `bot_config.enabledChannels` incluye INSTAGRAM y MESSENGER (lo hace el SQL).
+6. Opcional: `SystemConfig` `reclutamiento.responsables` = `{"MERIDA":["<userId>"]}` cuando Luis
    nombre al responsable de Mérida. Sin eso, el aviso va a la gerencia de la plaza y, si no hay, a ADMIN.
 
 Orden de canales: Instagram, luego Messenger. WhatsApp cuando su conexión con Meta sea estable.
@@ -69,6 +72,9 @@ pedir; el historial que ve el bot trae `[adjunto: <nombre>]`.
   y falló; el siguiente mensaje del candidato no re-evalúa. Poner `botEvaluadoAt = NULL` para reintentar.
 - Si el bot repite la misma pregunta, revisar que la respuesta tenga un sinónimo en `enumOptions` del
   playbook (`src/lib/bot/playbook/segment-playbooks.ts`) y volver a sembrar.
+- Un CV mandado como **primer** mensaje (antes del primer turno del bot) no se liga: la fila del
+  candidato se crea en el primer turno del bot y `ligarCv` no encuentra a quién colgarlo. No es un
+  error: el bot pide el CV al final de todos modos y ese sí se liga.
 
 ## Bitácora
 
