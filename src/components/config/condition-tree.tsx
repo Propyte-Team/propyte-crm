@@ -24,14 +24,14 @@ const OPS = [
 
 function CondRowFields({ c, onChange, onDelete, listId }: { c: CondLeaf; onChange: (c: CondLeaf) => void; onDelete: () => void; listId: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <input list={listId} className="form-input text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
+    <div className="flex flex-wrap items-center gap-2">
+      <input list={listId} className="form-input !w-auto min-w-[12rem] flex-1 text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
         onChange={(e) => onChange({ ...c, field: e.target.value })} />
       <select className="form-input !w-auto text-[13px]" value={c.op} onChange={(e) => onChange({ ...c, op: e.target.value })}>
         {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       {c.op !== "exists" && (
-        <input className="form-input text-[13px]" placeholder={c.op === "in" || c.op === "nin" ? "a,b,c" : "valor"} value={c.value}
+        <input className="form-input !w-auto min-w-[8rem] flex-1 text-[13px]" placeholder={c.op === "in" || c.op === "nin" ? "a,b,c" : "valor"} value={c.value}
           onChange={(e) => onChange({ ...c, value: e.target.value })} />
       )}
       <button type="button" onClick={onDelete} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
