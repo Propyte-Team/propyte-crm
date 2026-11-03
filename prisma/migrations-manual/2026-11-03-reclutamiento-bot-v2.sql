@@ -6,7 +6,9 @@
 -- Requiere 2026-11-02-reclutamiento-bot.sql aplicado. APLICAR ANTES DEL DEPLOY: el código nuevo
 -- selecciona "cvUrl" al buscar al candidato; sin la columna, asegurarCandidato devuelve null (P2022)
 -- y el bot de reclutamiento deja de evaluar y de llenar la ficha hasta que se aplique.
--- Orden de salida: 1) este SQL, 2) seed `scripts/seed-bot-playbooks-segmento.ts`, 3) merge/deploy.
+-- Orden de salida: 1) este SQL, 2) merge/deploy, 3) seed `scripts/seed-bot-playbooks-segmento.ts`
+-- justo después del deploy. El seed NO va antes: agrega la opción OTRO_INGRESO, que el código viejo
+-- evalúa como FALLA, así que un candidato que la elija quedaría rechazado por error.
 --
 -- Rollback:
 --   ALTER TABLE "propyte_crm"."recruit_candidates" DROP COLUMN IF EXISTS "cvUrl";

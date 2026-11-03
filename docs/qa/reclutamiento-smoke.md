@@ -8,11 +8,13 @@ módulo Reclutamiento del #926, tabla `recruit_candidates`).
 1. Aplicar `prisma/migrations-manual/2026-11-02-reclutamiento-bot.sql` y después
    `prisma/migrations-manual/2026-11-03-reclutamiento-bot-v2.sql` (columna `cvUrl` e identidad v2). La v2 va
    **antes** del deploy: el código nuevo lee `cvUrl` y sin la columna el bot deja de evaluar.
-2. Sembrar el guion nuevo: `npx tsx scripts/seed-bot-playbooks-segmento.ts` (reemplaza las tareas del
-   playbook del «Agente Reclutamiento» conservando su id). Es seguro hacerlo **antes** del deploy: el
-   código viejo ignora las claves nuevas. Y el código nuevo no evalúa mientras el guion sembrado sea el
-   viejo (el hook exige la tarea `actitud_3`), así que el orden SQL → seed → deploy no deja huecos.
-3. Mergear y desplegar.
+2. Mergear y desplegar.
+3. Sembrar el guion nuevo **justo después del deploy**: `npx tsx scripts/seed-bot-playbooks-segmento.ts`
+   (reemplaza las tareas del playbook del «Agente Reclutamiento» conservando su id). **No** antes del
+   deploy: el seed agrega la opción `OTRO_INGRESO`, que el código viejo evalúa como FALLA, así que un
+   candidato que la eligiera quedaría rechazado por error. Entre el deploy y el seed no hay hueco: el
+   código nuevo no evalúa mientras el guion sembrado sea el viejo (el hook exige la tarea `actitud_3`).
+   Orden: SQL v2 → deploy → seed.
 4. Activar en Ajustes → Agentes del bot el «Agente Reclutamiento».
 5. Confirmar que `bot_config.enabledChannels` incluye INSTAGRAM y MESSENGER (lo hace el SQL).
 6. Opcional: `SystemConfig` `reclutamiento.responsables` = `{"MERIDA":["<userId>"]}` cuando Luis
