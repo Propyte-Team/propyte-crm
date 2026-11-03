@@ -50,6 +50,8 @@ import { RegistrarEnBroker } from "@/components/contacts/registrar-en-broker";
 import { tituloRegistros } from "@/lib/contacts/referidos";
 import { opcionesFlujo } from "@/lib/flujos";
 import { EstadoDelContacto } from "@/components/contacts/estado-del-contacto";
+import { OperacionesDelContacto } from "@/components/contacts/operaciones-del-contacto";
+import { NEGOCIO_ANTERIOR_LABEL, esEtapaOperacion, etiquetaEtapa } from "@/lib/operaciones";
 import { etiquetaEstado } from "@/lib/estados";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
 import {
@@ -83,6 +85,9 @@ const TEMP_COLORS: Record<string, string> = {
   COLD: "#3B82F6",
   DEAD: "#9CA3AF",
 };
+// #957: roles de solo lectura en los negocios (mismos de /api/deals).
+const SOLO_LECTURA_OPERACIONES = ["MARKETING", "HOSTESS", "DEVELOPER_EXT", "MANTENIMIENTO"];
+
 const DEAL_STAGE_LABEL: Record<string, string> = {
   NEW_LEAD: "Nuevo lead",
   CONTACTED: "Contactado",
@@ -412,12 +417,14 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               router.refresh();
             }}
           />
-          <button
-            className="btn-secondary text-[13px]"
-            onClick={() => setDealOpen(true)}
-          >
-            <Plus className="h-4 w-4" /> Crear Deal
-          </button>
+          {!SOLO_LECTURA_OPERACIONES.includes(userRole) && (
+            <button
+              className="btn-secondary text-[13px]"
+              onClick={() => setDealOpen(true)}
+            >
+              <Plus className="h-4 w-4" /> Nueva operación
+            </button>
+          )}
           <button className="btn-secondary text-[13px]" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4" /> Editar todo
           </button>
@@ -437,7 +444,7 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
         <Metric label="Último contacto" value={relative(lastActivity)} sub={lastActivity ? formatShort(lastActivity) : undefined} />
         <Metric label="Actividades" value={String(activities.length)} num />
         <Metric label="Próx. seguimiento" value={nextFollowUp ? formatShort(nextFollowUp) : "—"} highlight={!!nextFollowUp} />
-        <Metric label="Deals" value={String(contact.deals?.length ?? 0)} num />
+        <Metric label="Operaciones" value={String(contact.deals?.length ?? 0)} num />
         {acc("score") !== "HIDDEN" && (
           <ScoreMetric scoreContacto={Number(contact.score ?? 0)} guardado={scoreGuardado} activo={scoringActivo} />
         )}
@@ -579,51 +586,24 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
         </div>
       </div>
 
-      {/* ── Deals ── */}
+      {/* ── Operaciones (#957; antes «Deals») ── */}
       <Section
-        title={`Deals (${contact.deals?.length ?? 0})`}
+        title={`Operaciones (${contact.deals?.length ?? 0})`}
         action={
-          <button className="btn-secondary text-[13px]" onClick={() => setDealOpen(true)}>
-            <Plus className="h-3.5 w-3.5" /> Nuevo deal
-          </button>
+          !SOLO_LECTURA_OPERACIONES.includes(userRole) ? (
+            <button className="btn-secondary text-[13px]" onClick={() => setDealOpen(true)}>
+              <Plus className="h-3.5 w-3.5" /> Nueva operación
+            </button>
+          ) : undefined
         }
       >
-        {contact.deals?.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="hairline-b text-left text-[color:var(--text-tertiary)]">
-                  <th className="pb-2 font-medium">Etapa</th>
-                  <th className="pb-2 font-medium">Desarrollo</th>
-                  <th className="pb-2 font-medium">Unidad</th>
-                  <th className="pb-2 font-medium">Valor</th>
-                  <th className="pb-2 font-medium">Asesor</th>
-                  <th className="pb-2 font-medium">Fecha</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contact.deals.map((deal: any) => (
-                  <tr
-                    key={deal.id}
-                    className="hairline-b cursor-pointer last:border-0 hover:bg-[color:var(--bg-row-hover)]"
-                    onClick={() => router.push(`/pipeline?dealId=${deal.id}`)}
-                  >
-                    <td className="py-2">{DEAL_STAGE_LABEL[deal.stage] ?? deal.stage}</td>
-                    <td className="py-2">{deal.development?.name ?? "—"}</td>
-                    <td className="py-2">{deal.unit?.unitNumber ?? "—"}</td>
-                    <td className="num py-2">{formatCurrency(deal.estimatedValue, deal.currency)}</td>
-                    <td className="py-2">{deal.assignedTo?.name ?? "—"}</td>
-                    <td className="py-2 text-[color:var(--text-tertiary)]">{formatShort(deal.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="py-6 text-center text-[13px] text-[color:var(--text-tertiary)]">
-            Sin operaciones. Crea un deal para iniciar el proceso comercial.
-          </p>
-        )}
+        <OperacionesDelContacto
+          operaciones={contact.deals ?? []}
+          etiquetaEtapaVieja={(stage) => (stage ? DEAL_STAGE_LABEL[stage] ?? stage : "—")}
+          readOnly={SOLO_LECTURA_OPERACIONES.includes(userRole)}
+          onGuardado={() => router.refresh()}
+          onNueva={() => setDealOpen(true)}
+        />
       </Section>
 
       {/* ── Cotizaciones / Documentos por deal ── */}
@@ -639,7 +619,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
               >
                 {contact.deals.map((d: any) => (
                   <option key={d.id} value={d.id}>
-                    {d.development?.name ?? "Sin desarrollo"} — {DEAL_STAGE_LABEL[d.stage] ?? d.stage}
+                    {d.development?.name ?? "Sin desarrollo"} —{" "}
+                    {esEtapaOperacion(d.etapa) ? etiquetaEtapa(d.etapa) : `${NEGOCIO_ANTERIOR_LABEL} · ${DEAL_STAGE_LABEL[d.stage] ?? d.stage}`}
                   </option>
                 ))}
               </select>
@@ -772,9 +753,10 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
       <Dialog open={dealOpen} onOpenChange={setDealOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Crear nuevo deal</DialogTitle>
+            <DialogTitle>Nueva operación</DialogTitle>
           </DialogHeader>
           <DealForm
+            modoOperacion
             initialData={{ contactId: contact.id }}
             onSuccess={() => {
               setDealOpen(false);

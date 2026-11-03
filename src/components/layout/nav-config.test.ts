@@ -115,6 +115,11 @@ describe("nav-config — orden del sidebar", () => {
     ]);
   });
 
+  it("#957: el menú Negocios solo lo ven administración y dirección hasta la #958", () => {
+    const negocios = navGroups.flatMap((g) => g.items).find((i) => i.href === "/pipeline");
+    expect(negocios?.roles).toEqual(["DIRECTOR"]); // ADMIN ve todo el menú (sidebar.tsx)
+  });
+
   it("'Pipeline' se llama 'Negocios' pero la ruta /pipeline NO cambió", () => {
     const negocios = navGroups.flatMap((g) => g.items).find((i) => i.href === "/pipeline");
     expect(negocios?.label).toBe("Negocios");

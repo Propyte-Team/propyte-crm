@@ -18,6 +18,7 @@ import {
   RAZONES_CON_DETALLE,
   RAZONES_CON_FECHA,
   esEstado,
+  esEstadoPorOperacion,
   esSalida,
   etiquetaEstado,
   etiquetaRazon,
@@ -90,6 +91,8 @@ export function EstadoDelContacto({ contacto, readOnly, puedeCorregir = false, c
   const { normales, correcciones } = opcionesDeEstado(estado, contacto.flujo ?? null, puedeCorregir);
   const subestados = subestadosDe(estado, contacto.flujo ?? null);
   const color = estado && esEstado(estado) ? ESTADO_COLORS[estado] : ESTADO_VACIO_COLOR;
+  // #957: Apartado–Postventa vienen de la operación; el subestado se cambia allá.
+  const porOperacion = esEstadoPorOperacion(estado);
 
   async function aplicar(cuerpo: Record<string, unknown>): Promise<boolean> {
     setOcupado(true);
@@ -124,8 +127,14 @@ export function EstadoDelContacto({ contacto, readOnly, puedeCorregir = false, c
         color={color}
         etiqueta={etiquetaEstado(estado)}
         ocupado={ocupado}
-        readOnly={readOnly}
-        titulo={estado ? undefined : "Este contacto todavía no tiene estado: elígelo"}
+        readOnly={readOnly || (porOperacion && correcciones.length === 0)}
+        titulo={
+          porOperacion
+            ? "Lo marca la operación: se cambia en la sección Operaciones"
+            : estado
+              ? undefined
+              : "Este contacto todavía no tiene estado: elígelo"
+        }
       >
         <select
           className="absolute inset-0 cursor-pointer opacity-0"
@@ -147,7 +156,12 @@ export function EstadoDelContacto({ contacto, readOnly, puedeCorregir = false, c
       </Chip>
 
       {!compacto && subestados.length > 0 && (
-        <Chip etiqueta={subestados.find((s) => s.valor === contacto.subestado)?.etiqueta ?? "Subestado —"} ocupado={ocupado} readOnly={readOnly}>
+        <Chip
+          etiqueta={subestados.find((s) => s.valor === contacto.subestado)?.etiqueta ?? "Subestado —"}
+          ocupado={ocupado}
+          readOnly={readOnly || porOperacion}
+          titulo={porOperacion ? "Lo marca la operación: se cambia en la sección Operaciones" : undefined}
+        >
           <select
             className="absolute inset-0 cursor-pointer opacity-0"
             value={contacto.subestado ?? ""}

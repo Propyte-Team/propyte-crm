@@ -50,6 +50,15 @@ import { ActivityLog } from "@/components/activities/activity-log";
 import { ShortlistPanel } from "@/components/shortlists/shortlist-panel";
 import { AdvisorSelect } from "@/components/shared/advisor-select";
 import { opcionesFlujo } from "@/lib/flujos";
+import Link from "next/link";
+import {
+  ETAPA_OPERACION_COLORS,
+  ETAPA_OPERACION_LABELS,
+  TIPO_OPERACION_LABELS,
+  esEtapaOperacion,
+  esTipoOperacion,
+} from "@/lib/operaciones";
+import { SUBESTADO_LABELS } from "@/lib/estados";
 
 interface DealDetailClientProps {
   deal: any;
@@ -127,6 +136,9 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
   };
 
   const stageColor = STAGE_COLORS[deal.stage] || "#6B7280";
+  // #957: una operación avanza por su etapa desde la ficha del contacto, no por la etapa vieja.
+  const op = deal as unknown as { etapa?: string | null; subestado?: string | null; tipoOperacion?: string | null };
+  const etapaOp = esEtapaOperacion(op.etapa) ? op.etapa : null;
 
   return (
     <div className="space-y-6">
@@ -141,18 +153,32 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
       {/* Header del deal */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="eyebrow">Deal &middot; {DEAL_TYPE_LABELS[deal.dealType] || deal.dealType}</p>
+          <p className="eyebrow">
+            {etapaOp
+              ? `Operación · ${esTipoOperacion(op.tipoOperacion) ? TIPO_OPERACION_LABELS[op.tipoOperacion] : "Venta"}`
+              : <>Deal &middot; {DEAL_TYPE_LABELS[deal.dealType] || deal.dealType}</>}
+          </p>
           <h1 className="mt-1 text-[28px] font-bold leading-tight tracking-tight">
             {deal.contact?.firstName} {deal.contact?.lastName}
           </h1>
           <div className="flex items-center gap-3 mt-1">
             {/* Chip de etapa: tinte de fondo + texto del mismo tono (speckit §4, nunca relleno saturado) */}
-            <span
-              className="inline-flex items-center rounded px-3 py-1 text-sm font-semibold"
-              style={{ backgroundColor: `${stageColor}1f`, color: stageColor }}
-            >
-              {STAGE_LABELS[deal.stage] || deal.stage}
-            </span>
+            {etapaOp ? (
+              <span
+                className="inline-flex items-center rounded px-3 py-1 text-sm font-semibold"
+                style={{ backgroundColor: `${ETAPA_OPERACION_COLORS[etapaOp]}1f`, color: ETAPA_OPERACION_COLORS[etapaOp] }}
+              >
+                {ETAPA_OPERACION_LABELS[etapaOp]}
+                {op.subestado ? ` · ${SUBESTADO_LABELS[op.subestado] ?? op.subestado}` : ""}
+              </span>
+            ) : (
+              <span
+                className="inline-flex items-center rounded px-3 py-1 text-sm font-semibold"
+                style={{ backgroundColor: `${stageColor}1f`, color: stageColor }}
+              >
+                {STAGE_LABELS[deal.stage] || deal.stage}
+              </span>
+            )}
             <span className="num text-lg font-bold text-primary">
               {formatCurrency(Number(deal.estimatedValue || 0), deal.currency)}
             </span>
@@ -161,7 +187,11 @@ export function DealDetailClient({ deal, userRole, userId }: DealDetailClientPro
 
         {/* Botones de acción */}
         <div className="flex gap-2">
-          {!isTerminal && (
+          {etapaOp ? (
+            <Link href={`/contacts/${deal.contactId}`} className="btn-secondary text-[13px]">
+              Avanzar en la ficha del contacto
+            </Link>
+          ) : !isTerminal && (
             <Button
               onClick={() => setShowStageDialog(true)}
               size="sm"

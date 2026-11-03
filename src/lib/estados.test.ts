@@ -172,11 +172,28 @@ describe("validarCambioDeEstado (#953)", () => {
 
   it("estado inexistente, salto no permitido y estado fuera del flujo", () => {
     expect(v({ estado: "NUEVO" }, { estado: "INVENTADO" })).toMatchObject({ ok: false, campo: "estado" });
-    expect(v({ estado: "NUEVO" }, { estado: "FIRMA", ticketEstimado: 1 })).toMatchObject({ ok: false, error: "De Nuevo no se puede pasar a Firma" });
-    expect(v({ estado: "PROPUESTA", flujo: "F6_BROKER", ticketEstimado: 1 }, { estado: "APARTADO" })).toMatchObject({
+    expect(v({ estado: "NUEVO" }, { estado: "DEMO", ticketEstimado: 1 })).toMatchObject({ ok: false, error: "De Nuevo no se puede pasar a Demo" });
+    expect(v({ estado: "REUNION", flujo: "F3_CAPTACION_MB" }, { estado: "RECORRIDO" })).toMatchObject({
       ok: false,
-      error: "Apartado no aplica en el flujo de este contacto",
+      error: "Recorrido no aplica en el flujo de este contacto",
     });
+  });
+
+  it("#957: Apartado–Postventa los marca la operación (ni se entra, ni se sale, ni se cambia el subestado a mano)", () => {
+    const propuesta = { estado: "PROPUESTA", ticketEstimado: 1 };
+    for (const e of ["APARTADO", "FIRMA"]) {
+      expect(v(propuesta, { estado: e })).toMatchObject({ ok: false, campo: "estado", error: expect.stringContaining("lo marca la operación") });
+    }
+    expect(v({ estado: "APARTADO", subestado: "PAGADO" }, { estado: "NEGOCIO_PERDIDO", razonSalida: "PRECIO" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("cancela la operación"),
+    });
+    expect(v({ estado: "FIRMA", subestado: "FIRMADO" }, { subestado: "DEVENGO_ACTIVO" })).toMatchObject({ ok: false, campo: "subestado" });
+    // Un administrador sí corrige.
+    expect(v(propuesta, { estado: "APARTADO" }, true)).toMatchObject({ ok: true, datos: { estado: "APARTADO" } });
+    expect(opcionesDeEstado("PROPUESTA", null, false).normales.map((o) => o.valor)).toEqual(["PROPUESTA", "NEGOCIO_PERDIDO"]);
+    expect(opcionesDeEstado("FIRMA", null, false).normales.map((o) => o.valor)).toEqual(["FIRMA"]);
+    expect(opcionesDeEstado("FIRMA", null, true).correcciones.map((o) => o.valor)).toContain("NEGOCIO_PERDIDO");
   });
 
   it("forzar se salta la tabla pero no los datos obligatorios", () => {

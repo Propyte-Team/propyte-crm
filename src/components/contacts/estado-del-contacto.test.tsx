@@ -35,7 +35,8 @@ describe("EstadoDelContacto (#953)", () => {
   it("sin estado dice «Por clasificar» y ofrece todos", () => {
     const html = renderToStaticMarkup(<EstadoDelContacto compacto contacto={{ id: "c1", estado: null }} />);
     expect(html).toContain("Por clasificar");
-    expect(opciones(html, "Cambiar estado")).toHaveLength(17);
+    // «Por clasificar» + los 16 estados, menos Apartado, Firma, Escritura y Postventa (#957: los marca la operación).
+    expect(opciones(html, "Cambiar estado")).toHaveLength(13);
     expect(html).not.toContain("Cambiar subestado"); // compacto: solo el estado
   });
 

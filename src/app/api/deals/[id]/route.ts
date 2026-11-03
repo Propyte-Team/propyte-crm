@@ -19,6 +19,15 @@ import { actividadDeCambioDeEtapa } from "@/lib/deals/stage-activity";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, canSeeDealBrand } from "@/lib/brands/visibility";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
+import {
+  TIPO_OPERACION_ORDER,
+  ETAPA_OPERACION_ORDER,
+  FORMA_PAGO_ORDER,
+  NIVEL_MB_ORDER,
+  CLAVES_DE_OPERACION,
+  validarCambioDeOperacion,
+  type DatosDeOperacion,
+} from "@/lib/operaciones";
 
 // Roles con acceso completo
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -60,6 +69,23 @@ const updateDealSchema = z.object({
   ]).optional(),
   lostReasonDetail: z.string().max(500).optional(),
   actualCloseDate: dueDateSchema.optional(),
+  // #957: la operación. La etapa nueva decide la vieja (`stage`): ver lib/operaciones.ts.
+  tipoOperacion: z.enum(TIPO_OPERACION_ORDER).optional(),
+  etapa: z.enum(ETAPA_OPERACION_ORDER).optional(),
+  subestado: z.string().trim().max(60).nullable().optional(),
+  contratoFirmado: z.boolean().optional(),
+  enganchePagado: z.boolean().optional(),
+  reapartar: z.boolean().optional(),
+  formaPago: z.enum(FORMA_PAGO_ORDER).nullable().optional(),
+  vigenciaHasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (AAAA-MM-DD)").nullable().optional(),
+  porcentajeComision: z.number().min(0).max(100).nullable().optional(),
+  nivelMb: z.enum(NIVEL_MB_ORDER).nullable().optional(),
+  propiedadDescripcion: z.string().trim().max(500).nullable().optional(),
+  // Unidad del Hub (SOT del inventario): para apartar una operación que se preparó sin unidad.
+  hubDevelopmentId: z.string().min(1).nullable().optional(),
+  hubUnitId: z.string().min(1).nullable().optional(),
+  // Corrección de un administrador: se salta las etapas permitidas (no las reglas de la etapa vieja).
+  forzarCambio: z.boolean().optional(),
 });
 
 /**
@@ -222,6 +248,61 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     const data = validation.data;
 
     // =============================================
+    // #957: operación. La etapa nueva (Apartado, Firma, Escritura, Postventa, Cancelada) se traduce
+    // a la etapa vieja y de ahí pasa por las MISMAS reglas de siempre (unidad, hold del Hub,
+    // inventario, comisión al ganar). La etapa vieja de una operación ya no se mueve sola.
+    // =============================================
+    if (data.forzarCambio && userRole !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Solo un administrador puede corregir una operación fuera de sus etapas", fields: ["etapa"] },
+        { status: 403 }
+      );
+    }
+    let datosOperacion: DatosDeOperacion = {};
+    const tocaOperacion = CLAVES_DE_OPERACION.some((k) => data[k] !== undefined);
+    if (tocaOperacion) {
+      const r = validarCambioDeOperacion(
+        {
+          tipoOperacion: existingDeal.tipoOperacion ?? null,
+          etapa: existingDeal.etapa ?? null,
+          subestado: existingDeal.subestado ?? null,
+          contratoFirmado: existingDeal.contratoFirmado ?? false,
+          enganchePagado: existingDeal.enganchePagado ?? false,
+          flujo: existingDeal.flujo ?? null,
+        },
+        {
+          tipoOperacion: data.tipoOperacion,
+          etapa: data.etapa,
+          subestado: data.subestado,
+          contratoFirmado: data.contratoFirmado,
+          enganchePagado: data.enganchePagado,
+          reapartar: data.reapartar,
+        },
+        { forzar: data.forzarCambio === true }
+      );
+      if (!r.ok) {
+        return NextResponse.json({ error: r.error, fields: [r.campo] }, { status: 400 });
+      }
+      datosOperacion = r.datos;
+      // Un negocio de antes que se vuelve «en preparación» conserva su etapa vieja (no retrocede).
+      const soloPreparar = r.datos.etapa === "EN_PREPARACION" && !existingDeal.etapa;
+      // Una venta ya ganada (con su comisión calculada) no regresa a una etapa vieja anterior por
+      // moverle el subestado de la firma o avanzar a Escritura/Postventa; solo sale si se cancela.
+      const ganadaSeQueda = existingDeal.stage === "WON" && r.stage !== "LOST";
+      if (r.stage && r.stage !== existingDeal.stage && !soloPreparar && !ganadaSeQueda) data.stage = r.stage as typeof data.stage;
+      if (r.datos.etapa === "CANCELADA" && !data.lostReason) {
+        data.lostReason = "OTRO";
+        data.lostReasonDetail = data.lostReasonDetail ?? "Canceló apartado o contrato";
+      }
+    } else if (data.stage && data.stage !== existingDeal.stage && existingDeal.etapa && !data.forzarCambio) {
+      return NextResponse.json(
+        { error: "Esta operación avanza por su etapa (Apartado, Firma, Escritura, Postventa) desde la ficha del contacto", fields: ["stage"] },
+        { status: 400 }
+      );
+    }
+    const hubUnitIdEfectivo = data.hubUnitId !== undefined ? data.hubUnitId : existingDeal.hubUnitId;
+
+    // =============================================
     // Validaciones de reglas de negocio para transiciones de etapa
     // =============================================
     if (data.stage && data.stage !== existingDeal.stage) {
@@ -286,7 +367,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
 
       // Regla: RESERVED requiere unidad asignada (Hub o local legacy)
       if (newStage === "RESERVED") {
-        const unitId = data.unitId || existingDeal.unitId || existingDeal.hubUnitId;
+        const unitId = data.unitId || existingDeal.unitId || hubUnitIdEfectivo; // #957: o la que viene en el cambio
         if (!unitId) {
           return NextResponse.json(
             { error: "Se requiere una unidad asignada para reservar." },
@@ -329,6 +410,49 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     if (data.lostReason !== undefined) updateData.lostReason = data.lostReason;
     if (data.lostReasonDetail !== undefined) updateData.lostReasonDetail = data.lostReasonDetail;
 
+    // #957: columnas de la operación y fechas que se llenan solas con la etapa.
+    if (datosOperacion.tipoOperacion !== undefined) updateData.tipoOperacion = datosOperacion.tipoOperacion;
+    if (datosOperacion.etapa !== undefined) updateData.etapa = datosOperacion.etapa;
+    if (datosOperacion.subestado !== undefined) updateData.subestado = datosOperacion.subestado;
+    if (datosOperacion.contratoFirmado !== undefined) updateData.contratoFirmado = datosOperacion.contratoFirmado;
+    if (datosOperacion.enganchePagado !== undefined) updateData.enganchePagado = datosOperacion.enganchePagado;
+    if (datosOperacion.reapartar) {
+      updateData.reapartados = { increment: 1 };
+      updateData.reservedAt = new Date(); // cada reapartado reinicia el reloj de 15 días (Luis, 02-nov)
+    }
+    const etapaFinal = datosOperacion.etapa ?? existingDeal.etapa;
+    const subFinal = datosOperacion.subestado !== undefined ? datosOperacion.subestado : existingDeal.subestado;
+    if (datosOperacion.etapa === "APARTADO" && !existingDeal.reservedAt) updateData.reservedAt = new Date();
+    if ((datosOperacion.contratoFirmado || subFinal === "FIRMADO" || subFinal === "DEVENGO_ACTIVO") && etapaFinal === "FIRMA" && !existingDeal.contractSignedAt) {
+      updateData.contractSignedAt = new Date();
+    }
+    if (etapaFinal === "ESCRITURA" && subFinal === "ESCRITURADO" && !existingDeal.deedAt) updateData.deedAt = new Date();
+    if (etapaFinal === "POSTVENTA" && subFinal === "ENTREGADA" && !existingDeal.deliveredAt) updateData.deliveredAt = new Date();
+    if (data.formaPago !== undefined) updateData.formaPago = data.formaPago;
+    if (data.vigenciaHasta !== undefined) updateData.vigenciaHasta = data.vigenciaHasta ? new Date(`${data.vigenciaHasta}T00:00:00.000Z`) : null;
+    if (data.porcentajeComision !== undefined) updateData.porcentajeComision = data.porcentajeComision;
+    if (data.nivelMb !== undefined) updateData.nivelMb = data.nivelMb;
+    if (data.propiedadDescripcion !== undefined) updateData.propiedadDescripcion = data.propiedadDescripcion || null;
+    if (data.hubDevelopmentId !== undefined) updateData.hubDevelopmentId = data.hubDevelopmentId;
+    if (data.hubUnitId !== undefined) updateData.hubUnitId = data.hubUnitId;
+    // Unidad nueva del Hub (al apartar una operación que se preparó sin unidad): se valida contra el
+    // Hub y se congela su copia, igual que al crear el negocio.
+    if (data.hubUnitId && data.hubUnitId !== existingDeal.hubUnitId) {
+      const { getHubUnit } = await import("@/lib/hub/client");
+      const hubUnit = await getHubUnit(data.hubUnitId);
+      if (!hubUnit) {
+        return NextResponse.json({ error: "Unidad del Hub no encontrada", fields: ["hubUnitId"] }, { status: 404 });
+      }
+      const customPrevio =
+        existingDeal.custom && typeof existingDeal.custom === "object" && !Array.isArray(existingDeal.custom)
+          ? (existingDeal.custom as Record<string, unknown>)
+          : {};
+      updateData.custom = {
+        ...customPrevio,
+        hubUnitSnapshot: { ...hubUnit, snapshotAt: new Date().toISOString(), source: "hub" },
+      };
+    }
+
     // WON: fecha de cierre real y cálculo de comisiones
     if (data.stage === "WON") {
       updateData.actualCloseDate = data.actualCloseDate || new Date();
@@ -356,17 +480,19 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     // Se toma ANTES de abrir la transacción porque es una llamada HTTP; si la
     // transacción falla después, el catch lo libera.
     let holdTomadoEnHub: string | null = null;
-    if (data.stage === "RESERVED" && existingDeal.hubUnitId) {
+    // #957: también al reapartar (renueva el hold) y con la unidad que se elige al apartar.
+    const tomaHold = (data.stage === "RESERVED" && data.stage !== existingDeal.stage) || datosOperacion.reapartar;
+    if (tomaHold && hubUnitIdEfectivo) {
       const { requestUnitHold } = await import("@/lib/hub/client");
-      const hold = await requestUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id });
+      const hold = await requestUnitHold({ hubUnitId: hubUnitIdEfectivo, crmDealId: existingDeal.id });
       if (!hold.ok) {
         return NextResponse.json(
           { error: `No se pudo apartar la unidad en el Hub: ${hold.error ?? "no disponible"}` },
           { status: 409 }
         );
       }
-      holdTomadoEnHub = existingDeal.hubUnitId;
-      updateData.holdId = hold.unit?.id ?? existingDeal.hubUnitId;
+      holdTomadoEnHub = hubUnitIdEfectivo;
+      updateData.holdId = hold.unit?.id ?? hubUnitIdEfectivo;
       updateData.holdExpiresAt = hold.unit?.holdExpiresAt ? new Date(hold.unit.holdExpiresAt) : null;
       updateData.reservedAt = new Date();
     }
@@ -443,9 +569,9 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     }
 
     // Hub: confirmar venta al ganar (SOT). No bloquea el WON; el webhook reconcilia.
-    if (data.stage === "WON" && existingDeal.hubUnitId) {
+    if (data.stage === "WON" && data.stage !== existingDeal.stage && hubUnitIdEfectivo) {
       const { confirmUnitHold } = await import("@/lib/hub/client");
-      await confirmUnitHold({ hubUnitId: existingDeal.hubUnitId, crmDealId: existingDeal.id }).catch(() => null);
+      await confirmUnitHold({ hubUnitId: hubUnitIdEfectivo, crmDealId: existingDeal.id }).catch(() => null);
     }
 
     // #915: cambiar el asesor de un negocio le avisa al nuevo. Solo si de verdad cambió.

@@ -311,6 +311,15 @@ export function destinosPermitidos(desde: string | null | undefined, flujo: stri
   return base.filter((e) => e !== desde && estadoAplicaAlFlujo(e, flujo));
 }
 
+// #957: desde el apartado (o la firma del contrato o convenio) el estado del contacto lo marca su
+// operación activa más avanzada (disparador en deals). Aquí no se entra ni se sale a mano: se aparta,
+// firma o cancela desde la sección Operaciones de la ficha. Un administrador sí puede corregirlo.
+export const ESTADOS_POR_OPERACION: readonly Estado[] = ["APARTADO", "FIRMA", "ESCRITURA", "POSTVENTA"];
+
+export function esEstadoPorOperacion(e: string | null | undefined): boolean {
+  return !!e && (ESTADOS_POR_OPERACION as readonly string[]).includes(e);
+}
+
 // ───────────────────────────── validación del cambio ─────────────────────────────
 
 export interface EstadoActual {
@@ -392,6 +401,20 @@ export function validarCambioDeEstado(
     }
     const d = destino as Estado;
     if (!opts.forzar) {
+      if (esEstadoPorOperacion(d)) {
+        return {
+          ok: false,
+          error: `${ESTADO_LABELS[d]} lo marca la operación: créala o avánzala en la sección Operaciones de la ficha`,
+          campo: "estado",
+        };
+      }
+      if (esEstadoPorOperacion(actual.estado)) {
+        return {
+          ok: false,
+          error: "Este contacto tiene una operación en curso: para sacarlo, cancela la operación en la sección Operaciones",
+          campo: "estado",
+        };
+      }
       if (!destinosPermitidos(actual.estado, flujo).includes(d)) {
         const de = etiquetaEstado(actual.estado);
         if (!estadoAplicaAlFlujo(d, flujo)) {
@@ -404,6 +427,17 @@ export function validarCambioDeEstado(
   }
 
   const estadoFinal = destino && esEstado(destino) ? destino : null;
+
+  // #957: el subestado de Apartado a Postventa es el de la operación.
+  if (
+    !tocaEstado &&
+    !opts.forzar &&
+    esEstadoPorOperacion(estadoFinal) &&
+    cambio.subestado !== undefined &&
+    cambio.subestado !== (actual.subestado ?? null)
+  ) {
+    return { ok: false, error: "El subestado lo marca la operación: cámbialo en la sección Operaciones", campo: "subestado" };
+  }
 
   // Ticket estimado desde Demo.
   if (tocaEstado && estadoFinal && ESTADOS_CON_TICKET.includes(estadoFinal)) {
@@ -545,7 +579,8 @@ export function opcionesDeEstado(
   flujo: string | null | undefined,
   puedeCorregir: boolean,
 ): { normales: { valor: string; etiqueta: string }[]; correcciones: { valor: string; etiqueta: string }[] } {
-  const destinos = destinosPermitidos(actual, flujo);
+  // #957: a Apartado–Postventa se llega (y se sale) por la operación, no por el chip.
+  const destinos = esEstadoPorOperacion(actual) ? [] : destinosPermitidos(actual, flujo).filter((e) => !esEstadoPorOperacion(e));
   const normales = [
     { valor: actual ?? "", etiqueta: etiquetaEstado(actual) },
     ...destinos.map((e) => ({ valor: e, etiqueta: ESTADO_LABELS[e] })),

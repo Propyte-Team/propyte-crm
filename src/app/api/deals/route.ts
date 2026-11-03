@@ -20,6 +20,13 @@ import { CONTACT_BRAND_SELECT, dealBrandVisibilityWhere } from "@/lib/brands/vis
 import { loadBrandFilter } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM, dealBrandFilterWhere } from "@/lib/brands/filter";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
+import {
+  TIPO_OPERACION_ORDER,
+  FORMA_PAGO_ORDER,
+  NIVEL_MB_ORDER,
+  TIPO_OPERACION_LABELS,
+  tipoPorFlujo,
+} from "@/lib/operaciones";
 
 // Roles con acceso completo a todos los deals
 const FULL_ACCESS_ROLES = ["ADMIN", "DIRECTOR"];
@@ -56,6 +63,14 @@ const createDealSchema = z.object({
   expectedCloseDate: dueDateSchema,
   leadSourceAtDeal: z.string().min(1, "La fuente del lead es requerida"),
   assignedToId: z.string().guid("ID de asesor inválido").optional(),
+  // #957: una operación nace «en preparación» (para cotizar). Apartar, firmar, etc. es un PATCH.
+  etapa: z.literal("EN_PREPARACION", { error: "Una operación nueva empieza en preparación" }).optional(),
+  tipoOperacion: z.enum(TIPO_OPERACION_ORDER).optional(),
+  formaPago: z.enum(FORMA_PAGO_ORDER).nullable().optional(),
+  vigenciaHasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (AAAA-MM-DD)").nullable().optional(),
+  porcentajeComision: z.number().min(0).max(100).nullable().optional(),
+  nivelMb: z.enum(NIVEL_MB_ORDER).nullable().optional(),
+  propiedadDescripcion: z.string().trim().max(500).nullable().optional(),
 });
 
 /**
@@ -249,7 +264,7 @@ export async function POST(request: NextRequest) {
     // Verificar que el contacto existe
     const contact = await prisma.contact.findUnique({
       where: { id: data.contactId },
-      select: { leadSource: true },
+      select: { leadSource: true, flujo: true },
     });
     if (!contact) {
       return NextResponse.json(
@@ -306,7 +321,12 @@ export async function POST(request: NextRequest) {
     }
 
     const assignedToId = data.assignedToId || session.user.id;
-    const initialStage = data.stage || "NEW_LEAD";
+    // #957: la operación en preparación equivale a Propuesta en la etapa vieja (ya se le cotiza).
+    const esOperacion = data.etapa === "EN_PREPARACION";
+    const initialStage = esOperacion ? "PROPOSAL_SENT" : data.stage || "NEW_LEAD";
+    // Mismo flujo que pondría el disparador del #948: F5 si es Nativa, si no el del contacto.
+    const flujoEfectivo = data.flujo ?? (data.dealType.startsWith("NATIVA") ? "F5_NATIVA" : contact.flujo ?? null);
+    const tipoOperacion = esOperacion ? data.tipoOperacion ?? tipoPorFlujo(flujoEfectivo) : null;
     const probability = data.probability || DEAL_STAGE_PROBABILITY[initialStage] || 5;
 
     // Crear el deal
@@ -327,6 +347,17 @@ export async function POST(request: NextRequest) {
         expectedCloseDate: data.expectedCloseDate,
         leadSourceAtDeal: data.leadSourceAtDeal,
         ...(hubUnitSnapshot ? { custom: { hubUnitSnapshot } as Prisma.InputJsonValue } : {}),
+        ...(esOperacion
+          ? {
+              etapa: "EN_PREPARACION" as const,
+              tipoOperacion,
+              formaPago: data.formaPago ?? null,
+              vigenciaHasta: data.vigenciaHasta ? new Date(`${data.vigenciaHasta}T00:00:00.000Z`) : null,
+              porcentajeComision: data.porcentajeComision ?? null,
+              nivelMb: data.nivelMb ?? null,
+              propiedadDescripcion: data.propiedadDescripcion || null,
+            }
+          : {}),
       },
       include: {
         contact: { select: { id: true, firstName: true, lastName: true } },
@@ -343,8 +374,10 @@ export async function POST(request: NextRequest) {
         dealId: deal.id,
         userId: session.user.id,
         activityType: "NOTE",
-        subject: "Deal creado",
-        description: `Nuevo deal tipo ${data.dealType} con valor estimado de ${data.estimatedValue}`,
+        subject: esOperacion ? "Operación creada" : "Deal creado",
+        description: esOperacion && tipoOperacion
+          ? `${TIPO_OPERACION_LABELS[tipoOperacion]} en preparación, valor estimado de ${data.estimatedValue}`
+          : `Nuevo deal tipo ${data.dealType} con valor estimado de ${data.estimatedValue}`,
         status: "COMPLETADA",
         completedAt: new Date(),
       },
