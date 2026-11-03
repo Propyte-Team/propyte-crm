@@ -3281,6 +3281,9 @@ model RecruitCandidate {
   botEvaluadoAt     DateTime?
   /// Días y horario que el candidato dijo que le acomodan para la entrevista (texto libre).
   horarioEntrevista String?
+  /// #959: etapa en que estaba cuando el disparador la descartó porque su contacto dejó de ser
+  /// Empleo; si vuelve a ser Empleo, regresa ahí. Un cambio de etapa desde la pantalla la limpia.
+  stagePrevia       String?
   createdById    String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt

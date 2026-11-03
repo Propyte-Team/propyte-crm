@@ -73,6 +73,35 @@ async function buscarPorContacto(contactId: string): Promise<CandidatoBot | null
   return f ? aCandidatoBot(f) : null;
 }
 
+/**
+ * #959: cuando el clasificador marca al contacto como Empleo, el disparador de la base le crea la
+ * ficha (origen CONTACTO) antes de que el bot llegue aquí. El bot la adopta: anota el canal y, si
+ * la ficha nació así, la pasa a origen CHAT con la conversación como referencia (la que el módulo
+ * usa para enlazar el chat) y, sin puesto, le pone «Asesor / Ventas». Una ficha capturada a mano o importada conserva su origen. Nunca lanza.
+ */
+async function adoptarFichaDelContacto(
+  candidatoId: string,
+  input: { canal: ConversationChannel; conversationId: string }
+): Promise<void> {
+  try {
+    await prisma.recruitCandidate.updateMany({
+      where: { id: candidatoId, botCanal: null },
+      data: { botCanal: input.canal },
+    });
+    await prisma.recruitCandidate.updateMany({
+      where: { id: candidatoId, source: "CONTACTO", sourceRef: null },
+      data: { source: "CHAT", sourceRef: input.conversationId },
+    });
+    // El agente de reclutamiento perfila asesores: sin puesto capturado, es esa vacante.
+    await prisma.recruitCandidate.updateMany({
+      where: { id: candidatoId, area: null },
+      data: { area: AREA_ASESOR },
+    });
+  } catch (err) {
+    console.warn("[reclutamiento] no se pudo anotar el canal del bot en la ficha:", err);
+  }
+}
+
 /** Devuelve el candidato ligado al contacto; si no existe lo crea con origen CHAT. */
 export async function asegurarCandidato(input: {
   contact: ContactoDelBot;
@@ -82,7 +111,10 @@ export async function asegurarCandidato(input: {
   const { contact } = input;
   try {
     const existente = await buscarPorContacto(contact.id);
-    if (existente) return existente;
+    if (existente) {
+      await adoptarFichaDelContacto(existente.id, input);
+      return existente;
+    }
     const nombre = `${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim() || NOMBRE_PROVISIONAL;
     const nuevo = await crearCandidato(
       // El tipo de entrada (zod con transforms) exige todas las claves; las que el bot no conoce van en null.

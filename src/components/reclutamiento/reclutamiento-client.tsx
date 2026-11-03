@@ -8,6 +8,7 @@
 // El CV va DIRECTO del navegador al bucket privado (URL firmada); la API solo lo registra.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Plus, Pencil, ExternalLink, FileText, Trash2, Loader2, Search, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ import {
   type CandidatoFila,
   type EtapaCode,
 } from "@/lib/reclutamiento/shared";
+import { ESTADO_COLORS, ESTADO_VACIO_COLOR, esEstado, etiquetaEstado } from "@/lib/estados";
 
 interface Props {
   initial: CandidatoFila[];
@@ -267,6 +269,26 @@ function Vacio() {
   return <span className="text-muted-foreground">-</span>;
 }
 
+/**
+ * #959: el estado que la persona tiene en Contactos («Sin respuesta», «Derivado a RH»…), con
+ * enlace a su ficha. Va debajo de la etapa porque es el otro «dónde va» de la misma persona.
+ */
+export function EstadoEnContactos({ contacto, nombre }: { contacto: { id: string; estado: string | null }; nombre: string }) {
+  const color = esEstado(contacto.estado) ? ESTADO_COLORS[contacto.estado] : ESTADO_VACIO_COLOR;
+  const etiqueta = etiquetaEstado(contacto.estado);
+  return (
+    <Link
+      href={`/contacts/${contacto.id}`}
+      className="mt-1 flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:underline"
+      title={`Abrir a ${nombre} en Contactos`}
+      aria-label={`En Contactos: ${etiqueta}. Abrir a ${nombre} en Contactos`}
+    >
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+      <span>Contactos · {etiqueta}</span>
+    </Link>
+  );
+}
+
 function FilaCandidato({
   f,
   fondo,
@@ -303,6 +325,7 @@ function FilaCandidato({
             </option>
           ))}
         </select>
+        {f.contacto && <EstadoEnContactos contacto={f.contacto} nombre={f.fullName} />}
       </td>
       <td className="num whitespace-nowrap px-3 py-2.5">{f.age != null ? f.age : <Vacio />}</td>
       <td className="px-3 py-2.5">
