@@ -2,12 +2,13 @@
 // Sin React ni BD, para poder probarla sola. Los resúmenes legibles se muestran en la lista
 // de reglas; el editor usa el árbol de condiciones del builder de workflows.
 import type { RoutingTargets } from "@/lib/validations/routing-rule";
-import type { ConditionTree } from "@/lib/workflows/builder-model";
 import {
-  ROUTING_STRATEGY_LABELS, ROLE_LABELS_COMPLETO, PLAZA_LABELS, LEAD_SOURCE_LABELS,
-  CONTACT_TYPE_LABELS, LEAD_TEMPERATURE_LABELS, PREFERRED_LANGUAGE_LABELS, PROPERTY_TYPE_LABELS,
-  etiqueta,
+  ROUTING_STRATEGY_LABELS, ROLE_LABELS_COMPLETO, PLAZA_LABELS, etiqueta,
 } from "@/lib/labels";
+import { buildConditionsTree, type ConditionTree } from "@/lib/workflows/builder-model";
+import {
+  FIELD_LABELS, FIELD_VALUE_LABELS, describeConditions, validarCondiciones,
+} from "@/lib/workflows/condition-catalog";
 
 // Campos del contacto que tiene sentido usar para repartir un lead. El evaluador resuelve
 // dot-paths sobre { contact, adAttribution }, así que cualquier otro campo también vale;
@@ -46,68 +47,10 @@ export function strategyOptions(current?: string): { value: string; label: strin
   return values.map((value) => ({ value, label: etiqueta(STRATEGY_LABELS, value) }));
 }
 
-// Diccionario de valores por campo, para mostrar "Meta Ads" en vez de META_ADS.
-export const FIELD_VALUE_LABELS: Record<string, Record<string, string>> = {
-  "contact.leadSource": LEAD_SOURCE_LABELS,
-  "contact.contactType": CONTACT_TYPE_LABELS,
-  "contact.targetPlaza": PLAZA_LABELS,
-  "contact.preferredLanguage": PREFERRED_LANGUAGE_LABELS,
-  "contact.temperature": LEAD_TEMPERATURE_LABELS,
-  "contact.propertyType": PROPERTY_TYPE_LABELS,
-};
-
-export const FIELD_LABELS: Record<string, string> = {
-  "contact.leadSource": "fuente",
-  "contact.contactType": "tipo de contacto",
-  "contact.targetPlaza": "plaza",
-  "contact.preferredZone": "zona preferida",
-  "contact.preferredLanguage": "idioma",
-  "contact.budgetMin": "presupuesto mín.",
-  "contact.budgetMax": "presupuesto máx.",
-  "contact.propertyType": "tipo de propiedad",
-  "contact.temperature": "temperatura",
-  "contact.score": "score",
-  "contact.residenceCountry": "país de residencia",
-  "adAttribution.campaignName": "campaña",
-  "adAttribution.adsetName": "conjunto de anuncios",
-  "adAttribution.network": "red",
-};
-
-const OP_LABELS: Record<string, string> = {
-  eq: "=", neq: "≠", gt: ">", gte: "≥", lt: "<", lte: "≤",
-  in: "en", nin: "no en", contains: "contiene", exists: "existe", changed_to: "cambió a",
-};
-
-function fieldLabel(field: string): string {
-  return FIELD_LABELS[field] ?? field.replace(/^contact\./, "");
-}
-
-function valueLabel(field: string, value: unknown): string {
-  const dict = FIELD_VALUE_LABELS[field];
-  const one = (v: unknown) => (dict && typeof v === "string" ? etiqueta(dict, v) : String(v));
-  if (Array.isArray(value)) return value.map(one).join(", ");
-  if (value == null) return "";
-  return one(value);
-}
-
-/** Resumen legible del DSL de condiciones. Sin condiciones → "siempre". */
-export function describeConditions(conditions: unknown): string {
-  if (!conditions || typeof conditions !== "object") return "siempre";
-  const node = conditions as Record<string, unknown>;
-  if (Array.isArray(node.all)) {
-    const parts = node.all.map(describeConditions).filter((p) => p !== "siempre");
-    return parts.length ? parts.join(" y ") : "siempre";
-  }
-  if (Array.isArray(node.any)) {
-    const parts = node.any.map(describeConditions).filter((p) => p !== "siempre");
-    return parts.length ? `(${parts.join(" o ")})` : "siempre";
-  }
-  if (typeof node.field === "string" && typeof node.op === "string") {
-    if (node.op === "exists") return `${fieldLabel(node.field)} existe`;
-    return `${fieldLabel(node.field)} ${OP_LABELS[node.op] ?? node.op} ${valueLabel(node.field, node.value)}`.trim();
-  }
-  return "siempre";
-}
+// Etiquetas de campo/valor y descripción de condiciones: viven en el catálogo de condiciones
+// (E2) para que reglas de reparto, cadencias y flujos se lean igual. Se reexportan aquí para
+// no tocar a los consumidores.
+export { FIELD_LABELS, FIELD_VALUE_LABELS, describeConditions };
 
 /** Resumen legible del destino de una regla de ruteo. */
 export function describeTargets(
@@ -149,13 +92,14 @@ export function nextPriority(existing: Array<{ priority: number }>): number {
 }
 
 /**
- * ¿Hay alguna condición a medias? Fila sin campo, sin operador, o con un operador que exige
- * valor y el valor vacío. Sirve para avisar antes de guardar (el constructor descartaría la fila en silencio).
+ * ¿Hay alguna condición a medias? Fila sin campo, sin operador, con un operador que exige
+ * valor y el valor vacío, o con un valor que no corresponde al tipo del campo. Sirve para avisar
+ * antes de guardar (el constructor descartaría la fila en silencio).
  */
 export function hasIncompleteCondition(tree: ConditionTree): boolean {
-  const incompleta = (c: { field: string; op: string; value: string }) =>
-    !c.field.trim() || !c.op || (c.op !== "exists" && !String(c.value ?? "").trim());
-  return tree.items.some((item) =>
-    "conditions" in item ? item.conditions.some(incompleta) : incompleta(item),
-  );
+  const hojas = tree.items.flatMap((item) => ("conditions" in item ? item.conditions : [item]));
+  // buildConditionsTree descarta en silencio las filas sin campo/operador: si el DSL trae
+  // menos hojas que el árbol, había filas a medias que validarCondiciones ya no vería.
+  if (hojas.some((c) => !c.field.trim() || !c.op)) return true;
+  return !validarCondiciones(buildConditionsTree(tree)).ok;
 }
