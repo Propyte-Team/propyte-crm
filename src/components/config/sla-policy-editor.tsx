@@ -5,7 +5,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { ConditionTreeEditor } from "./condition-tree";
-import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado } from "./condition-tree-model";
 import { erroresPorCampo } from "@/lib/api-errors";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/use-toast";
@@ -155,7 +156,7 @@ function SlaForm({
       isActive,
       isDefault,
       priority,
-      conditions: isDefault ? {} : buildConditionsTree(tree),
+      conditions: isDefault ? {} : buildConditionsTreeGuiado(tree),
       firstTouchMinutes,
       retryMinutes,
       orphanHours,
@@ -222,6 +223,7 @@ function SlaForm({
           tree={tree}
           onChange={setTree}
           label="¿Para qué contactos aplica? (segmento)"
+          contexto="contact"
           emptyText="Sin condiciones = aplica a cualquier contacto que no cumpla otra política de orden menor."
         />
       ) : (

@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import {
-  buildTriggerConfig, buildConditionsTree, parseConditions, parseTriggerValue, hasDecisionNode,
+  buildTriggerConfig, parseConditions, parseTriggerValue, hasDecisionNode,
   DEAL_STAGES, LIFECYCLE_STAGES,
   type ConditionTree, type ActionRow,
 } from "@/lib/workflows/builder-model";
@@ -13,6 +13,7 @@ import { LIFECYCLE_LABELS, STAGE_LABELS } from "@/lib/constants";
 import { erroresPorCampo } from "@/lib/api-errors";
 import { RULE_TEMPLATES } from "@/lib/workflows/builder-templates";
 import { ConditionTreeEditor } from "./condition-tree";
+import { buildConditionsTreeGuiado } from "./condition-tree-model";
 import { DelayInput, mensajeAutomatizacion } from "./cadence-editor";
 import {
   NODE_CATALOG, TRIGGER_CATALOG, coerceFieldConfig, labelFor, type FieldDef,
@@ -139,7 +140,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       ...(isEdit ? { id: rule.id } : {}),
       name, description: description || null,
       triggerType, triggerConfig: buildTriggerConfig(triggerType, triggerValue),
-      conditions: buildConditionsTree(tree),
+      conditions: buildConditionsTreeGuiado(tree),
       actions: actions.map((a) => ({
         type: a.type,
         config: coerceFieldConfig(a.type, a.config),
@@ -266,6 +267,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
         tree={tree}
         onChange={setTree}
         emptyText="Sin condiciones = la regla aplica siempre que ocurra el disparador."
+        contexto={triggerType === "STAGE_CHANGE" ? "deal" : triggerType === "EVENT" ? "event" : "contact"}
       />
 
       {/* Acciones */}

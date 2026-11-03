@@ -1,7 +1,8 @@
 "use client";
 import type { DecisionNodeDraft, BranchDraft, Conditions } from "@/lib/journey/rule-draft";
 import { ConditionTreeEditor } from "@/components/config/condition-tree";
-import { parseConditions, buildConditionsTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado } from "@/components/config/condition-tree-model";
+import { parseConditions } from "@/lib/workflows/builder-model";
 
 interface DecisionOps {
   setDecisionLabel: (nodeId: string, label: string) => void;
@@ -37,7 +38,7 @@ export function DecisionInspector({ decision, ops }: { decision: DecisionNodeDra
           </div>
           <ConditionTreeEditor
             tree={parseConditions(b.conditions)}
-            onChange={(tree) => ops.setBranchConditions(b.branchId, buildConditionsTree(tree) as Conditions)}
+            onChange={(tree) => ops.setBranchConditions(b.branchId, buildConditionsTreeGuiado(tree) as Conditions)}
             label="Si cumple…"
           />
           <p className="label" style={{ marginTop: 6 }}>
