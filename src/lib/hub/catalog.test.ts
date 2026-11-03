@@ -7,6 +7,7 @@ vi.mock("@/lib/db", () => ({
 
 import {
   PUBLIC_GATE,
+  ESTADOS_DISPONIBLES,
   listPublishedDevelopments,
   getPublishedDevelopment,
   listPublishedUnits,
@@ -180,7 +181,7 @@ describe("onlyAvailable se filtra en SQL, antes del LIMIT (no en JS después de 
     // (`$7::bool IS NOT TRUE OR ...` la vuelve no-op cuando el param es null/false).
     await listPublishedUnits({ onlyAvailable: true, limit: 5 });
     const sql = lastSql();
-    const statusIdx = sql.indexOf("LOWER(u.status) = 'disponible'");
+    const statusIdx = sql.indexOf("LOWER(u.status) IN ('disponible', 'preventa', 'entrega inmediata')");
     const limitIdx = sql.lastIndexOf("LIMIT");
     expect(statusIdx).toBeGreaterThan(-1);
     expect(statusIdx).toBeLessThan(limitIdx);
@@ -188,7 +189,13 @@ describe("onlyAvailable se filtra en SQL, antes del LIMIT (no en JS después de 
 
   it("compara sin distinguir mayúsculas (status es texto libre: 'Disponible' con mayúscula)", async () => {
     await listPublishedUnits({ onlyAvailable: true });
-    expect(lastSql()).toContain("LOWER(u.status) = 'disponible'");
+    expect(lastSql()).toContain("LOWER(u.status) IN (");
+  });
+
+  it("#961: Preventa y Entrega inmediata también se pueden apartar (misma lista que el reporte)", async () => {
+    await listPublishedUnits({ onlyAvailable: true });
+    const sql = lastSql();
+    for (const e of ESTADOS_DISPONIBLES) expect(sql).toContain(`'${e}'`);
   });
 
   it("con onlyAvailable, pasa `true` como parámetro (activa el filtro)", async () => {

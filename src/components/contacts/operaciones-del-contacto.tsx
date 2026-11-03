@@ -28,6 +28,7 @@ import {
   subestadosDeEtapa,
   type EtapaOperacion,
 } from "@/lib/operaciones";
+import { HOLD_PENDIENTE_LABEL, holdPendienteDe } from "@/lib/hub/hold-pendiente";
 
 export interface OperacionDelContacto {
   id: string;
@@ -51,7 +52,8 @@ export interface OperacionDelContacto {
   unit?: { unitNumber?: string | null } | null;
   assignedTo?: { name?: string | null } | null;
   /** custom.hubUnitSnapshot: copia de la unidad del Hub al crearla o apartarla (lib/hub/types.ts). */
-  custom?: { hubUnitSnapshot?: { numero?: string | null; titulo?: string | null } | null } | null;
+  // #961: custom.hubHoldPendiente = se apartó en el CRM sin que el Hub contestara (hold-pendiente.ts).
+  custom?: { hubUnitSnapshot?: { numero?: string | null; titulo?: string | null } | null; hubHoldPendiente?: unknown } | null;
 }
 
 interface Props {
@@ -156,6 +158,7 @@ function TarjetaOperacion({
   const siguientes = siguientesEtapas(tipo, etapa).filter((e) => e !== "CANCELADA");
   const puedeCancelar = siguientesEtapas(tipo, etapa).includes("CANCELADA");
   const tieneUnidad = !!(op.hubUnitId || op.unitId);
+  const pendienteHub = etapa !== "CANCELADA" && etapa !== "EN_PREPARACION" ? holdPendienteDe(op.custom) : null;
 
   async function aplicar(cuerpo: Record<string, unknown>) {
     setOcupado(true);
@@ -212,6 +215,15 @@ function TarjetaOperacion({
         {(op.reapartados ?? 0) > 0 && (
           <span className="text-[12px] text-[color:var(--text-tertiary)]">Reapartada {op.reapartados} {op.reapartados === 1 ? "vez" : "veces"}</span>
         )}
+        {pendienteHub && (
+          <span
+            className={chip}
+            style={{ borderColor: "#D97706", background: "var(--bg-card)", color: "#B45309" }}
+            title={`Se apartó en el CRM porque el inventario no respondió${pendienteHub.error ? `: ${pendienteHub.error}` : ""}. La unidad todavía no está apartada en el Hub.`}
+          >
+            {HOLD_PENDIENTE_LABEL}
+          </span>
+        )}
         <Link href={`/pipeline/${op.id}`} className="ml-auto text-[12px] text-[color:var(--color-teal,#0D9488)] hover:underline">
           Ver detalle
         </Link>
@@ -260,8 +272,19 @@ function TarjetaOperacion({
         </div>
       )}
 
-      {!readOnly && (siguientes.length > 0 || puedeCancelar || etapa === "APARTADO") && (
+      {!readOnly && (siguientes.length > 0 || puedeCancelar || etapa === "APARTADO" || pendienteHub) && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
+          {pendienteHub && (
+            <button
+              type="button"
+              className="btn-secondary text-[12px]"
+              disabled={ocupado}
+              title="Vuelve a pedirle al inventario que aparte la unidad (no cuenta como reapartado)"
+              onClick={() => void aplicar({ reintentarHold: true })}
+            >
+              Apartar en el Hub
+            </button>
+          )}
           {siguientes.map((e) => (
             <button key={e} type="button" className="btn-secondary text-[12px]" disabled={ocupado} onClick={() => avanzar(e)}>
               {ACCION_DE_ETAPA[e]}

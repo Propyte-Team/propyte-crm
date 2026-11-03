@@ -186,6 +186,13 @@ const UNIT_COLS = `
   u.fin_preventa               AS "finPreventa"
 `;
 
+/**
+ * #961: «disponible» para apartar = Disponible, Preventa o Entrega inmediata (misma clasificación
+ * que el reporte de inventario, abajo). Antes solo «Disponible»: las ~800 unidades en Preventa no
+ * salían para apartar ni para crear la operación.
+ */
+export const ESTADOS_DISPONIBLES = ["disponible", "preventa", "entrega inmediata"] as const;
+
 export async function listPublishedUnits(
   filters: UnitCatalogFilters = {}
 ): Promise<CatalogResult<PublishedUnit[]>> {
@@ -201,7 +208,7 @@ export async function listPublishedUnits(
           AND ($4::float8 IS NULL OR u.price_mxn >= $4)
           AND ($5::float8 IS NULL OR u.price_mxn <= $5)
           AND ($6::text IS NULL OR u.zone ILIKE '%' || $6 || '%')
-          AND ($7::bool IS NOT TRUE OR LOWER(u.status) = 'disponible')
+          AND ($7::bool IS NOT TRUE OR LOWER(u.status) IN ('disponible', 'preventa', 'entrega inmediata'))
         ORDER BY u.unit_number ASC NULLS LAST
         LIMIT ${limit}`,
       filters.developmentId ?? null,

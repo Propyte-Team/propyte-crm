@@ -34,6 +34,12 @@ export interface HubHoldResult {
   ok: boolean;
   unit?: { id: string; status: string; holdExpiresAt: string | null };
   error?: string;
+  /**
+   * #961: por qué falló. `rechazo` = el Hub contestó que no (unidad ocupada, 4xx): se respeta.
+   * `sin_configurar` (faltan HUB_API_BASE_URL / HUB_API_KEY) y `sin_respuesta` (red, tiempo, 5xx)
+   * no dicen nada de la unidad: ahí el CRM puede apartar de respaldo (lib/hub/apartado-de-respaldo.ts).
+   */
+  motivo?: "rechazo" | "sin_configurar" | "sin_respuesta";
 }
 
 export interface HubUnitFilters {

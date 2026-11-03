@@ -55,6 +55,22 @@ describe("OperacionesDelContacto (#957)", () => {
     expect(botones(html)).toEqual(["Usar para cotizar o apartar"]);
   });
 
+  it("#961: apartada sin el Hub muestra la marca y «Apartar en el Hub»", () => {
+    const html = dibujar([
+      {
+        id: "d1",
+        etapa: "APARTADO",
+        tipoOperacion: "VENTA",
+        subestado: "PAGADO",
+        custom: { hubHoldPendiente: { desde: "2026-11-03T17:00:00Z", motivo: "sin_configurar", error: "Hub API no configurada" } },
+      },
+    ]);
+    expect(html).toContain("Pendiente de apartar en el Hub");
+    expect(botones(html)).toEqual(["Apartar en el Hub", "Pasar a firma", "Reapartar", "Cancelar operación"]);
+    // Sin la marca, no aparece.
+    expect(dibujar([{ id: "d2", etapa: "APARTADO", tipoOperacion: "VENTA", subestado: "PAGADO" }])).not.toContain("Pendiente de apartar");
+  });
+
   it("de solo lectura no hay botones ni selects activos", () => {
     const html = dibujar([{ id: "d1", etapa: "APARTADO", tipoOperacion: "VENTA", subestado: "PAGADO" }], true);
     expect(botones(html)).toEqual([]);

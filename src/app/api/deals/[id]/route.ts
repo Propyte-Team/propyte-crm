@@ -20,6 +20,13 @@ import { getVisibleBrands } from "@/lib/brands/user-access";
 import { CONTACT_BRAND_SELECT, canSeeDealBrand } from "@/lib/brands/visibility";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import {
+  HOLD_PENDIENTE_LABEL,
+  holdPendienteDe,
+  permiteRespaldo,
+  unidadOcupadaSinHub,
+  type HoldPendiente,
+} from "@/lib/hub/apartado-de-respaldo";
+import {
   TIPO_OPERACION_ORDER,
   ETAPA_OPERACION_ORDER,
   FORMA_PAGO_ORDER,
@@ -86,6 +93,8 @@ const updateDealSchema = z.object({
   hubUnitId: z.string().min(1).nullable().optional(),
   // Corrección de un administrador: se salta las etapas permitidas (no las reglas de la etapa vieja).
   forzarCambio: z.boolean().optional(),
+  // #961: volver a pedir el apartado al Hub de una operación «Pendiente de apartar en el Hub».
+  reintentarHold: z.boolean().optional(),
 });
 
 /**
@@ -480,21 +489,56 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     // Se toma ANTES de abrir la transacción porque es una llamada HTTP; si la
     // transacción falla después, el catch lo libera.
     let holdTomadoEnHub: string | null = null;
+    let avisoHold: string | null = null;
     // #957: también al reapartar (renueva el hold) y con la unidad que se elige al apartar.
-    const tomaHold = (data.stage === "RESERVED" && data.stage !== existingDeal.stage) || datosOperacion.reapartar;
+    // #961: y al reintentar el de una operación que quedó pendiente de apartar en el Hub.
+    const pendienteAntes = holdPendienteDe(existingDeal.custom);
+    const reintenta = data.reintentarHold === true;
+    if (reintenta && !pendienteAntes) {
+      return NextResponse.json({ error: "Esta operación no tiene un apartado pendiente en el Hub" }, { status: 400 });
+    }
+    const tomaHold = (data.stage === "RESERVED" && data.stage !== existingDeal.stage) || datosOperacion.reapartar || reintenta;
     if (tomaHold && hubUnitIdEfectivo) {
       const { requestUnitHold } = await import("@/lib/hub/client");
       const hold = await requestUnitHold({ hubUnitId: hubUnitIdEfectivo, crmDealId: existingDeal.id });
-      if (!hold.ok) {
+      // Base del JSON custom: lo que ya traiga este cambio (copia de la unidad) o lo guardado.
+      const customBase = (): Record<string, unknown> =>
+        updateData.custom ??
+        (existingDeal.custom && typeof existingDeal.custom === "object" && !Array.isArray(existingDeal.custom)
+          ? { ...(existingDeal.custom as Record<string, unknown>) }
+          : {});
+      if (hold.ok) {
+        holdTomadoEnHub = hubUnitIdEfectivo;
+        updateData.holdId = hold.unit?.id ?? hubUnitIdEfectivo;
+        updateData.holdExpiresAt = hold.unit?.holdExpiresAt ? new Date(hold.unit.holdExpiresAt) : null;
+        if (!reintenta) updateData.reservedAt = new Date();
+        if (pendienteAntes) {
+          const sinPendiente = { ...customBase() };
+          delete sinPendiente.hubHoldPendiente;
+          updateData.custom = sinPendiente;
+        }
+      } else if (reintenta) {
+        return NextResponse.json(
+          { error: `El Hub sigue sin apartar la unidad: ${hold.error ?? "no disponible"}` },
+          { status: permiteRespaldo(hold) ? 503 : 409 }
+        );
+      } else if (permiteRespaldo(hold)) {
+        // El Hub no contestó (o no está configurado): se aparta en el CRM si la unidad está libre
+        // por lo que sí sabemos, y queda marcada para reintentar.
+        const ocupada = await unidadOcupadaSinHub(hubUnitIdEfectivo, existingDeal.id);
+        if (ocupada) {
+          return NextResponse.json({ error: ocupada, fields: ["hubUnitId"] }, { status: 409 });
+        }
+        const pendiente: HoldPendiente = { desde: new Date().toISOString(), motivo: hold.motivo, error: hold.error ?? null };
+        updateData.custom = { ...customBase(), hubHoldPendiente: pendiente };
+        updateData.reservedAt = new Date();
+        avisoHold = `${HOLD_PENDIENTE_LABEL}: el inventario no respondió (${hold.error ?? hold.motivo}).`;
+      } else {
         return NextResponse.json(
           { error: `No se pudo apartar la unidad en el Hub: ${hold.error ?? "no disponible"}` },
           { status: 409 }
         );
       }
-      holdTomadoEnHub = hubUnitIdEfectivo;
-      updateData.holdId = hold.unit?.id ?? hubUnitIdEfectivo;
-      updateData.holdExpiresAt = hold.unit?.holdExpiresAt ? new Date(hold.unit.holdExpiresAt) : null;
-      updateData.reservedAt = new Date();
     }
 
     // #D-02: el deal, la unidad, los contadores del desarrollo y la actividad se
@@ -589,7 +633,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       });
     }
 
-    return NextResponse.json({ data: updatedDeal });
+    return NextResponse.json({ data: updatedDeal, ...(avisoHold ? { aviso: avisoHold } : {}) });
   } catch (error) {
     console.error("Error al actualizar deal:", error);
     return NextResponse.json(
