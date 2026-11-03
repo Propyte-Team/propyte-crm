@@ -81,4 +81,50 @@ describe("evaluar", () => {
     const r = evaluar({ respuestas: pasaTodo, actitudPuntos: 50, cvRecibido: false, modelo: MODELO_DEFAULT });
     expect(r.desglose.actitud).toBe(20);
   });
+
+  it("un filtro ambiguo con puntaje < apto → NO_APTO con motivo ambiguo", () => {
+    const r = evaluar({
+      respuestas: { ...pasaTodo, colchon_meses: "NO_SE", experiencia_inmobiliaria: "DE_1_A_3_ANOS", cartera_clientes: "MENOS_10" },
+      actitudPuntos: 10, cvRecibido: false, modelo: MODELO_DEFAULT,
+    });
+    expect(r.puntaje).toBe(36);
+    expect(r.resultado).toBe("NO_APTO");
+    expect(r.motivo).toBe("ambiguo:colchon_meses");
+  });
+
+  it("valor desconocido en un puntuable suma 0", () => {
+    const r = evaluar({ respuestas: { ...pasaTodo, ingles: "NATIVO" }, actitudPuntos: 0, cvRecibido: false, modelo: MODELO_DEFAULT });
+    expect(r.desglose.ingles).toBe(0);
+    expect(r.puntaje).toBe(0);
+  });
+
+  it("'constructor' como respuesta suma 0 y no produce NaN", () => {
+    const r = evaluar({ respuestas: { ...pasaTodo, ingles: "constructor", cartera_clientes: "toString" }, actitudPuntos: 0, cvRecibido: false, modelo: MODELO_DEFAULT });
+    expect(r.desglose.ingles).toBe(0);
+    expect(r.desglose.cartera_clientes).toBe(0);
+    expect(Number.isNaN(r.puntaje)).toBe(false);
+    expect(r.puntaje).toBe(0);
+  });
+
+  it("dos ambiguos: motivo en orden canónico sin importar el orden de las respuestas", () => {
+    const r = evaluar({
+      respuestas: { colchon_meses: "NO_SE", disponibilidad: "NO_SE", mayor_edad: "SI", acepta_comision: "SI", plaza: "PDC", movilidad: "SI" },
+      actitudPuntos: 0, cvRecibido: false, modelo: MODELO_DEFAULT,
+    });
+    expect(r.resultado).toBe("NO_APTO");
+    expect(r.motivo).toBe("ambiguo:disponibilidad,colchon_meses");
+  });
+
+  it("REVISAR por banda lleva motivo 'puntaje'", () => {
+    const r = evaluar({ respuestas: { ...pasaTodo, experiencia_inmobiliaria: "MAS_DE_3_ANOS", cartera_clientes: "DE_10_A_50" }, actitudPuntos: 5, cvRecibido: false, modelo: MODELO_DEFAULT });
+    expect(r.puntaje).toBe(44);
+    expect(r.resultado).toBe("REVISAR");
+    expect(r.motivo).toBe("puntaje");
+  });
+
+  it("actitud no finita se trata como null", () => {
+    const r = evaluar({ respuestas: pasaTodo, actitudPuntos: Number.NaN, cvRecibido: false, modelo: MODELO_DEFAULT });
+    expect(r.desglose.actitud).toBeNull();
+    expect(r.puntaje).toBe(0);
+  });
 });

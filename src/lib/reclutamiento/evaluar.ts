@@ -39,11 +39,17 @@ export function evaluar(input: {
   for (const clave of CLAVES_PUNTUABLE) {
     const p = modelo.puntuables[clave];
     const v = respuestas[clave];
-    const pts = p && v && v in p.puntos ? p.puntos[v] : 0;
+    // Object.hasOwn evita recorrer el prototipo ("constructor" daría una función, no un número).
+    const bruto = p && v && Object.hasOwn(p.puntos, v) ? p.puntos[v] : 0;
+    const pts = typeof bruto === "number" && Number.isFinite(bruto) ? bruto : 0;
     desglose[clave] = pts;
     puntaje += pts;
   }
-  const actitud = input.actitudPuntos === null ? null : Math.max(0, Math.min(modelo.actitudMax, Math.round(input.actitudPuntos)));
+  // Actitud no numérica o no finita (NaN, Infinity) se trata como ausente: no suma.
+  const actitud =
+    typeof input.actitudPuntos === "number" && Number.isFinite(input.actitudPuntos)
+      ? Math.max(0, Math.min(modelo.actitudMax, Math.round(input.actitudPuntos)))
+      : null;
   desglose.actitud = actitud;
   puntaje += actitud ?? 0;
   const cv = input.cvRecibido ? modelo.cvPuntos : 0;
