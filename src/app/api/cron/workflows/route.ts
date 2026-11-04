@@ -7,6 +7,7 @@ import prisma from "@/lib/db";
 import { processPendingEvents, emitEvent } from "@/lib/workflows/events";
 import { runQueue, recuperarEncalladas } from "@/lib/workflows/queue";
 import { checkSlaBreaches } from "@/lib/workflows/sla";
+import { reasignarSinPrimerContacto } from "@/lib/workflows/sla-reasignacion";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 import { rechazoCron } from "@/lib/cron/auth";
 import { limpiarOtpVencidos } from "@/lib/auth/otp-limpieza";
@@ -142,6 +143,11 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   { nombre: "encalladas", correr: () => recuperarEncalladas(50) },
   { nombre: "queue", correr: () => runQueue(20) },
   { nombre: "slaBreaches", correr: () => checkSlaBreaches(100) },
+  // Reasignación por falta de primer contacto. Va DESPUÉS de `slaBreaches` para que el
+  // vencimiento quede marcado (y avisado) antes de mover el lead. Apagada por defecto: sin
+  // la fila `workflows.sla.reasignacion_primer_contacto` encendida no hace ninguna consulta
+  // más que leer esa fila.
+  { nombre: "slaReasignacion", correr: () => reasignarSinPrimerContacto(50) },
   { nombre: "enrollments", correr: () => runEnrollments(50) },
   { nombre: "inactivity", correr: () => runInactivityRules(200) },
   { nombre: "overduePayments", correr: () => checkOverduePayments() },

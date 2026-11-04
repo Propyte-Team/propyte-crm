@@ -3,7 +3,7 @@
 import type { Brand } from "@prisma/client";
 import prisma from "@/lib/db";
 import { evaluateConditions } from "./evaluate-conditions";
-import { createSlaTimer, cumplirOrphan } from "./sla";
+import { createSlaTimer, cumplirOrphan, cancelarRelojesDeAtencion } from "./sla";
 import { ROLES_RUTEABLES, usuarioRuteableWhere } from "./ruteables";
 import { gerenciaDeLaPlaza } from "./gerencia";
 import {
@@ -24,6 +24,19 @@ const RR_POINTER_KEY = "workflows.routing.rr_cursor";
 const RR_EXCLUDED_KEY = "workflows.routing.excluded_user_ids";
 /** #918: «regla» del turno general (todos los asesores ruteables), para su propio contador. */
 export const REPARTO_GENERAL = "reparto_general";
+
+export type OpcionesDeReparto = {
+  reason?: string;
+  connectorId?: string | null;
+  /** Ids que no pueden recibir este lead, además de la lista de SystemConfig. */
+  excluirUserIds?: string[];
+  /** Si nadie puede recibirlo, devuelve `null` sin mandarlo al Pond ni tocar el contacto. */
+  sinPond?: boolean;
+  /** Origen que queda en la bitácora de cambios (`RecordFieldChange.source`). */
+  source?: string;
+  /** Cierra el FIRST_TOUCH/RETRY en curso para que el asesor nuevo arranque su propio plazo. */
+  reiniciarPrimerContacto?: boolean;
+};
 
 async function routingExcludedIds(): Promise<string[]> {
   const cfg = await prisma.systemConfig.findUnique({ where: { key: RR_EXCLUDED_KEY } });
@@ -202,7 +215,7 @@ async function responsableDeLaMarca(marca: Brand, excludedIds: string[]): Promis
  */
 export async function autoRouteLead(
   contactId: string,
-  opts: { reason?: string; connectorId?: string | null } = {}
+  opts: OpcionesDeReparto = {}
 ): Promise<string | null> {
   const encontrado = await prisma.contact.findUnique({ where: { id: contactId }, include: { adAttribution: true } });
   if (!encontrado || encontrado.deletedAt) return null;
@@ -247,7 +260,9 @@ export async function autoRouteLead(
   // #678 (e): las tres condiciones salieron a `./ruteables` sin cambiar de valor, para que
   // la revisión diaria pueda publicar «cuántos asesores ruteables hay» con ESTE criterio y
   // no con una copia suya. Aquí siguen siendo las mismas.
-  const excludedIds = await routingExcludedIds();
+  // La reasignación por falta de primer contacto suma al asesor que no contestó (y a los
+  // que ya lo perdieron antes por lo mismo) para que el turno no se lo devuelva.
+  const excludedIds = [...new Set([...(await routingExcludedIds()), ...(opts.excluirUserIds ?? [])])];
   const routableWhere = usuarioRuteableWhere();
 
   let assigneeId: string | null = null;
@@ -432,13 +447,16 @@ export async function autoRouteLead(
         ` · fuente=${contact.leadSource} plaza=${contact.targetPlaza ?? "sin plaza"}` +
         ` · reglas activas=${rules.length}, evaluadas sin asignar=${pasos.length}`,
     );
+    // Quien reasigna un lead que YA tiene dueño no quiere quitárselo para mandarlo al Pond:
+    // si no hay otro asesor, el lead se queda donde está y el llamador decide qué hacer.
+    if (opts.sinPond) return null;
     await sendToPond(contact, opts.reason, motivo);
     return null;
   }
 
   const previous = contact.assignedToId;
   await withChangeSource(
-    { source: via === "responsable_marca" ? "routing_marca" : "routing" },
+    { source: opts.source ?? (via === "responsable_marca" ? "routing_marca" : "routing") },
     (tx) =>
       tx.contact.update({
         where: { id: contactId },
@@ -446,6 +464,9 @@ export async function autoRouteLead(
       })
   );
 
+  // `createSlaTimer` no abre un FIRST_TOUCH si ya hay uno RUNNING: el del asesor anterior
+  // se cierra primero para que el nuevo dueño tenga su propio plazo, completo.
+  if (opts.reiniciarPrimerContacto) await cancelarRelojesDeAtencion(contactId);
   await createSlaTimer(contactId, "FIRST_TOUCH");
 
   // #753: el lead consiguió dueño, así que el reloj de la bandeja de rescate SÍ se cumple

@@ -4,6 +4,7 @@ const processPendingEvents = vi.fn();
 const runQueue = vi.fn();
 const recuperarEncalladas = vi.fn();
 const checkSlaBreaches = vi.fn();
+const reasignarSinPrimerContacto = vi.fn();
 const runEnrollments = vi.fn();
 const runInactivityRules = vi.fn();
 const emitEvent = vi.fn();
@@ -43,6 +44,11 @@ vi.mock("@/lib/workflows/queue", () => ({
   recuperarEncalladas: (...a: unknown[]) => recuperarEncalladas(...a),
 }));
 vi.mock("@/lib/workflows/sla", () => ({ checkSlaBreaches: (...a: unknown[]) => checkSlaBreaches(...a) }));
+// Reasignación por falta de primer contacto: su lógica se prueba en
+// lib/workflows/sla-reasignacion.test.ts; aquí solo cuenta que sea una etapa más del tick.
+vi.mock("@/lib/workflows/sla-reasignacion", () => ({
+  reasignarSinPrimerContacto: (...a: unknown[]) => reasignarSinPrimerContacto(...a),
+}));
 // #699 (defecto 2): etapa que retira los códigos de un solo uso ya vencidos. Se dobla
 // aquí como las demás para que este archivo siga probando el AISLAMIENTO del tick y no la
 // consulta del barrido, que tiene sus propias pruebas en lib/auth/otp-limpieza.test.ts.
@@ -93,6 +99,7 @@ beforeEach(() => {
   runQueue.mockResolvedValue({ corridas: 2 });
   recuperarEncalladas.mockResolvedValue({ reencoladas: 0, agotadas: 0 });
   checkSlaBreaches.mockResolvedValue({ marcados: 1 });
+  reasignarSinPrimerContacto.mockResolvedValue({ revisados: 0, reasignados: 0, omitidos: {} });
   runEnrollments.mockResolvedValue({ inscritos: 0 });
   runInactivityRules.mockResolvedValue({ disparadas: 0 });
   paymentFindMany.mockResolvedValue([]);
@@ -206,8 +213,23 @@ describe("GET /api/cron/workflows — aislamiento por etapa", () => {
       encalladas: { reencoladas: 0, agotadas: 0 },
       queue: { corridas: 2 },
       slaBreaches: { marcados: 1 },
+      slaReasignacion: { revisados: 0, reasignados: 0 },
     });
     expect(typeof body.ms).toBe("number");
+  });
+
+  it("la reasignación corre DESPUÉS de marcar los vencimientos y su fallo no tumba a las demás", async () => {
+    const orden: string[] = [];
+    checkSlaBreaches.mockImplementation(async () => { orden.push("slaBreaches"); return { marcados: 0 }; });
+    reasignarSinPrimerContacto.mockImplementation(async () => { orden.push("slaReasignacion"); throw new Error("boom"); });
+    runEnrollments.mockImplementation(async () => { orden.push("enrollments"); return { inscritos: 0 }; });
+
+    const r = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await r.json();
+
+    expect(orden).toEqual(["slaBreaches", "slaReasignacion", "enrollments"]);
+    expect(r.status).toBe(500);
+    expect(body.fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["slaReasignacion"]);
   });
 
   /**
