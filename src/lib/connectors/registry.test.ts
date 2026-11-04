@@ -53,13 +53,19 @@ describe("registry de proveedores", () => {
 });
 
 describe("splitConnectorFields", () => {
-  it("IG: pageId/igBusinessId/brand → config; token/appSecret/verifyToken → credentials", () => {
+  it("IG: pageId/igBusinessId/brand → config; token/appSecret → credentials", () => {
     const { config, credentials } = splitConnectorFields("INSTAGRAM", {
       pageId: "P", igBusinessId: "IG", brand: "Nativa",
-      pageAccessToken: "T", appSecret: "S", verifyToken: "V",
+      pageAccessToken: "T", appSecret: "S",
     });
     expect(config).toEqual({ pageId: "P", igBusinessId: "IG", brand: "Nativa" });
-    expect(credentials).toEqual({ pageAccessToken: "T", appSecret: "S", verifyToken: "V" });
+    expect(credentials).toEqual({ pageAccessToken: "T", appSecret: "S" });
+  });
+  it("los DMs (IG/Messenger) no piden Verify Token por cuenta: el webhook usa META_DM_VERIFY_TOKEN", () => {
+    for (const id of ["INSTAGRAM", "MESSENGER"]) {
+      expect(providerById(id)?.credFields.some((f) => f.key === "verifyToken")).toBe(false);
+    }
+    expect(providerById("META")?.credFields.some((f) => f.key === "verifyToken")).toBe(true);
   });
   it("ignora vacíos y recorta espacios", () => {
     const { config } = splitConnectorFields("MESSENGER", { pageId: " P ", brand: "" });

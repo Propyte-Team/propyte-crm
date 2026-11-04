@@ -10,7 +10,7 @@ const reg = (over: Partial<RegistroFusion> = {}): RegistroFusion => ({
   ...over,
 });
 
-function mkTx(opts: { registros?: RegistroFusion[]; survivor?: Record<string, unknown>; loser?: Record<string, unknown>; dossierLoser?: number } = {}) {
+function mkTx(opts: { registros?: RegistroFusion[]; survivor?: Record<string, unknown>; loser?: Record<string, unknown>; dossierLoser?: number; ocupados?: string[] } = {}) {
   const estado = { value: opts.registros ?? [reg()] as unknown };
   const calls: Array<[string, string, unknown]> = [];
   const contacts: Record<string, Record<string, unknown>> = {
@@ -28,6 +28,8 @@ function mkTx(opts: { registros?: RegistroFusion[]; survivor?: Record<string, un
     },
     contact: {
       findUnique: vi.fn(async (a: { where: { id: string } }) => contacts[a.where.id] ?? null),
+      findFirst: vi.fn(async (a: { where: Record<string, unknown> }) =>
+        Object.values(a.where).some((v) => typeof v === "string" && (opts.ocupados ?? []).includes(v)) ? { id: "X" } : null),
       update: vi.fn(async (a: unknown) => { calls.push(["contact", "update", a]); }),
     },
     deal: deleg("deal"), message: deleg("message"), contactDossier: deleg("contactDossier"),
@@ -58,7 +60,7 @@ describe("deshacerFusionTx", () => {
   it("devuelve relaciones, revierte campo, restaura al perdedor y marca el registro", async () => {
     const { tx, estado, calls } = mkTx();
     const r = await deshacerFusionTx(tx, "f1");
-    expect(r).toEqual({ ok: true, loserId: "L", survivorId: "S" });
+    expect(r).toEqual({ ok: true, loserId: "L", survivorId: "S", idsNoDevueltos: [] });
     const dealCall = calls.find((c) => c[0] === "deal")![2] as { where: unknown; data: unknown };
     expect(dealCall).toEqual({ where: { id: { in: ["d1", "d2"] }, contactId: "S" }, data: { contactId: "L" } });
     expect(calls.some((c) => c[0] === "contactDossier")).toBe(true);
@@ -66,6 +68,20 @@ describe("deshacerFusionTx", () => {
     expect(updates).toContainEqual({ where: { id: "S" }, data: { email: null } });
     expect(updates).toContainEqual({ where: { id: "L" }, data: { deletedAt: null, mergedIntoId: null } });
     expect(leerFusiones(estado.value)[0].deshechaEn).toBeTruthy();
+  });
+  it("#903: quita al ganador el id de canal que recibió y se lo devuelve al perdedor", async () => {
+    const r0 = reg({
+      campos: { instagramId: { antes: null, despues: "ig-1" } },
+      idsCanalArchivado: { instagramId: "ig-1", messengerPsid: "psid-1" },
+    });
+    const { tx, calls } = mkTx({ registros: [r0], survivor: { id: "S", deletedAt: null, instagramId: "ig-1" }, ocupados: ["psid-1"] });
+    const r = await deshacerFusionTx(tx, "f1");
+    expect(r).toMatchObject({ ok: true, idsNoDevueltos: ["messengerPsid"] });
+    const updates = calls.filter((c) => c[0] === "contact").map((c) => c[2]);
+    const iS = updates.findIndex((u) => JSON.stringify(u) === JSON.stringify({ where: { id: "S" }, data: { instagramId: null } }));
+    const iL = updates.findIndex((u) => JSON.stringify(u) === JSON.stringify({ where: { id: "L" }, data: { deletedAt: null, mergedIntoId: null, instagramId: "ig-1" } }));
+    expect(iS).toBeGreaterThanOrEqual(0);
+    expect(iL).toBeGreaterThan(iS);
   });
   it("no pisa un campo que el ganador ya cambió", async () => {
     const { tx, calls } = mkTx({ survivor: { id: "S", deletedAt: null, email: "otro@x.com" } });

@@ -7,6 +7,7 @@ import prisma from "@/lib/db";
 import { processPendingEvents, emitEvent } from "@/lib/workflows/events";
 import { runQueue, recuperarEncalladas } from "@/lib/workflows/queue";
 import { checkSlaBreaches } from "@/lib/workflows/sla";
+import { reasignarSinPrimerContacto } from "@/lib/workflows/sla-reasignacion";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 import { rechazoCron } from "@/lib/cron/auth";
 import { limpiarOtpVencidos } from "@/lib/auth/otp-limpieza";
@@ -29,6 +30,18 @@ async function recalcularScoresSafe() {
   try {
     const { recalcularScores } = await import("@/lib/scoring/recalcular");
     return await recalcularScores(200);
+  } catch (err) {
+    if (esTablaSinMigrar(err)) return { calculados: 0, sinMigrar: true };
+    throw err;
+  }
+}
+
+// #973: temperatura calculada (Copilot). Igual que el score: solo se perdona P2021
+// (contact_temperaturas sin migrar); cualquier otro error sube con el nombre de la etapa.
+async function recalcularTemperaturasSafe() {
+  try {
+    const { recalcularTemperaturas } = await import("@/lib/copilot/temperatura-recalcular");
+    return await recalcularTemperaturas(200);
   } catch (err) {
     if (esTablaSinMigrar(err)) return { calculados: 0, sinMigrar: true };
     throw err;
@@ -130,6 +143,11 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   { nombre: "encalladas", correr: () => recuperarEncalladas(50) },
   { nombre: "queue", correr: () => runQueue(20) },
   { nombre: "slaBreaches", correr: () => checkSlaBreaches(100) },
+  // Reasignación por falta de primer contacto. Va DESPUÉS de `slaBreaches` para que el
+  // vencimiento quede marcado (y avisado) antes de mover el lead. Apagada por defecto: sin
+  // la fila `workflows.sla.reasignacion_primer_contacto` encendida no hace ninguna consulta
+  // más que leer esa fila.
+  { nombre: "slaReasignacion", correr: () => reasignarSinPrimerContacto(50) },
   { nombre: "enrollments", correr: () => runEnrollments(50) },
   { nombre: "inactivity", correr: () => runInactivityRules(200) },
   { nombre: "overduePayments", correr: () => checkOverduePayments() },
@@ -147,6 +165,8 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // Lead scoring: en sombra no alimenta a nadie (solo escribe contact_scores). Con
   // `scoring.activo` emite `contact.scored`, que el tick SIGUIENTE procesa vía `events`.
   { nombre: "leadScoring", correr: () => recalcularScoresSafe() },
+  // #973: no alimenta a ninguna etapa de este tick (Copilot la leerá para ordenar «Mi día»).
+  { nombre: "temperatura", correr: () => recalcularTemperaturasSafe() },
   // #699 (defecto 2): retira los códigos de un solo uso que ya vencieron. Va al final por
   // lo mismo: no alimenta a nadie. Y NO lleva `try` propio —a diferencia de las etapas con
   // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto

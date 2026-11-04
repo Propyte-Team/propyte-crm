@@ -105,10 +105,10 @@ export const connectorCredentialsMetaSchema = z.object({
 });
 
 // Social (IG DM / Messenger): secretos en credentials; identificadores en config.
+// El verify token del webhook de DMs es global (META_DM_VERIFY_TOKEN), no por cuenta.
 export const connectorCredentialsSocialSchema = z.object({
   pageAccessToken: z.string().min(1),
   appSecret: z.string().min(1),
-  verifyToken: z.string().min(1),
 });
 export const connectorConfigSocialSchema = z.object({
   pageId: z.string().min(1),

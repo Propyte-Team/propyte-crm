@@ -30,12 +30,13 @@ describe("el constructor se deriva de los catálogos (sin mapas duplicados)", ()
   });
   it("los disparadores cubren todos los TriggerType compartidos", () => {
     const tipos = new Set(DISPARADORES.map((d) => d.triggerType));
-    for (const t of TRIGGER_TYPES) expect(tipos.has(t)).toBe(true);
+    // TIME se retiró del catálogo (el motor no lo ejecuta).
+    for (const t of TRIGGER_TYPES.filter((x) => x !== "TIME")) expect(tipos.has(t)).toBe(true);
   });
   it("disparadoresAgrupados solo ofrece activos, más el actual aunque sea próximamente", () => {
     const claves = (k: string) => disparadoresAgrupados(k).flatMap((g) => g.disparadores.map((d) => d.key));
-    expect(claves("lead.captured")).not.toContain("time");
-    expect(claves("time")).toContain("time");
+    expect(claves("lead.captured")).not.toContain("behavioral");
+    expect(claves("behavioral")).toContain("behavioral");
     expect(claves("lead.captured")).toContain("lead.captured");
   });
 });

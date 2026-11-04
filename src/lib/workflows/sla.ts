@@ -123,6 +123,22 @@ export async function cumplirOrphan(contactId: string): Promise<number> {
 }
 
 /**
+ * Cierra (CANCELLED) los relojes de atención en curso —FIRST_TOUCH y RETRY— de un contacto.
+ *
+ * Lo usa la reasignación por falta de primer contacto: el lead cambia de asesor y el plazo
+ * que corría era del anterior. CANCELLED y no MET, porque nadie lo atendió; y no BREACHED,
+ * porque ese estado lo pone solo el barrido cuando el plazo de verdad vence. El ORPHAN no se
+ * toca: mide otra cosa (ver `cumplirOrphan`).
+ */
+export async function cancelarRelojesDeAtencion(contactId: string): Promise<number> {
+  const res = await prisma.slaTimer.updateMany({
+    where: { contactId, status: "RUNNING", type: { in: ["FIRST_TOUCH", "RETRY"] as never } },
+    data: { status: "CANCELLED" },
+  });
+  return res.count;
+}
+
+/**
  * #756: a quién se le avisa de un vencimiento, y el aviso en sí.
  *
  * Va aparte del bucle para que `checkSlaBreaches` siga leyéndose de un tirón, y porque esto

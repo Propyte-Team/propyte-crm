@@ -49,19 +49,17 @@ const IG_DM_FIELDS: CredField[] = [
   { key: "brand", label: "Marca (opcional)", config: true },
   { key: "pageAccessToken", label: "Page Access Token (long-lived)", secret: true },
   { key: "appSecret", label: "App Secret", secret: true },
-  { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
 ];
 const MESSENGER_DM_FIELDS: CredField[] = [
   { key: "pageId", label: "Page ID", config: true },
   { key: "brand", label: "Marca (opcional)", config: true },
   { key: "pageAccessToken", label: "Page Access Token (long-lived)", secret: true },
   { key: "appSecret", label: "App Secret", secret: true },
-  { key: "verifyToken", label: "Verify Token (lo inventas tú)" },
 ];
 const DM_STEPS: WizardStep[] = [
   { title: "Abre tu app de Meta (Propyte CRM)", body: "Selecciona la Página FB vinculada a la cuenta.", link: "https://developers.facebook.com/apps" },
   { title: "Genera un Page Access Token (System User)", body: "Con permisos de mensajería (instagram_manage_messages / pages_messaging)." },
-  { title: "Pega Page ID, Instagram Business ID, token, App Secret y Verify Token", body: "El Verify Token lo inventas tú; ponlo igual en el webhook /api/webhooks/meta-dm de Meta." },
+  { title: "Pega Page ID, Instagram Business ID, token y App Secret", body: "Al configurar el webhook /api/webhooks/meta-dm en Meta, el Verify Token es el que tiene configurado el administrador del sistema (no se captura aquí)." },
   { title: "Prueba y guarda", body: "Validamos el token contra la API y guardamos cifrado (los IDs van en config)." },
 ];
 

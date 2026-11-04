@@ -4,12 +4,14 @@ const processPendingEvents = vi.fn();
 const runQueue = vi.fn();
 const recuperarEncalladas = vi.fn();
 const checkSlaBreaches = vi.fn();
+const reasignarSinPrimerContacto = vi.fn();
 const runEnrollments = vi.fn();
 const runInactivityRules = vi.fn();
 const emitEvent = vi.fn();
 const limpiarOtpVencidos = vi.fn();
 const sincronizarCorreoEntranteTick = vi.fn();
 const recalcularScores = vi.fn();
+const recalcularTemperaturas = vi.fn();
 const completarPerfilDesdeHub = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
@@ -42,6 +44,11 @@ vi.mock("@/lib/workflows/queue", () => ({
   recuperarEncalladas: (...a: unknown[]) => recuperarEncalladas(...a),
 }));
 vi.mock("@/lib/workflows/sla", () => ({ checkSlaBreaches: (...a: unknown[]) => checkSlaBreaches(...a) }));
+// Reasignación por falta de primer contacto: su lógica se prueba en
+// lib/workflows/sla-reasignacion.test.ts; aquí solo cuenta que sea una etapa más del tick.
+vi.mock("@/lib/workflows/sla-reasignacion", () => ({
+  reasignarSinPrimerContacto: (...a: unknown[]) => reasignarSinPrimerContacto(...a),
+}));
 // #699 (defecto 2): etapa que retira los códigos de un solo uso ya vencidos. Se dobla
 // aquí como las demás para que este archivo siga probando el AISLAMIENTO del tick y no la
 // consulta del barrido, que tiene sus propias pruebas en lib/auth/otp-limpieza.test.ts.
@@ -57,6 +64,9 @@ vi.mock("@/lib/google/gmail-sync", () => ({
 // lib/scoring/calcular.test.ts.
 vi.mock("@/lib/scoring/recalcular", () => ({
   recalcularScores: (...a: unknown[]) => recalcularScores(...a),
+}));
+vi.mock("@/lib/copilot/temperatura-recalcular", () => ({
+  recalcularTemperaturas: (...a: unknown[]) => recalcularTemperaturas(...a),
 }));
 vi.mock("@/lib/intake/perfil-desde-hub", () => ({
   completarPerfilDesdeHub: (...a: unknown[]) => completarPerfilDesdeHub(...a),
@@ -89,6 +99,7 @@ beforeEach(() => {
   runQueue.mockResolvedValue({ corridas: 2 });
   recuperarEncalladas.mockResolvedValue({ reencoladas: 0, agotadas: 0 });
   checkSlaBreaches.mockResolvedValue({ marcados: 1 });
+  reasignarSinPrimerContacto.mockResolvedValue({ revisados: 0, reasignados: 0, omitidos: {} });
   runEnrollments.mockResolvedValue({ inscritos: 0 });
   runInactivityRules.mockResolvedValue({ disparadas: 0 });
   paymentFindMany.mockResolvedValue([]);
@@ -96,6 +107,8 @@ beforeEach(() => {
   limpiarOtpVencidos.mockResolvedValue(0);
   sincronizarCorreoEntranteTick.mockResolvedValue({ cuentas: 1, registrados: 0, omitidos: 0, desconectadas: 0, errores: [] });
   recalcularScores.mockResolvedValue({ calculados: 0, activo: false });
+  recalcularTemperaturas.mockReset();
+  recalcularTemperaturas.mockResolvedValue({ calculados: 0, cambiados: 0 });
   completarPerfilDesdeHub.mockResolvedValue({ revisados: 0, completados: 0, campos: 0 });
 });
 
@@ -141,6 +154,30 @@ describe("etapa leadScoring", () => {
   });
 });
 
+describe("etapa temperatura (#973)", () => {
+  it("corre en cada tick con un lote de 200", async () => {
+    recalcularTemperaturas.mockResolvedValue({ calculados: 12, cambiados: 3 });
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect(recalcularTemperaturas).toHaveBeenCalledWith(200);
+    expect((await res.json()).temperatura).toEqual({ calculados: 12, cambiados: 3 });
+  });
+
+  it("con contact_temperaturas sin migrar (P2021) no tumba el tick", async () => {
+    recalcularTemperaturas.mockRejectedValue(Object.assign(new Error("tabla no existe"), { code: "P2021" }));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).temperatura).toEqual({ calculados: 0, sinMigrar: true });
+  });
+
+  it("cualquier otro error sale con su nombre y el tick responde 500", async () => {
+    recalcularTemperaturas.mockRejectedValue(new Error("conexión caída"));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["temperatura"]);
+  });
+});
+
 /** Una parcialidad vencida tal como la selecciona `checkOverduePayments`. */
 function parcialidad(id: string) {
   return {
@@ -176,8 +213,23 @@ describe("GET /api/cron/workflows — aislamiento por etapa", () => {
       encalladas: { reencoladas: 0, agotadas: 0 },
       queue: { corridas: 2 },
       slaBreaches: { marcados: 1 },
+      slaReasignacion: { revisados: 0, reasignados: 0 },
     });
     expect(typeof body.ms).toBe("number");
+  });
+
+  it("la reasignación corre DESPUÉS de marcar los vencimientos y su fallo no tumba a las demás", async () => {
+    const orden: string[] = [];
+    checkSlaBreaches.mockImplementation(async () => { orden.push("slaBreaches"); return { marcados: 0 }; });
+    reasignarSinPrimerContacto.mockImplementation(async () => { orden.push("slaReasignacion"); throw new Error("boom"); });
+    runEnrollments.mockImplementation(async () => { orden.push("enrollments"); return { inscritos: 0 }; });
+
+    const r = await GET(pedir({ "x-cron-secret": SECRET }));
+    const body = await r.json();
+
+    expect(orden).toEqual(["slaBreaches", "slaReasignacion", "enrollments"]);
+    expect(r.status).toBe(500);
+    expect(body.fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["slaReasignacion"]);
   });
 
   /**

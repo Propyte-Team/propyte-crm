@@ -59,7 +59,6 @@ export const metaDmsCreateSchema = z.object(
         pageId: idField("Page ID"),
         pageAccessToken: pageTokenField,
         appSecret: secretField("App Secret"),
-        verifyToken: secretField("Verify Token"),
         brand: z.string(siTipoInvalido("La marca visible debe ser texto")).trim().max(120, "La marca visible es demasiado larga").optional(),
         igBusinessId: z
           .string(siTipoInvalido("El Instagram Business ID debe ser texto"))

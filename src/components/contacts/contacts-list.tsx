@@ -67,7 +67,7 @@ interface ContactData {
   phone: string;
   email: string | null;
   leadSource: string;
-  temperature: string;
+  temperature: string | null; // #973: NULL = no aplica
   contactType: string | null; // null = sin tipo (#863): «—» hasta que alguien lo elija
   flujo?: string | null; // #951: null = «Sin flujo» (#948)
   contactStatus: string;
@@ -1004,8 +1004,8 @@ function CeldaContacto({
     case "temperatura":
       return (
         <td className={`${base}`}>
-          <Badge variant={TEMP_VARIANT[contact.temperature] || "cold"}>
-            {TEMP_LABEL[contact.temperature] || contact.temperature}
+          <Badge variant={(contact.temperature && TEMP_VARIANT[contact.temperature]) || "cold"}>
+            {contact.temperature ? TEMP_LABEL[contact.temperature] || contact.temperature : "—" /* #973: no aplica */}
           </Badge>
         </td>
       );
