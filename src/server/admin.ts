@@ -13,7 +13,7 @@ import { z } from "zod";
 import type { UserRole, Plaza, CareerLevel } from "@prisma/client";
 import { generateApiKeyPair } from "@/lib/auth/api-key";
 import { generarSecretWebhook, sinSecretConPista } from "@/lib/webhooks/secret";
-import { describirClaveRegla, mensajeReglaDuplicada } from "@/components/admin/admin-helpers";
+import { describirClaveRegla, mensajeReglaDuplicada } from "@/lib/commissions/reglas-texto";
 
 // Roles permitidos para acceder a administración
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
@@ -1046,6 +1046,17 @@ export async function regenerateWebhookSecret(id: string) {
     data: { secret },
   });
   return { ...sinSecretConPista(config), secret };
+}
+
+/**
+ * Manda un evento de prueba firmado al URL del webhook y devuelve el resultado.
+ */
+export async function sendWebhookTest(id: string) {
+  await requireAdminRole();
+  const config = await prisma.webhookConfig.findUnique({ where: { id } });
+  if (!config) throw new Error("Webhook no encontrado");
+  const { enviarWebhookPrueba } = await import("@/lib/webhooks/dispatcher");
+  return enviarWebhookPrueba(config);
 }
 
 /**

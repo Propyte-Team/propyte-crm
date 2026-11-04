@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import { updateBotConfig } from "@/server/bot-config";
 import { AUTONOMY_LABELS } from "@/lib/labels";
+import { LARGOS_DE_RESPUESTA, largoDeLineas } from "@/lib/bot/largo-respuesta";
 import { BOT_CHANNELS, toggleBotChannel } from "./bot-channels";
 import { BotResumen } from "./bot-resumen";
 import { BotProbador } from "./bot-probador";
@@ -211,14 +212,27 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
             ))}
           </fieldset>
           <div className="space-y-2">
-            <Label>Longitud máxima de cada respuesta (líneas)</Label>
-            <Input
-              type="number"
-              min={1}
-              max={8}
-              value={cfg.maxLines}
-              onChange={(e) => setCfg({ ...cfg, maxLines: Number(e.target.value) })}
-            />
+            <Label id="largo-respuesta-label">Largo de las respuestas</Label>
+            <div role="radiogroup" aria-labelledby="largo-respuesta-label" className="flex flex-wrap gap-2">
+              {LARGOS_DE_RESPUESTA.map((l) => {
+                const activo = largoDeLineas(cfg.maxLines) === l.valor;
+                return (
+                  <button
+                    key={l.valor}
+                    type="button"
+                    role="radio"
+                    aria-checked={activo}
+                    onClick={() => setCfg({ ...cfg, maxLines: l.lineas })}
+                    className={`rounded-md border px-3 py-1.5 text-sm ${activo ? "border-foreground font-medium" : "text-muted-foreground"}`}
+                  >
+                    {l.etiqueta}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {LARGOS_DE_RESPUESTA.find((l) => l.valor === largoDeLineas(cfg.maxLines))?.descripcion}
+            </p>
           </div>
         </CardContent>
       </Card>

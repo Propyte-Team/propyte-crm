@@ -1,15 +1,8 @@
 // Lógica pura de Usuarios, Comisiones y Acuerdo de actividad (sin React, para poder
 // probarla en node). La usa admin-content.tsx.
-import { DEAL_TYPE_LABELS, LEAD_SOURCE_CATEGORY_LABELS } from "@/lib/constants";
-import { ROLE_LABELS_COMPLETO, etiqueta } from "@/lib/labels";
+import type { ReglaClave } from "@/lib/commissions/reglas-texto";
 
 // ---------- Comisiones ----------
-
-export interface ReglaClave {
-  dealType: string;
-  leadSourceCategory: string;
-  role: string;
-}
 
 /** Regla ya existente con la misma combinación tipo de deal + fuente + rol (ignora `ignorarId`). */
 export function buscarReglaDuplicada<T extends ReglaClave & { id: string }>(
@@ -24,19 +17,6 @@ export function buscarReglaDuplicada<T extends ReglaClave & { id: string }>(
       r.leadSourceCategory === clave.leadSourceCategory &&
       r.role === clave.role,
   );
-}
-
-/** "Nativa Contado · Lead Propyte · Asesor Senior" */
-export function describirClaveRegla(clave: ReglaClave): string {
-  return [
-    etiqueta(DEAL_TYPE_LABELS, clave.dealType),
-    etiqueta(LEAD_SOURCE_CATEGORY_LABELS, clave.leadSourceCategory),
-    etiqueta(ROLE_LABELS_COMPLETO, clave.role),
-  ].join(" · ");
-}
-
-export function mensajeReglaDuplicada(existente: ReglaClave & { percentage: unknown }): string {
-  return `Ya existe una regla para ${describirClaveRegla(existente)} (${Number(existente.percentage)}%). Edítala en lugar de crear otra.`;
 }
 
 // ---------- Usuarios ----------

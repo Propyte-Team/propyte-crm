@@ -2,6 +2,13 @@
 // Fire-and-forget: no bloquea la operación principal
 import { prisma } from "@/lib/db";
 import { createHmac } from "crypto";
+import {
+  construirCuerpoPrueba,
+  describirFalloRed,
+  describirRespuesta,
+  firmarCuerpo,
+  type ResultadoPrueba,
+} from "./prueba";
 
 /**
  * Despacha un webhook a todos los endpoints configurados para el evento.
@@ -50,5 +57,34 @@ export async function dispatchWebhook(
   } catch (err) {
     // No propagar errores de webhooks — son fire-and-forget
     console.error("Error despachando webhooks:", err);
+  }
+}
+
+/**
+ * Envía un evento de ejemplo (marcado `test: true`) firmado con el secret del webhook
+ * y devuelve el resultado. No registra nada; el destino decide qué hacer con él.
+ */
+export async function enviarWebhookPrueba(config: {
+  url: string;
+  event: string;
+  secret: string;
+}): Promise<ResultadoPrueba> {
+  const body = construirCuerpoPrueba(config.event);
+  try {
+    const res = await fetch(config.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Webhook-Signature": firmarCuerpo(body, config.secret),
+        "X-Webhook-Event": config.event,
+        "X-Webhook-Test": "true",
+      },
+      body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(10000),
+    });
+    return describirRespuesta(res.status);
+  } catch (err) {
+    return describirFalloRed(err);
   }
 }

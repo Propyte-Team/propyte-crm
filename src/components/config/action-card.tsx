@@ -3,11 +3,13 @@
 // constructor de reglas y el editor de cadencias. La lógica vive en action-card-model.ts.
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   MessageCircle, Mail, Bell, ClipboardList, Phone, UserPlus, Shuffle, TriangleAlert, Pencil, Tag,
   Flag, RefreshCw, Repeat, Bot, Sparkles, PhoneCall, Link as LinkIcon, Circle,
-  ChevronUp, ChevronDown, Trash2, Plus,
+  ChevronUp, ChevronDown, Trash2, Plus, GripVertical,
 } from "lucide-react";
 import {
   accionPorTipo, camposVisibles, describeAction, describirRetraso, validarAccion,
@@ -121,10 +123,12 @@ export interface ActionCardProps {
   onRemove: () => void;
   /** false en pasos de cadencia, donde el retraso se edita aparte. Por defecto true. */
   mostrarRetraso?: boolean;
+  /** Asa para arrastrar (la pone ActionCardOrdenable). */
+  asa?: ReactNode;
 }
 
 export function ActionCard({
-  action, index, total, fuentes, listas, abierta, onToggle, onChange, onMove, onRemove, mostrarRetraso = true,
+  action, index, total, fuentes, listas, abierta, onToggle, onChange, onMove, onRemove, mostrarRetraso = true, asa,
 }: ActionCardProps) {
   const def = accionPorTipo(action.type);
   const raw = rawDesdeConfig(action.config);
@@ -139,6 +143,7 @@ export function ActionCard({
     <div className="space-y-1">
       <div className="crm-card !p-3">
         <div className="flex flex-wrap items-center gap-2">
+          {asa}
           <span className="badge shrink-0" title={def?.label}><IconoDeAccion type={action.type} /></span>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] text-[color:var(--text-tertiary)]">{index + 1}. {def?.label ?? action.type}</p>
@@ -179,6 +184,33 @@ export function ActionCard({
           {problemas.map((p) => <li key={p} className="text-[12px] text-red-600">{p}</li>)}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ── Tarjeta que se puede arrastrar para reordenar (dentro de un SortableContext) ─────
+// El teclado sigue funcionando con los botones Subir/Bajar; el asa solo agrega el arrastre.
+export function ActionCardOrdenable({ sortableId, ...props }: ActionCardProps & { sortableId: string }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: sortableId });
+  const asa = (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      className="shrink-0 cursor-grab touch-none px-0.5 text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)] active:cursor-grabbing"
+      aria-label="Arrastrar para cambiar el orden de la acción"
+      title="Arrastra para cambiar el orden"
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical className="h-4 w-4" />
+    </button>
+  );
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1, position: "relative", zIndex: isDragging ? 10 : undefined }}
+    >
+      <ActionCard {...props} asa={asa} />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { mensajeDeError } from "@/lib/api-errors";
 import { BotResumen } from "./bot-resumen";
 import { useBotGeneral } from "./use-bot-general";
 import { textoHereda } from "@/lib/bot/quien-contesta";
+import { textoUsadoPor, usoDeGuiones } from "@/lib/bot/uso-de-guiones";
 
 // #907: mismas etiquetas que el resto del CRM («Broker», «Proveedor», «Otro»…).
 const TYPE_LABEL: Record<string, string> = CONTACT_TYPE_LABELS;
@@ -48,6 +49,8 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
   const { toast } = useToast();
   const confirmar = useConfirm();
   const { datos: general } = useBotGeneral();
+  // «usado por»: lo guardado en el servidor (bot general, marcas y agentes que ya eligieron cada guion).
+  const usoGuiones = general ? usoDeGuiones(general) : null;
 
   function patch(idx: number, p: Partial<AgentProfileRow>) {
     setProfiles((prev) => prev.map((row, i) => (i === idx ? { ...row, ...p } : row)));
@@ -217,7 +220,7 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
             >
               <option value="">Guion: ninguno propio (este agente no usa el del bot general)</option>
               {playbooks.map((pb) => (
-                <option key={pb.id} value={pb.id}>Guion: {pb.name}</option>
+                <option key={pb.id} value={pb.id}>Guion: {pb.name}{usoGuiones ? ` — ${textoUsadoPor(usoGuiones.get(pb.id))}` : ""}</option>
               ))}
             </select>
             <select

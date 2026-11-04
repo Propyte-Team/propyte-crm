@@ -15,9 +15,10 @@ import { generalToFlow, applyPositions, type Positions } from "@/lib/journey/flo
 import { draftToFlow, ruleToDraft, isDecisionDraft, type RuleRow, type RuleDraft } from "@/lib/journey/rule-draft";
 import { computeNodeMetrics, type RawMetrics, type NodeMetrics } from "@/lib/journey/node-metrics";
 import { summaryFor } from "@/lib/journey/node-catalog";
+import { ReglasResumen } from "./reglas-resumen";
 import { EDGE_TYPES, NODE_TYPES, FitOnChange, decorateNodes, edgeLabel } from "./flow-nodes";
 
-type Mode = "general" | "rule";
+type Mode = "general" | "rule" | "resumen";
 type Win = "7" | "30" | "90" | "all";
 
 const scope = "general";
@@ -159,7 +160,7 @@ export function JourneyMapView() {
       <header className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-6 py-3 dark:border-neutral-800">
         <h1 className="text-lg font-semibold tracking-tight">Mapa de Journey</h1>
         <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
-          <div className="inline-flex rounded-md border border-neutral-300 p-0.5">{tab("general", "General")}{tab("rule", "Por regla")}</div>
+          <div className="inline-flex rounded-md border border-neutral-300 p-0.5">{tab("general", "General")}{tab("rule", "Por regla")}{tab("resumen", "Todas las reglas")}</div>
           <select value={metricsWindow} onChange={(e) => setMetricsWindow(e.target.value as Win)} className="rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-xs" aria-label="Ventana de métricas">
             <option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option><option value="all">Todo</option>
           </select>
@@ -186,7 +187,8 @@ export function JourneyMapView() {
             </ul>
           </aside>
         )}
-        <div className="relative flex-1">
+        {mode === "resumen" && <ReglasResumen window={metricsWindow} onAbrir={(id) => { setRuleId(id); setMode("rule"); }} />}
+        <div className={`relative flex-1 ${mode === "resumen" ? "hidden" : ""}`}>
           {mode === "rule" && !rule && (
             <div className="absolute inset-0 z-10 flex items-center justify-center p-6 text-sm text-neutral-500">
               Elige una regla de la lista para ver su flujo y cuántos contactos pasan por cada paso.
