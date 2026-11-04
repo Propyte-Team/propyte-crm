@@ -79,11 +79,13 @@ describe("revisarAcuerdoDeActividad", () => {
   const systemConfigUpsert = vi.fn();
   const userFindMany = vi.fn();
   const groupBy = vi.fn();
+  const messageGroupBy = vi.fn();
   const createMany = vi.fn();
   const db = {
     systemConfig: { findMany: systemConfigFindMany, upsert: systemConfigUpsert },
     user: { findMany: userFindMany },
     activity: { groupBy },
+    message: { groupBy: messageGroupBy },
     notification: { createMany },
   } as never;
   const AHORA = new Date("2026-11-04T15:00:00Z");
@@ -92,6 +94,7 @@ describe("revisarAcuerdoDeActividad", () => {
     vi.clearAllMocks();
     systemConfigFindMany.mockResolvedValue([]);
     groupBy.mockResolvedValue([]);
+    messageGroupBy.mockResolvedValue([]);
     gerenciaDeLaPlaza.mockResolvedValue(["g1"]);
     userFindMany.mockResolvedValue([
       { id: "a1", name: "Ana", email: "ana@propyte.com", plaza: "CANCUN", teamLeaderId: "l1" },
@@ -127,9 +130,23 @@ describe("revisarAcuerdoDeActividad", () => {
       { userId: "a2", _count: { _all: n } },
     ];
     groupBy.mockResolvedValue(filas(100));
+    messageGroupBy.mockResolvedValue(filas(100));
     const r = await revisarAcuerdoDeActividad(db, AHORA);
     expect(r).toMatchObject({ incumplidos: 0, notificaciones: 0 });
     expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it("los WhatsApps se cuentan de mensajes del asesor, no de actividades (el bot no suma)", async () => {
+    groupBy.mockResolvedValue([
+      { userId: "a1", _count: { _all: 100 } },
+      { userId: "a2", _count: { _all: 100 } },
+    ]);
+    messageGroupBy.mockResolvedValue([{ userId: "a1", _count: { _all: 100 } }]);
+    const r = await revisarAcuerdoDeActividad(db, AHORA);
+    expect(r).toMatchObject({ incumplidos: 1 });
+    const where = messageGroupBy.mock.calls[0][0].where;
+    expect(where).toMatchObject({ channel: "WHATSAPP", direction: "OUTBOUND", sender: "ADVISOR" });
+    expect(createMany.mock.calls[0][0].data[0].message).toContain("WhatsApps");
   });
 
   it("fuera de horario no consulta nada", async () => {
