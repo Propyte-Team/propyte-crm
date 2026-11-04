@@ -1,6 +1,6 @@
 # Conectar Meta (Lead Ads, Instagram, Messenger) con «Conectar con Facebook»
 
-Tarjeta 982 · 2026-11-04 · Estado: **borrador para decisión de Luis**
+Tarjeta 982 · 2026-11-04 · Estado: **borrador; decisiones 1 y 2 tomadas (ver §6)**
 
 ## 1. Problema
 
@@ -32,7 +32,8 @@ Nadie ve ni copia tokens, app secret ni verify token.
   - Activos: Páginas e Instagram.
   - Permisos: `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`, `pages_messaging`, `instagram_basic`, `instagram_manage_messages`, `leads_retrieval`, `pages_manage_ads` (para listar formularios), `business_management`.
 - Nueva variable: `NEXT_PUBLIC_META_PAGES_CONFIG_ID`. `NEXT_PUBLIC_META_APP_ID` ya existe.
-- Secreto de la app: **un solo** `META_APP_SECRET` para canjear el código y validar firmas de webhooks de Páginas. Hoy hay tres fuentes (`META_DM_APP_SECRET` global, `appSecret` por conector de Lead Ads, `META_WA_APP_SECRET`); si la app es la misma, los tres valores son iguales y se unifican con respaldo a los nombres viejos.
+- Secreto de la app: las conexiones nuevas salen de la app de `NEXT_PUBLIC_META_APP_ID` y usan su secreto (`META_WA_APP_SECRET`, que pasa a llamarse `META_APP_SECRET` con respaldo al nombre viejo). El webhook de mensajes acepta la firma de `META_DM_APP_SECRET` **o** de `META_APP_SECRET`, así sirve tanto para conexiones viejas como nuevas sin tener que confirmar si son la misma app.
+- Medido el 2026-11-04 (solo lectura, comparando huellas, sin ver valores): el `appSecret` guardado en las 10 conexiones de IG/Messenger tiene 3 valores distintos y **no se usa** (el webhook valida con el global). Llegan mensajes tanto de conexiones con un valor como con otro, así que ese campo no dice de qué app es cada conexión. Con OAuth deja de pedirse.
 
 ### 3.2 Flujo
 
@@ -69,11 +70,13 @@ Cron diario con `GET /debug_token`: si el token ya no es válido o perdió permi
 - El asistente manual queda detrás de «Avanzado» hasta que todas estén migradas; luego se retira.
 - Sin cambios de esquema salvo la sesión de alta (o SystemConfig con TTL si se prefiere no migrar).
 
-## 4. Riesgo principal: revisión de Meta
+## 4. Revisión de Meta: no hace falta para empezar
 
-Los permisos de la sección 3.1 necesitan **acceso avanzado** aprobado en App Review y la empresa verificada. Hoy no hay solicitud para `pages_messaging`, `leads_retrieval`, `pages_manage_metadata`, `pages_manage_ads` ni `business_management` (`docs/meta-app-review/`), y la de comentarios fue rechazada el 25-oct por el video. Sin aprobación, el botón solo funciona con usuarios que tengan rol en la app (útil para Propyte mismo, no para terceros).
+**Decisión (Luis, 2026-11-04):** conecta solo el equipo de Propyte, con las Páginas de Propyte y las que Propyte administra para sus clientes (Market, Nativa, Yaxnah, AVICA…).
 
-**Si solo Propyte conecta sus propias Páginas**, basta con que quien conecta sea administrador de la app: no hace falta App Review para empezar.
+- Con acceso estándar, los permisos funcionan para **personas con rol en la app** (administrador, desarrollador o tester). Quien pulse «Conectar con Facebook» debe tener ese rol y ser administrador (o tener la tarea de gestionar) de cada Página que elija. El popup solo muestra las Páginas a las que esa persona ya tiene acceso.
+- Las Páginas de clientes deben estar compartidas con el negocio de Propyte en Business Manager (como socio) o administradas por la persona que conecta. Si el token es de usuario del sistema, la Página debe estar asignada a ese negocio: es el caso normal de «las que administramos».
+- App Review (acceso avanzado) solo haría falta si alguien sin rol en la app tuviera que conectar sus propias Páginas. Fuera de alcance; F4 queda descartada.
 
 ## 5. Entregas
 
@@ -83,13 +86,19 @@ Los permisos de la sección 3.1 necesitan **acceso avanzado** aprobado en App Re
 | F1 | Cargador de SDK compartido, canje, lista de Páginas, alta de Messenger/IG por OAuth | F0 |
 | F2 | Lead Ads por OAuth: suscripción `leadgen`, selector de formularios, webhook con secreto global y Graph `v24.0` | F1 |
 | F3 | Reconectar conexiones manuales, desconectar con aviso a Meta, cron de salud | F2 |
-| F4 | App Review (video y textos), si se va a ofrecer a terceros | F1 |
 
 Cada entrega: tests de las rutas con Graph simulado; verificación en navegador con una Página de prueba de Propyte.
 
-## 6. Decisiones que necesito de Luis
+## 6. Decisiones
 
-1. **¿Quién conecta?** ¿Solo Propyte sus propias Páginas (sin App Review para empezar) o también desarrolladores/terceros (App Review obligatorio, F4)?
-2. **¿Un secreto de app único?** ¿Confirmas que Lead Ads, DMs y WhatsApp usan la misma app de Meta? Si hay más de una app, 3.1 cambia.
-3. **¿Migrar las conexiones manuales** con «Reconectar» (recomendado) o dejarlas como están?
-4. **Formularios de Lead Ads:** ¿entran todos por defecto o se eligen al conectar?
+1. **Quién conecta — decidido:** el equipo de Propyte, con sus Páginas y las de clientes que administra. Sin App Review (§4).
+2. **Secreto de app — resuelto en el diseño:** el webhook acepta el secreto viejo o el nuevo (§3.1); no hace falta confirmarlo.
+3. **Conexiones manuales — propuesta por defecto:** migrar con «Reconectar con Facebook», una por una, sin perder historial.
+4. **Formularios de Lead Ads — propuesta por defecto:** entran todos; al conectar se puede limitar a algunos.
+
+Si Luis no dice otra cosa, 3 y 4 quedan así.
+
+## 7. Hallazgos al medir (fuera de este spec)
+
+- En los últimos 7 días no entró ningún mensaje por «Messenger | DM Propyte - Market», «Messenger | DM Avica» ni «IG - AVICA» (las dos primeras nunca han recibido uno). Puede ser poco tráfico o una suscripción caída: revisar con el diagnóstico de conexiones (`/api/admin/connectors/health?probe=1`).
+- El asistente de IG/Messenger sigue pidiendo un `appSecret` que no se usa (mismo caso que el verify token quitado en #250).
