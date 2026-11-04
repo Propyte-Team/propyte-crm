@@ -209,13 +209,6 @@ const RENTAL_STRATEGY_OPTIONS = [
   { value: "NA", label: "No aplica" },
 ];
 
-const TEMPERATURE_OPTIONS = [
-  { value: "HOT", label: "Caliente" },
-  { value: "WARM", label: "Tibio" },
-  { value: "COLD", label: "Frío" },
-  { value: "DEAD", label: "Muerto" },
-];
-
 /**
  * Arma el body a mandar al servidor a partir del estado del formulario.
  *
@@ -297,7 +290,7 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija, brokerF
     purchaseModality: initialData?.purchaseModality || undefined,
     rentalStrategy: initialData?.rentalStrategy || undefined,
     assignedToId: initialData?.assignedToId || initialData?.assignedTo?.id || undefined,
-    temperature: initialData?.temperature || "COLD",
+    // #973: la temperatura la calcula el CRM; el formulario ya no la pide ni la manda.
     tags: initialData?.tags || [],
   });
 
@@ -869,24 +862,6 @@ export function ContactForm({ mode, initialData, onSuccess, empresaFija, brokerF
                 {advisors.map((advisor) => (
                   <SelectItem key={advisor.id} value={advisor.id}>
                     {advisor.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="temperature">Temperatura</Label>
-            <Select
-              value={formData.temperature || "COLD"}
-              onValueChange={(v) => updateField("temperature", v)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TEMPERATURE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>

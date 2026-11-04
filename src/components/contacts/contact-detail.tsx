@@ -116,12 +116,14 @@ interface ContactDetailProps {
   currentUserName?: string | null;
   /** Lead scoring: último cálculo guardado (contact_scores) y si ya está activo o en sombra. */
   scoreGuardado?: ScoreGuardado | null;
+  /** #973: por qué tiene esa temperatura (contact_temperaturas). */
+  temperaturaDetalle?: { motivo: string } | null;
   scoringActivo?: boolean;
   /** Su candidato en Reclutamiento; null si no tiene o si el rol no puede ver el módulo. */
   candidatoReclutamiento?: CandidatoDeContacto | null;
 }
 
-export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName, scoreGuardado = null, scoringActivo = false, candidatoReclutamiento = null }: ContactDetailProps) {
+export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUserId, currentUserName, scoreGuardado = null, scoringActivo = false, candidatoReclutamiento = null, temperaturaDetalle = null }: ContactDetailProps) {
   // Acceso por campo core (default EDIT). HIDDEN ya viene removido del server; aquí
   // ocultamos en UI igual por robustez y degradamos READ a solo lectura.
   const acc = (key: string): FieldAccess => fieldAccess[key] ?? "EDIT";
@@ -318,14 +320,18 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
                   onGuardado={() => router.refresh()}
                 />
               )}
+              {/* #973: la temperatura la calcula el CRM (no se edita); al pasar el cursor dice por qué. */}
               {acc("temperature") !== "HIDDEN" && (
                 <ChipSelect
-                  value={contact.temperature ?? "COLD"}
-                  options={Object.entries(LEAD_TEMPERATURE_LABELS).map(([value, label]) => ({ value, label }))}
+                  value={contact.temperature ?? ""}
+                  options={[
+                    ...Object.entries(LEAD_TEMPERATURE_LABELS).map(([value, label]) => ({ value, label })),
+                    { value: "", label: "Sin temperatura" },
+                  ]}
                   dotColor={TEMP_COLORS[contact.temperature] ?? "#9CA3AF"}
-                  loading={busy === "temperature"}
-                  readOnly={acc("temperature") !== "EDIT"}
-                  onChange={(v) => changeField("temperature", v)}
+                  readOnly
+                  titulo={temperaturaDetalle?.motivo ?? "La calcula el CRM con la fuente, la última respuesta y las señales de compra"}
+                  onChange={() => {}}
                 />
               )}
               {acc("contactType") !== "HIDDEN" && (
@@ -943,6 +949,7 @@ function ChipSelect({
   dotColor,
   loading,
   readOnly,
+  titulo,
   onChange,
 }: {
   value: string;
@@ -950,6 +957,8 @@ function ChipSelect({
   dotColor?: string;
   loading?: boolean;
   readOnly?: boolean;
+  /** Texto al pasar el cursor (p. ej. el motivo de la temperatura, #973). */
+  titulo?: string;
   onChange: (v: string) => void;
 }) {
   const current = options.find((o) => o.value === value);
@@ -957,6 +966,7 @@ function ChipSelect({
     <span
       className="relative inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
       style={{ borderColor: "var(--border-default)", background: "var(--bg-card)", opacity: loading ? 0.5 : 1 }}
+      title={titulo}
     >
       {dotColor && <span className="h-2 w-2 rounded-full" style={{ background: dotColor }} />}
       {current?.label ?? value}
