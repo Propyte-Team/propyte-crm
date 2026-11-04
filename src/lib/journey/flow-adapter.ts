@@ -1,7 +1,6 @@
 // Adaptador puro: vistas derivadas (journey-map.ts) → {nodes,edges} de React Flow.
 // Sin importar React Flow aquí (solo tipos planos) → testeable en Node.
-import type { GeneralView, TargetedView } from "./journey-map";
-import { LIFECYCLE_LABELS } from "@/lib/constants";
+import { laneLabel, type GeneralView, type TargetedView } from "./journey-map";
 
 export interface RFNode { id: string; type: string; position: { x: number; y: number }; data: Record<string, unknown> }
 export interface RFEdge { id: string; source: string; target: string; data?: Record<string, unknown> }
@@ -19,7 +18,7 @@ export function generalToFlow(view: GeneralView): Flow {
     const x = li * LANE_W;
     nodes.push({
       id: `stage:${lane.stage}`, type: "stage", position: { x, y: HEADER_Y },
-      data: { label: LIFECYCLE_LABELS[lane.stage] ?? "General / Sin etapa", stage: lane.stage },
+      data: { label: laneLabel(lane.stage), stage: lane.stage },
     });
     let row = 1;
     for (const r of lane.rules) {
@@ -37,6 +36,23 @@ export function generalToFlow(view: GeneralView): Flow {
       edges.push({ id: `adv:${prev.stage}->${lane.stage}`, source: `stage:${prev.stage}`, target: `stage:${lane.stage}` });
     }
   });
+  // Aristas regla -> cadencia (ENROLL_PLAN) y regla -> etapa destino (CHANGE_STAGE/SET_LIFECYCLE).
+  // Se arman al final, cuando ya existen todos los nodos, para no apuntar a algo que no se dibujo.
+  const ids = new Set(nodes.map((n) => n.id));
+  const seen = new Set(edges.map((e) => e.id));
+  const link = (id: string, source: string, target: string) => {
+    if (seen.has(id) || !ids.has(source) || !ids.has(target)) return;
+    seen.add(id);
+    edges.push({ id, source, target });
+  };
+  for (const lane of view.lanes) {
+    for (const r of lane.rules) {
+      for (const pid of r.planIds ?? []) link(`rp:${r.id}->${pid}`, `rule:${r.id}`, `plan:${pid}`);
+      for (const st of r.stageTargets ?? []) {
+        if (st !== lane.stage) link(`rs:${r.id}->${st}`, `rule:${r.id}`, `stage:${st}`);
+      }
+    }
+  }
   return { nodes, edges };
 }
 
@@ -46,7 +62,8 @@ export function targetedToFlow(view: TargetedView): Flow {
   view.flows.forEach((flow, fi) => {
     let prevId: string | null = null;
     flow.forEach((node, ni) => {
-      const id = `f${fi}:${node.kind}:${ni}`;
+      // ID por rule.id (no por indice): crear/borrar/reordenar reglas no desplaza el acomodo guardado (E4 #11).
+      const id = `f:${view.ruleIds?.[fi] ?? fi}:${node.kind}:${ni}`;
       const data: Record<string, unknown> = { label: node.label };
       if (node.planId) data.planId = node.planId;
       if (node.isSlaBreach) data.isSlaBreach = node.isSlaBreach;

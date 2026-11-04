@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useMemo, useState } from "react";
+import { erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
 import {
   type RuleDraft, type RuleRow, ruleToDraft, draftToRulePayload, newRuleDraft,
   addAction, insertAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta,
@@ -12,12 +13,15 @@ export function useRuleDraft() {
   const [baseline, setBaseline] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Errores por campo de la API (p. ej. { name: "Debe tener al menos 3 caracteres" }); aditivo, el inspector puede ignorarlo.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const load = useCallback((row: RuleRow) => {
     const d = ruleToDraft(row);
     setDraft(d);
     setBaseline(JSON.stringify(draftToRulePayload(d)));
     setError(null);
+    setFieldErrors({});
   }, []);
 
   const startNew = useCallback(() => {
@@ -25,6 +29,7 @@ export function useRuleDraft() {
     setDraft(d);
     setBaseline(""); // siempre dirty
     setError(null);
+    setFieldErrors({});
   }, []);
 
   const isDirty = useMemo(
@@ -58,19 +63,38 @@ export function useRuleDraft() {
 
   const save = useCallback(async (): Promise<boolean> => {
     if (!draft) return false;
-    setSaving(true);
     setError(null);
+    setFieldErrors({});
+    // La API exige nombre de al menos 3 caracteres: se avisa antes de ir al servidor.
+    if (draft.name.trim().length < 3) {
+      setFieldErrors({ name: "Debe tener al menos 3 caracteres" });
+      setError("Nombre: debe tener al menos 3 caracteres");
+      return false;
+    }
+    setSaving(true);
     const payload = draftToRulePayload(draft);
     const method = draft.id ? "PUT" : "POST";
-    const res = await fetch("/api/admin/automation/rules", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/admin/automation/rules", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      setSaving(false);
+      setError("No se pudo guardar: sin conexión");
+      return false;
+    }
     setSaving(false);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body?.error ?? "No se pudo guardar");
+      // La API de reglas manda { error: "Datos inválidos", details: <zod flatten> }: los campos
+      // viven en `details`, no en `error`. erroresPorCampo/mensajeDeError esperan `error`, así que se adapta.
+      const detalle = body?.details ? { error: body.details } : null;
+      const porCampo = detalle ? erroresPorCampo(detalle) : {};
+      setFieldErrors(porCampo);
+      setError(detalle ? mensajeDeError(detalle, body?.error ?? "No se pudo guardar") : mensajeDeError(body, "No se pudo guardar"));
       return false;
     }
     const body = await res.json();
@@ -80,5 +104,5 @@ export function useRuleDraft() {
 
   const discard = useCallback(() => setDraft(null), []);
 
-  return { draft, isDirty, saving, error, load, startNew, ops, save, discard };
+  return { draft, isDirty, saving, error, fieldErrors, load, startNew, ops, save, discard };
 }

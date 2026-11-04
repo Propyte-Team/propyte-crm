@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ruleStage, buildGeneralView, extractCampaigns, buildTargetedView,
-  deriveSlaPanel, isSlaTriggeredRule, summarizeConditions, resolveRuleJourneyLink,
+  deriveSlaPanel, isSlaTriggeredRule, summarizeConditions, resolveRuleJourneyLink, buildRuleView, laneLabel,
   type RuleLite, type PlanLite, type SlaPolicyLite,
 } from "./journey-map";
 
@@ -216,16 +216,61 @@ describe("deriveSlaPanel", () => {
 });
 
 describe("resolveRuleJourneyLink", () => {
-  it("regla sin match → { mode: 'general' } (degradación)", () => {
+  it("regla inexistente → { mode: 'general' } (el view avisa)", () => {
     expect(resolveRuleJourneyLink(undefined)).toEqual({ mode: "general" });
   });
-  it("regla sin condición de campaña → degrada a general", () => {
-    const r = rule({ conditions: { all: [{ field: "contact.score", op: "gte", value: "70" }] } });
-    expect(resolveRuleJourneyLink(r)).toEqual({ mode: "general" });
+  it("regla SIN condición de campaña → se abre igual (targeted, campaña vacía)", () => {
+    const r = rule({ id: "rX", conditions: { all: [{ field: "contact.score", op: "gte", value: "70" }] } });
+    expect(resolveRuleJourneyLink(r)).toEqual({ mode: "targeted", ruleId: "rX", campaign: "" });
   });
   it("regla con condición de campaña → targeted + esa campaña", () => {
-    const r = rule({ conditions: { all: [{ field: "adAttribution.campaignName", op: "contains", value: "BROKERS" }] } });
-    expect(resolveRuleJourneyLink(r)).toEqual({ mode: "targeted", campaign: "BROKERS" });
+    const r = rule({ id: "rB", conditions: { all: [{ field: "adAttribution.campaignName", op: "contains", value: "BROKERS" }] } });
+    expect(resolveRuleJourneyLink(r)).toEqual({ mode: "targeted", ruleId: "rB", campaign: "BROKERS" });
+  });
+});
+
+describe("ruleStage — pipeline y disparador (E4 #3)", () => {
+  it("STAGE_CHANGE con toStage de pipeline → carril de esa etapa", () => {
+    expect(ruleStage(rule({ triggerType: "STAGE_CHANGE", triggerConfig: { toStage: "PROPOSAL_SENT" } }))).toBe("PROPOSAL_SENT");
+  });
+  it("acción CHANGE_STAGE → etapa de pipeline destino", () => {
+    expect(ruleStage(rule({ actions: [{ type: "CHANGE_STAGE", config: { toStage: "CONTACTED" } }] }))).toBe("CONTACTED");
+  });
+  it("lead.captured sin etapa → Entrada de leads", () => {
+    const r = rule({ triggerConfig: { eventType: "lead.captured" } });
+    expect(ruleStage(r)).toBe("ENTRADA");
+    expect(laneLabel("ENTRADA")).toBe("Entrada de leads");
+  });
+  it("INACTIVITY → Seguimiento; payment.overdue → Postventa", () => {
+    expect(ruleStage(rule({ triggerType: "INACTIVITY" }))).toBe("SEGUIMIENTO");
+    expect(ruleStage(rule({ triggerConfig: { eventType: "payment.overdue" } }))).toBe("POSTVENTA");
+  });
+  it("la etapa de una acción gana sobre el carril por disparador", () => {
+    const r = rule({ triggerConfig: { eventType: "lead.captured" }, actions: [{ type: "SET_LIFECYCLE", config: { toStage: "MQL" } }] });
+    expect(ruleStage(r)).toBe("MQL");
+  });
+  it("buildGeneralView expone planIds y stageTargets de la regla", () => {
+    const r = rule({ id: "r1", triggerConfig: { eventType: "lead.captured" }, actions: [
+      { type: "ENROLL_PLAN", config: { planId: "pl1" } }, { type: "CHANGE_STAGE", config: { toStage: "CONTACTED" } },
+    ] });
+    const view = buildGeneralView([r], [plan]);
+    // la acción CHANGE_STAGE ubica la regla en el carril de pipeline CONTACTED
+    const node = view.lanes.flatMap((l) => l.rules).find((x) => x.id === "r1")!;
+    expect(node.planIds).toEqual(["pl1"]);
+    expect(node.stageTargets).toEqual(["CONTACTED"]);
+  });
+});
+
+describe("buildRuleView (Dirigida por regla, E4 #2)", () => {
+  it("arma el flujo de una regla sin campaña y guarda su id", () => {
+    const r = rule({ id: "rZ", name: "Asignar", triggerConfig: { eventType: "lead.captured" }, actions: [{ type: "ASSIGN", config: {} }] });
+    const view = buildRuleView([r], [plan], "rZ");
+    expect(view.ruleIds).toEqual(["rZ"]);
+    expect(view.flows[0][0].kind).toBe("trigger");
+    expect(view.flows[0].some((n) => n.kind === "action")).toBe(true);
+  });
+  it("regla inexistente → vacío", () => {
+    expect(buildRuleView([], [plan], "nope").flows).toEqual([]);
   });
 });
 
@@ -255,9 +300,10 @@ describe("buildGeneralView — isSlaBreach en RuleNode", () => {
     const rSla = rule({ id: "rSla", triggerType: "SLA_BREACH" });
     const rNormal = rule({ id: "rNorm", triggerType: "EVENT" });
     const view = buildGeneralView([rSla, rNormal], []);
-    const gen = view.lanes.find((l) => l.stage === "GENERAL")!;
-    expect(gen.rules.find((r) => r.id === "rSla")?.isSlaBreach).toBe(true);
-    expect(gen.rules.find((r) => r.id === "rNorm")?.isSlaBreach).toBe(false);
+    // SLA_BREACH cae ahora en el carril "Seguimiento" (E4 #3): se busca en todos los carriles.
+    const all = view.lanes.flatMap((l) => l.rules);
+    expect(all.find((r) => r.id === "rSla")?.isSlaBreach).toBe(true);
+    expect(all.find((r) => r.id === "rNorm")?.isSlaBreach).toBe(false);
   });
 });
 
