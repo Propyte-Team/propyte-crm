@@ -7,7 +7,7 @@ import type { BotMessage } from "../claude";
 import { extractFields, type ExtractTaskLite } from "./extract";
 import { coerceCapture, type EnumOption } from "./capture";
 import { applyCapture } from "./apply";
-import { nextTask, buildObjective, COMPLETION_OBJECTIVE, type PlaybookTaskLite } from "./engine";
+import { nextTask, buildObjective, buildRepreguntaObjective, COMPLETION_OBJECTIVE, type PlaybookTaskLite } from "./engine";
 
 export interface PlaybookTaskFull {
   key: string;
@@ -69,6 +69,8 @@ export async function runPlaybookStep(
     }
 
     let completedKeys = ((state.completedTaskKeys as string[]) ?? []) as string[];
+    // Tarea que el bot estaba persiguiendo antes de este mensaje (null en el primer turno o tras reiniciar).
+    const tareaPrevia = (state as { currentTaskKey?: string | null }).currentTaskKey ?? null;
 
     const pending = tasks.filter((t) => !completedKeys.includes(t.key));
     const newlyDone: string[] = [];
@@ -131,7 +133,11 @@ export async function runPlaybookStep(
         where: { conversationId },
         data: { currentTaskKey: task.key, status: "IN_PROGRESS" },
       });
-      return { objective: buildObjective(task), status: "IN_PROGRESS" };
+      // El cliente contestó y la tarea que se le preguntó sigue sin registrarse → repreguntar, no improvisar.
+      const contestoElCliente = messages.length > 0 && messages[messages.length - 1].role === "user";
+      const objective =
+        contestoElCliente && tareaPrevia === task.key ? buildRepreguntaObjective(task) : buildObjective(task);
+      return { objective, status: "IN_PROGRESS" };
     }
 
     await db.conversationPlaybookState.update({

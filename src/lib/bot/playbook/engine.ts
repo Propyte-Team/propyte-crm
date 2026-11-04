@@ -45,3 +45,18 @@ export function nextTask(
 export function buildObjective(task: PlaybookTaskLite): string {
   return `Tu meta ahora: ${task.objective}. Consíguelo con UNA sola pregunta natural, sin sonar a formulario ni listar campos.`;
 }
+
+/**
+ * La misma tarea sigue pendiente después de que el cliente contestó (prueba de reclutamiento
+ * 2026-11-04: «Sip» no casó con ninguna opción, el guion se quedó en la comisión y el modelo, por
+ * no repetirse, improvisó preguntas propias y cerró pidiendo el CV). Se le dice que la respuesta no
+ * quedó registrada y que la confirme antes de seguir.
+ */
+export function buildRepreguntaObjective(task: PlaybookTaskLite): string {
+  return (
+    `Tu meta ahora: ${task.objective}. Ya lo preguntaste, pero la respuesta del cliente no quedó clara para el registro. ` +
+    "Si el cliente hizo una pregunta, contéstala breve primero. Luego confirma ese mismo punto con una pregunta corta y " +
+    "directa (que pueda contestar con un sí, un no o una de las opciones). No pases a otro tema, no hagas otras preguntas " +
+    "y no cierres la charla hasta tener esa respuesta."
+  );
+}

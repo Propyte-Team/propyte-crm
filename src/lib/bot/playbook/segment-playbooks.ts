@@ -38,6 +38,13 @@ export interface SegmentPlaybookSpec {
   tasks: SegmentTaskSpec[];
 }
 
+/**
+ * Formas coloquiales de decir «sí» (prueba de reclutamiento 2026-11-04: «Sip» no casaba con nada
+ * —«si» solo vale como palabra completa— y el guion se atoró). Solo frases afirmativas sin «no»
+ * dentro, para que no le ganen a la opción negativa: nada de «claro» suelto («claro que no»).
+ */
+export const SI_COLOQUIAL = ["sip", "sipi", "simón", "ok", "okay", "claro que sí", "por supuesto", "perfecto", "así es", "correcto"];
+
 export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
   {
     // #954 (2026-10-30): «Agente Clientes» pasó a llamarse «Agente Lead Comprador» (tipo
@@ -296,9 +303,10 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
       {
         key: "mayor_edad", targetField: "custom.reclutamiento_mayor_edad", captureType: "ENUM",
         objective: "Confirma con naturalidad que es mayor de edad.",
+        // NO va primero: «no soy mayor de edad» contiene «mayor de edad» y caía en SI.
         enumOptions: [
-          { value: "SI", synonyms: ["mayor de edad", "soy mayor", "ya soy mayor de edad", "tengo 18", "tengo 19"] },
-          { value: "NO", synonyms: ["soy menor", "menor de edad", "tengo 17", "tengo 16"] },
+          { value: "NO", synonyms: ["no soy mayor", "soy menor", "menor de edad", "tengo 17", "tengo 16", "todavía no", "aún no"] },
+          { value: "SI", synonyms: ["mayor de edad", "soy mayor", "tengo 18", "tengo 19", ...SI_COLOQUIAL] },
         ],
       },
       {
@@ -324,8 +332,8 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         objective: "Explica que el esquema es 100 % comisión, sin sueldo base, y pregunta si le funciona.",
         enumOptions: [
           { value: "NO_SE", synonyms: ["no sé", "depende", "lo pensaría"] },
-          { value: "NO", synonyms: ["necesito sueldo", "necesito base", "no me conviene", "no me funciona", "no podría"] },
-          { value: "SI", synonyms: ["me funciona", "sin problema", "ya trabajo así", "está bien", "de acuerdo", "acepto"] },
+          { value: "NO", synonyms: ["necesito sueldo", "necesito base", "no me conviene", "no me funciona", "no podría", "no me parece", "no me late"] },
+          { value: "SI", synonyms: ["me funciona", "sin problema", "ya trabajo así", "está bien", "de acuerdo", "acepto", "me parece bien", "me late", ...SI_COLOQUIAL] },
         ],
       },
       {
@@ -366,7 +374,7 @@ export const SEGMENT_PLAYBOOKS: SegmentPlaybookSpec[] = [
         objective: "Pregunta si tiene vehículo propio y disposición para moverse por la zona a mostrar propiedades.",
         enumOptions: [
           { value: "SOLO_DISPOSICION", synonyms: ["no tengo coche", "no tengo carro", "no tengo auto", "no tengo vehículo", "sin coche", "sin carro", "en transporte", "puedo moverme sin auto", "uber"] },
-          { value: "SI", synonyms: ["tengo coche", "tengo carro", "tengo auto", "tengo vehículo", "tengo camioneta", "moto", "motocicleta", "vehículo propio"] },
+          { value: "SI", synonyms: ["tengo coche", "tengo carro", "tengo auto", "tengo vehículo", "tengo camioneta", "moto", "motocicleta", "vehículo propio", ...SI_COLOQUIAL] },
           { value: "NO", synonyms: ["no tengo", "no puedo moverme", "no me puedo mover"] },
         ],
       },

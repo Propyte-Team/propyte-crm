@@ -25,11 +25,13 @@ beforeEach(() => {
 });
 
 describe("esMimeDeCv", () => {
-  it("acepta PDF y Word; rechaza imagen, audio y video (mismas reglas que la subida manual)", () => {
+  it("acepta PDF, Word y fotos (Instagram no manda PDF); rechaza audio, video y GIF", () => {
     expect(esMimeDeCv("application/pdf")).toBe(true);
     expect(esMimeDeCv("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(true);
     expect(esMimeDeCv("application/msword")).toBe(true);
-    expect(esMimeDeCv("image/jpeg")).toBe(false);
+    expect(esMimeDeCv("image/jpeg")).toBe(true);
+    expect(esMimeDeCv("image/png")).toBe(true);
+    expect(esMimeDeCv("image/gif")).toBe(false);
     expect(esMimeDeCv("audio/ogg")).toBe(false);
     expect(esMimeDeCv("video/mp4")).toBe(false);
     expect(esMimeDeCv(null)).toBe(false);
@@ -104,8 +106,17 @@ describe("ligarCv", () => {
     candFindFirst.mockResolvedValue({ id: "c1" });
     expect(await ligarCv({ ...msg, mediaUrl: "https://cdn.meta.com/x.pdf" })).toBe(false);
     expect(await ligarCv({ ...msg, mediaUrl: null })).toBe(false);
-    expect(await ligarCv({ ...msg, mediaMimeType: "image/jpeg" })).toBe(false);
+    expect(await ligarCv({ ...msg, mediaMimeType: "audio/ogg" })).toBe(false);
     expect(copiarDeChatMedia).not.toHaveBeenCalled();
+  });
+  it("foto sin nombre (CV por Instagram, prueba 2026-11-04) → se registra como cv.jpg", async () => {
+    candFindFirst.mockResolvedValue({ id: "c1" });
+    fileFindFirst.mockResolvedValue(null);
+    copiarDeChatMedia.mockResolvedValue(1);
+    registrarCvDeCandidato.mockResolvedValue({ id: "f1", duplicado: false });
+    expect(await ligarCv({ ...msg, mediaFilename: null, mediaMimeType: "image/jpeg" })).toBe(true);
+    expect((copiarDeChatMedia.mock.calls[0] as string[])[1]).toMatch(/\.jpg$/);
+    expect(registrarCvDeCandidato.mock.calls[0][0]).toMatchObject({ fileName: "cv.jpg", mimeType: "image/jpeg", source: "CHAT" });
   });
   it("si la copia falla no registra nada", async () => {
     candFindFirst.mockResolvedValue({ id: "c1" });
