@@ -26,7 +26,7 @@ export function shouldGuardRule(rule: { actions?: unknown } | null | undefined):
 }
 
 export const DECISION_GUARD_MESSAGE =
-  "Esta regla usa ramas de decisión; edítala en el canvas de Journey para no perder su estructura.";
+  "Esta regla usa ramas de decisión; edítala en la vista avanzada para no perder su estructura.";
 
 // ── Presets ──────────────────────────────────────────────────────────────────────────
 export const PRESETS_NO_REPETIR: { label: string; minutes: number }[] = [

@@ -13,6 +13,8 @@ import { ConditionTreeEditor } from "./condition-tree";
 import { DelayInput, mensajeAutomatizacion } from "./cadence-editor";
 import { ActionCard, ActionPicker } from "./action-card";
 import { useFuentes } from "./use-fuentes";
+import { RuleCanvasEditor } from "@/components/journey/rule-canvas-editor";
+import { payloadToDraft, ruleToDraft, type RuleDraft, type RulePayload } from "@/lib/journey/rule-draft";
 import {
   DECISION_GUARD_MESSAGE, PRESETS_NO_REPETIR, agregarAccion, avisoDeDisparador, borradorDesdePlantilla, borradorDesdeRegla,
   cambiarDisparador, contextoDeDisparador, disparadoresAgrupados, fraseDeBorrador, fraseDePlantilla,
@@ -60,6 +62,22 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [intentoGuardar, setIntentoGuardar] = useState(false);
   const [errServidor, setErrServidor] = useState<Record<string, string>>({});
+  // Vista avanzada (ramas): lienzo a casi toda la ventana; al guardar cierra el modal, Cancelar vuelve aqui.
+  const [avanzada, setAvanzada] = useState<RuleDraft | null>(null);
+
+  const vistaAvanzada = avanzada && (
+    <div className="fixed inset-3 z-[60] overflow-hidden rounded-lg border border-neutral-300 shadow-2xl" style={{ background: "var(--bg-card)" }}>
+      <RuleCanvasEditor initialDraft={avanzada} onSaved={() => { setAvanzada(null); onSaved(); }} onCancel={() => setAvanzada(null)} />
+    </div>
+  );
+
+  function convertirEnRamas() {
+    try {
+      setAvanzada(payloadToDraft(payloadDeBorrador(b, { id: isEdit ? rule.id : undefined, activate: isEdit ? !!rule.isActive : false }) as unknown as RulePayload));
+    } catch {
+      setError("No se pudo pasar la regla a la vista avanzada. Revisa el disparador y las acciones.");
+    }
+  }
 
   const set = (patch: Partial<BorradorDeRegla>) => setB((prev) => ({ ...prev, ...patch }));
   const problemas = useMemo(() => problemasPorCampo(validarBorrador(b, fuentes)), [b, fuentes]);
@@ -116,8 +134,9 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
         </div>
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-secondary text-[13px]" onClick={onCancel}>Cerrar</button>
-          <a href={rule?.id ? `/journey?mode=targeted&ruleId=${rule.id}` : "/journey"} className="btn-primary text-[13px]">Abrir en Journey</a>
+          <button type="button" className="btn-primary text-[13px]" onClick={() => setAvanzada(ruleToDraft(rule))}>Vista avanzada (ramas)</button>
         </div>
+        {vistaAvanzada}
       </div>
     );
   }
@@ -127,6 +146,7 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
 
   return (
     <div className="space-y-5">
+      {vistaAvanzada}
       {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {errorFuentes && <Hint>No se pudieron cargar las plantillas y cadencias ({errorFuentes}). Puedes seguir editando; no se validarán contra la lista.</Hint>}
 
@@ -240,6 +260,10 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
             <label className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>No repetir para el mismo contacto durante</label>
             <DelayInput value={b.cooldown} onChange={(v) => set({ cooldown: v })} presets={PRESETS_NO_REPETIR} emptyText="Sin límite: la regla puede repetirse cada vez que ocurra el disparador" />
             <Errores items={ver("cooldown") ?? (errServidor.cooldownMinutes ? [errServidor.cooldownMinutes] : undefined)} />
+          </div>
+          <div>
+            <button type="button" className="text-[12px] underline" style={{ color: "var(--text-tertiary)" }} onClick={convertirEnRamas}>Convertir en flujo con ramas</button>
+            <Hint>Abre la vista avanzada con esta regla para agregar decisiones (si … entonces … si no …).</Hint>
           </div>
           <div className="space-y-1">
             <label className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Así se guarda (solo lectura)</label>

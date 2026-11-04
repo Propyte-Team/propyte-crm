@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { workflowActionsSchema, conditionsDslSchema, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
-import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction, type NodeDraft, type ActionNodeDraft, setElseEnabled, addActionToElse, addActionToBranch } from "./rule-draft";
+import { ruleToDraft, draftToRulePayload, draftToFlow, newRuleDraft, type RuleRow, addAction, removeAction, removeNode, addDecision, addBranch, removeBranch, setBranchConditions, setBranchLabel, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta, insertAction, type NodeDraft, type ActionNodeDraft, setElseEnabled, addActionToElse, addActionToBranch, payloadToDraft, type RulePayload } from "./rule-draft";
 
 const asAction = (n: NodeDraft) => n as ActionNodeDraft;
 
@@ -313,5 +313,28 @@ describe("draftToFlow árbol", () => {
     const flow = draftToFlow(draft);
     expect(flow.nodes.find((n) => n.id === "trigger")).toBeTruthy();
     expect(flow.nodes.filter((n) => n.type === "action" || n.type === "stage").length).toBe(2);
+  });
+});
+
+describe("payloadToDraft (acciones planas a draft del lienzo)", () => {
+  const flat = {
+    name: "Bienvenida", description: null, triggerType: "EVENT", triggerConfig: { eventType: "lead.captured" },
+    conditions: {}, priority: 100, cooldownMinutes: null, isActive: false,
+    actions: [
+      { type: "CHANGE_STAGE", config: { toStage: "CONTACTADO" } },
+      { type: "ENROLL_PLAN", config: { planId: "p1" }, delayMinutes: 30 },
+    ],
+  } as unknown as RulePayload;
+
+  it("regla nueva: sin id y con nodos a0, a1", () => {
+    const d = payloadToDraft(flat);
+    expect("id" in d).toBe(false);
+    expect(d.actions.map((a) => a.nodeId)).toEqual(["a0", "a1"]);
+  });
+
+  it("round-trip: el payload resultante conserva las acciones", () => {
+    const out = draftToRulePayload(payloadToDraft({ ...flat, id: "r1" }));
+    expect(out.id).toBe("r1");
+    expect(out.actions).toEqual(flat.actions);
   });
 });

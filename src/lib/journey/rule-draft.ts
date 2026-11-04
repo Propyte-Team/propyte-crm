@@ -400,6 +400,16 @@ export function newRuleDraft(): RuleDraft {
   };
 }
 
+/**
+ * Convierte un payload de regla (acciones planas o con ramas, como lo arma el constructor de
+ * Configuracion) en draft del lienzo. Sin id => regla nueva (el draft no lleva id).
+ */
+export function payloadToDraft(p: RulePayload): RuleDraft {
+  const d = ruleToDraft({ ...p, id: p.id ?? "" });
+  if (!p.id) delete d.id;
+  return d;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function draftToRulePayload(draft: RuleDraft): RulePayload {

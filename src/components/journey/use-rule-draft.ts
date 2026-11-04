@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
 import {
   type RuleDraft, type RuleRow, ruleToDraft, draftToRulePayload, newRuleDraft,
@@ -23,6 +23,17 @@ export function useRuleDraft() {
     setError(null);
     setFieldErrors({});
   }, []);
+
+  /** Carga un draft ya armado (p. ej. convertido desde el constructor lineal). Sin id: siempre "sin guardar". */
+  const loadDraft = useCallback((d: RuleDraft) => {
+    setDraft(d);
+    setBaseline(d.id ? JSON.stringify(draftToRulePayload(d)) : "");
+    setError(null);
+    setFieldErrors({});
+  }, []);
+
+  // Ultima regla persistida por save(): el editor la entrega a onSaved.
+  const lastSaved = useRef<RuleRow | null>(null);
 
   const startNew = useCallback(() => {
     const d = newRuleDraft();
@@ -98,11 +109,12 @@ export function useRuleDraft() {
       return false;
     }
     const body = await res.json();
+    lastSaved.current = body.data as RuleRow;
     load(body.data); // re-sincroniza baseline desde la fila persistida
     return true;
   }, [draft, load]);
 
   const discard = useCallback(() => setDraft(null), []);
 
-  return { draft, isDirty, saving, error, fieldErrors, load, startNew, ops, save, discard };
+  return { draft, isDirty, saving, error, fieldErrors, load, loadDraft, lastSaved, startNew, ops, save, discard };
 }
