@@ -1,74 +1,47 @@
-# Pool de conexiones a la base de datos (#974)
+# Pool de conexiones a la base de datos (tarjeta 974)
 
 ## Qué pasa
 
-Algunas pantallas (Hoy, Administración, Leads huérfanos) fallan a veces con:
+Algunas pantallas (Hoy, Administración, Huérfanos) fallan a veces con:
 
-`EMAXCONNSESSION ... pool_size: 15`
+    EMAXCONNSESSION ... pool_size: 15
 
-Significa que la base de datos (Supabase) ya tiene ocupadas las 15 conexiones que permite
-y rechaza la siguiente. No es un error de datos: es un tope de conexiones.
+El CRM se conecta a Supabase por el **pooler en modo sesión (puerto 5432)**. En ese modo cada
+conexión que abre el CRM queda reservada mientras el proceso vive, y el máximo del pooler es **15**.
 
-Hoy usamos el pooler de Supabase en modo **sesión** (puerto 5432). En ese modo cada conexión
-que abre el CRM se queda reservada y el máximo es 15 en total. El CRM corre en Vercel, que
-levanta varias copias de la app a la vez, y cada copia abre varias conexiones por su cuenta
-(Prisma abre por defecto unas 9 o más). Con 2 copias activas ya se llena. Además, esas
-pantallas lanzaban entre 11 y 13 consultas al mismo tiempo.
+El CRM corre en **Hostinger Cloud con Passenger** (no en Vercel). Passenger puede tener varios
+procesos de Node a la vez, y cada proceso tiene su propio pool de Prisma del tamaño de
+`connection_limit` en `DATABASE_URL` (hoy `5`, puesto en junio de 2026). Con 3 procesos son
+15 conexiones: el tope. Si además una pantalla lanza 11–13 consultas a la vez, se piden todas
+juntas.
 
-## Qué se cambió en el código (ya hecho)
+## Qué arregla el código (este PR)
 
-- `src/lib/db/index.ts`: el cliente de Prisma se guarda siempre en `globalThis` (antes solo fuera de
-  producción), para no abrir un segundo pool en la misma copia de la app.
-- `src/lib/db/lotes.ts` (`enLotes`): corre las consultas en grupos de 4 en lugar de todas a la vez.
-- Hoy (`src/server/today.ts`, 13 consultas), Administración (`admin/page.tsx`, 11) y Leads huérfanos
-  (`conexiones/huerfanos/page.tsx`) usan `enLotes`. Muestran exactamente lo mismo.
+- Hoy, Administración y Huérfanos piden sus datos en tandas de 4 (o 2) en vez de todas a la vez.
+- El cliente de Prisma se reutiliza siempre (no se crea uno nuevo si el módulo se recarga).
 
-Esto reduce los picos, pero **no basta por sí solo**: el arreglo de fondo es de infraestructura.
+## Qué hacer en infraestructura (Luis)
 
-## Cambio de infraestructura recomendado (lo haces tú)
+**No pasar al puerto 6543 (modo transacción).** En junio de 2026 ese pooler se quedó trabado de
+forma permanente (`ECHECKOUTTIMEOUT`) y por eso el CRM está en 5432.
 
-Pasar la app al pooler en modo **transacción** (puerto 6543). Ahí una conexión se presta solo
-durante cada consulta, y miles de clientes comparten pocas conexiones reales.
+### Paso 1. Bajar `connection_limit` a 3
 
-### Paso 1. Copiar la cadena de conexión en Supabase
+1. hPanel > Websites > crm.propyte.com > **Node.js** (o «Settings and redeploy») >
+   **Variables de entorno**.
+2. En `DATABASE_URL`, cambia `connection_limit=5` por `connection_limit=3`. No toques nada más
+   de la URL.
+3. Guarda y redeploy. Las variables solo se leen al arrancar.
 
-1. Supabase > tu proyecto > **Connect** (o Settings > Database > Connection string).
-2. Elige **Transaction pooler**. Copia la URL; trae el puerto **6543**.
-3. No pegues la contraseña en chats ni en el repositorio.
+Así 3 procesos usan 9 conexiones y quedan 6 para el Hub, scripts y picos.
 
-### Paso 2. Armar la nueva `DATABASE_URL`
+### Paso 2 (solo si vuelve a pasar). Subir el tamaño del pool en Supabase
 
-```
-postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-1-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
-```
+Supabase > proyecto > **Database > Settings > Connection pooling > Pool size**. El máximo
+depende del tamaño de la instancia. Subirlo da más margen a todos los que usan el pooler.
 
-- `<PROJECT_REF>` y `<PASSWORD>` son los mismos que ya usas hoy (solo cambia el puerto y lo que va
-  después del signo `?`).
-- `pgbouncer=true`: necesario en modo transacción para que Prisma no use sentencias preparadas.
-- `connection_limit=1`: cada copia de la app en Vercel usa 1 conexión. Es el valor estándar para
-  serverless. Si notas lentitud en pantallas con muchas consultas, súbelo a `3`; no pasar de 5.
+### Si algo falla
 
-### Paso 3. Cambiarla en Vercel
-
-1. Vercel > proyecto del CRM > **Settings** > **Environment Variables**.
-2. Edita `DATABASE_URL` en **Production** (y Preview si aplica) y pega la URL del paso 2.
-3. (Opcional, para migraciones) agrega `DIRECT_URL` con la URL original del puerto **5432**.
-   Hoy no la usa ningún comando del repo; si algún día se agrega `directUrl` en
-   `prisma/schema.prisma`, ya estará lista.
-4. **Deployments** > el último despliegue > **Redeploy** (las variables nuevas solo aplican en un
-   despliegue nuevo).
-
-### Paso 4. Verificar
-
-- Abre Hoy, Administración y Leads huérfanos varias veces seguidas, con otra persona entrando a la vez.
-- Debe desaparecer el error `EMAXCONNSESSION`.
-- En Supabase > Reports > Database puedes ver las conexiones: deben quedar muy por debajo de 15.
-
-## Importante
-
-- En tu computadora, los scripts y migraciones (`prisma db push`, `scripts/*.ts`, aplicar SQL) deben
-  seguir usando la URL del puerto **5432** en tu `.env` local. El modo transacción no sirve para
-  migraciones. No cambies tu `.env` local, solo la variable de Vercel.
-- Si algo falla tras el cambio, vuelve a poner la URL anterior en Vercel y haz Redeploy.
-- Si el error persiste con 6543, revisa que no haya otros servicios (workers, crons externos) usando
-  la misma base por el puerto 5432: también consumen de las 15 conexiones.
+- Si aparece «Timed out fetching a new connection from the connection pool», sube a
+  `connection_limit=4`.
+- Para volver atrás, pon de nuevo `connection_limit=5` y redeploy.
