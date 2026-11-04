@@ -58,6 +58,14 @@ describe("cobertura del catálogo de acciones", () => {
   });
 });
 
+describe("retraso en config.delayMinutes", () => {
+  it("describeAction lo muestra y validarAccion lo valida", () => {
+    expect(describeAction({ type: "CREATE_TASK", config: { subject: "x", delayMinutes: 1440 } }, undefined, { conRetraso: true })).toContain("(tras 1 día)");
+    expect(describeAction({ type: "CREATE_TASK", config: { subject: "x", delayMinutes: 1440 }, delayMinutes: 60 }, undefined, { conRetraso: true })).toContain("(tras 1 h");
+    expect(validarAccion({ type: "CREATE_TASK", config: { subject: "x", delayMinutes: -1 } }).problemas.join()).toContain("retraso");
+  });
+});
+
 describe("describeAction", () => {
   const fuentes = fuentesDesdeRespuesta({
     plantillas: [{ id: "t1", nombre: "Bienvenida" }, { id: "t2", nombre: "Seguimiento" }],
@@ -99,8 +107,8 @@ describe("describeAction", () => {
     const a = { type: "ASSIGN", delayMinutes: 1440 };
     expect(describeAction(a)).toBe("asignar asesor");
     expect(describeAction(a, undefined, { conRetraso: true })).toBe("asignar asesor (tras 1 día)");
-    // delayMinutes dentro de config NO lo lee walkNodes: no se muestra.
-    expect(describeAction({ type: "ASSIGN", config: { delayMinutes: 1440 } }, undefined, { conRetraso: true })).toBe("asignar asesor");
+    // delayMinutes dentro de config también lo lee el motor (walkNodes): se muestra.
+    expect(describeAction({ type: "ASSIGN", config: { delayMinutes: 1440 } }, undefined, { conRetraso: true })).toBe("asignar asesor (tras 1 día)");
   });
   it("nodo de decisión y tipo desconocido", () => {
     expect(describeAction({ type: "x", kind: "decision", branches: [{}, {}] })).toBe("decidir según condiciones (2 ramas)");
@@ -129,13 +137,13 @@ describe("describeRule — las 8 reglas canónicas", () => {
   });
   it("sin condiciones se omite el «si»", () => {
     expect(por.WF5).not.toContain(" si ");
-    expect(por.WF5).toMatch(/^Cuando cambia de etapa a .+ · entonces crear la tarea «Checklist KYC \(expediente\)» \(vence en 1 día\) → avisar al asesor → avisar al asesor$/);
-    expect(por.WF8).toMatch(/^Cuando se gana un negocio · entonces enviar WhatsApp «Bienvenida postventa» → enviar correo «Encuesta satisfaccion» → enviar WhatsApp «Referidos»$/);
+    expect(por.WF5).toMatch(/^Cuando cambia de etapa a .+ · entonces crear la tarea «Checklist KYC \(expediente\)» \(vence en 1 día\) → avisar al asesor \(tras 2 días\) → avisar al asesor \(tras 5 días\)$/);
+    expect(por.WF8).toMatch(/^Cuando se gana un negocio · entonces enviar WhatsApp «Bienvenida postventa» → enviar correo «Encuesta satisfaccion» \(tras 7 días\) → enviar WhatsApp «Referidos» \(tras 30 días\)$/);
   });
   it("WF3, WF4, WF6, WF7", () => {
     expect(por.WF3).toMatch(/^Cuando lleva 24 h sin actividad · si tipo de contacto es .+ y no contactar es No · entonces reasignar asesor → escalar al líder o a la gerencia$/);
     expect(por.WF4).toMatch(/^Cuando cambia de etapa a .+ · si .+ · entonces crear la tarea «Enviar cotización» \(vence en 1 día\) → preparar un borrador con IA \(seguimiento de cotización\)$/);
-    expect(por.WF6).toBe("Cuando se atrasa un pago · entonces enviar WhatsApp «Pago vencido» → crear la tarea «Llamada cobranza» → escalar al líder o a la gerencia");
+    expect(por.WF6).toBe("Cuando se atrasa un pago · entonces enviar WhatsApp «Pago vencido» (tras 1 día) → crear la tarea «Llamada cobranza» (tras 7 días) → escalar al líder o a la gerencia (tras 15 días)");
     expect(por.WF7).toMatch(/^Cuando lleva 30 días sin actividad · si temperatura es alguno de .+ · entonces preparar un borrador con IA \(reactivación\)$/);
     expect(por.WF2).toMatch(/^Cuando se asigna un lead · si .+ · entonces crear una tarea de llamada$/);
   });
@@ -236,11 +244,11 @@ describe("validarAccion", () => {
     expect(validarAccion({ type: "ASSIGN", delayMinutes: 60 }).ok).toBe(true);
     expect(validarAccion({ type: "NOPE" }).ok).toBe(false);
   });
-  it("las plantillas de reglas del builder son válidas salvo el tipo «LEAD» retirado", () => {
+  it("las plantillas de reglas del builder son válidas ", () => {
     const lead = RULE_TEMPLATES.find((t) => t.key === "lead")!;
     const problemas = lead.rule.actions.flatMap((a) => validarAccion(a as never).problemas);
-    // Hallazgo: builder-templates.ts guarda contactType "LEAD", que el motor descarta (#938).
-    expect(problemas.some((p) => p.includes("LEAD"))).toBe(true);
+    // builder-templates.ts ya guarda LEAD_COMPRADOR (el LEAD retirado en #938 se corrigió).
+    expect(problemas).toEqual([]);
   });
 });
 

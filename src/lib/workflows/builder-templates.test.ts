@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
+import { CONTACT_TYPE_RETIRADOS } from "@/lib/constants";
 import { RULE_TEMPLATES } from "./builder-templates";
 import { conditionsDslSchema, workflowActionTypes } from "@/lib/validations/rebuild-f1";
 
@@ -26,5 +27,12 @@ describe("RULE_TEMPLATES", () => {
       const parsed = ruleSchema.safeParse(t.rule);
       expect(parsed.success, `${t.key}: ${JSON.stringify((parsed as any).error?.flatten?.())}`).toBe(true);
     }
+  });
+  it("no usa tipos de contacto retirados (#938)", () => {
+    for (const t of RULE_TEMPLATES) {
+      const tipo = t.rule.actions.find((a) => a.type === "UPDATE_FIELD" && a.config.field === "contactType")?.config.value;
+      expect(Object.keys(CONTACT_TYPE_RETIRADOS), t.key).not.toContain(tipo);
+    }
+    expect(RULE_TEMPLATES.find((t) => t.key === "lead")!.rule.actions[0].config.value).toBe("LEAD_COMPRADOR");
   });
 });

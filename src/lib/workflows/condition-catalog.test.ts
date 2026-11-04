@@ -55,6 +55,8 @@ describe("catálogo: enums contra el schema de Prisma", () => {
       const [raizKey, campo] = c.key.split(".");
       // event.* y context.* no son columnas: los arma buildContext (engine.ts) al evaluar.
       if (raizKey === "event" || raizKey === "context") continue;
+      // deal.hasQuote lo calcula loadEntityContext (existe una Quote del negocio), no es columna.
+      if (c.key === "deal.hasQuote") continue;
       expect(modelos[raizKey], c.key).toMatch(new RegExp(`^\\s+${campo}\\s`, "m"));
     }
   });

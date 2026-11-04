@@ -3,8 +3,9 @@
 //   npx tsx scripts/seed-rebuild-f1.ts
 //
 // Crea: SlaPolicy default · RoutingRule round-robin · 8 AutomationRule canónicas (§D.5,
-// INACTIVAS hasta que exista el runner de Fase 2) · 4 plantillas globales de marca.
+// INACTIVAS hasta que exista el runner de Fase 2) · 8 plantillas globales (marca + las de WF6/WF8).
 import { PrismaClient } from "@prisma/client";
+import { GLOBAL_TEMPLATES } from "../src/lib/workflows/seed-templates";
 
 const prisma = new PrismaClient();
 
@@ -134,45 +135,6 @@ const CANONICAL_RULES = [
   },
 ];
 
-const GLOBAL_TEMPLATES = [
-  {
-    channel: "WHATSAPP" as const,
-    name: "Primer contacto ES",
-    shortcut: "/hola",
-    language: "ES" as const,
-    body:
-      "Hola {{contact.firstName}}, soy {{user.name}} de Propyte. Gracias por tu interés" +
-      " — ¿te gustaría que te comparta opciones según tu presupuesto y zona de interés?",
-  },
-  {
-    channel: "WHATSAPP" as const,
-    name: "First contact EN",
-    shortcut: "/hello",
-    language: "EN" as const,
-    body:
-      "Hi {{contact.firstName}}, this is {{user.name}} with Propyte. Thanks for reaching out" +
-      " — would you like me to share options based on your budget and preferred area?",
-  },
-  {
-    channel: "WHATSAPP" as const,
-    name: "Seguimiento post-visita ES",
-    shortcut: "/postvisita",
-    language: "ES" as const,
-    body:
-      "{{contact.firstName}}, gracias por visitarnos. Te preparo la información de las unidades" +
-      " que vimos y te la mando hoy mismo. ¿Hay algo específico que quieras revisar primero?",
-  },
-  {
-    channel: "EMAIL" as const,
-    name: "Presentación ES",
-    shortcut: "/presentacion",
-    language: "ES" as const,
-    subject: "Opciones de inversión en la Riviera Maya — Propyte",
-    body:
-      "Hola {{contact.firstName}},\n\nSoy {{user.name}}, asesor en Propyte. Con gusto te acompaño" +
-      " en tu búsqueda. Puedes agendar una llamada aquí: {{user.calendarUrl}}\n\nSaludos,\n{{user.name}}\n{{card.url}}",
-  },
-];
 
 async function main() {
   // 1. Política SLA default (§D.2, businessHours por plaza — §K G.7)
