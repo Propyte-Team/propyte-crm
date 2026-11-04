@@ -120,7 +120,7 @@ interface WebhookData {
   event: string;
   url: string;
   isActive: boolean;
-  secret: string;
+  secretHint: string;
   createdAt: Date;
 }
 
