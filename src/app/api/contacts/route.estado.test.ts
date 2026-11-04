@@ -254,3 +254,29 @@ describe("GET /api/contacts?status= — filtro por estado (#953)", () => {
     expect(await visibles("?status=PROSPECTO")).toEqual(["demo", "por-clasificar"]);
   });
 });
+
+describe("GET /api/contacts?etiqueta= — filtro por etiqueta (#958)", () => {
+  const FILAS: Fila[] = [
+    { id: "sin-razon", deletedAt: null, assignedToId: "u1", estado: "NEGOCIO_PERDIDO", tags: ["migracion-958", "falta-razon"] },
+    { id: "broker", deletedAt: null, assignedToId: "u1", estado: "CONTACTADO", tags: ["confirmar-broker"] },
+    { id: "sin-etiquetas", deletedAt: null, assignedToId: "u1", estado: "NUEVO", tags: [] },
+  ];
+  async function visibles(qs: string): Promise<string[]> {
+    getServerSession.mockResolvedValue({ user: { id: "d1", role: "DIRECTOR", plaza: "CANCUN" } });
+    const res = await GET(new Request(`https://x/api/contacts${qs}`) as never);
+    expect(res.status).toBe(200);
+    const where = contactFindMany.mock.calls.at(-1)![0].where as Fila;
+    return FILAS.filter((f) => cumple(f, where)).map((f) => f.id as string);
+  }
+
+  it("lista solo los que tienen la etiqueta (el enlace de la tarea)", async () => {
+    expect(await visibles("?etiqueta=falta-razon")).toEqual(["sin-razon"]);
+    expect(await visibles("?etiqueta=confirmar-broker")).toEqual(["broker"]);
+  });
+  it("se combina con los demás filtros", async () => {
+    expect(await visibles("?etiqueta=falta-razon&status=CONTACTADO")).toEqual([]);
+  });
+  it("vacía no filtra", async () => {
+    expect(await visibles("?etiqueta=%20%20")).toEqual(["sin-razon", "broker", "sin-etiquetas"]);
+  });
+});

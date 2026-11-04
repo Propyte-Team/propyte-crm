@@ -6,6 +6,7 @@ import { ContactsList } from "@/components/contacts/contacts-list";
 import { BrandViewProvider } from "@/components/brands/brand-view";
 import { getBrandViewContext } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM } from "@/lib/brands/filter";
+import { PARAM_ETIQUETA, etiquetaDelFiltro } from "@/lib/contacts/filtro-etiqueta";
 
 export default async function ContactsPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -22,11 +23,13 @@ export default async function ContactsPage(props: {
   const marca = searchParams[BRAND_FILTER_PARAM];
   const brandId = typeof marca === "string" ? marca : undefined;
   const brandView = await getBrandViewContext(session.user);
+  // #958: ?etiqueta= (los enlaces de las tareas abren la lista ya filtrada).
+  const etiqueta = etiquetaDelFiltro(searchParams[PARAM_ETIQUETA]);
 
   // Obtener primera página de contactos para renderizado inicial
   let initialData;
   try {
-    initialData = await getContacts({ page: 1, pageSize: 20, brandId });
+    initialData = await getContacts({ page: 1, pageSize: 20, brandId, etiqueta });
   } catch {
     initialData = { contacts: [], total: 0, page: 1, pageSize: 20, totalPages: 0 };
   }
@@ -43,6 +46,7 @@ export default async function ContactsPage(props: {
           initialPageSize={initialData.pageSize}
           initialTotalPages={initialData.totalPages}
           userRole={session.user.role}
+          etiquetaInicial={etiqueta}
         />
       </BrandViewProvider>
     </div>

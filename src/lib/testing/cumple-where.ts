@@ -7,14 +7,14 @@
 // forma "razonable" puede significar otra cosa): lo aplican a un puñado de filas y comparan
 // QUÉ FILAS saldrían.
 //
-// Cubre lo que usan esas pruebas: igualdad, null, Date, `in`, `equals`, `not`, `contains`
+// Cubre lo que usan esas pruebas: igualdad, null, Date, `in`, `equals`, `not`, `has` (listas), `contains`
 // (con `mode: "insensitive"`), AND / OR / NOT y filtros de relación 1-1 (`user: { plaza }`).
 // Lanza ante un campo que la fila no tiene, para que un cambio de forma futuro haga fallar la
 // prueba en vez de pasarla en silencio. No lo importes desde código de la app.
 
 export type Fila = Record<string, unknown>;
 
-const OPERADORES = new Set(["in", "equals", "contains", "mode", "not"]);
+const OPERADORES = new Set(["in", "equals", "contains", "mode", "not", "has"]);
 
 function esOperador(v: unknown): v is Record<string, unknown> {
   return (
@@ -40,6 +40,7 @@ function cumpleCampo(valor: unknown, filtro: unknown): boolean {
       if (op === "mode") continue;
       if (op === "in" && !(arg as unknown[]).some((x) => igual(x, valor))) return false;
       if (op === "equals" && !igual(valor, arg)) return false;
+      if (op === "has" && !(Array.isArray(valor) && valor.some((x) => igual(x, arg)))) return false;
       if (op === "not" && !(arg === null ? valor !== null && valor !== undefined : !igual(valor, arg))) return false;
       if (op === "contains") {
         if (typeof valor !== "string") return false;
