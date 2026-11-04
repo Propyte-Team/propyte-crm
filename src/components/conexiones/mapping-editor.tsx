@@ -2,7 +2,7 @@
 // para enums + dry-run contra el último lead o guardado directo vía PATCH.
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { parseRules, type MappingRule } from "@/lib/intake/map-lead";
@@ -110,10 +110,13 @@ function RuleRow({
   rule,
   onChange,
   onDelete,
+  preguntas,
 }: {
   rule: MappingRule;
   onChange: (r: MappingRule) => void;
   onDelete: () => void;
+  /** Preguntas del último prospecto recibido (sugerencias; se puede escribir otra). */
+  preguntas: string[];
 }) {
   const hasEnum = rule.target in ENUM_OPTIONS;
   const esPersonalizado = rule.target.startsWith("custom.");
@@ -134,12 +137,15 @@ function RuleRow({
         </select>
 
         {rule.source === "question" && (
-          <input
-            className="form-input text-[12px]"
-            placeholder="pregunta del formulario (ej. full_name)"
-            value={rule.metaField ?? ""}
-            onChange={(e) => onChange({ ...rule, metaField: e.target.value })}
-          />
+          <>
+            <input
+              className="form-input text-[12px]"
+              list={preguntas.length ? "preguntas-del-formulario" : undefined}
+              placeholder={preguntas.length ? "elige o escribe la pregunta" : "pregunta del formulario (ej. full_name)"}
+              value={rule.metaField ?? ""}
+              onChange={(e) => onChange({ ...rule, metaField: e.target.value })}
+            />
+          </>
         )}
         {rule.source === "metadata" && (
           <select
@@ -211,6 +217,18 @@ export function MappingEditor({
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Preguntas que trajo el último prospecto: se ofrecen como sugerencias al elegir el origen.
+  const [preguntas, setPreguntas] = useState<string[]>([]);
+  useEffect(() => {
+    let vivo = true;
+    fetch(`/api/admin/connectors/${connectorId}/test-mapping`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (vivo && Array.isArray(d?.data?.questions)) setPreguntas(d.data.questions.filter((q: unknown) => typeof q === "string"));
+      })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [connectorId]);
   const [testResult, setTestResult] = useState<{ mapped: Record<string, unknown>; usedLastLead: boolean; warnings?: string[] } | null>(null);
 
   function updateRule(i: number, r: MappingRule) {
@@ -298,9 +316,14 @@ export function MappingEditor({
           Los campos con opciones fijas (ej. tipo de contacto, temperatura) permiten traducir valores.
         </p>
 
+        {preguntas.length > 0 && (
+          <datalist id="preguntas-del-formulario">
+            {preguntas.map((q) => <option key={q} value={q} />)}
+          </datalist>
+        )}
         <div className="space-y-2">
           {rules.map((r, i) => (
-            <RuleRow key={i} rule={r} onChange={(nr) => updateRule(i, nr)} onDelete={() => removeRule(i)} />
+            <RuleRow key={i} rule={r} preguntas={preguntas} onChange={(nr) => updateRule(i, nr)} onDelete={() => removeRule(i)} />
           ))}
         </div>
 

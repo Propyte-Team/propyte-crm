@@ -39,7 +39,7 @@ const META_CRED: CredField[] = [
 const META_STEPS: WizardStep[] = [
   { title: "Abre tu app de Meta", body: "Entra a tu app y selecciona la página del negocio.", link: "https://developers.facebook.com/apps" },
   { title: "Genera un Page Access Token", body: "Con permiso leads_retrieval (long-lived)." },
-  { title: "Pega token, Page ID, App Secret y Verify Token", body: "El Verify Token lo inventas tú; lo pondrás igual en el webhook de Meta." },
+  { title: "Pega token, Page ID y App Secret", body: "El Verify Token lo generamos nosotros: al terminar te mostramos la URL del webhook y el token para pegarlos en Meta." },
   { title: "Prueba y guarda", body: "Validamos el token contra la API y guardamos cifrado." },
 ];
 

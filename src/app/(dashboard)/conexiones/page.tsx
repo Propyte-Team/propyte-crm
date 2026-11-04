@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth/session";
 import prisma from "@/lib/db";
 import { ConnectionsView } from "@/components/conexiones/connections-view";
 import { countOrphanLeads } from "@/server/orphan-leads";
+import { leadsUltimos30Dias } from "@/lib/connectors/actividad";
 import { embeddedSignupAvailability } from "@/lib/whatsapp/coex/public-config";
 
 const ALLOWED_ROLES = ["ADMIN", "DIRECTOR", "GERENTE", "MARKETING"];
@@ -31,11 +32,15 @@ export default async function ConexionesPage() {
     countOrphanLeads(session.user),
   ]);
 
+  // E6: prospectos de los últimos 30 días por cuenta (null = no se pudo contar).
+  const por30d = await leadsUltimos30Dias(connectors.map((c) => c.id));
+
   return (
     <ConnectionsView
       initial={connectors.map((c) => ({
         ...c,
         lastLeadAt: c.lastLeadAt?.toISOString() ?? null,
+        leads30d: por30d ? (por30d[c.id] ?? 0) : null,
       }))}
       orphanCount={orphanCount}
       // Se lee en cada petición (no en el build): ver lib/whatsapp/coex/public-config.ts.
