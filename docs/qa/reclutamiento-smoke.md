@@ -87,6 +87,12 @@ vuelve a pedir el CV.
 Al colchón contestar «tengo otro trabajo». Esperado: el bot sigue con la siguiente pregunta (no se atora) y
 el filtro de colchón pasa. «No tengo trabajo ni ahorros» no debe pasar.
 
+## Caso 9 — «sí» coloquial y CV en foto (Instagram)
+
+A la comisión contestar «Sip». Esperado: el guion avanza (`acepta_comision=SI`) y la siguiente pregunta es de
+disponibilidad. Si una respuesta no se entiende, el bot repite esa misma pregunta de forma directa (no improvisa
+otras ni cierra). Al final mandar el CV como **foto**: aparece en la columna CV de `/reclutamiento` como `cv.jpg`.
+
 ## Caso 6 — adjunto sin texto
 
 Mandar solo un PDF, sin mensaje. Esperado: el bot lo reconoce («gracias por tu CV») y no lo vuelve a
@@ -108,4 +114,6 @@ pedir; el historial que ve el bot trae `[adjunto: <nombre>]`.
 | Fecha | Canal | conversationId | Caso | Resultado |
 |---|---|---|---|---|
 | 2026-11-03 | Instagram | dbf17326-2a00-41cd-8130-c88db210e3ca | 1 | Falló: no preguntó nombre; se atoró en colchón («tengo otro trabajo»), cerró solo y pidió CV; sin evaluación ni teléfono en la ficha; describió mal Ancestral y Gran Coralia; «boutique»; sin dirección de oficina; CV por enlace de Drive no ligado; error 400 por dos mensajes seguidos. Corregido en F1.1 (plan 2026-11-03). |
+| 2026-11-04 | Instagram (@jkarla.idk) | 047c4f1f-65a1-4b9b-8724-829650e21861 | 1 | Parcial. OK: mayor de edad primero, nombre completo, plaza, teléfono, experiencia, movilidad, disponibilidad. Falló: «Sip» a la comisión no casó con ninguna opción, el guion se quedó en `acepta_comision` y el modelo improvisó y cerró pidiendo CV sin colchón, cartera, inglés, redes ni actitud (sin evaluación ni aviso); CV en foto no se ligó; la ficha quedó con «☆ (@jkarla.idk)». Sin probar: colchón, oficina, horario. Corregido en `fix/bot-reclutamiento-humo`. |
+| 2026-11-04 | Instagram (Myriam) | dbf17326-2a00-41cd-8130-c88db210e3ca | — | Estado de guion reiniciado y claves `reclutamiento_*` borradas del contacto (con OK de Luis). El hilo conserva 35 mensajes: el bot relee los últimos 20 y re-captura respuestas viejas. Para probar desde cero, usar una cuenta nueva. |
 | | | | | |

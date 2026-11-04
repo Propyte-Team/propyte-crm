@@ -161,6 +161,14 @@ describe("camposDeContacto", () => {
     expect(camposDeContacto(vacia, c(" Ana ", " López  Ruiz", " +52 ", " a@x.mx "))).toEqual({ fullName: "Ana López Ruiz", phone: "+52", email: "a@x.mx" });
     expect(camposDeContacto({ ...vacia, fullName: "Candidato por chat" }, c("Ana", ""))).toEqual({ fullName: "Ana" });
   });
+  it("el nombre de perfil del canal (prueba 2026-11-04) se reemplaza por el que da el candidato", () => {
+    expect(camposDeContacto({ ...vacia, fullName: "☆ (@jkarla.idk)" }, c("Karla", "Jaqueline Muñoz Trejo"))).toEqual({
+      fullName: "Karla Jaqueline Muñoz Trejo",
+    });
+    expect(camposDeContacto({ ...vacia, fullName: "★ ✨" }, c("Ana", "López"))).toEqual({ fullName: "Ana López" });
+    // Un nombre de persona sigue protegido aunque traiga paréntesis sin usuario.
+    expect(camposDeContacto({ ...vacia, fullName: "Ana (prima de Luis)" }, c("Karla", "Muñoz"))).toEqual({});
+  });
   it("el nombre completo extiende al que ya estaba (sin importar mayúsculas ni acentos)", () => {
     expect(camposDeContacto({ ...vacia, fullName: "Myriam" }, c("Myriam", "Morales Jiménez"))).toEqual({ fullName: "Myriam Morales Jiménez" });
     expect(camposDeContacto({ ...vacia, fullName: "jose" }, c("José", "Pérez"))).toEqual({ fullName: "José Pérez" });

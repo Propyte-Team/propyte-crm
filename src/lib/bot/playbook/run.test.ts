@@ -6,6 +6,7 @@ const applyCapture = vi.fn();
 const detectDuplicatesForContact = vi.fn();
 const nextTask = vi.fn();
 const buildObjective = vi.fn();
+const buildRepreguntaObjective = vi.fn();
 
 vi.mock("./extract", () => ({ extractFields: (...a: unknown[]) => extractFields(...a) }));
 vi.mock("./capture", () => ({ coerceCapture: (...a: unknown[]) => coerceCapture(...a) }));
@@ -14,6 +15,7 @@ vi.mock("@/lib/contacts/duplicate-alert", () => ({ detectDuplicatesForContact: (
 vi.mock("./engine", () => ({
   nextTask: (...a: unknown[]) => nextTask(...a),
   buildObjective: (...a: unknown[]) => buildObjective(...a),
+  buildRepreguntaObjective: (...a: unknown[]) => buildRepreguntaObjective(...a),
   COMPLETION_OBJECTIVE: "listo",
 }));
 
@@ -45,11 +47,12 @@ const textTask = {
 };
 
 beforeEach(() => {
-  [extractFields, coerceCapture, applyCapture, detectDuplicatesForContact, nextTask, buildObjective].forEach((m) => m.mockReset());
+  [extractFields, coerceCapture, applyCapture, detectDuplicatesForContact, nextTask, buildObjective, buildRepreguntaObjective].forEach((m) => m.mockReset());
   applyCapture.mockResolvedValue(undefined);
   detectDuplicatesForContact.mockResolvedValue(undefined);
   nextTask.mockReturnValue(null);
   buildObjective.mockReturnValue("siguiente objetivo");
+  buildRepreguntaObjective.mockReturnValue("repregunta");
 });
 
 describe("runPlaybookStep — hook de detección de duplicados (Caso 1)", () => {
@@ -227,5 +230,54 @@ describe("runPlaybookStep — estado de otro playbook (ignoreForeignState)", () 
     );
     expect(resets).toHaveLength(0);
     expect(nextTask).toHaveBeenCalledWith(expect.anything(), ["capture_phone"], expect.anything());
+  });
+});
+
+describe("runPlaybookStep — respuesta que no se pudo registrar (prueba reclutamiento 2026-11-04)", () => {
+  function dbEn(currentTaskKey: string | null) {
+    const db = makeDb([]);
+    db.conversationPlaybookState.upsert = vi.fn(async () => ({ id: "state1", completedTaskKeys: [], currentTaskKey }));
+    return db;
+  }
+  const args = (db: unknown, messages: { role: "user" | "assistant"; content: string }[]) =>
+    runPlaybookStep(db as never, {
+      playbook: { id: "pb", tasks: [phoneTask] },
+      conversationId: "conv1",
+      contact: { id: "contact1" },
+      messages,
+      model: "m",
+    });
+
+  it("el cliente contestó y la misma tarea sigue pendiente → objetivo de repregunta", async () => {
+    extractFields.mockResolvedValue({ capture_phone: null });
+    nextTask.mockReturnValue(phoneTask);
+    const r = await args(dbEn("capture_phone"), [
+      { role: "assistant", content: "¿Me pasas tu teléfono?" },
+      { role: "user", content: "Sip" },
+    ]);
+    expect(r.objective).toBe("repregunta");
+    expect(buildRepreguntaObjective).toHaveBeenCalledWith(phoneTask);
+  });
+
+  it("la tarea pendiente es nueva (antes perseguía otra) → objetivo normal", async () => {
+    extractFields.mockResolvedValue({});
+    nextTask.mockReturnValue(phoneTask);
+    const r = await args(dbEn("capture_email"), [{ role: "user", content: "hola" }]);
+    expect(r.objective).toBe("siguiente objetivo");
+    expect(buildRepreguntaObjective).not.toHaveBeenCalled();
+  });
+
+  it("primer turno (sin tarea previa) → objetivo normal", async () => {
+    extractFields.mockResolvedValue({});
+    nextTask.mockReturnValue(phoneTask);
+    const r = await args(dbEn(null), [{ role: "user", content: "hola" }]);
+    expect(r.objective).toBe("siguiente objetivo");
+  });
+
+  it("el último mensaje es del bot (no contestó el cliente) → objetivo normal", async () => {
+    extractFields.mockResolvedValue({});
+    nextTask.mockReturnValue(phoneTask);
+    const r = await args(dbEn("capture_phone"), [{ role: "assistant", content: "¿Me pasas tu teléfono?" }]);
+    expect(r.objective).toBe("siguiente objetivo");
   });
 });

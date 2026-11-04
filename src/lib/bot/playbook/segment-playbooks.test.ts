@@ -279,6 +279,19 @@ describe("Playbook de reclutamiento (spec 2026-11-02)", () => {
       expect(coerce("colchon_meses", "6 meses")).toBe("TRES_A_SEIS");
     });
 
+    it("«Sip» y otros sí coloquiales (prueba 2026-11-04) cuentan como SI sin robarse las negativas", () => {
+      expect(coerce("acepta_comision", "Sip")).toBe("SI");
+      expect(coerce("acepta_comision", "simón")).toBe("SI");
+      expect(coerce("acepta_comision", "ok, me parece bien")).toBe("SI");
+      expect(coerce("acepta_comision", "no me parece")).toBe("NO");
+      expect(coerce("acepta_comision", "no me funciona")).toBe("NO");
+      expect(coerce("mayor_edad", "Sí, así es")).toBe("SI");
+      expect(coerce("mayor_edad", "sip")).toBe("SI");
+      expect(coerce("mayor_edad", "no soy mayor de edad")).toBe("NO");
+      expect(coerce("movilidad", "sip")).toBe("SI");
+      expect(coerce("movilidad", "no tengo")).toBe("NO");
+    });
+
     it("respuestas cortas y negaciones comunes caen en la opción correcta", () => {
       expect(coerce("acepta_comision", "no sé")).toBe("NO_SE");
       expect(coerce("acepta_comision", "bueno, sin problema")).toBe("SI");

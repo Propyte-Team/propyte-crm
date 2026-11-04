@@ -232,8 +232,18 @@ export interface ContactoParaFicha {
 const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 /**
+ * Nombre que puso el canal y no una persona (prueba 2026-11-04: la ficha se quedó con
+ * «☆ (@jkarla.idk)»): lleva el usuario de Instagram entre paréntesis o no tiene ni una letra.
+ * Un reclutador no escribe así, así que el nombre que da el candidato lo reemplaza.
+ */
+export function esNombreDePerfil(nombre: string): boolean {
+  return /\(@[^)]*\)/.test(nombre) || !/\p{L}/u.test(nombre);
+}
+
+/**
  * Qué datos del contacto se copian a la ficha (los comparten la sincronización de cada turno y la
- * evaluación). Nombre: si la ficha está vacía, dice «Candidato por chat» o el nuevo extiende al actual
+ * evaluación). Nombre: si la ficha está vacía, dice «Candidato por chat», trae el nombre de perfil del
+ * canal («☆ (@usuario)») o el nuevo extiende al actual
  * («Myriam» → «Myriam Morales Jiménez»); nunca reemplaza un nombre distinto que escribió un reclutador.
  * Teléfono y correo: solo si la ficha no los tiene. Pura.
  */
@@ -247,7 +257,7 @@ export function camposDeContacto(
   if (nombre && nombre !== NOMBRE_PROVISIONAL) {
     const previo = actual.fullName?.trim() ?? "";
     const extiende = !!previo && sinAcentos(nombre).startsWith(`${sinAcentos(previo).replace(/\s+/g, " ")} `);
-    if (!previo || previo === NOMBRE_PROVISIONAL || extiende) out.fullName = nombre;
+    if (!previo || previo === NOMBRE_PROVISIONAL || esNombreDePerfil(previo) || extiende) out.fullName = nombre;
   }
   const telefono = contacto.phone?.trim() ?? "";
   const correo = contacto.email?.trim() ?? "";

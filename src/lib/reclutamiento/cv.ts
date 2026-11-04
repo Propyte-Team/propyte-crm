@@ -18,16 +18,21 @@ const SIN_MIGRAR = new Set(["P2021", "P2022"]);
  * primer MIME de cada extensión: por chat no se acepta octet-stream ni zip, porque sin el nombre
  * del archivo no hay forma de saber si de verdad es un Word.
  */
-const EXT_POR_MIME: Record<string, string> = Object.fromEntries(
-  Object.entries(CV_TIPOS).map(([ext, mimes]) => [mimes[0], ext])
-);
+const EXT_POR_MIME: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(CV_TIPOS).map(([ext, mimes]) => [mimes[0], ext])),
+  // Solo por chat (decisión de Luis, 2026-11-04): Instagram no deja mandar PDF y la gente manda
+  // el CV en foto. La subida manual de /reclutamiento sigue siendo PDF o Word (CV_TIPOS).
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 
 /** `Application/PDF; charset=binary` → `application/pdf` (mismo criterio que `motivoRechazo`). */
 function mimeNormalizado(mime: string | null | undefined): string {
   return (mime ?? "").split(";")[0].trim().toLowerCase();
 }
 
-/** Mismos tipos que la subida manual (#917/#926): PDF, DOC y DOCX. */
+/** PDF, DOC y DOCX como la subida manual (#917/#926), más fotos JPG/PNG/WebP por chat. */
 export function esMimeDeCv(mime: string | null | undefined): boolean {
   return mimeNormalizado(mime) in EXT_POR_MIME;
 }
@@ -35,7 +40,7 @@ export function esMimeDeCv(mime: string | null | undefined): boolean {
 /**
  * Nombre con la extensión que corresponde al MIME. Los canales de chat a veces mandan el nombre
  * sin extensión ("CV Ana") o con una ajena ("cv.bin"); como `rutaCvCandidato` toma la extensión
- * del nombre, aquí se garantiza que nombre y ruta terminen en .pdf/.doc/.docx según el MIME.
+ * del nombre, aquí se garantiza que nombre y ruta terminen en la extensión del MIME (.pdf, .docx, .jpg…).
  */
 function nombreConExtension(fileName: string | null | undefined, mime: string): string {
   const ext = EXT_POR_MIME[mime];
