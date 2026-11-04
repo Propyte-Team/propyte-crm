@@ -166,6 +166,14 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto
   // falla, es un fallo de verdad y tiene que subir a la lista de fallos y sacar el 500.
   { nombre: "otpVencidos", correr: () => limpiarOtpVencidos() },
+  // Acuerdo de actividad (E8): una vez por dia laboral por la manana, avisa al lider (o a la
+  // gerencia) de los asesores que no llegaron a los minimos del dia anterior. Se frena solo
+  // con `activity_agreement.last_run`, asi que correr cada minuto no repite avisos.
+  {
+    nombre: "acuerdoActividad",
+    correr: async () =>
+      (await import("@/lib/workflows/acuerdo-actividad")).revisarAcuerdoDeActividad(prisma, new Date()),
+  },
   // #889: correo entrante de los buzones Gmail conectados → historial del contacto + aviso
   // al asesor. Va al final porque no alimenta a ninguna otra etapa y es la única que sale a
   // la red (API de Gmail). Import dinámico para no cargar googleapis si nadie lo usa. Una

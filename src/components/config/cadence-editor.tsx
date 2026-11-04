@@ -3,19 +3,17 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { ActionCard, ActionPicker } from "./action-card";
+import { useFuentes } from "./use-fuentes";
+import {
+  abiertaTrasMover, abiertaTrasQuitar, minutosAcumulados, pasoNuevo, primerProblemaDePasos, type StepRow,
+} from "./cadence-editor-model";
+import { describeStep } from "@/lib/workflows/action-catalog";
 import { ConditionTreeEditor } from "./condition-tree";
-import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
-import { labelFor } from "@/lib/journey/node-catalog";
+import { parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado } from "./condition-tree-model";
 import { AUTONOMY_LABELS } from "@/lib/labels";
 import { NOMBRES_DE_CAMPO, erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
-
-interface StepRow {
-  actionType: string;
-  delayMinutes: number;
-  config: Record<string, string>;
-  autonomyLevel: string;
-}
 
 interface PlanData {
   id?: string;
@@ -24,11 +22,6 @@ interface PlanData {
   exitConditions: unknown;
   steps: StepRow[];
 }
-
-const ACTION_OPTIONS = [
-  "SEND_WHATSAPP", "SEND_EMAIL", "CREATE_TASK", "NOTIFY", "ADD_TAG",
-  "UPDATE_FIELD", "ASSIGN", "SET_LIFECYCLE", "AI_DRAFT", "WEBHOOK",
-];
 
 // Orden fijo L0 → L2 (opciones() ordenaría alfabéticamente); textos del diccionario único.
 const AUTONOMY = (["L0", "L1", "L2"] as const).map((value) => ({
@@ -155,7 +148,7 @@ export function DelayInput({
 
 function treeToConditions(tree: ConditionTree): unknown {
   if (tree.items.length === 0) return {};
-  return buildConditionsTree(tree);
+  return buildConditionsTreeGuiado(tree);
 }
 
 function conditionsToTree(exitConditions: unknown): ConditionTree {
@@ -180,15 +173,13 @@ export function CadenceEditor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErrs, setFieldErrs] = useState<Record<string, string>>({});
+  const { fuentes, listas } = useFuentes();
+  const [abierta, setAbierta] = useState<number | null>(null);
+  const acumulados = minutosAcumulados(plan.steps);
 
-  function addStep() {
-    setPlan((p) => ({
-      ...p,
-      steps: [
-        ...p.steps,
-        { actionType: "SEND_WHATSAPP", delayMinutes: 0, config: {}, autonomyLevel: "L0" },
-      ],
-    }));
+  function addStep(actionType: string) {
+    setPlan((p) => ({ ...p, steps: [...p.steps, pasoNuevo(actionType)] }));
+    setAbierta(plan.steps.length);
   }
 
   function updateStep(i: number, patch: Partial<StepRow>) {
@@ -200,6 +191,7 @@ export function CadenceEditor({
 
   function removeStep(i: number) {
     setPlan((p) => ({ ...p, steps: p.steps.filter((_, idx) => idx !== i) }));
+    setAbierta((a) => abiertaTrasQuitar(a, i));
   }
 
   function move(i: number, dir: -1 | 1) {
@@ -210,12 +202,18 @@ export function CadenceEditor({
       [steps[i], steps[j]] = [steps[j], steps[i]];
       return { ...p, steps };
     });
+    setAbierta((a) => abiertaTrasMover(a, i, i + dir));
   }
 
   async function save() {
-    setBusy(true);
     setErr(null);
     setFieldErrs({});
+    const problema = primerProblemaDePasos(plan.steps, fuentes);
+    if (problema) {
+      setErr(problema);
+      return;
+    }
+    setBusy(true);
     const url = plan.id
       ? `/api/admin/automation/plans/${plan.id}`
       : "/api/admin/automation/plans";
@@ -280,87 +278,47 @@ export function CadenceEditor({
           </p>
         )}
         {plan.steps.map((s, i) => (
-          <div
-            key={i}
-            className="flex flex-wrap items-center gap-2 rounded-md border p-2.5 text-[13px]"
-            style={{ borderColor: "var(--border-subtle)" }}
-          >
-            <span
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium"
-              style={{ background: "var(--bg-badge-neutral)", color: "var(--text-secondary)" }}
-            >
-              {i + 1}
-            </span>
-
-            <div className="flex items-start gap-1.5 text-[12px]" style={{ color: "var(--text-secondary)" }}>
-              <span className="pt-1">{i === 0 ? "Empezar tras" : "Esperar"}</span>
-              <DelayInput
-                value={String(s.delayMinutes)}
-                onChange={(v) => updateStep(i, { delayMinutes: v === "" ? 0 : Number(v) })}
-                emptyText={i === 0 ? "Inmediato (al entrar a la cadencia)" : "Sin espera"}
-              />
-            </div>
-
-            <select
-              value={s.actionType}
-              onChange={(e) => updateStep(i, { actionType: e.target.value })}
-              className="form-input !w-auto !py-0.5 text-[13px]"
-              aria-label="Acción del paso"
-            >
-              {(ACTION_OPTIONS.includes(s.actionType) ? ACTION_OPTIONS : [...ACTION_OPTIONS, s.actionType]).map((a) => (
-                <option key={a} value={a}>{labelFor(a)}</option>
-              ))}
-            </select>
-
-            <select
-              value={s.autonomyLevel}
-              onChange={(e) => updateStep(i, { autonomyLevel: e.target.value })}
-              className="form-input !w-auto !py-0.5 text-[13px]"
-              aria-label="Nivel de autonomía"
-              title="Solo sugiere: propone al asesor · Pide aprobación: espera un OK · Automático: se ejecuta solo"
-            >
-              {AUTONOMY.map((a) => (
-                <option key={a.value} value={a.value}>{a.label}</option>
-              ))}
-            </select>
-
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => move(i, -1)}
-                disabled={i === 0}
-                className="rounded p-0.5 text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)] disabled:opacity-30"
-                title="Subir paso"
+          <div key={i} className="space-y-1.5 rounded-md border p-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <p className="text-[12px] font-medium" style={{ color: "var(--text-secondary)" }}>
+              {describeStep(s, fuentes, { acumuladoMinutos: acumulados[i] })}
+            </p>
+            <ActionCard
+              action={{ type: s.actionType, config: s.config }}
+              index={i}
+              total={plan.steps.length}
+              fuentes={fuentes}
+              listas={listas}
+              abierta={abierta === i}
+              onToggle={() => setAbierta(abierta === i ? null : i)}
+              onChange={(next) => updateStep(i, { actionType: next.type, config: next.config })}
+              onMove={(dir) => move(i, dir)}
+              onRemove={() => removeStep(i)}
+              mostrarRetraso={false}
+            />
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+              <div className="flex items-start gap-1.5">
+                <span className="pt-1">{i === 0 ? "Empezar tras" : "Esperar"}</span>
+                <DelayInput
+                  value={String(s.delayMinutes)}
+                  onChange={(v) => updateStep(i, { delayMinutes: v === "" ? 0 : Number(v) })}
+                  emptyText={i === 0 ? "Inmediato (al entrar a la cadencia)" : "Sin espera"}
+                />
+              </div>
+              <select
+                value={s.autonomyLevel}
+                onChange={(e) => updateStep(i, { autonomyLevel: e.target.value })}
+                className="form-input !w-auto !py-0.5 text-[13px]"
+                aria-label="Nivel de autonomía"
+                title="Solo sugiere: propone al asesor · Pide aprobación: espera un OK · Automático: se ejecuta solo"
               >
-                <ChevronUp className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => move(i, 1)}
-                disabled={i === plan.steps.length - 1}
-                className="rounded p-0.5 text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)] disabled:opacity-30"
-                title="Bajar paso"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => removeStep(i)}
-                className="rounded p-0.5 text-[color:var(--text-tertiary)] hover:text-red-600"
-                title="Eliminar paso"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+                {AUTONOMY.map((a) => (
+                  <option key={a.value} value={a.value}>{a.label}</option>
+                ))}
+              </select>
             </div>
           </div>
         ))}
-        <button
-          type="button"
-          onClick={addStep}
-          className="btn-secondary text-[12px]"
-        >
-          <Plus className="h-3.5 w-3.5" /> Agregar paso
-        </button>
+        <ActionPicker onPick={(a) => addStep(a.type)} label="Agregar paso" />
       </div>
 
       {/* Condiciones de salida */}
@@ -368,6 +326,7 @@ export function CadenceEditor({
         tree={exitTree}
         onChange={setExitTree}
         label="Condiciones de salida"
+        contexto="contact"
         emptyText="Sin condiciones = el contacto recorre todos los pasos sin salida anticipada."
       />
 

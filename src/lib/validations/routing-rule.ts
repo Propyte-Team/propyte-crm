@@ -15,6 +15,8 @@ export const routingTargetsSchema = z
     roles: z.array(z.enum(ROUTING_TARGET_ROLES)).optional(),
     userIds: z.array(z.string().guid()).optional(),
     plaza: z.enum(ROUTING_PLAZAS).optional(),
+    // Un equipo (Team): los candidatos son sus miembros activos y ruteables.
+    teamId: z.string().guid().optional(),
   })
   .strict();
 

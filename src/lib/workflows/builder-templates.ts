@@ -36,7 +36,7 @@ function tpl(key: RuleTemplate["key"], label: string, marker: string, contactTyp
 }
 
 export const RULE_TEMPLATES: RuleTemplate[] = [
-  tpl("lead", "Lead", "[LEADS]", "LEAD", "META_ADS", "lead"),
+  tpl("lead", "Lead", "[LEADS]", "LEAD_COMPRADOR", "META_ADS", "lead"),
   tpl("broker", "Broker", "BROKER", "BROKER_EXTERNO", "REGISTRO_BROKER", "broker"),
   tpl("empleo", "Empleo", "EMPLEO", "EMPLEO", "META_ADS", "empleo"),
 ];

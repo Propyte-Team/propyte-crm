@@ -78,6 +78,28 @@ describe("generalToFlow — planId e isSlaBreach en data", () => {
   });
 });
 
+describe("IDs estables y aristas (E4 #3, #11)", () => {
+  it("targetedToFlow usa rule.id en el ID del nodo, no el índice", () => {
+    const tv: TargetedView = { flows: [[{ kind: "trigger", label: "t" }, { kind: "action", label: "a" }]], ruleIds: ["abc"] };
+    const { nodes } = targetedToFlow(tv);
+    expect(nodes.map((n) => n.id)).toEqual(["f:abc:trigger:0", "f:abc:action:1"]);
+    // al anteponer otra regla, los IDs de "abc" no cambian
+    const tv2: TargetedView = { flows: [[{ kind: "trigger", label: "x" }], tv.flows[0]], ruleIds: ["zzz", "abc"] };
+    expect(targetedToFlow(tv2).nodes.map((n) => n.id)).toContain("f:abc:trigger:0");
+  });
+  it("generalToFlow dibuja regla → cadencia y regla → etapa destino", () => {
+    const view: GeneralView = { lanes: [
+      { stage: "ENTRADA", rules: [{ id: "r1", name: "Entrada", isActive: true, triggerType: "EVENT", isSlaBreach: false, planIds: ["p1"], stageTargets: ["MQL"] }],
+        cadences: [{ id: "p1", name: "Bienvenida", isActive: true, stepCount: 2 }] },
+      { stage: "MQL", rules: [], cadences: [] },
+    ] };
+    const { edges, nodes } = generalToFlow(view);
+    expect(nodes.find((n) => n.id === "stage:ENTRADA")!.data.label).toBe("Entrada de leads");
+    expect(edges.some((e) => e.source === "rule:r1" && e.target === "plan:p1")).toBe(true);
+    expect(edges.some((e) => e.source === "rule:r1" && e.target === "stage:MQL")).toBe(true);
+  });
+});
+
 describe("applyPositions", () => {
   it("sobrescribe posición por nodo guardado y deja el resto en auto", () => {
     const nodes: RFNode[] = [

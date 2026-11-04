@@ -90,4 +90,14 @@ describe("walkNodes", () => {
     const tree: WorkflowNode[] = [{ type: "AI_DRAFT", config: {}, autonomyLevel: "L2" }];
     expect(walkNodes(tree, ctx)[0].autonomyLevel).toBe("L2");
   });
+
+  it("retraso: primer nivel gana; si no, config.delayMinutes (como lo guarda el seed)", () => {
+    const tree: WorkflowNode[] = [
+      { type: "NOTIFY", config: { delayMinutes: 2880 } },
+      { type: "NOTIFY", config: { delayMinutes: 2880 }, delayMinutes: 10 },
+      { type: "NOTIFY", config: {} },
+    ];
+    const out = walkNodes(tree, ctx);
+    expect(out.map((s) => s.delayMinutes)).toEqual([2880, 10, undefined]);
+  });
 });
