@@ -53,7 +53,8 @@ describe("catálogo: enums contra el schema de Prisma", () => {
     const modelos: Record<string, string> = { contact: cuerpo("Contact"), deal: cuerpo("Deal"), adAttribution: cuerpo("AdAttribution") };
     for (const c of CAMPOS_DE_CONDICION) {
       const [raizKey, campo] = c.key.split(".");
-      if (raizKey === "event") continue;
+      // event.* y context.* no son columnas: los arma buildContext (engine.ts) al evaluar.
+      if (raizKey === "event" || raizKey === "context") continue;
       expect(modelos[raizKey], c.key).toMatch(new RegExp(`^\\s+${campo}\\s`, "m"));
     }
   });
