@@ -57,9 +57,23 @@ describe("buildTargets / parseTargets", () => {
     expect(buildTargets({ mode: "users", roles: [], userIds: [], plaza: "" })).toEqual({});
   });
   it("parse es inverso de build", () => {
-    expect(parseTargets({ userIds: ["u1"] })).toEqual({ mode: "users", roles: [], userIds: ["u1"], plaza: "" });
-    expect(parseTargets({ roles: ["ASESOR"], plaza: "PDC" })).toEqual({ mode: "roles", roles: ["ASESOR"], userIds: [], plaza: "PDC" });
-    expect(parseTargets(null)).toEqual({ mode: "roles", roles: [], userIds: [], plaza: "" });
+    expect(parseTargets({ userIds: ["u1"] })).toEqual({ mode: "users", roles: [], userIds: ["u1"], plaza: "", teamId: "" });
+    expect(parseTargets({ roles: ["ASESOR"], plaza: "PDC" })).toEqual({ mode: "roles", roles: ["ASESOR"], userIds: [], plaza: "PDC", teamId: "" });
+    expect(parseTargets(null)).toEqual({ mode: "roles", roles: [], userIds: [], plaza: "", teamId: "" });
+  });
+});
+
+describe("destino por equipo", () => {
+  it("describeTargets muestra el nombre del equipo", () => {
+    expect(describeTargets({ teamId: "tttttttt-1" }, {}, { "tttttttt-1": "Tulum Centro" })).toBe("Equipo Tulum Centro");
+    expect(describeTargets({ teamId: "tttttttt-1" })).toBe("Equipo tttttttt");
+  });
+  it("buildTargets en modo team ignora roles, usuarios y plaza", () => {
+    expect(buildTargets({ mode: "team", roles: ["ASESOR"], userIds: ["u1"], plaza: "PDC", teamId: "t1" })).toEqual({ teamId: "t1" });
+    expect(buildTargets({ mode: "team", roles: [], userIds: [], plaza: "", teamId: "" })).toEqual({});
+  });
+  it("parseTargets reconoce teamId", () => {
+    expect(parseTargets({ teamId: "t1" })).toEqual({ mode: "team", roles: [], userIds: [], plaza: "", teamId: "t1" });
   });
 });
 

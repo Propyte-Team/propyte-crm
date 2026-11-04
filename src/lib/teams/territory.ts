@@ -19,6 +19,27 @@ export function pickWinningTerritory(matches: TerritoryMatch[]): TerritoryMatch 
   return [...matches].sort((a, b) => b.depth - a.depth || a.priority - b.priority)[0];
 }
 
+// Zonas: minúsculas, sin acentos, recortada y con espacios colapsados.
+export function normalizarZona(z: string | null | undefined): string {
+  return (z ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Pura: ¿la zona preferida del contacto coincide con alguna zona del territorio?
+export function coincideZona(zonas: string[] | null | undefined, preferredZone: string | null | undefined): boolean {
+  const objetivo = normalizarZona(preferredZone);
+  if (!objetivo || !zonas?.length) return false;
+  return zonas.some((z) => normalizarZona(z) === objetivo);
+}
+
+// Prioridad de la coincidencia implícita por zona: mayor (= menos prioritaria) que cualquier
+// regla explícita del mismo territorio, para que una regla escrita a mano gane.
+export const ZONE_MATCH_PRIORITY = 900;
+
 async function territoryDepth(territoryId: string, cache: Map<string, number>): Promise<number> {
   if (cache.has(territoryId)) return cache.get(territoryId)!;
   let depth = 0;
@@ -50,7 +71,20 @@ export async function resolveTerritoryForContact(contact: Contact): Promise<Terr
       },
     },
   });
-  if (rules.length === 0) return null;
+  // Una sola consulta extra: territorios activos con zonas definidas (match implícito).
+  const zoneTerritories = contact.preferredZone
+    ? await prisma.territory.findMany({
+        where: { isActive: true, deletedAt: null, zones: { isEmpty: false } },
+        select: {
+          id: true,
+          name: true,
+          plaza: true,
+          zones: true,
+          members: { select: { userId: true, user: { select: { isActive: true } } } },
+        },
+      })
+    : [];
+  if (rules.length === 0 && zoneTerritories.length === 0) return null;
 
   const ctx = { contact: { ...contact, score: Number(contact.score) } };
   const depthCache = new Map<string, number>();
@@ -66,6 +100,19 @@ export async function resolveTerritoryForContact(contact: Contact): Promise<Terr
       memberUserIds: rule.territory.members
         .filter((m) => m.user.isActive)
         .map((m) => m.userId),
+    });
+  }
+
+  for (const t of zoneTerritories) {
+    if (!coincideZona(t.zones, contact.preferredZone)) continue;
+    // Si el contacto no tiene plaza, la plaza del territorio no bloquea.
+    if (t.plaza && contact.targetPlaza && t.plaza !== contact.targetPlaza) continue;
+    matches.push({
+      territoryId: t.id,
+      territoryName: t.name,
+      depth: await territoryDepth(t.id, depthCache),
+      priority: ZONE_MATCH_PRIORITY,
+      memberUserIds: t.members.filter((m) => m.user.isActive).map((m) => m.userId),
     });
   }
 
