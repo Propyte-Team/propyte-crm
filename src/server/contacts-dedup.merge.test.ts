@@ -44,8 +44,10 @@ const contact = {
 };
 
 // Las relaciones (negocios, actividades, mensajes…) no importan aquí: se mueven y ya.
-const relacion = { updateMany: async () => ({ count: 0 }), count: async () => 0 };
-const tx = new Proxy({ contact } as Record<string, unknown>, {
+const relacion = { updateMany: async () => ({ count: 0 }), findMany: async () => [], count: async () => 0 };
+// El registro de fusiones (#977) guarda en SystemConfig; aquí no importa.
+const systemConfig = { findUnique: async () => null, upsert: async () => ({}) };
+const tx = new Proxy({ contact, systemConfig } as Record<string, unknown>, {
   get: (obj, prop: string) => (prop in obj ? obj[prop] : relacion),
 });
 

@@ -42,10 +42,11 @@ describe("mergeContacts — emite contact.merged", () => {
     const emitirContactoFusionado = vi.fn();
     const tx = {
       contact: { findFirst: vi.fn().mockResolvedValue({ id: "x", email: null, createdAt: new Date() }), update: vi.fn() },
+      systemConfig: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
       $executeRawUnsafe: vi.fn(), $executeRaw: vi.fn(),
     } as Record<string, unknown>;
     for (const r of ["deal", "activity", "walkIn", "message", "slaTimer", "connectorLeadLog", "conversionEvent", "shortlist", "contactFile", "contactDossier", "adAttribution", "webBehavior", "conversation"]) {
-      tx[r] = { updateMany: vi.fn(), count: vi.fn().mockResolvedValue(1) };
+      tx[r] = { updateMany: vi.fn(), findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(1) };
     }
     vi.doMock("@/lib/db", () => ({ default: { $transaction: (fn: (t: unknown) => unknown) => fn(tx) } }));
     vi.doMock("@/lib/audit/change-context", () => ({ setChangeSource: vi.fn() }));

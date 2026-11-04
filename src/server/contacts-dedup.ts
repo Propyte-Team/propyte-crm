@@ -1,8 +1,10 @@
+import { randomUUID } from "crypto";
 import prisma from "@/lib/db";
 import { buildDuplicateGroups, type DuplicateMatchType } from "@/lib/contacts/duplicates";
 import { setChangeSource } from "@/lib/audit/change-context";
+import { nombreDe, registrarFusion, type RegistroFusion, type TxLike } from "@/lib/contacts/fusiones";
 import { emitirContactoFusionado } from "@/lib/workflows/emisiones";
-import { datosDeArchivado, idsQuePasanAlQueQueda } from "@/lib/contacts/archivar";
+import { IDS_DE_CANAL, datosDeArchivado, idsQuePasanAlQueQueda } from "@/lib/contacts/archivar";
 
 export interface DupGroupContact {
   id: string; firstName: string; lastName: string;
@@ -56,12 +58,18 @@ export async function mergeContacts(input: { survivorId: string; loserId: string
     const loser = await tx.contact.findFirst({ where: { id: input.loserId, deletedAt: null, mergedIntoId: null } });
     if (!survivor || !loser) return { error: "Uno de los contactos no existe o ya fue fusionado/borrado" };
 
+    const movidas: Record<string, string[]> = {};
+    const movidasUno: Record<string, string[]> = {};
     for (const rel of N_RELATIONS) {
+      const filas: Array<{ id: string }> = await (tx as any)[rel].findMany({ where: { contactId: input.loserId }, select: { id: true } }); // #977: para deshacer
+      if (filas.length) movidas[rel] = filas.map((f) => f.id);
       await (tx as any)[rel].updateMany({ where: { contactId: input.loserId }, data: { contactId: input.survivorId } });
     }
     for (const rel of ONE_TO_ONE) {
       const survivorHas = await (tx as any)[rel].count({ where: { contactId: input.survivorId } });
       if (survivorHas === 0) {
+        const filas: Array<{ id: string }> = await (tx as any)[rel].findMany({ where: { contactId: input.loserId }, select: { id: true } });
+        if (filas.length) movidasUno[rel] = filas.map((f) => f.id);
         await (tx as any)[rel].updateMany({ where: { contactId: input.loserId }, data: { contactId: input.survivorId } });
       }
     }
@@ -78,6 +86,11 @@ export async function mergeContacts(input: { survivorId: string; loserId: string
     // ocupado. Primero se archiva al fusionado soltando sus ids y DESPUÉS se le dan al que queda:
     // en el orden contrario, los dos tendrían el mismo id un instante y el índice único lo rechaza.
     Object.assign(enrich, idsQuePasanAlQueQueda(survivor, loser));
+    const campos: RegistroFusion["campos"] = {};
+    for (const k of Object.keys(enrich)) campos[k] = { antes: (survivor as Record<string, unknown>)[k] ?? null, despues: enrich[k] };
+    // #977: los ids de canal que tenía el fusionado, para devolvérselos si se deshace.
+    const idsCanalArchivado: RegistroFusion["idsCanalArchivado"] = {};
+    for (const c of IDS_DE_CANAL) if (loser[c]) idsCanalArchivado[c] = loser[c] as string;
 
     await tx.contact.update({
       where: { id: input.loserId },
@@ -85,6 +98,12 @@ export async function mergeContacts(input: { survivorId: string; loserId: string
     });
 
     if (Object.keys(enrich).length) await tx.contact.update({ where: { id: input.survivorId }, data: enrich });
+    await registrarFusion(tx as unknown as TxLike, {
+      id: randomUUID(), fecha: new Date().toISOString(), actorId: input.actorId ?? null,
+      survivorId: input.survivorId, loserId: input.loserId,
+      survivorNombre: nombreDe(survivor), loserNombre: nombreDe(loser),
+      movidas, movidasUno, campos, idsCanalArchivado,
+    });
 
     return { survivorId: input.survivorId };
   });
