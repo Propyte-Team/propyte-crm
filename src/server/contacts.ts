@@ -11,6 +11,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
+import { datosDeArchivado } from "@/lib/contacts/archivar";
 import { CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER, tiposEquivalentes } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import {
@@ -640,10 +641,10 @@ export async function deleteContact(id: string) {
     throw new Error("Contacto no encontrado");
   }
 
-  // Soft delete: marcar como eliminado
+  // Soft delete: marcar como eliminado. #903: y soltar los ids de canal (ver lib/contacts/archivar).
   await prisma.contact.update({
     where: { id },
-    data: { deletedAt: new Date() },
+    data: datosDeArchivado(),
   });
 
   return { success: true };

@@ -23,7 +23,20 @@ export const TIPO_NOTIFICACION = "activity_below_minimum";
 
 /** Qué tipos de actividad cuentan para cada mínimo. */
 export const TIPOS_LLAMADA = ["CALL_OUTBOUND", "DISCOVERY_CALL"] as const;
-export const TIPOS_WHATSAPP = ["WHATSAPP_OUT"] as const;
+/**
+ * Los WhatsApps NO se cuentan desde actividades: el bot registra sus envíos como
+ * actividad WHATSAPP_OUT a nombre del asesor dueño del contacto (en oct–nov 2026, 18 de
+ * 22). Se cuentan los mensajes salientes que mandó el propio asesor (sender ADVISOR).
+ */
+export function whatsappsDelAsesorWhere(ids: string[], desde: Date, hasta: Date) {
+  return {
+    userId: { in: ids },
+    channel: "WHATSAPP" as const,
+    direction: "OUTBOUND" as const,
+    sender: "ADVISOR" as const,
+    createdAt: { gte: desde, lt: hasta },
+  };
+}
 export const TIPOS_VISITA = ["MEETING_PRESENTIAL", "MEETING_SHOWROOM", "WALK_IN"] as const;
 export const TIPOS_SEGUIMIENTO = ["FOLLOW_UP"] as const;
 
@@ -233,10 +246,21 @@ export async function revisarAcuerdoDeActividad(db: Db, ahora: Date): Promise<Re
     return new Map(filas.map((f) => [f.userId, f._count._all]));
   };
 
+  const contarWhatsapps = async (desde: Date, hasta: Date) => {
+    const filas = await db.message.groupBy({
+      by: ["userId"],
+      where: whatsappsDelAsesorWhere(ids, desde, hasta) as never,
+      _count: { _all: true },
+    });
+    return new Map(
+      filas.filter((f) => f.userId).map((f) => [f.userId as string, f._count._all])
+    );
+  };
+
   const dia = v.ayer;
   const [llamadas, whatsapps, seguimientos, visitas] = await Promise.all([
     contar(dia.desde, dia.hasta, TIPOS_LLAMADA),
-    contar(dia.desde, dia.hasta, TIPOS_WHATSAPP),
+    contarWhatsapps(dia.desde, dia.hasta),
     contar(dia.desde, dia.hasta, TIPOS_SEGUIMIENTO),
     v.semana ? contar(v.semana.desde, v.semana.hasta, TIPOS_VISITA) : Promise.resolve(null),
   ]);

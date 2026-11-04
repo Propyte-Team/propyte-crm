@@ -109,7 +109,7 @@ export async function buildContext(event: WorkflowEvent): Promise<Record<string,
  * "estamos en horario de oficina" que nunca dispara es un fallo silencioso, y este arreglo
  * no debe cambiar qué reglas disparan: solo de dónde sale el calendario.
  */
-async function isBusinessHoursNow(): Promise<boolean> {
+export async function isBusinessHoursNow(): Promise<boolean> {
   const policy = await prisma.slaPolicy
     .findFirst({ where: { isDefault: true, isActive: true } })
     .catch(() => null);

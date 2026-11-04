@@ -7,6 +7,7 @@ import { resolveCoreFieldAccess, stripHiddenCoreFields } from "@/lib/metadata/co
 import { BrandViewProvider } from "@/components/brands/brand-view";
 import { getBrandViewContext } from "@/lib/brands/view-context";
 import { cargarConfigScoring, obtenerScoreContacto } from "@/lib/scoring/recalcular";
+import { obtenerTemperaturaContacto } from "@/lib/copilot/temperatura-recalcular";
 import { puedeVerReclutamiento } from "@/lib/reclutamiento/roles";
 import { candidatoDeContacto } from "@/server/reclutamiento";
 
@@ -69,6 +70,8 @@ export default async function ContactDetailPage(props: ContactPageProps) {
         cargarConfigScoring().then((c) => c.activo).catch(() => false),
       ])
     : [null, false];
+  // #973: el motivo de la temperatura (chip de la ficha). Best-effort, como el score.
+  const temperaturaDetalle = fieldAccess.temperature !== "HIDDEN" ? await obtenerTemperaturaContacto(params.id) : null;
   // Tarjeta «Reclutamiento» (datos personales de candidatos): solo se lee para quien puede ver el
   // módulo; a los demás roles no les llega nada. candidatoDeContacto nunca lanza.
   const candidatoReclutamiento = puedeVerReclutamiento(session.user.role)
@@ -86,6 +89,7 @@ export default async function ContactDetailPage(props: ContactPageProps) {
         scoreGuardado={scoreGuardado ? JSON.parse(JSON.stringify(scoreGuardado)) : null}
         scoringActivo={scoringActivo}
         candidatoReclutamiento={candidatoReclutamiento}
+        temperaturaDetalle={temperaturaDetalle ? { motivo: temperaturaDetalle.motivo } : null}
       />
     </BrandViewProvider>
   );

@@ -2,6 +2,7 @@ import prisma from "@/lib/db";
 import { buildDuplicateGroups, type DuplicateMatchType } from "@/lib/contacts/duplicates";
 import { setChangeSource } from "@/lib/audit/change-context";
 import { emitirContactoFusionado } from "@/lib/workflows/emisiones";
+import { datosDeArchivado, idsQuePasanAlQueQueda } from "@/lib/contacts/archivar";
 
 export interface DupGroupContact {
   id: string; firstName: string; lastName: string;
@@ -71,9 +72,19 @@ export async function mergeContacts(input: { survivorId: string; loserId: string
     if (!survivor.originalCreatedAt) {
       enrich.originalCreatedAt = loser.originalCreatedAt ?? (loser.createdAt < survivor.createdAt ? loser.createdAt : survivor.createdAt);
     }
-    if (Object.keys(enrich).length) await tx.contact.update({ where: { id: input.survivorId }, data: enrich });
+    // #903: los ids de canal del fusionado (Instagram, Messenger, WhatsApp) pasan al que queda si
+    // este no tiene el suyo. Antes se quedaban en el archivado: cuando la persona volvía a escribir
+    // por ese canal nadie la encontraba (el intake solo mira vivos) y su alta chocaba con el id
+    // ocupado. Primero se archiva al fusionado soltando sus ids y DESPUÉS se le dan al que queda:
+    // en el orden contrario, los dos tendrían el mismo id un instante y el índice único lo rechaza.
+    Object.assign(enrich, idsQuePasanAlQueQueda(survivor, loser));
 
-    await tx.contact.update({ where: { id: input.loserId }, data: { mergedIntoId: input.survivorId, deletedAt: new Date() } });
+    await tx.contact.update({
+      where: { id: input.loserId },
+      data: { mergedIntoId: input.survivorId, ...datosDeArchivado() },
+    });
+
+    if (Object.keys(enrich).length) await tx.contact.update({ where: { id: input.survivorId }, data: enrich });
 
     return { survivorId: input.survivorId };
   });

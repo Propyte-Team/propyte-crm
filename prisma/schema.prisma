@@ -905,7 +905,10 @@ model Contact {
   // Asignación y scoring
   assignedToId String?
   assignedTo   User?           @relation("AssignedContacts", fields: [assignedToId], references: [id])
-  temperature  LeadTemperature @default(COLD)
+  // #973: la calcula el CRM (lib/copilot/temperatura.ts, cron de workflows); el detalle —grupo A/B,
+  // motivo, última respuesta— vive en contact_temperaturas. NULL = no aplica (Registrado por broker,
+  // Derivado a RH).
+  temperature  LeadTemperature? @default(COLD)
   score        Int             @default(0)
   tags         String[]
 
@@ -1548,6 +1551,23 @@ model AdAttribution {
 // `score` null = contacto excluido (broker, empleo…). Contact.score NO se toca hasta que
 // SystemConfig `scoring.activo` sea true.
 // Migración: prisma/migrations-manual/2026-10-26-lead-scoring.sql
+// #973 — Temperatura calculada (Copilot). Una fila por contacto, la reescribe el cron de workflows.
+// contacts.temperature es la que ve el asesor; aquí está el porqué y lo que ordena «Mi día».
+model ContactTemperatura {
+  contactId         String           @id
+  temperatura       LeadTemperature? // NULL = no aplica
+  grupo             String? // «A» | «B» dentro de Tibio (no se muestra al asesor)
+  orden             Int // 0 = primero en «Mi día»
+  motivo            String
+  ultimaRespuestaAt DateTime?
+  senalCompraAt     DateTime?
+  calculadoAt       DateTime         @default(now())
+
+  @@index([calculadoAt])
+  @@map("contact_temperaturas")
+  @@schema("propyte_crm")
+}
+
 model ContactScore {
   contactId      String   @id
   score          Int?
