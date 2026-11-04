@@ -4,7 +4,9 @@
 import { useEffect } from "react";
 import { Handle, Position, useReactFlow, type Edge, type EdgeTypes, type Node, type NodeProps, type NodeTypes } from "@xyflow/react";
 import { LIFECYCLE_COLORS, STAGE_COLORS, STAGE_LABELS } from "@/lib/constants";
-import { labelFor, summaryFor } from "@/lib/journey/node-catalog";
+import { labelFor } from "@/lib/journey/node-catalog";
+import { describeAction } from "@/lib/workflows/action-catalog";
+import { describeConditions } from "@/lib/workflows/condition-catalog";
 import type { NodeMetrics } from "@/lib/journey/node-metrics";
 import { InsertEdge } from "./insert-edge";
 
@@ -88,7 +90,10 @@ export function nodeLabel(type: string, data: Record<string, unknown>): string {
       ? data.label
       : (() => { const s = String((data.config as Record<string, unknown> | undefined)?.toStage ?? ""); return s ? `Etapa → ${STAGE_LABELS[s] ?? s}` : "Etapa"; })();
   } else if (data.actionType) {
-    label = summaryFor(String(data.actionType), (data.config ?? {}) as Record<string, unknown>);
+    // Frase del catálogo de E3 (sin emoji, en español), igual que la lista y el inspector.
+    label = describeAction({ type: String(data.actionType), config: (data.config ?? {}) as Record<string, unknown> });
+  } else if (type === "condition") {
+    label = data.conditions ? `Si ${describeConditions(data.conditions)}` : "Condición";
   } else if (typeof data.label === "string" && data.label) {
     label = data.label;
   } else {
