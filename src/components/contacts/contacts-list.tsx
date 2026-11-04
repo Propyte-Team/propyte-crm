@@ -54,6 +54,7 @@ import { BrandBadges, BrandFilterSelect, useBrandFilterParam, useBrandView } fro
 import { BotonColumnas, GestionarColumnas, useColumnasVisibles } from "@/components/ui/gestionar-columnas";
 import { COLUMNAS_CONTACTOS, STORAGE_KEY_COLUMNAS_CONTACTOS } from "@/lib/contacts/columnas";
 import { FLUJO_ORDER, FLUJO_LABELS, FLUJO_SIN_FLUJO, etiquetaFlujo, opcionesFlujo } from "@/lib/flujos";
+import { PARAM_ETIQUETA } from "@/lib/contacts/filtro-etiqueta";
 import { ESTADO_ORDER, ESTADO_LABELS, ESTADO_SIN_ESTADO, ESTADO_VACIO_LABEL } from "@/lib/estados";
 import { EstadoDelContacto } from "@/components/contacts/estado-del-contacto";
 import { CONTACT_TYPE_LABELS, CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, CONTACT_TYPE_VACIO_LABEL, LIFECYCLE_LABELS, LIFECYCLE_COLORS, LIFECYCLE_ORDER, LEAD_SOURCE_ORDER, LEAD_SOURCE_LABELS } from "@/lib/constants";
@@ -97,6 +98,8 @@ interface ContactsListProps {
   initialPageSize: number;
   initialTotalPages: number;
   userRole: string;
+  /** #958: ?etiqueta= de la URL. Se ve como un chip que se puede quitar. */
+  etiquetaInicial?: string | null;
 }
 
 // Etiquetas de fuentes: única fuente de verdad en constants.ts (AUD-20260710-02 —
@@ -139,6 +142,7 @@ export function ContactsList({
   initialPageSize,
   initialTotalPages,
   userRole,
+  etiquetaInicial = null,
 }: ContactsListProps) {
   const router = useRouter();
   const [contacts, setContacts] = useState<ContactData[]>(initialContacts);
@@ -178,6 +182,10 @@ export function ContactsList({
   const [filterFlujo, setFilterFlujo] = useState("ALL");
   const flujoRef = useRef(filterFlujo);
   flujoRef.current = filterFlujo;
+  // #958: filtro por etiqueta. Llega por la URL (enlaces de las tareas); también va por ref.
+  const [filterEtiqueta, setFilterEtiqueta] = useState<string | null>(etiquetaInicial);
+  const etiquetaRef = useRef(filterEtiqueta);
+  etiquetaRef.current = filterEtiqueta;
 
   // Función para obtener contactos desde la API
   const fetchContacts = useCallback(
@@ -204,6 +212,7 @@ export function ContactsList({
         if (brandRef.current) params.set("marca", brandRef.current);
         if (asesorRef.current) params.set("assignedTo", asesorRef.current);
         if (flujoRef.current !== "ALL") params.set("flujo", flujoRef.current);
+        if (etiquetaRef.current) params.set(PARAM_ETIQUETA, etiquetaRef.current);
 
         const res = await fetch(`/api/contacts?${params.toString()}`);
         if (!res.ok) throw new Error("Error al cargar contactos");
@@ -269,6 +278,23 @@ export function ContactsList({
     fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
   };
 
+  // #958: quitar el filtro de etiqueta (y sacarlo de la URL para que recargar no lo vuelva a poner).
+  const quitarEtiquetaDeLaUrl = () => {
+    setFilterEtiqueta(null);
+    etiquetaRef.current = null;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has(PARAM_ETIQUETA)) {
+        url.searchParams.delete(PARAM_ETIQUETA);
+        window.history.replaceState(null, "", url.pathname + url.search);
+      }
+    }
+  };
+  const handleQuitarEtiqueta = () => {
+    quitarEtiquetaDeLaUrl();
+    fetchContacts(search, filterSource, filterTemp, filterType, filterStatus, 1, lifecycleFilter);
+  };
+
   // Limpiar todos los filtros
   const clearFilters = () => {
     setSearch("");
@@ -283,6 +309,7 @@ export function ContactsList({
     asesorRef.current = "";
     setFilterFlujo("ALL");
     flujoRef.current = "ALL";
+    quitarEtiquetaDeLaUrl();
     fetchContacts("", "ALL", "ALL", "ALL", "ALL", 1, "");
   };
 
@@ -314,6 +341,7 @@ export function ContactsList({
     const fl = typeof f.flujo === "string" ? f.flujo : "ALL";
     setFilterFlujo(fl);
     flujoRef.current = fl;
+    quitarEtiquetaDeLaUrl(); // #958: una vista guardada no lleva etiqueta
     fetchContacts(s, src, tmp, typ, st, 1, lc);
   };
 
@@ -389,7 +417,7 @@ export function ContactsList({
 
   // Verificar si hay filtros activos
   const hasActiveFilters =
-    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null || filterAsesor !== "" || filterFlujo !== "ALL";
+    search || filterSource !== "ALL" || filterTemp !== "ALL" || filterType !== "ALL" || filterStatus !== "ALL" || lifecycleFilter !== "" || brandFilter !== null || filterAsesor !== "" || filterFlujo !== "ALL" || filterEtiqueta !== null;
 
   // Calcular rango visible
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -578,6 +606,19 @@ export function ContactsList({
               onChange={handleBrandChange}
               className={SELECT_NATIVO}
             />
+
+            {/* #958: etiqueta que vino en la URL */}
+            {filterEtiqueta && (
+              <span
+                className="inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm"
+                style={{ borderColor: "var(--border-default)", background: "var(--bg-card)" }}
+              >
+                Etiqueta: <strong className="font-medium">{filterEtiqueta}</strong>
+                <button type="button" aria-label="Quitar filtro de etiqueta" onClick={handleQuitarEtiqueta} className="ml-1">
+                  <X className="h-4 w-4" />
+                </button>
+              </span>
+            )}
 
             {/* Botón para limpiar filtros */}
             {hasActiveFilters && (

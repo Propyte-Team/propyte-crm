@@ -27,6 +27,7 @@ import { errorDeCampana } from "@/lib/contacts/campanas";
 import { MENSAJE_REFERIDO_INVALIDO, validarReferidoPor } from "@/lib/contacts/referidos";
 import { CAMPOS_ADICIONALES_SHAPE, datosCamposAdicionales } from "@/lib/contacts/campos-adicionales";
 import { FLUJO_ORDER, whereFlujo } from "@/lib/flujos";
+import { PARAM_ETIQUETA, etiquetaDelFiltro, whereEtiqueta } from "@/lib/contacts/filtro-etiqueta";
 import {
   ESTADO_ORDER,
   ESTADOS_CON_TICKET,
@@ -284,6 +285,9 @@ export async function GET(request: NextRequest) {
     if (porFlujo) {
       where.flujo = porFlujo.flujo;
     }
+    // #958: ?etiqueta= (enlaces de las tareas de la migración de estados).
+    const porEtiqueta = whereEtiqueta(etiquetaDelFiltro(searchParams.get(PARAM_ETIQUETA)));
+    if (porEtiqueta) Object.assign(where, porEtiqueta);
     // #953: el filtro «Estado» busca por el estado nuevo; «Por clasificar» = sin estado. Un valor del
     // estado viejo (vistas guardadas antes, p. ej. «PROSPECTO») sigue filtrando por contactStatus.
     const porEstado = whereEstado(contactStatus, CONTACT_STATUS_ORDER);

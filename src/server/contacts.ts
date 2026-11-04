@@ -75,6 +75,8 @@ interface ContactFilters {
   plaza?: string;
   /** Selector «Marca» (entrega 3, 2026-10-12): acota dentro de lo visible, nunca amplía. */
   brandId?: string;
+  /** #958: ?etiqueta= de la URL (ya normalizada con etiquetaDelFiltro). */
+  etiqueta?: string | null;
   page?: number;
   pageSize?: number;
 }
@@ -175,6 +177,7 @@ export async function getContacts(filters: ContactFilters = {}) {
       ],
     });
   }
+  if (filters.etiqueta) and.push({ tags: { has: filters.etiqueta } }); // #958
   if (and.length > 0) where.AND = and;
 
   // Filtros específicos
