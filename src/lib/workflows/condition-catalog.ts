@@ -284,7 +284,7 @@ function fieldLabel(field: string): string {
   return FIELD_LABELS[field] ?? field.replace(/^contact\./, "");
 }
 
-function valueLabel(field: string, value: unknown): string {
+export function valueLabel(field: string, value: unknown): string {
   const campo = campoPorKey(field);
   const uno = (v: unknown): string => {
     if (typeof v === "boolean") return v ? "Sí" : "No";
