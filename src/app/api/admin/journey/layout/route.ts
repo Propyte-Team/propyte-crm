@@ -25,10 +25,16 @@ export async function PUT(req: Request) {
   const parsed = putSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { scope, positions } = parsed.data;
-  await prisma.journeyLayout.upsert({
-    where: { id: scope },
-    create: { id: scope, positions: positions as object },
-    update: { positions: positions as object },
-  });
+  // Si la tabla journey_layouts no existe (migración manual sin aplicar) o falla la BD, se responde
+  // un error legible: el cliente lo muestra en un toast en vez de perder el acomodo en silencio.
+  try {
+    await prisma.journeyLayout.upsert({
+      where: { id: scope },
+      create: { id: scope, positions: positions as object },
+      update: { positions: positions as object },
+    });
+  } catch {
+    return NextResponse.json({ error: "No se pudo guardar el acomodo" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

@@ -8,8 +8,9 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { ConditionTreeEditor } from "./condition-tree";
-import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
-import { ROUTING_FIELD_SUGGESTIONS, nextPriority, hasIncompleteCondition } from "@/lib/teams/rules-model";
+import { parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado, problemasDeCondiciones } from "./condition-tree-model";
+import { ROUTING_FIELD_SUGGESTIONS, nextPriority } from "@/lib/teams/rules-model";
 import { toast } from "@/components/ui/use-toast";
 import { leerError } from "@/lib/api-errors";
 
@@ -42,8 +43,9 @@ export function TerritoryEditor({
   const updRule = (i: number, patch: Partial<RuleRow>) => setRuleRows(ruleRows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   async function save() {
-    if (ruleRows.some((r) => hasIncompleteCondition(r.tree))) {
-      toast({ title: "Hay una condición incompleta", description: "Completa o quita la fila antes de guardar.", variant: "destructive" });
+    const problemas = ruleRows.flatMap((r) => problemasDeCondiciones(r.tree));
+    if (problemas.length > 0) {
+      toast({ title: "Hay una condición incompleta", description: problemas[0], variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -53,7 +55,7 @@ export function TerritoryEditor({
       body: JSON.stringify({
         territoryId,
         members: memberRows.map((m) => ({ userId: m.userId, accessLevel: "VIEW" })),
-        rules: ruleRows.map((r) => ({ priority: r.priority, isActive: r.isActive, conditions: buildConditionsTree(r.tree) })),
+        rules: ruleRows.map((r) => ({ priority: r.priority, isActive: r.isActive, conditions: buildConditionsTreeGuiado(r.tree) })),
       }),
     });
     setSaving(false);
@@ -117,6 +119,7 @@ export function TerritoryEditor({
               tree={r.tree}
               onChange={(tree) => updRule(i, { tree })}
               label="Entra cuando"
+              contexto="contact"
               emptyText="Sin condiciones = todos los leads caen aquí."
               fieldSuggestions={ROUTING_FIELD_SUGGESTIONS}
               listId="routing-field-suggestions"

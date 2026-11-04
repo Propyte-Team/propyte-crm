@@ -251,6 +251,8 @@ export async function autoRouteLead(
   const routableWhere = usuarioRuteableWhere();
 
   let assigneeId: string | null = null;
+  // Equipo de la regla que asignó (si la regla apuntaba a un equipo), para avisar a su líder.
+  let equipoAsignado: { id: string; name: string; leaderId: string | null } | null = null;
   // #678 (a): se anota por qué falla cada regla que SÍ matcheó, para poder decir después
   // cuál de los cinco motivos fue en vez de un `null` sin explicación.
   const pasos: PasoDeReparto[] = [];
@@ -262,9 +264,34 @@ export async function autoRouteLead(
     };
     if (!evaluateConditions(rule.conditions as never, ctx)) continue;
 
-    const targets = (rule.targets ?? {}) as { roles?: string[]; userIds?: string[]; plaza?: string };
+    const targets = (rule.targets ?? {}) as { roles?: string[]; userIds?: string[]; plaza?: string; teamId?: string };
     let candidates: string[] = [];
-    if (Array.isArray(targets.userIds) && targets.userIds.length > 0) {
+    let equipoDeLaRegla: { id: string; name: string; leaderId: string | null } | null = null;
+    if (typeof targets.teamId === "string" && targets.teamId) {
+      // Regla por equipo: candidatos = miembros activos del equipo (sin salida registrada),
+      // con el mismo criterio de persona atendible y las mismas exclusiones que el resto.
+      // No exige plaza: el equipo ya es el recorte.
+      const equipo = await prisma.team.findFirst({
+        where: { id: targets.teamId, isActive: true, deletedAt: null },
+        select: { id: true, name: true, leaderId: true },
+      });
+      if (equipo) {
+        equipoDeLaRegla = equipo;
+        const miembros = await prisma.teamMember.findMany({
+          where: {
+            teamId: equipo.id,
+            leftAt: null,
+            user: {
+              ...routableWhere,
+              ...(excludedIds.length ? { id: { notIn: excludedIds } } : {}),
+            },
+          },
+          select: { userId: true },
+          orderBy: { joinedAt: "asc" },
+        });
+        candidates = [...new Set(miembros.map((m) => m.userId))];
+      }
+    } else if (Array.isArray(targets.userIds) && targets.userIds.length > 0) {
       const users = await prisma.user.findMany({
         where: {
           id: { in: targets.userIds, ...(excludedIds.length ? { notIn: excludedIds } : {}) },
@@ -331,7 +358,10 @@ export async function autoRouteLead(
       default:
         assigneeId = candidates[0] ?? null;
     }
-    if (assigneeId) break;
+    if (assigneeId) {
+      equipoAsignado = equipoDeLaRegla;
+      break;
+    }
     // Había candidatos y la estrategia devolvió null. Es el único de los cinco motivos que
     // sería un defecto de código y no un estado de los datos, así que conviene distinguirlo.
     pasos.push({ reglaId: rule.id, motivo: "estrategia_no_eligio" });
@@ -449,6 +479,27 @@ export async function autoRouteLead(
       link: `/contacts/${contactId}`,
     },
   });
+
+  // Regla por equipo: el líder se entera de que entró un lead a su equipo (si no es él quien
+  // lo recibe). Un fallo aquí nunca tumba la asignación.
+  if (via === "regla" && equipoAsignado?.leaderId && equipoAsignado.leaderId !== assigneeId) {
+    const liderId = equipoAsignado.leaderId;
+    const nombre = equipoAsignado.name;
+    try {
+      const asignado = await prisma.user.findUnique({ where: { id: assigneeId }, select: { name: true } });
+      await prisma.notification.create({
+        data: {
+          userId: liderId,
+          title: `Lead nuevo en tu equipo ${nombre}`,
+          message: `Lead nuevo en tu equipo: ${contact.firstName} ${contact.lastName} → asignado a ${asignado?.name ?? assigneeId}`,
+          type: "lead_assigned",
+          link: `/contacts/${contactId}`,
+        },
+      });
+    } catch (err) {
+      console.error(`[routing] no se pudo avisar al líder del equipo ${equipoAsignado.id}:`, err);
+    }
+  }
 
   // Import dinámico para evitar ciclo events→engine→actions→routing→events
   const { emitEvent } = await import("./events");
