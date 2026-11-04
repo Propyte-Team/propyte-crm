@@ -2,6 +2,8 @@
 // middleware). Marca openedAt al abrir. Imprimible. La vigencia bloquea la aceptación.
 import { notFound } from "next/navigation";
 import prisma from "@/lib/db";
+import { getServerSession } from "@/lib/auth/session";
+import { emitirCotizacionAbierta } from "@/lib/workflows/emisiones";
 
 export const dynamic = "force-dynamic";
 
@@ -43,14 +45,20 @@ export default async function PublicQuotePage(props: { params: Promise<{ id: str
 
   if (!quote) notFound();
 
-  // Marcar como abierta (tracking de apertura) — sólo la primera vez.
+  // Marcar como abierta (tracking de apertura) — sólo la primera vez. `updateMany` con
+  // `openedAt: null` hace de candado: si dos visitas llegan a la vez, solo una gana y emite.
   if (!quote.openedAt) {
-    await prisma.quote
-      .update({
-        where: { id: quote.id },
+    const marcada = await prisma.quote
+      .updateMany({
+        where: { id: quote.id, openedAt: null },
         data: { openedAt: new Date(), ...(quote.status === "SENT" ? { status: "OPENED" } : {}) },
       })
-      .catch(() => null);
+      .catch(() => ({ count: 0 }));
+    if (marcada.count > 0) {
+      // Un usuario interno con sesión (vista previa) no es "el cliente abre la cotización".
+      const interno = await getServerSession().then((s) => !!s?.user).catch(() => false);
+      if (!interno) await emitirCotizacionAbierta({ id: quote.id, dealId: quote.dealId, contactId: quote.deal?.contactId });
+    }
   }
 
   const snap = (quote.unitSnapshot && typeof quote.unitSnapshot === "object" ? (quote.unitSnapshot as any) : {}) as any;

@@ -1,6 +1,7 @@
 import prisma from "@/lib/db";
 import { buildDuplicateGroups, type DuplicateMatchType } from "@/lib/contacts/duplicates";
 import { setChangeSource } from "@/lib/audit/change-context";
+import { emitirContactoFusionado } from "@/lib/workflows/emisiones";
 
 export interface DupGroupContact {
   id: string; firstName: string; lastName: string;
@@ -48,7 +49,7 @@ export async function mergeContacts(input: { survivorId: string; loserId: string
   Promise<{ error: string } | { survivorId: string }> {
   if (input.survivorId === input.loserId) return { error: "No se puede fusionar un contacto consigo mismo" };
 
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     await setChangeSource(tx, { source: "merge", actorId: input.actorId ?? null });
     const survivor = await tx.contact.findFirst({ where: { id: input.survivorId, deletedAt: null, mergedIntoId: null } });
     const loser = await tx.contact.findFirst({ where: { id: input.loserId, deletedAt: null, mergedIntoId: null } });
@@ -76,4 +77,6 @@ export async function mergeContacts(input: { survivorId: string; loserId: string
 
     return { survivorId: input.survivorId };
   });
+  if (!("error" in res)) await emitirContactoFusionado(res.survivorId, input.loserId);
+  return res;
 }

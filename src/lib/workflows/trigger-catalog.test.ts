@@ -14,7 +14,8 @@ vi.mock("@/lib/db", () => ({ default: {} }));
 
 describe("cobertura del catálogo", () => {
   it("cada TriggerType tiene al menos un disparador", () => {
-    for (const t of TRIGGER_TYPES) expect(DISPARADORES.some((d) => d.triggerType === t), t).toBe(true);
+    // TIME se retiró del catálogo: el motor no tiene rama para él (ver scheduler.ts).
+    for (const t of TRIGGER_TYPES.filter((x) => x !== "TIME")) expect(DISPARADORES.some((d) => d.triggerType === t), t).toBe(true);
   });
   it("cada evento de EVENTOS_DE_CONDICION se puede elegir (propio o suelto)", () => {
     for (const ev of Object.keys(EVENTOS_DE_CONDICION)) {
@@ -30,14 +31,17 @@ describe("cobertura del catálogo", () => {
       expect(d.frase).not.toMatch(/[a-z]+\.[a-z_]+|_/);
     }
   });
-  it("TIME y BEHAVIORAL son próximamente; INACTIVITY y SLA_BREACH activos", () => {
-    expect(disparadorPorKey("time")?.estado).toBe("proximamente");
+  it("BEHAVIORAL es próximamente; INACTIVITY y SLA_BREACH activos; TIME ya no se ofrece", () => {
+    expect(disparadorPorKey("time")).toBeUndefined();
     expect(disparadorPorKey("behavioral")?.estado).toBe("proximamente");
     expect(disparadorPorKey("inactivity")?.estado).toBe("activo");
     expect(disparadorPorKey("sla_breach")?.estado).toBe("activo");
   });
-  it("los eventos que nadie emite quedan como próximamente", () => {
-    for (const k of ["contact.merged", "quote.opened", "visit.completed"]) expect(disparadorPorKey(k)?.estado, k).toBe("proximamente");
+  it("los eventos que ya se emiten (fusión, cotización abierta, visita) están activos y sin aviso", () => {
+    for (const k of ["contact.merged", "quote.opened", "visit.completed"]) {
+      expect(disparadorPorKey(k)?.estado, k).toBe("activo");
+      expect(disparadorPorKey(k)?.ayuda, k).toBeUndefined();
+    }
     expect(disparadorPorKey("lead.captured")?.estado).toBe("activo");
   });
 });
