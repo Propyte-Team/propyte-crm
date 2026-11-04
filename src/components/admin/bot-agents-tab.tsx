@@ -11,6 +11,9 @@ import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import { useToast } from "@/components/ui/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { mensajeDeError } from "@/lib/api-errors";
+import { BotResumen } from "./bot-resumen";
+import { useBotGeneral } from "./use-bot-general";
+import { textoHereda } from "@/lib/bot/quien-contesta";
 
 // #907: mismas etiquetas que el resto del CRM («Broker», «Proveedor», «Otro»…).
 const TYPE_LABEL: Record<string, string> = CONTACT_TYPE_LABELS;
@@ -44,6 +47,7 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
   const { toast } = useToast();
   const confirmar = useConfirm();
+  const { datos: general } = useBotGeneral();
 
   function patch(idx: number, p: Partial<AgentProfileRow>) {
     setProfiles((prev) => prev.map((row, i) => (i === idx ? { ...row, ...p } : row)));
@@ -119,8 +123,22 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
     setProfiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  // Lo que se ve en pantalla (aunque no esté guardado) alimenta el resumen "¿Quién contesta?".
+  const agentesEnPantalla = profiles
+    .filter((p) => p.id)
+    .map((p) => ({
+      id: p.id as string,
+      name: p.name,
+      contactTypes: p.contactTypes,
+      tonePreset: p.tonePreset,
+      playbookId: p.playbookId,
+      isActive: p.isActive,
+      priority: p.priority,
+    }));
+
   return (
     <div className="space-y-4">
+      <BotResumen agentes={agentesEnPantalla} />
       <div className="flex items-center justify-between">
         <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
           El bot detecta si escribe un comprador, un broker o un candidato (sin pisar lo que ponga un humano) y
@@ -193,13 +211,13 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <select
               className="form-input !py-1.5 text-[12px]"
-              aria-label="Playbook del agente"
+              aria-label="Guion de preguntas del agente"
               value={row.playbookId ?? ""}
               onChange={(e) => patch(idx, { playbookId: e.target.value || null })}
             >
-              <option value="">Playbook: igual que el bot general</option>
+              <option value="">Guion: ninguno propio (este agente no usa el del bot general)</option>
               {playbooks.map((pb) => (
-                <option key={pb.id} value={pb.id}>Playbook: {pb.name}</option>
+                <option key={pb.id} value={pb.id}>Guion: {pb.name}</option>
               ))}
             </select>
             <select
@@ -208,7 +226,7 @@ export function BotAgentsTab({ initialProfiles, playbooks }: Props) {
               value={row.tonePreset ?? ""}
               onChange={(e) => patch(idx, { tonePreset: e.target.value || null })}
             >
-              <option value="">Estilo: igual que el bot general</option>
+              <option value="">Estilo: {general ? textoHereda("estilo", general.botConfig) : "igual que el bot general"}</option>
               {AGENT_TONE_PRESETS.map((t) => (
                 <option key={t} value={t}>Estilo: {TONE_LABEL[t] ?? t}</option>
               ))}

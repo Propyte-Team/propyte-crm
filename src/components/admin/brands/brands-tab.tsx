@@ -15,6 +15,8 @@ import { providerById } from "@/lib/connectors/registry";
 import { mensajeDeError } from "@/lib/api-errors";
 import type { BrandRow } from "./brand-helpers";
 import { BrandFormDialog } from "./brand-form-dialog";
+import { BotResumen } from "../bot-resumen";
+import { useBotGeneral } from "../use-bot-general";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "Activa", PAUSED: "Pausada", ERROR: "Con error" };
 
@@ -32,6 +34,7 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
   const [loadError, setLoadError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<BrandRow | null>(null);
+  const { datos: general } = useBotGeneral();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +60,7 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
 
   return (
     <div className="space-y-4">
+      <BotResumen />
       <div className="flex items-start justify-between gap-3">
         <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
           Cada marca contesta con su propia presentación, conocimiento, catálogo y canales. Las cuentas de
@@ -149,6 +153,7 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
         onOpenChange={setDialogOpen}
         brand={editing}
         playbooks={playbooks}
+        general={general?.botConfig ?? null}
         users={users}
         onSaved={load}
       />
