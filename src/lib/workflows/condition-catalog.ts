@@ -9,7 +9,7 @@
 // ── API (todo exportado de este archivo) ─────────────────────────────────────────────
 // Tipos
 //   TipoDeCampo            "enum" | "number" | "text" | "boolean"  (no hay campos de fecha en el evaluador)
-//   GrupoDeCampo           "Contacto" | "Perfil de inversión" | "Calificación" | "Anuncio (Meta)" | "Negocio" | "Evento"
+//   GrupoDeCampo           "Contacto" | "Perfil de inversión" | "Calificación" | "Anuncio (Meta)" | "Negocio" | "Evento" | "Contexto"
 //   ContextoDeCondicion    "contact" | "deal" | "event"
 //   CampoDeCondicion       { key, label, frase?, grupo, tipo, opciones?, contextos, ayuda? }
 //                          `label` = nombre para el selector ("Presupuesto máx."); `frase` = forma corta
@@ -43,7 +43,7 @@ import { PREFERRED_LANGUAGE_LABELS, PROPERTY_TYPE_LABELS, etiqueta } from "@/lib
 
 export type TipoDeCampo = "enum" | "number" | "text" | "boolean";
 export type GrupoDeCampo =
-  | "Contacto" | "Perfil de inversión" | "Calificación" | "Anuncio (Meta)" | "Negocio" | "Evento";
+  | "Contacto" | "Perfil de inversión" | "Calificación" | "Anuncio (Meta)" | "Negocio" | "Evento" | "Contexto";
 export type ContextoDeCondicion = "contact" | "deal" | "event";
 
 export interface CampoDeCondicion {
@@ -61,7 +61,7 @@ export type ValorEditable = string | string[] | boolean;
 export interface ResultadoValidacion { ok: boolean; problemas: string[] }
 
 export const GRUPOS_DE_CAMPO: GrupoDeCampo[] = [
-  "Contacto", "Perfil de inversión", "Calificación", "Anuncio (Meta)", "Negocio", "Evento",
+  "Contacto", "Perfil de inversión", "Calificación", "Anuncio (Meta)", "Negocio", "Evento", "Contexto",
 ];
 
 // Diccionarios que no existían en labels.ts/constants.ts (el catálogo no los edita allá).
@@ -172,6 +172,9 @@ export const CAMPOS_DE_CONDICION: CampoDeCondicion[] = [
   { key: "deal.lostReason", label: "Motivo de pérdida", frase: "motivo de pérdida", grupo: "Negocio", tipo: "enum", opciones: LOST_REASON_LABELS, contextos: DE_NEGOCIO },
   // Evento
   { key: "event.type", label: "Tipo de evento", frase: "evento", grupo: "Evento", tipo: "enum", opciones: EVENTOS_DE_CONDICION, contextos: ["event"] },
+  // Contexto: no es una columna de BD; `buildContext` (engine.ts) lo calcula al evaluar. Solo existe
+  // al procesar un evento: en las reglas de inactividad (scheduler.ts) `context` va vacío.
+  { key: "context.isBusinessHours", label: "Es horario laboral", frase: "es horario laboral", grupo: "Contexto", tipo: "boolean", contextos: TODOS },
 ];
 
 const POR_KEY = new Map(CAMPOS_DE_CONDICION.map((c) => [c.key, c]));
