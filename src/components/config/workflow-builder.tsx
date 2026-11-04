@@ -13,6 +13,7 @@ import { ConditionTreeEditor } from "./condition-tree";
 import { DelayInput, mensajeAutomatizacion } from "./cadence-editor";
 import { ActionCard, ActionPicker } from "./action-card";
 import { useFuentes } from "./use-fuentes";
+import { ProbarReglaPanel } from "./probar-regla-panel";
 import { RuleCanvasEditor } from "@/components/journey/rule-canvas-editor";
 import { payloadToDraft, ruleToDraft, type RuleDraft, type RulePayload } from "@/lib/journey/rule-draft";
 import {
@@ -241,6 +242,9 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
         <ActionPicker onPick={(nueva) => { set({ actions: agregarAccion(b.actions, nueva) }); setAbierta(b.actions.length); }} />
         <Errores items={ver("actions") ?? (errServidor.actions ? [errServidor.actions] : undefined)} />
       </Seccion>
+
+      {/* Probar con un contacto (solo lectura) */}
+      <ProbarReglaPanel regla={payloadDeBorrador(b, { activate: false })} fuentes={fuentes} />
 
       {/* Avanzado */}
       <details className="crm-card !p-4">
