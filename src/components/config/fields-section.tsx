@@ -8,6 +8,7 @@ import { Plus, Archive, Pencil, ArrowUp, ArrowDown, RotateCcw, X } from "lucide-
 import { FIELD_TYPE_LABELS, ROLE_LABELS_COMPLETO, etiqueta } from "@/lib/labels";
 import { erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
 import { generarApiName, construirOpciones, opcionesDeTexto } from "@/lib/metadata/api-name";
+import { validarPasoCampo, resumenPaso1, type PasoCampo } from "@/lib/metadata/asistente-campo";
 import { ROLES_CONFIGURABLES, type Access } from "@/lib/metadata/visibilidad-model";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/use-toast";
@@ -54,6 +55,7 @@ export function FieldsSection({ userRole }: { userRole: string }) {
   const [archivados, setArchivados] = useState<FieldDef[]>([]);
   const [object, setObject] = useState("contact");
   const [draft, setDraft] = useState(BORRADOR_VACIO);
+  const [paso, setPaso] = useState<PasoCampo>(1);
   const [apiTocado, setApiTocado] = useState(false); // el usuario editó el nombre técnico a mano
   const [msg, setMsg] = useState("");
   const [errores, setErrores] = useState<Record<string, string>>({});
@@ -80,8 +82,15 @@ export function FieldsSection({ userRole }: { userRole: string }) {
     setMsg("");
     setErrores({});
     setSimilar([]);
-    if (!draft.label.trim()) {
-      setErrores({ label: "Escribe cómo se llama el campo" });
+    const e1 = validarPasoCampo(1, draft);
+    if (Object.keys(e1).length) {
+      setErrores(e1);
+      setPaso(1);
+      return;
+    }
+    const e2 = validarPasoCampo(2, draft);
+    if (Object.keys(e2).length) {
+      setErrores(e2);
       return;
     }
     const body: Record<string, unknown> = {
@@ -109,11 +118,20 @@ export function FieldsSection({ userRole }: { userRole: string }) {
       toast({ title: "Campo creado", description: draft.label.trim() });
       setDraft(BORRADOR_VACIO);
       setApiTocado(false);
+      setPaso(1);
       load();
     } else {
       setErrores(erroresPorCampo(data));
       setMsg(mensajeDeError(data, "No se pudo crear el campo"));
     }
+  }
+
+  function siguiente() {
+    const e = validarPasoCampo(1, draft);
+    setErrores(e);
+    setMsg("");
+    setSimilar([]);
+    if (Object.keys(e).length === 0) setPaso(2);
   }
 
   async function archive(id: string) {
@@ -180,41 +198,56 @@ export function FieldsSection({ userRole }: { userRole: string }) {
           className="crm-card !p-4 space-y-3"
           onSubmit={(e) => { e.preventDefault(); create(false); }}
         >
-          <p className="text-[13px] font-semibold">Nuevo campo en {nombreObjeto}</p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <input className="form-input" aria-label="Etiqueta visible" placeholder="¿Cómo se llama? (ej. Notaría asignada)" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
-              {errores.label && <p className="mt-1 text-[11px]" style={{ color: "var(--color-warning)" }}>{errores.label}</p>}
-            </div>
-            <select className="form-input" aria-label="Tipo de campo" value={draft.fieldType} onChange={(e) => setDraft({ ...draft, fieldType: e.target.value })}>
-              {FIELD_TYPES.map((t) => <option key={t} value={t}>{etiqueta(FIELD_TYPE_LABELS, t)}</option>)}
-            </select>
-            <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
-              <input type="checkbox" checked={draft.isRequired} onChange={(e) => setDraft({ ...draft, isRequired: e.target.checked })} />
-              Obligatorio
-            </label>
-          </div>
-          {draft.fieldType === "PICKLIST" && (
-            <div>
-              <input className="form-input" aria-label="Opciones de la lista" placeholder="Opciones separadas por coma: Notaría 1, Notaría 7" value={draft.options} onChange={(e) => setDraft({ ...draft, options: e.target.value })} />
-              {errores.options && <p className="mt-1 text-[11px]" style={{ color: "var(--color-warning)" }}>{errores.options}</p>}
+          <p className="text-[13px] font-semibold">
+            Nuevo campo en {nombreObjeto}{" "}
+            <span className="font-normal" style={{ color: "var(--text-tertiary)" }}>· Paso {paso} de 2</span>
+          </p>
+          {paso === 1 && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <input className="form-input" aria-label="Etiqueta visible" placeholder="¿Cómo se llama? (ej. Notaría asignada)" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
+                {errores.label && <p className="mt-1 text-[11px]" style={{ color: "var(--color-warning)" }}>{errores.label}</p>}
+              </div>
+              <select className="form-input" aria-label="Tipo de campo" value={draft.fieldType} onChange={(e) => setDraft({ ...draft, fieldType: e.target.value })}>
+                {FIELD_TYPES.map((t) => <option key={t} value={t}>{etiqueta(FIELD_TYPE_LABELS, t)}</option>)}
+              </select>
             </div>
           )}
-          <details className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            <summary className="cursor-pointer">Avanzado</summary>
-            <div className="mt-2 space-y-1">
-              <label className="block text-[12px]" htmlFor="api-name-campo">Nombre técnico</label>
-              <input
-                id="api-name-campo"
-                className="form-input num !w-full sm:!w-96"
-                value={apiTocado ? draft.apiName : apiSugerido}
-                onChange={(e) => { setApiTocado(true); setDraft({ ...draft, apiName: e.target.value }); }}
-              />
-              <p className="text-[11px]" style={{ color: errores.apiName ? "var(--color-warning)" : "var(--text-tertiary)" }}>
-                {errores.apiName ?? "Se genera solo a partir de la etiqueta. Puedes ajustarlo ahora; una vez creado el campo no se puede cambiar."}
+          {paso === 2 && (
+            <>
+              <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                {resumenPaso1(draft, etiqueta(FIELD_TYPE_LABELS, draft.fieldType))}
               </p>
-            </div>
-          </details>
+              <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
+                <input type="checkbox" checked={draft.isRequired} onChange={(e) => setDraft({ ...draft, isRequired: e.target.checked })} />
+                Obligatorio
+              </label>
+              {draft.fieldType === "PICKLIST" && (
+                <div>
+                  <input className="form-input" aria-label="Opciones de la lista" placeholder="Opciones separadas por coma: Notaría 1, Notaría 7" value={draft.options} onChange={(e) => setDraft({ ...draft, options: e.target.value })} />
+                  {errores.options && <p className="mt-1 text-[11px]" style={{ color: "var(--color-warning)" }}>{errores.options}</p>}
+                </div>
+              )}
+              <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                Quién ve y quién edita este campo se ajusta después con el lápiz de la lista (por defecto, solo lectura para los demás puestos).
+              </p>
+              <details className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
+                <summary className="cursor-pointer">Avanzado</summary>
+                <div className="mt-2 space-y-1">
+                  <label className="block text-[12px]" htmlFor="api-name-campo">Nombre técnico</label>
+                  <input
+                    id="api-name-campo"
+                    className="form-input num !w-full sm:!w-96"
+                    value={apiTocado ? draft.apiName : apiSugerido}
+                    onChange={(e) => { setApiTocado(true); setDraft({ ...draft, apiName: e.target.value }); }}
+                  />
+                  <p className="text-[11px]" style={{ color: errores.apiName ? "var(--color-warning)" : "var(--text-tertiary)" }}>
+                    {errores.apiName ?? "Se genera solo a partir de la etiqueta. Puedes ajustarlo ahora; una vez creado el campo no se puede cambiar."}
+                  </p>
+                </div>
+              </details>
+            </>
+          )}
           {msg && <p className="text-[12px]" style={{ color: similar.length ? "var(--color-warning)" : "var(--text-secondary)" }}>{msg}</p>}
           {similar.length > 0 && (
             <div className="space-y-1">
@@ -224,9 +257,20 @@ export function FieldsSection({ userRole }: { userRole: string }) {
               <button type="button" className="btn-secondary !py-1.5 !px-3 text-[12px]" onClick={() => create(true)}>Crear de todos modos</button>
             </div>
           )}
-          <button type="submit" className="btn-primary !py-1.5 !px-3 text-[12px]">
-            <Plus className="h-3.5 w-3.5" /> Crear campo
-          </button>
+          {paso === 1 ? (
+            <button type="button" className="btn-primary !py-1.5 !px-3 text-[12px]" onClick={siguiente}>
+              Siguiente
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button type="button" className="btn-secondary !py-1.5 !px-3 text-[12px]" onClick={() => { setPaso(1); setErrores({}); setMsg(""); setSimilar([]); }}>
+                Atrás
+              </button>
+              <button type="submit" className="btn-primary !py-1.5 !px-3 text-[12px]">
+                <Plus className="h-3.5 w-3.5" /> Crear campo
+              </button>
+            </div>
+          )}
         </form>
       )}
 

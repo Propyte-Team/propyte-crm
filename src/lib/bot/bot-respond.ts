@@ -1,6 +1,7 @@
 // botRespond — pipeline del bot WhatsApp L2 con red (Anexo B §I.4).
 // Contexto → RAG catálogo Hub (data-gate) → Claude (voz Sage) → brand linter →
 // envía o ESCALA a humano (intención fuerte / sin confianza).
+import { maxTokensDeLineas } from "./largo-respuesta";
 import prisma from "@/lib/db";
 import {
   askClaude,
@@ -573,7 +574,7 @@ export async function botRespond(
   const diagnostico: DiagnosticoClaude = {};
   let reply: string | null;
   try {
-    reply = await askClaude({ system, messages: history, maxTokens: 300, model: config.model }, diagnostico);
+    reply = await askClaude({ system, messages: history, maxTokens: maxTokensDeLineas(effectiveConfig.maxLines), model: config.model }, diagnostico);
   } catch (err) {
     await noteSilence(describeAiSilence(diagnostico.sinRespuesta, err));
     throw err;

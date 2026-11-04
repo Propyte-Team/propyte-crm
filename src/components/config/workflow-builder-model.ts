@@ -299,3 +299,21 @@ export function jsonDeSoloLectura(b: BorradorDeRegla): string {
   const p = payloadDeBorrador(b, { activate: false });
   return JSON.stringify({ triggerType: p.triggerType, triggerConfig: p.triggerConfig, conditions: p.conditions, actions: p.actions }, null, 2);
 }
+
+/** Arrastrar y soltar: mueve el elemento de `from` a la posición `to` (los demás se recorren). */
+export function reordenarAcciones<T>(items: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
+  const out = [...items];
+  const [movido] = out.splice(from, 1);
+  out.splice(to, 0, movido);
+  return out;
+}
+
+/** Tras arrastrar de `from` a `to`, a qué tarjeta sigue abierta (índice o null). */
+export function indiceAbiertoTrasReordenar(abierta: number | null, from: number, to: number): number | null {
+  if (abierta === null) return null;
+  if (abierta === from) return to;
+  if (from < to && abierta > from && abierta <= to) return abierta - 1;
+  if (to < from && abierta >= to && abierta < from) return abierta + 1;
+  return abierta;
+}

@@ -11,7 +11,9 @@ import { disparadorPorKey, describeTrigger } from "@/lib/workflows/trigger-catal
 import { describeRule } from "@/lib/workflows/action-catalog";
 import { ConditionTreeEditor } from "./condition-tree";
 import { DelayInput, mensajeAutomatizacion } from "./cadence-editor";
-import { ActionCard, ActionPicker } from "./action-card";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { ActionCardOrdenable, ActionPicker } from "./action-card";
 import { useFuentes } from "./use-fuentes";
 import { ProbarReglaPanel } from "./probar-regla-panel";
 import { RuleCanvasEditor } from "@/components/journey/rule-canvas-editor";
@@ -19,7 +21,7 @@ import { payloadToDraft, ruleToDraft, type RuleDraft, type RulePayload } from "@
 import {
   DECISION_GUARD_MESSAGE, PRESETS_NO_REPETIR, agregarAccion, avisoDeDisparador, borradorDesdePlantilla, borradorDesdeRegla,
   cambiarDisparador, contextoDeDisparador, disparadoresAgrupados, fraseDeBorrador, fraseDePlantilla,
-  fusionarAccion, indiceAbiertoTrasMover, indiceAbiertoTrasQuitar, jsonDeSoloLectura, moverAccion,
+  fusionarAccion, indiceAbiertoTrasMover, indiceAbiertoTrasQuitar, indiceAbiertoTrasReordenar, reordenarAcciones, jsonDeSoloLectura, moverAccion,
   payloadDeBorrador, problemasPorCampo, quitarAccion, shouldGuardRule, validarBorrador,
   type BorradorDeRegla, type CampoConProblema,
 } from "./workflow-builder-model";
@@ -78,6 +80,19 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
     } catch {
       setError("No se pudo pasar la regla a la vista avanzada. Revisa el disparador y las acciones.");
     }
+  }
+
+  const sensores = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  function alSoltarAccion(e: DragEndEvent) {
+    if (!e.over || e.active.id === e.over.id) return;
+    const from = Number(String(e.active.id).replace("accion-", ""));
+    const to = Number(String(e.over.id).replace("accion-", ""));
+    if (Number.isNaN(from) || Number.isNaN(to)) return;
+    setB((prev) => ({ ...prev, actions: reordenarAcciones(prev.actions, from, to) }));
+    setAbierta((a) => indiceAbiertoTrasReordenar(a, from, to));
   }
 
   const set = (patch: Partial<BorradorDeRegla>) => setB((prev) => ({ ...prev, ...patch }));
@@ -216,10 +231,13 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
       {/* Entonces */}
       <Seccion titulo="Entonces">
         {b.actions.length === 0 && <Hint>Aún no hay acciones. Agrega la primera.</Hint>}
+        <DndContext sensors={sensores} collisionDetection={closestCenter} onDragEnd={alSoltarAccion}>
+        <SortableContext items={b.actions.map((_, i) => `accion-${i}`)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
           {b.actions.map((a, i) => (
-            <ActionCard
+            <ActionCardOrdenable
               key={i}
+              sortableId={`accion-${i}`}
               action={a}
               index={i}
               total={b.actions.length}
@@ -239,6 +257,8 @@ export function WorkflowBuilder({ rule, onSaved, onCancel }: Props) {
             />
           ))}
         </div>
+        </SortableContext>
+        </DndContext>
         <ActionPicker onPick={(nueva) => { set({ actions: agregarAccion(b.actions, nueva) }); setAbierta(b.actions.length); }} />
         <Errores items={ver("actions") ?? (errServidor.actions ? [errServidor.actions] : undefined)} />
       </Seccion>

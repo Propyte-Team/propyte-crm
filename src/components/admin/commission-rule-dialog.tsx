@@ -47,6 +47,8 @@ interface CommissionRuleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rule: CommissionRuleData | null;
+  /** Combinación con la que abre un alta (celda vacía de la matriz). Se ignora al editar. */
+  prefill?: { dealType: string; leadSourceCategory: string; role: string } | null;
   /** Error del último intento de guardar (p. ej. regla duplicada); el diálogo sigue abierto. */
   serverError?: { field?: string; message: string } | null;
   onSubmit: (data: Record<string, unknown>) => Promise<void>;
@@ -57,6 +59,7 @@ export function CommissionRuleDialog({
   open,
   onOpenChange,
   rule,
+  prefill = null,
   serverError = null,
   onSubmit,
   isPending,
@@ -85,15 +88,15 @@ export function CommissionRuleDialog({
       });
     } else {
       setFormData({
-        dealType: "",
-        leadSourceCategory: "",
-        role: "",
+        dealType: prefill?.dealType ?? "",
+        leadSourceCategory: prefill?.leadSourceCategory ?? "",
+        role: prefill?.role ?? "",
         percentage: "",
         isActive: true,
       });
     }
     setErrors({});
-  }, [rule, open]);
+  }, [rule, prefill, open]);
 
 
   // Error devuelto por el servidor (p. ej. correo repetido): se pinta junto al campo, o arriba

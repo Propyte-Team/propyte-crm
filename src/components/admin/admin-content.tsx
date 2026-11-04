@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, KeyRound, History, RotateCcw, Info } from "lucide-react";
+import { Plus, Pencil, Trash2, KeyRound, History, RotateCcw, Info, Search } from "lucide-react";
 import {
   DEAL_TYPE_LABELS,
   LEAD_SOURCE_CATEGORY_LABELS,
@@ -34,10 +34,11 @@ import {
   campoDeMensaje,
   CAMPOS_ACUERDO,
   construirFilaUsuario,
-  describirClaveRegla,
   leerEnteroNoNegativo,
-  mensajeReglaDuplicada,
 } from "./admin-helpers";
+import { describirClaveRegla, mensajeReglaDuplicada } from "@/lib/commissions/reglas-texto";
+import { construirMatrizReglas } from "@/lib/commissions/matriz-reglas";
+import { filtrarUsuarios } from "@/lib/usuarios/tabla-usuarios";
 import {
   createUser,
   updateUser,
@@ -261,6 +262,9 @@ export function AdminContent({
   // Filtros de la tabla de usuarios
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [plazaFilter, setPlazaFilter] = useState<string>("ALL");
+  const [userSearch, setUserSearch] = useState("");
+  // Celda vacia de la matriz de comisiones pulsada: precarga el dialogo de alta.
+  const [rulePrefill, setRulePrefill] = useState<{ dealType: string; leadSourceCategory: string; role: string } | null>(null);
 
   // Dialogos
   const [userDialogOpen, setUserDialogOpen] = useState(false);
@@ -283,11 +287,7 @@ export function AdminContent({
   });
 
   // Usuarios filtrados
-  const filteredUsers = users.filter((u) => {
-    if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
-    if (plazaFilter !== "ALL" && u.plaza !== plazaFilter) return false;
-    return true;
-  });
+  const filteredUsers = filtrarUsuarios(users, { busqueda: userSearch, rol: roleFilter, plaza: plazaFilter });
 
   // Usuarios que pueden ser team leader (TL o Gerente)
   const teamLeaderUsers = users.filter((u) =>
@@ -595,16 +595,12 @@ export function AdminContent({
     toast({ title: "Valores recomendados cargados", description: "Pulsa «Guardar» para aplicarlos." });
   }
 
-  // Agrupar reglas de comision por dealType
-  const groupedRules = commissionRules.reduce(
-    (acc, rule) => {
-      const key = rule.dealType;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(rule);
-      return acc;
-    },
-    {} as Record<string, CommissionRuleData[]>
-  );
+  // Matriz de comisiones: filas = origen del lead + rol, columnas = tipo de operacion
+  const matrizReglas = construirMatrizReglas(commissionRules, {
+    dealTypes: Object.keys(DEAL_TYPE_LABELS),
+    origenes: Object.keys(LEAD_SOURCE_CATEGORY_LABELS),
+    roles: Object.keys(ROLE_LABELS_COMPLETO),
+  });
 
   return (
     <>
@@ -650,6 +646,17 @@ export function AdminContent({
             <CardContent>
               {/* Filtros */}
               <div className="mb-4 flex flex-wrap items-center gap-4">
+                <div className="relative w-64">
+                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    className="pl-8"
+                    placeholder="Buscar por nombre o correo"
+                    aria-label="Buscar usuarios por nombre o correo"
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                  />
+                </div>
                 <div className="w-48">
                   <Select value={roleFilter} onValueChange={setRoleFilter}>
                     <SelectTrigger>
@@ -854,6 +861,7 @@ export function AdminContent({
               <Button
                 onClick={() => {
                   setEditingRule(null);
+                  setRulePrefill(null);
                   setRuleSubmitError(null);
                   setRuleDialogOpen(true);
                 }}
@@ -863,81 +871,98 @@ export function AdminContent({
               </Button>
             </CardHeader>
             <CardContent>
-              {Object.entries(groupedRules).map(([dealType, rules]) => (
-                <div key={dealType} className="mb-6 last:mb-0">
-                  <h3 className="mb-3 text-sm font-semibold text-muted-foreground uppercase">
-                    {etiqueta(DEAL_TYPE_LABELS, dealType)}
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-2 font-medium">Origen del lead</th>
-                          <th className="pb-2 font-medium">Rol</th>
-                          <th className="pb-2 font-medium">Porcentaje</th>
-                          <th className="pb-2 font-medium">Activa</th>
-                          <th className="pb-2 font-medium">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rules.map((rule) => (
-                          <tr
-                            key={rule.id}
-                            className="border-b last:border-0 hover:bg-muted/50"
-                          >
-                            <td className="py-2">
-                              {etiqueta(LEAD_SOURCE_CATEGORY_LABELS, rule.leadSourceCategory)}
-                            </td>
-                            <td className="py-2">
-                              <Badge variant="outline">
-                                {etiqueta(ROLE_LABELS_COMPLETO, rule.role)}
-                              </Badge>
-                            </td>
-                            <td className="py-2 font-medium">
-                              {Number(rule.percentage)}%
-                            </td>
-                            <td className="py-2">
-                              <Badge
-                                variant={rule.isActive ? "default" : "secondary"}
-                                className={rule.isActive ? "bg-green-500" : ""}
-                              >
-                                {rule.isActive ? "Sí" : "No"}
-                              </Badge>
-                            </td>
-                            <td className="py-2">
-                              <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Editar regla"
-                                  aria-label="Editar regla"
-                                  onClick={() => {
-                                    setEditingRule(rule);
-                                    setRuleSubmitError(null);
-                                    setRuleDialogOpen(true);
-                                  }}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Eliminar regla"
-                                  aria-label="Eliminar regla"
-                                  onClick={() => handleDeleteRule(rule)}
-                                  disabled={isPending}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
+              {matrizReglas.filas.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="pb-2 pr-4 font-medium">Origen del lead</th>
+                        <th className="pb-2 pr-4 font-medium">Rol</th>
+                        {matrizReglas.columnas.map((dealType) => (
+                          <th key={dealType} className="px-2 pb-2 text-center font-medium">
+                            {etiqueta(DEAL_TYPE_LABELS, dealType)}
+                          </th>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matrizReglas.filas.map((fila) => (
+                        <tr
+                          key={`${fila.leadSourceCategory}|${fila.role}`}
+                          className="border-b last:border-0 hover:bg-muted/50"
+                        >
+                          <td className="py-2 pr-4">
+                            {etiqueta(LEAD_SOURCE_CATEGORY_LABELS, fila.leadSourceCategory)}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <Badge variant="outline">{etiqueta(ROLE_LABELS_COMPLETO, fila.role)}</Badge>
+                          </td>
+                          {fila.celdas.map((rule, i) => {
+                            const dealType = matrizReglas.columnas[i];
+                            return (
+                              <td key={dealType} className="px-2 py-1 text-center">
+                                {rule ? (
+                                  <div className="inline-flex items-center gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className={`font-medium ${rule.isActive ? "" : "text-muted-foreground line-through"}`}
+                                      title={`Editar regla: ${describirClaveRegla(rule)}${rule.isActive ? "" : " (inactiva)"}`}
+                                      aria-label={`Editar regla ${describirClaveRegla(rule)}, ${Number(rule.percentage)}%`}
+                                      onClick={() => {
+                                        setEditingRule(rule);
+                                        setRulePrefill(null);
+                                        setRuleSubmitError(null);
+                                        setRuleDialogOpen(true);
+                                      }}
+                                    >
+                                      {Number(rule.percentage)}%
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      title="Eliminar regla"
+                                      aria-label={`Eliminar regla ${describirClaveRegla(rule)}`}
+                                      onClick={() => handleDeleteRule(rule)}
+                                      disabled={isPending}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-muted-foreground"
+                                    title="Crear regla para esta combinación"
+                                    aria-label={`Crear regla para ${describirClaveRegla({ dealType, leadSourceCategory: fila.leadSourceCategory, role: fila.role })}`}
+                                    onClick={() => {
+                                      setEditingRule(null);
+                                      setRulePrefill({
+                                        dealType,
+                                        leadSourceCategory: fila.leadSourceCategory,
+                                        role: fila.role,
+                                      });
+                                      setRuleSubmitError(null);
+                                      setRuleDialogOpen(true);
+                                    }}
+                                  >
+                                    —
+                                  </Button>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Pulsa un porcentaje para editarlo, o «—» para crear la regla de esa combinación. Las reglas
+                    inactivas aparecen tachadas.
+                  </p>
                 </div>
-              ))}
+              )}
               {commissionRules.length === 0 && (
                 <p className="py-8 text-center text-muted-foreground">
                   No hay reglas de comisión configuradas
@@ -1097,6 +1122,7 @@ export function AdminContent({
         open={ruleDialogOpen}
         onOpenChange={setRuleDialogOpen}
         rule={editingRule}
+        prefill={rulePrefill}
         serverError={ruleSubmitError}
         onSubmit={async (data) => {
           const res = editingRule

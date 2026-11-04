@@ -14,12 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Copy, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Copy, RefreshCw, Send } from "lucide-react";
 import {
   createWebhookConfig,
   updateWebhookConfig,
   deleteWebhookConfig,
   regenerateWebhookSecret,
+  sendWebhookTest,
   generateNewApiKey,
   revokeApiKey,
 } from "@/server/admin";
@@ -149,6 +150,21 @@ export function IntegrationsTab({
         setWebhooks((prev) => prev.map((w) => (w.id === webhook.id ? { ...w, secretHint: fila.secretHint } : w)));
         setSecretNuevo({ url: webhook.url, secret });
         toast({ title: "Clave regenerada", description: "Cópiala ahora, no se volverá a mostrar." });
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+    });
+  }
+
+  function handleTestWebhook(webhook: WebhookData) {
+    startTransition(async () => {
+      try {
+        const r = await sendWebhookTest(webhook.id);
+        toast({
+          title: r.ok ? "Prueba enviada" : "La prueba falló",
+          description: r.mensaje,
+          variant: r.ok ? undefined : "destructive",
+        });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -336,6 +352,16 @@ export function IntegrationsTab({
                       </td>
                       <td className="py-2">
                         <div className="flex items-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Enviar evento de prueba"
+                            aria-label="Enviar evento de prueba"
+                            onClick={() => handleTestWebhook(webhook)}
+                            disabled={isPending}
+                          >
+                            <Send className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

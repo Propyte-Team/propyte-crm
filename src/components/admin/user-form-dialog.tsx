@@ -24,6 +24,7 @@ import {
 import { CAREER_REQUIREMENTS } from "@/lib/constants";
 import { ROLE_LABELS, ROLE_LABELS_COMPLETO, PLAZA_LABELS, etiqueta } from "@/lib/labels";
 import { z } from "zod";
+import { ayudaDeRol, rolUsaNivelCarrera } from "@/lib/usuarios/tabla-usuarios";
 import { UserBrandsField } from "./user-brands-field";
 import { effectiveBrandIds, sameBrandSet, type BrandOption } from "./user-brands-helpers";
 
@@ -206,7 +207,9 @@ export function UserFormDialog({
       email: formData.email,
       role: formData.role,
       plaza: formData.plaza,
-      careerLevel: formData.careerLevel || "JR",
+      // Solo los asesores tienen nivel de carrera; en los demás no se manda (alta = "JR" por
+      // defecto del servidor, edición = se conserva el que tenía).
+      ...(rolUsaNivelCarrera(formData.role) ? { careerLevel: formData.careerLevel || "JR" } : {}),
       // El SelectItem "Sin asignar" tiene value "none" (Radix no permite value "");
       // hay que traducirlo a null o el create/update viola el FK de teamLeaderId.
       teamLeaderId:
@@ -330,6 +333,9 @@ export function UserFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {formData.role && ayudaDeRol(formData.role) && (
+                <p className="text-xs text-muted-foreground">{ayudaDeRol(formData.role)}</p>
+              )}
               {errors.role && (
                 <p className="text-sm text-red-500">{errors.role}</p>
               )}
@@ -360,6 +366,7 @@ export function UserFormDialog({
 
           {/* Nivel de carrera y Team Leader */}
           <div className="grid gap-4 sm:grid-cols-2">
+            {rolUsaNivelCarrera(formData.role) && (
             <div className="space-y-2">
               <Label>Nivel de carrera</Label>
               <Select
@@ -378,6 +385,7 @@ export function UserFormDialog({
                 </SelectContent>
               </Select>
             </div>
+            )}
 
             <div className="space-y-2">
               <Label>Líder de equipo</Label>

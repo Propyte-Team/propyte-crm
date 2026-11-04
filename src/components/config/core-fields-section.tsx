@@ -12,6 +12,7 @@ import {
   accesoDe,
   aplicarAcceso,
   camposQueSeOcultan,
+  planCopiaPermisos,
   resumenPorRol,
   textoResumen,
   type Access,
@@ -110,6 +111,53 @@ export function CoreFieldsSection({ userRole }: { userRole: string }) {
     setTimeout(() => setMsg(""), 1500);
   }
 
+  // Copia los permisos de otro rol al rol elegido (solo los campos que difieren), con confirmación.
+  async function copiarDesde(origen: string) {
+    if (!origen) return;
+    const claves = fields.filter((f) => !CAMPOS_DEL_SISTEMA.has(f.key)).map((f) => f.key);
+    const plan = planCopiaPermisos(perms, origen, role, claves);
+    const nombreOrigen = etiqueta(ROLE_LABELS_COMPLETO, origen);
+    const nombreRol = etiqueta(ROLE_LABELS_COMPLETO, role);
+    if (plan.total === 0) {
+      toast({ title: "Sin cambios", description: `${nombreRol} ya tiene los mismos permisos que ${nombreOrigen}.` });
+      return;
+    }
+    const usuarios = usuariosActivos[role] ?? 0;
+    const ok = await confirmar({
+      titulo: `¿Copiar los permisos de ${nombreOrigen} a ${nombreRol}?`,
+      descripcion: `Cambiarán ${plan.total} ${plan.total === 1 ? "campo" : "campos"} de ${nombreRol}${
+        plan.seOcultan.length > 0 && usuarios > 0
+          ? `; ${plan.seOcultan.length} quedarán ocultos para ${usuarios} ${usuarios === 1 ? "usuario activo" : "usuarios activos"}`
+          : ""
+      }. Los permisos actuales de ${nombreRol} se reemplazan.`,
+      confirmar: "Copiar permisos",
+      peligroso: plan.seOcultan.length > 0 && usuarios > 0,
+    });
+    if (!ok) return;
+    const antes = perms;
+    let siguiente = perms;
+    for (const a of ["HIDDEN", "READ", "EDIT"] as Access[]) {
+      if (plan.porAcceso[a].length) siguiente = aplicarAcceso(siguiente, role, plan.porAcceso[a], a);
+    }
+    setPerms(siguiente);
+    for (const a of ["HIDDEN", "READ", "EDIT"] as Access[]) {
+      const keys = plan.porAcceso[a];
+      if (!keys.length) continue;
+      const res = await fetch("/api/admin/metadata/core-fields", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(keys.length === 1 ? { object, fieldKey: keys[0], role, access: a } : { object, fieldKeys: keys, role, access: a }),
+      });
+      if (!res.ok) {
+        setPerms(antes);
+        toast({ title: "No se pudieron copiar los permisos", description: "Revisa la pantalla; puede que se hayan copiado solo algunos.", variant: "destructive" });
+        load();
+        return;
+      }
+    }
+    toast({ title: "Permisos copiados", description: `${nombreRol} ahora sigue los permisos de ${nombreOrigen}.` });
+  }
+
   if (!isAdmin) {
     return <p className="text-[13px] text-[color:var(--text-tertiary)]">Solo ADMIN puede configurar la visibilidad de campos.</p>;
   }
@@ -141,6 +189,17 @@ export function CoreFieldsSection({ userRole }: { userRole: string }) {
         <span className="text-[12px] text-[color:var(--text-tertiary)]">
           {etiqueta(ROLE_LABELS_COMPLETO, role)}: {textoResumen(resumen.find((r) => r.role === role))}
         </span>
+        <select
+          className="form-input max-w-[220px] text-[13px]"
+          aria-label="Copiar permisos de otro rol"
+          value=""
+          onChange={(e) => copiarDesde(e.target.value)}
+        >
+          <option value="">Copiar permisos de…</option>
+          {roles.filter((r) => r !== role).map((r) => (
+            <option key={r} value={r}>{etiqueta(ROLE_LABELS_COMPLETO, r)}</option>
+          ))}
+        </select>
         {msg && <span className="text-[12px] text-[color:var(--text-tertiary)]">{msg}</span>}
       </div>
 

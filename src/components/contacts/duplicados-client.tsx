@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { leerError } from "@/lib/api-errors";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/use-toast";
 import { DuplicadosHistorial } from "./duplicados-historial";
+import { SIN_ASESOR, armarComparativa, asesoresDeGrupos, filtrarGruposPorAsesor } from "./duplicados-comparar";
 import { descripcionFusion, resumenFusion, type ResumenFusion } from "./duplicados-model";
 
 export interface Ct {
@@ -56,6 +57,39 @@ function MatchBadge({ matchType }: { matchType: MatchType }) {
   );
 }
 
+// Campos clave en filas y un contacto por columna; las filas con diferencias van resaltadas.
+function Comparativa({ contacts, principalId }: { contacts: Ct[]; principalId?: string }) {
+  const filas = armarComparativa(contacts);
+  return (
+    <div className="mb-3 overflow-x-auto rounded border" style={{ borderColor: "var(--border-subtle)" }}>
+      <table className="w-full text-left text-[12px]">
+        <thead>
+          <tr className="text-[color:var(--text-tertiary)]">
+            <th className="px-2 py-1.5 font-medium">Campo</th>
+            {contacts.map((c, i) => (
+              <th key={c.id} className="px-2 py-1.5 font-medium">
+                Contacto {i + 1}{c.id === principalId ? " · principal" : ""}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.clave} className="border-t" style={{ borderColor: "var(--border-subtle)", background: f.difiere ? "var(--color-warning-bg, rgba(245,158,11,0.12))" : undefined }}>
+              <th scope="row" className="px-2 py-1.5 font-medium text-[color:var(--text-secondary)]">
+                {f.etiqueta}{f.difiere && <span className="ml-1 text-[10px] font-normal text-[color:var(--text-tertiary)]">(distinto)</span>}
+              </th>
+              {f.valores.map((v, i) => (
+                <td key={contacts[i].id} className={`px-2 py-1.5 ${f.difiere ? "font-medium text-[color:var(--text-primary)]" : "text-[color:var(--text-tertiary)]"}`}>{v}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 interface Meta {
   total: number;
   totalFuertes: number;
@@ -76,8 +110,13 @@ export function DuplicadosClient() {
   const [cargandoMas, setCargandoMas] = useState(false);
   const [survivors, setSurvivors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [asesor, setAsesor] = useState("");
+  const [comparando, setComparando] = useState<Record<string, boolean>>({});
   const [version, setVersion] = useState(0);
   const [resultados, setResultados] = useState<Array<ResumenFusion & { id: number }>>([]);
+
+  const asesores = useMemo(() => asesoresDeGrupos(groups), [groups]);
+  const visibles = useMemo(() => filtrarGruposPorAsesor(groups, asesor), [groups, asesor]);
 
   // offset 0 reemplaza la lista; offset > 0 ("Cargar más") la acumula.
   const load = useCallback(async (offset = 0) => {
@@ -188,6 +227,18 @@ export function DuplicadosClient() {
         ))}
       </div>
 
+      {!loading && (asesores.nombres.length > 0 || asesores.haySinAsesor) && (
+        <label className="flex flex-wrap items-center gap-2 text-[13px] text-[color:var(--text-secondary)]">
+          Asesor asignado
+          <select className="form-input !w-auto text-[13px]" value={asesor} onChange={(e) => setAsesor(e.target.value)}>
+            <option value="">Todos</option>
+            {asesores.nombres.map((n) => <option key={n} value={n}>{n}</option>)}
+            {asesores.haySinAsesor && <option value={SIN_ASESOR}>Sin asesor</option>}
+          </select>
+          {asesor && <span className="text-[12px] text-[color:var(--text-tertiary)]">{visibles.length} de {groups.length} grupos cargados</span>}
+        </label>
+      )}
+
       {resultados.length > 0 && (
         <div className="space-y-1">
           {resultados.map((r) => (
@@ -201,13 +252,13 @@ export function DuplicadosClient() {
 
       {loading ? (
         <p className="text-[13px] text-[color:var(--text-tertiary)]">Cargando…</p>
-      ) : groups.length === 0 ? (
+      ) : visibles.length === 0 ? (
         <p className="text-[13px] text-[color:var(--text-tertiary)]">
-          No hay grupos en esta lista.
+          {groups.length === 0 ? "No hay grupos en esta lista." : "Ningún grupo cargado tiene contactos de ese asesor."}
         </p>
       ) : (
         <div className="space-y-4">
-          {groups.map((g) => (
+          {visibles.map((g) => (
             <div
               key={g.key}
               className="crm-card rounded-lg border p-4"
@@ -223,7 +274,14 @@ export function DuplicadosClient() {
                   </span>
                   <MatchBadge matchType={g.matchType} />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn-secondary text-xs"
+                    aria-expanded={!!comparando[g.key]}
+                    onClick={() => setComparando((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                  >
+                    {comparando[g.key] ? "Ocultar comparación" : "Comparar lado a lado"}
+                  </button>
                   <button
                     className="btn-secondary text-xs disabled:opacity-40"
                     disabled={busy}
@@ -240,6 +298,7 @@ export function DuplicadosClient() {
                   </button>
                 </div>
               </div>
+              {comparando[g.key] && <Comparativa contacts={g.contacts} principalId={survivors[g.key]} />}
               <div className="grid gap-2 sm:grid-cols-2">
                 {g.contacts.map((c) => (
                   <label

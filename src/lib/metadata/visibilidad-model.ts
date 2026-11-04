@@ -74,3 +74,35 @@ export function aplicarAcceso(
   const resto = perms.filter((p) => !(p.role === role && claves.has(p.fieldKey)));
   return access === "EDIT" ? resto : [...resto, ...fieldKeys.map((fieldKey) => ({ fieldKey, role, access }))];
 }
+
+export interface PlanCopia {
+  /** Campos a cambiar en el rol destino, agrupados por el acceso que recibirán. */
+  porAcceso: Record<Access, string[]>;
+  /** Total de campos que cambian (los que ya coinciden no cuentan). */
+  total: number;
+  /** De ésos, los que hoy no están ocultos al destino y quedarían ocultos. */
+  seOcultan: string[];
+}
+
+/**
+ * Qué cambiaría al copiar los permisos del rol `origen` al rol `destino`:
+ * solo los campos cuyo acceso difiere. `fieldKeys` limita los campos considerados.
+ */
+export function planCopiaPermisos(
+  perms: PermisoCelda[],
+  origen: string,
+  destino: string,
+  fieldKeys: string[]
+): PlanCopia {
+  const porAcceso: Record<Access, string[]> = { HIDDEN: [], READ: [], EDIT: [] };
+  if (origen === destino) return { porAcceso, total: 0, seOcultan: [] };
+  for (const k of fieldKeys) {
+    const deOrigen = accesoDe(perms, k, origen);
+    if (deOrigen !== accesoDe(perms, k, destino)) porAcceso[deOrigen].push(k);
+  }
+  return {
+    porAcceso,
+    total: porAcceso.HIDDEN.length + porAcceso.READ.length + porAcceso.EDIT.length,
+    seOcultan: porAcceso.HIDDEN,
+  };
+}

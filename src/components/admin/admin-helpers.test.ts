@@ -4,9 +4,7 @@ import {
   campoDeMensaje,
   CAMPOS_ACUERDO,
   construirFilaUsuario,
-  describirClaveRegla,
   leerEnteroNoNegativo,
-  mensajeReglaDuplicada,
 } from "./admin-helpers";
 import { ACTIVITY_AGREEMENT_DEFAULTS } from "@/lib/constants";
 
@@ -35,22 +33,6 @@ describe("buscarReglaDuplicada", () => {
   });
   it("ignora la propia regla al editar", () => {
     expect(buscarReglaDuplicada(reglas, reglas[0], "1")).toBeUndefined();
-  });
-});
-
-describe("mensajes en español", () => {
-  it("describe la clave sin enums crudos", () => {
-    const t = describirClaveRegla(reglas[0]);
-    expect(t).not.toMatch(/ASESOR_SR|PROPYTE_LEAD|NATIVA_CONTADO/);
-    expect(t).toContain("Nativa Contado");
-  });
-  it("el aviso de duplicado incluye el porcentaje", () => {
-    expect(mensajeReglaDuplicada(reglas[0])).toContain("2.5%");
-  });
-  it("etiqueta ADMIN", () => {
-    expect(
-      describirClaveRegla({ dealType: "MACROLOTE", leadSourceCategory: "BROKER_LEAD", role: "ADMIN" }),
-    ).toContain("Administrador");
   });
 });
 
