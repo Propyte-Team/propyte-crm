@@ -1,8 +1,11 @@
 // Configuración → Equipos & Territorios (gestión del territorio estilo Zoho).
+// Equipos · Territorios (miembros + reglas de entrada) · Reglas de ruteo.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, UserMinus } from "lucide-react";
+import { Plus, UserMinus, Pencil } from "lucide-react";
+import { RoutingRulesBlock } from "./routing-rules-block";
+import { TerritoryEditor } from "./territory-editor";
 
 interface TeamData {
   id: string;
@@ -22,9 +25,9 @@ interface TerritoryData {
   isActive: boolean;
   parentTerritory: { name: string } | null;
   members: Array<{ accessLevel: string; user: { id: string; name: string } }>;
-  rules: Array<{ id: string; priority: number; isActive: boolean }>;
+  rules: Array<{ id: string; priority: number; isActive: boolean; conditions?: unknown }>;
 }
-interface UserOpt { id: string; name: string; role: string }
+interface UserOpt { id: string; name: string; role: string; plaza?: string | null }
 
 export function TeamsSection({ userRole }: { userRole: string }) {
   const canEdit = ["ADMIN", "DIRECTOR", "GERENTE"].includes(userRole);
@@ -34,6 +37,7 @@ export function TeamsSection({ userRole }: { userRole: string }) {
   const [newTeam, setNewTeam] = useState({ name: "", plaza: "TULUM", leaderId: "" });
   const [newTerritory, setNewTerritory] = useState({ name: "", plaza: "TULUM", zones: "" });
   const [addMember, setAddMember] = useState<Record<string, string>>({});
+  const [openTerritory, setOpenTerritory] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
@@ -177,23 +181,42 @@ export function TeamsSection({ userRole }: { userRole: string }) {
         </div>
         {territories.length === 0 && <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>Sin territorios. Sin ellos, el ruteo usa round-robin global (válido).</p>}
         {territories.map((t) => (
-          <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hairline-b">
-            <div>
-              <span className="text-[13px] font-medium">{t.name}</span>
-              {t.parentTerritory && <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}> ⊂ {t.parentTerritory.name}</span>}
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {t.plaza && <span className="badge badge-neutral">{t.plaza}</span>}
-                {t.zones.map((z) => <span key={z} className="badge badge-neutral">{z}</span>)}
-                <span className="badge badge-neutral">{t.members.length} miembros</span>
-                <span className="badge badge-neutral">{t.rules.length} reglas</span>
+          <div key={t.id} className="px-4 py-3 hairline-b">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-[13px] font-medium">{t.name}</span>
+                {t.parentTerritory && <span className="text-[12px]" style={{ color: "var(--text-tertiary)" }}> ⊂ {t.parentTerritory.name}</span>}
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {t.plaza && <span className="badge badge-neutral">{t.plaza}</span>}
+                  {t.zones.map((z) => <span key={z} className="badge badge-neutral">{z}</span>)}
+                  <span className="badge badge-neutral">{t.members.length} miembros</span>
+                  <span className={`badge ${t.rules.filter((r) => r.isActive).length > 0 ? "badge-success" : "badge-warning"}`}>
+                    {t.rules.filter((r) => r.isActive).length} reglas activas
+                  </span>
+                </div>
               </div>
+              {canEdit && openTerritory !== t.id && (
+                <button className="btn-secondary !py-1 !px-2 text-[12px]" onClick={() => setOpenTerritory(t.id)}>
+                  <Pencil className="h-3.5 w-3.5" /> Miembros y reglas
+                </button>
+              )}
             </div>
-            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-              Miembros y reglas: vía API PUT /api/admin/territories (builder visual en próxima fase)
-            </p>
+            {openTerritory === t.id && (
+              <TerritoryEditor
+                territoryId={t.id}
+                members={t.members}
+                rules={t.rules}
+                users={users}
+                onSaved={(m) => { setMsg(m); setOpenTerritory(null); load(); }}
+                onCancel={() => setOpenTerritory(null)}
+              />
+            )}
           </div>
         ))}
       </div>
+
+      {/* Reglas de ruteo */}
+      <RoutingRulesBlock userRole={userRole} users={users} />
     </div>
   );
 }
