@@ -5,6 +5,7 @@ import Link from "next/link";
 import { leerError } from "@/lib/api-errors";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/use-toast";
+import { DuplicadosHistorial } from "./duplicados-historial";
 import { descripcionFusion, resumenFusion, type ResumenFusion } from "./duplicados-model";
 
 export interface Ct {
@@ -75,6 +76,7 @@ export function DuplicadosClient() {
   const [cargandoMas, setCargandoMas] = useState(false);
   const [survivors, setSurvivors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [version, setVersion] = useState(0);
   const [resultados, setResultados] = useState<Array<ResumenFusion & { id: number }>>([]);
 
   // offset 0 reemplaza la lista; offset > 0 ("Cargar más") la acumula.
@@ -98,6 +100,7 @@ export function DuplicadosClient() {
     });
     setLoading(false);
     setCargandoMas(false);
+    if (offset === 0) setVersion((v) => v + 1);
   }, [tab]);
 
   useEffect(() => {
@@ -297,6 +300,7 @@ export function DuplicadosClient() {
           )}
         </div>
       )}
+      <DuplicadosHistorial version={version} onCambio={() => load(0)} />
     </div>
   );
 }
