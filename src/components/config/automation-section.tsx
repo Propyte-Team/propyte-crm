@@ -6,6 +6,7 @@ import { Plus, Pencil, GitBranch } from "lucide-react";
 import { WorkflowBuilder } from "./workflow-builder";
 import { CadenceEditor } from "./cadence-editor";
 import { SlaPolicyEditor } from "./sla-policy-editor";
+import { SlaReasignacionCard } from "./sla-reasignacion-card";
 import { formatMinutes, mensajeAutomatizacion } from "./cadence-editor";
 import { labelFor, triggerLabelFor } from "@/lib/journey/node-catalog";
 import { etiqueta } from "@/lib/labels";
@@ -377,6 +378,7 @@ export function AutomationSection({
 
       {/* SLA */}
       <SlaPolicyEditor policies={slas} canEdit={canEdit} onChanged={load} deepLinkSlaId={deepLinkSlaId} />
+      <SlaReasignacionCard canEdit={canEdit} />
     </div>
   );
 }
