@@ -2,7 +2,7 @@
 // Página, en un solo formulario (2026-10-10).
 //
 // Por qué existe: cada marca tiene dos cuentas sociales — «Messenger | DM X» e «IG - X» —
-// que usan la MISMA Página, el MISMO Page Access Token, App Secret, Verify Token y marca;
+// que usan la MISMA Página, el MISMO Page Access Token, App Secret y marca;
 // la de Instagram solo añade su igBusinessId. Darlas de alta con dos asistentes obligaba a
 // teclear todo dos veces, y cada copia es una oportunidad de pegar el token o el App Secret
 // de otra marca.

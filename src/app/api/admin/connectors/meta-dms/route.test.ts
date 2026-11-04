@@ -154,7 +154,7 @@ describe("POST /api/admin/connectors/meta-dms · alta", () => {
     });
 
     // Las dos se cifran con los mismos secretos; el igBusinessId no entra en las credenciales.
-    const secrets = { pageAccessToken: TOKEN, appSecret: APP_SECRET, verifyToken: VERIFY };
+    const secrets = { pageAccessToken: TOKEN, appSecret: APP_SECRET };
     expect(writeCreds.mock.calls.map((c) => c[0])).toEqual([secrets, secrets]);
 
     const { data } = await res.json();

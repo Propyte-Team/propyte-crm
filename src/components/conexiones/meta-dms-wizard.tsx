@@ -2,7 +2,7 @@
 
 // Asistente «Conectar página de Meta (DMs)» (2026-10-10): la cuenta de Messenger de una
 // Página y, con «Incluir Instagram de esta Página» (marcado por defecto), la de Instagram
-// vinculada, en un solo formulario. Comparten Page ID, token, App Secret, Verify Token y
+// vinculada, en un solo formulario. Comparten Page ID, token, App Secret y
 // marca, así que se escriben una vez.
 //
 // La lógica vive en el servidor: «Probar conexión» pregunta a /meta-dms/lookup de qué
@@ -42,12 +42,12 @@ const STEPS = [
   },
   {
     title: "Pega los datos una sola vez, prueba y guarda",
-    body: "Sirven para Messenger y para el Instagram de la misma Página. Al probar confirmamos que el token es de esa Página y llenamos el Instagram Business ID. El Verify Token lo inventas tú; ponlo igual en el webhook /api/webhooks/meta-dm de Meta.",
+    body: "Sirven para Messenger y para el Instagram de la misma Página. Al probar confirmamos que el token es de esa Página y llenamos el Instagram Business ID. En el webhook /api/webhooks/meta-dm de Meta, el Verify Token es el que tiene configurado el administrador del sistema.",
   },
 ];
 
 // Campos compartidos con las etiquetas del registro (los de Messenger: Page ID, marca visible,
-// token, App Secret, Verify Token). El de Instagram solo añade su ID.
+// token, App Secret). El de Instagram solo añade su ID.
 const SHARED_FIELDS = providerById("MESSENGER")?.credFields ?? [];
 const IG_LABEL = providerById("INSTAGRAM")?.credFields.find((f) => f.key === "igBusinessId")?.label ?? "Instagram Business ID";
 
