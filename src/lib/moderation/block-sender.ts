@@ -7,6 +7,7 @@
 // de dashboard.ts y reports.ts.
 import prisma from "@/lib/db";
 import { withChangeSource } from "@/lib/audit/change-context";
+import { datosDeArchivado } from "@/lib/contacts/archivar";
 import { toMessageChannel, identifierFor } from "./channel";
 import type { MessageChannel } from "@prisma/client";
 import type { MetaModerationResult } from "./meta-moderation";
@@ -98,12 +99,12 @@ export async function markConversationAsSpam(args: {
           // pg_indexes y en los datos, no inferido del schema.
           phone: "",
           secondaryPhone: null,
-          instagramId: null,
-          messengerPsid: null,
           tags,
           contactStatus: "DESCARTADO",
           doNotContact: true,
-          deletedAt: new Date(),
+          // #903: archivar suelta los tres ids de canal; antes se quedaba el de WhatsApp (BSUID).
+          // El identificador bloqueado vive en blocked_senders, no aquí.
+          ...datosDeArchivado(),
         },
       });
 

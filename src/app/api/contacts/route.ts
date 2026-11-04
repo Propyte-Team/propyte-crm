@@ -49,6 +49,7 @@ import {
   filtroAsesor,
 } from "@/lib/contacts/alcance-lista";
 import { getContactAccessInfo } from "@/server/contacts";
+import { datosDeArchivado } from "@/lib/contacts/archivar";
 
 // Los sets de roles y el alcance de la lista viven en lib/contacts/alcance-lista.ts (#919):
 // el filtro «Asesores» usa la misma regla.
@@ -912,7 +913,9 @@ export async function DELETE(request: NextRequest) {
     // Soft delete
     await withChangeSource(
       { source: "ui", actorId: session.user.id },
-      (tx) => tx.contact.update({ where: { id }, data: { deletedAt: new Date() } })
+      // #903: archivar suelta los ids de canal (únicos): si no, la persona que vuelve a escribir
+      // choca con el archivado y su alta nueva se pierde. La cronología guarda los valores.
+      (tx) => tx.contact.update({ where: { id }, data: datosDeArchivado() })
     );
 
     return NextResponse.json({ success: true });
