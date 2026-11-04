@@ -392,7 +392,7 @@ export function ConnectionsView({
                               onChange={(e) => setTokenDraft(e.target.value)}
                             />
                             <p className="text-[10px] text-muted-foreground">
-                              Solo cambia el token: App Secret y Verify Token se conservan. Antes de guardar
+                              Solo cambia el token: App Secret y el resto de credenciales se conservan. Antes de guardar
                               se confirma con Meta que el token es de la página de esta cuenta.
                             </p>
                             <div className="flex gap-3">

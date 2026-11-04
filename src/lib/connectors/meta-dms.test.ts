@@ -16,7 +16,6 @@ const FIELDS = {
   brand: "Nativa",
   pageAccessToken: "EAAtoken",
   appSecret: "APP-SECRET",
-  verifyToken: "VERIFY",
   igBusinessId: "IG-1",
 };
 
@@ -44,7 +43,7 @@ describe("metaDmNames", () => {
 describe("buildMetaDmDrafts", () => {
   it("con Instagram: dos cuentas con los mismos secretos y la misma Página", () => {
     const [messenger, instagram] = buildMetaDmDrafts({ name: "Nativa Tulum", fields: FIELDS, includeInstagram: true });
-    const secrets = { pageAccessToken: "EAAtoken", appSecret: "APP-SECRET", verifyToken: "VERIFY" };
+    const secrets = { pageAccessToken: "EAAtoken", appSecret: "APP-SECRET" };
 
     expect(messenger).toEqual({
       provider: "MESSENGER",
