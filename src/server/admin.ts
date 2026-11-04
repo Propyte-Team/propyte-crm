@@ -10,9 +10,9 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { hash } from "bcryptjs";
 import { z } from "zod";
-import { randomBytes } from "crypto";
 import type { UserRole, Plaza, CareerLevel } from "@prisma/client";
 import { generateApiKeyPair } from "@/lib/auth/api-key";
+import { generarSecretWebhook, sinSecretConPista } from "@/lib/webhooks/secret";
 import { describirClaveRegla, mensajeReglaDuplicada } from "@/components/admin/admin-helpers";
 
 // Roles permitidos para acceder a administración
@@ -985,13 +985,16 @@ export async function updateSystemConfig(key: string, value: unknown) {
  */
 export async function getWebhookConfigs() {
   await requireAdminRole();
-  return prisma.webhookConfig.findMany({
+  // El secret completo no sale del servidor: solo una pista («••••ab12»).
+  const filas = await prisma.webhookConfig.findMany({
     orderBy: { event: "asc" },
   });
+  return filas.map(sinSecretConPista);
 }
 
 /**
  * Crea una nueva configuración de webhook saliente.
+ * Devuelve el secret completo UNA sola vez (en esta respuesta); luego solo la pista.
  */
 export async function createWebhookConfig(data: { event: string; url: string }) {
   await requireAdminRole();
@@ -1001,7 +1004,7 @@ export async function createWebhookConfig(data: { event: string; url: string }) 
   }
 
   // Generar secret aleatorio para firma HMAC
-  const secret = randomBytes(32).toString("hex");
+  const secret = generarSecretWebhook();
 
   const config = await prisma.webhookConfig.create({
     data: {
@@ -1011,11 +1014,11 @@ export async function createWebhookConfig(data: { event: string; url: string }) 
     },
   });
 
-  return { ...config, secret };
+  return { ...sinSecretConPista(config), secret };
 }
 
 /**
- * Actualiza un webhook (activar/desactivar, cambiar URL).
+ * Actualiza un webhook (activar/desactivar, cambiar URL). No devuelve el secret.
  */
 export async function updateWebhookConfig(
   id: string,
@@ -1023,10 +1026,26 @@ export async function updateWebhookConfig(
 ) {
   await requireAdminRole();
 
-  return prisma.webhookConfig.update({
+  const config = await prisma.webhookConfig.update({
     where: { id },
     data,
   });
+  return sinSecretConPista(config);
+}
+
+/**
+ * Regenera el secret de un webhook (mismos permisos que editarlo). Devuelve el nuevo
+ * secret UNA sola vez; el anterior deja de valer y el sistema receptor debe actualizarse.
+ */
+export async function regenerateWebhookSecret(id: string) {
+  await requireAdminRole();
+
+  const secret = generarSecretWebhook();
+  const config = await prisma.webhookConfig.update({
+    where: { id },
+    data: { secret },
+  });
+  return { ...sinSecretConPista(config), secret };
 }
 
 /**
