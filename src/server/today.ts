@@ -3,6 +3,7 @@
 // Vista Hoy del asesor (Fase 2, T2.1). Agrega lo accionable del día en una sola
 // consulta server-side con RBAC: ASESOR ve lo suyo, TEAM_LEADER su equipo, dirección todo.
 import prisma from "@/lib/db";
+import { enLotes } from "@/lib/db/lotes";
 import { realLeadWhere } from "@/lib/leads/real-leads";
 import { resolveActivityScope } from "@/lib/activities/scope";
 import { cancunDayRange } from "@/lib/agenda/grouping";
@@ -94,59 +95,59 @@ export async function getTodayView(userId: string, role: string): Promise<TodayV
       visitsCount, visits,
       hotCount, hot,
       openQuotes,
-    ] = await Promise.all([
+    ] = await enLotes([
       // 1. Leads nuevos sin tocar. El `deletedAt: null` explícito que había aquí se
       // quitó porque ahora lo trae `contactScope` (#683) y también realLeadWhere (#682):
       // repetirlo en el literal es un TS2783 ("se especifica más de una vez").
-      prisma.contact.count({ where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }) }),
-      prisma.contact.findMany({
+      () => prisma.contact.count({ where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }) }),
+      () => prisma.contact.findMany({
         where: realLeadWhere({ contactStatus: "NUEVO" as never, ...contactScope }),
         select: { id: true, firstName: true, lastName: true, phone: true, leadSource: true },
         orderBy: { createdAt: "desc" }, take: 6,
       }),
       // 2. SLA en riesgo (corriendo y por vencer)
-      prisma.slaTimer.count({ where: { status: "RUNNING" as never, dueAt: { lte: soon }, contact: contactScope } }),
-      prisma.slaTimer.findMany({
+      () => prisma.slaTimer.count({ where: { status: "RUNNING" as never, dueAt: { lte: soon }, contact: contactScope } }),
+      () => prisma.slaTimer.findMany({
         where: { status: "RUNNING" as never, dueAt: { lte: soon }, contact: contactScope },
         select: { id: true, dueAt: true, type: true, contact: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { dueAt: "asc" }, take: 6,
       }),
       // 3. Tareas vencidas o de hoy (TASK + CALL_TASK)
-      prisma.activity.count({
+      () => prisma.activity.count({
         where: { deletedAt: null, activityType: { in: ["TASK", "CALL_TASK"] as never }, status: "PENDIENTE" as never, dueDate: { lte: endToday }, ...activityUserScope },
       }),
-      prisma.activity.findMany({
+      () => prisma.activity.findMany({
         where: { deletedAt: null, activityType: { in: ["TASK", "CALL_TASK"] as never }, status: "PENDIENTE" as never, dueDate: { lte: endToday }, ...activityUserScope },
         select: { id: true, subject: true, dueDate: true, activityType: true, contact: { select: { id: true, firstName: true, lastName: true, phone: true } } },
         orderBy: { dueDate: "asc" }, take: 6,
       }),
       // 4. Conversaciones sin responder
-      prisma.conversation.count({ where: { unreadCount: { gt: 0 }, status: { not: "CLOSED" as never }, contact: contactScope } }),
-      prisma.conversation.findMany({
+      () => prisma.conversation.count({ where: { unreadCount: { gt: 0 }, status: { not: "CLOSED" as never }, contact: contactScope } }),
+      () => prisma.conversation.findMany({
         where: { unreadCount: { gt: 0 }, status: { not: "CLOSED" as never }, contact: contactScope },
         select: { id: true, unreadCount: true, lastInboundAt: true, contact: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { lastInboundAt: "desc" }, take: 6,
       }),
       // 5. Visitas de hoy
-      prisma.activity.count({
+      () => prisma.activity.count({
         where: { deletedAt: null, activityType: { in: ["MEETING_PRESENTIAL", "MEETING_VIRTUAL", "MEETING_SHOWROOM"] as never }, dueDate: { gte: startToday, lte: endToday }, ...activityUserScope },
       }),
-      prisma.activity.findMany({
+      () => prisma.activity.findMany({
         where: { deletedAt: null, activityType: { in: ["MEETING_PRESENTIAL", "MEETING_VIRTUAL", "MEETING_SHOWROOM"] as never }, dueDate: { gte: startToday, lte: endToday }, ...activityUserScope },
         select: { id: true, subject: true, dueDate: true, contact: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { dueDate: "asc" }, take: 6,
       }),
       // 6. Deals calientes (contacto HOT, no cerrados)
-      prisma.deal.count({
+      () => prisma.deal.count({
         where: { deletedAt: null, stage: { notIn: ["WON", "LOST", "FROZEN"] as never }, contact: { temperature: "HOT" as never }, ...dealScope },
       }),
-      prisma.deal.findMany({
+      () => prisma.deal.findMany({
         where: { deletedAt: null, stage: { notIn: ["WON", "LOST", "FROZEN"] as never }, contact: { temperature: "HOT" as never }, ...dealScope },
         select: { id: true, stage: true, estimatedValue: true, currency: true, contact: { select: { firstName: true, lastName: true } } },
         orderBy: { updatedAt: "desc" }, take: 6,
       }),
       // 7. Cotizaciones abiertas (enviadas / vistas)
-      prisma.quote.count({
+      () => prisma.quote.count({
         where: { deletedAt: null, status: { in: ["SENT", "OPENED"] as never }, ...(ownerWhere ? { deal: { assignedToId: ownerWhere } } : {}) },
       }),
     ]);

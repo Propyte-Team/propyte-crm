@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
 import { canSeeOrphanLeads } from "@/lib/leads/orphans";
 import { getOrphanAssignees, getOrphanLeads, MAX_ASIGNACION_POR_LOTE } from "@/server/orphan-leads";
+import { enLotes } from "@/lib/db/lotes";
 import { getBrandViewContext } from "@/lib/brands/view-context";
 import { BrandViewProvider } from "@/components/brands/brand-view";
 import { OrphanLeadsView } from "@/components/conexiones/orphan-leads-view";
@@ -19,11 +20,11 @@ export default async function LeadsHuerfanosPage() {
   // #883 (2026-10-14): se listan hasta el tope de la asignación masiva (antes 50 por sección) para
   // que «Seleccionar todos» abarque a todos: hoy son 90 con dueño técnico, y con 50 quedaban 40 sin
   // poder marcarse.
-  const [data, brandView, assignees] = await Promise.all([
-    getOrphanLeads(session.user, { limit: MAX_ASIGNACION_POR_LOTE }),
-    getBrandViewContext(session.user),
-    getOrphanAssignees(),
-  ]);
+  const [data, brandView, assignees] = await enLotes([
+    () => getOrphanLeads(session.user, { limit: MAX_ASIGNACION_POR_LOTE }),
+    () => getBrandViewContext(session.user),
+    () => getOrphanAssignees(),
+  ], 2); // getOrphanLeads ya lanza 5 consultas por dentro: de 2 en 2 (#974)
   if (!data) redirect("/hoy");
 
   return (
