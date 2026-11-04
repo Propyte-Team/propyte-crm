@@ -12,10 +12,11 @@ import { toast } from "@/components/ui/use-toast";
 import { leerError } from "@/lib/api-errors";
 import { ROLE_LABELS_COMPLETO, PLAZA_LABELS, etiqueta, opciones } from "@/lib/labels";
 import { ConditionTreeEditor } from "./condition-tree";
-import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado, problemasDeCondiciones } from "./condition-tree-model";
 import {
   ROUTING_FIELD_SUGGESTIONS, STRATEGY_LABELS, strategyOptions, describeConditions, describeTargets,
-  buildTargets, parseTargets, nextPriority, hasIncompleteCondition,
+  buildTargets, parseTargets, nextPriority,
 } from "@/lib/teams/rules-model";
 import { ROUTING_TARGET_ROLES } from "@/lib/validations/routing-rule";
 
@@ -72,13 +73,14 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
     if (!editing) return;
     const f = editing.form;
     if (f.name.trim().length < 3) { fallo("El nombre necesita al menos 3 caracteres"); return; }
-    if (hasIncompleteCondition(f.tree)) { fallo("Hay una condición incompleta. Completa o quita la fila antes de guardar."); return; }
+    const problemas = problemasDeCondiciones(f.tree);
+    if (problemas.length > 0) { fallo(`Condición incompleta: ${problemas[0]}`); return; }
     setSaving(true);
     const body = {
       name: f.name.trim(),
       priority: f.priority,
       strategy: f.strategy,
-      conditions: buildConditionsTree(f.tree),
+      conditions: buildConditionsTreeGuiado(f.tree),
       targets: buildTargets(f),
     };
     const res = await fetch(editing.id ? `/api/admin/routing-rules/${editing.id}` : "/api/admin/routing-rules", {
@@ -195,6 +197,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
             tree={editing.form.tree}
             onChange={(tree) => setForm({ tree })}
             label="Aplica cuando"
+            contexto="contact"
             emptyText="Sin condiciones = aplica a todos los leads."
             fieldSuggestions={ROUTING_FIELD_SUGGESTIONS}
             listId="routing-field-suggestions"

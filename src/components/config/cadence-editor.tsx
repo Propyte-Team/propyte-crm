@@ -5,7 +5,8 @@
 import { useState } from "react";
 import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { ConditionTreeEditor } from "./condition-tree";
-import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado } from "./condition-tree-model";
 import { labelFor } from "@/lib/journey/node-catalog";
 import { AUTONOMY_LABELS } from "@/lib/labels";
 import { NOMBRES_DE_CAMPO, erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
@@ -155,7 +156,7 @@ export function DelayInput({
 
 function treeToConditions(tree: ConditionTree): unknown {
   if (tree.items.length === 0) return {};
-  return buildConditionsTree(tree);
+  return buildConditionsTreeGuiado(tree);
 }
 
 function conditionsToTree(exitConditions: unknown): ConditionTree {
@@ -368,6 +369,7 @@ export function CadenceEditor({
         tree={exitTree}
         onChange={setExitTree}
         label="Condiciones de salida"
+        contexto="contact"
         emptyText="Sin condiciones = el contacto recorre todos los pasos sin salida anticipada."
       />
 

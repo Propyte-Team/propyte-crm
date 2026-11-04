@@ -7,16 +7,16 @@
 //   ConditionTreeEditor (condition-tree.tsx) usa { tree: ConditionTree; onChange }
 //   donde ConditionTree = { combinator: "all"|"any"; items: CondItem[] } — diferente de
 //   RuleDraft.conditions (Conditions = DSL ConditionNode de rebuild-f1.ts).
-//   Se usa parseConditions / buildConditionsTree de builder-model para la conversión.
+//   Se usa parseConditions / buildConditionsTreeGuiado (condition-tree-model) para la conversión.
 
 import { useState } from "react";
 import type { RuleDraft, Conditions, NodeDraft, DecisionNodeDraft } from "@/lib/journey/rule-draft";
 import { isDecisionDraft } from "@/lib/journey/rule-draft";
 import { workflowActionTypes, TRIGGER_TYPES } from "@/lib/validations/rebuild-f1";
 import { ConditionTreeEditor } from "@/components/config/condition-tree";
+import { buildConditionsTreeGuiado } from "@/components/config/condition-tree-model";
 import {
   parseConditions,
-  buildConditionsTree,
   type ConditionTree,
 } from "@/lib/workflows/builder-model";
 import {
@@ -85,7 +85,7 @@ function conditionsToTree(c: Conditions): ConditionTree {
 }
 
 function treeToConditions(tree: ConditionTree): Conditions {
-  return buildConditionsTree(tree) as Conditions;
+  return buildConditionsTreeGuiado(tree) as Conditions;
 }
 
 // ─── FriendlyField sub-component ─────────────────────────────────────────────
@@ -255,6 +255,7 @@ export function RuleInspectorPanel({
           tree={conditionsToTree(draft.conditions)}
           onChange={(tree) => ops.setConditions(treeToConditions(tree))}
           label="Condición"
+          contexto="contact"
         />
       </aside>
     );

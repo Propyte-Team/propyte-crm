@@ -11,9 +11,9 @@ describe("describeConditions", () => {
     expect(describeConditions({ all: [] })).toBe("siempre");
   });
   it("hoja con etiqueta legible", () => {
-    expect(describeConditions({ field: "contact.leadSource", op: "eq", value: "META_ADS" })).toBe("fuente = Meta Ads");
-    expect(describeConditions({ field: "contact.budgetMax", op: "gte", value: 250000 })).toBe("presupuesto máx. ≥ 250000");
-    expect(describeConditions({ field: "contact.preferredZone", op: "exists" })).toBe("zona preferida existe");
+    expect(describeConditions({ field: "contact.leadSource", op: "eq", value: "META_ADS" })).toBe("fuente es Meta Ads");
+    expect(describeConditions({ field: "contact.budgetMax", op: "gte", value: 250000 })).toBe("presupuesto máx. es al menos 250,000");
+    expect(describeConditions({ field: "contact.preferredZone", op: "exists" })).toBe("zona preferida tiene valor");
   });
   it("all → y; any → o entre paréntesis; listas con coma", () => {
     expect(describeConditions({
@@ -21,17 +21,17 @@ describe("describeConditions", () => {
         { field: "contact.targetPlaza", op: "eq", value: "TULUM" },
         { any: [{ field: "contact.preferredLanguage", op: "eq", value: "EN" }, { field: "contact.score", op: "gt", value: 50 }] },
       ],
-    })).toBe("plaza = Tulum y (idioma = Inglés o score > 50)");
-    expect(describeConditions({ field: "contact.leadSource", op: "in", value: ["META_ADS", "INSTAGRAM"] })).toBe("fuente en Meta Ads, Instagram");
+    })).toBe("plaza es Tulum y (idioma es Inglés o score es mayor que 50)");
+    expect(describeConditions({ field: "contact.leadSource", op: "in", value: ["META_ADS", "INSTAGRAM"] })).toBe("fuente es alguno de Meta Ads, Instagram");
   });
   it("valores con etiqueta según el campo; sin diccionario se dejan tal cual", () => {
-    expect(describeConditions({ field: "contact.contactType", op: "eq", value: "LEAD_COMPRADOR" })).toBe("tipo de contacto = Lead Comprador");
-    expect(describeConditions({ field: "contact.temperature", op: "eq", value: "HOT" })).toBe("temperatura = Caliente");
+    expect(describeConditions({ field: "contact.contactType", op: "eq", value: "LEAD_COMPRADOR" })).toBe("tipo de contacto es Lead Comprador");
+    expect(describeConditions({ field: "contact.temperature", op: "eq", value: "HOT" })).toBe("temperatura es Caliente");
     expect(describeConditions({ field: "adAttribution.campaignName", op: "contains", value: "META_ADS" })).toBe("campaña contiene META_ADS");
-    expect(describeConditions({ field: "contact.targetPlaza", op: "in", value: ["PDC", "MERIDA"] })).toBe("plaza en Playa del Carmen, Mérida");
+    expect(describeConditions({ field: "contact.targetPlaza", op: "in", value: ["PDC", "MERIDA"] })).toBe("plaza es alguno de Playa del Carmen, Mérida");
   });
   it("campo desconocido se muestra sin el prefijo contact.", () => {
-    expect(describeConditions({ field: "contact.custom.idioma", op: "eq", value: "pt" })).toBe("custom.idioma = pt");
+    expect(describeConditions({ field: "contact.custom.idioma", op: "eq", value: "pt" })).toBe("custom.idioma es pt");
   });
 });
 
