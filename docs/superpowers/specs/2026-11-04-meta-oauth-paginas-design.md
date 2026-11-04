@@ -52,9 +52,11 @@ Reutiliza el patrón de WhatsApp (popup + code flow, sin redirect):
 
 ### 3.3 Webhooks
 
-- **Lead Ads** (`/api/connectors/meta/webhook`): para conectores `onboarding: "oauth"`, verificación y firma con el `verifyToken`/`META_APP_SECRET` globales; los conectores manuales siguen con sus valores por conector. Pasar la llamada de detalle del lead de `v21.0` con token en la URL a `v24.0` con cabecera `Authorization`.
-- **Messenger / Instagram** (`/api/webhooks/meta-dm`): sin cambios (ya usan valores globales).
-- La URL de webhook y el verify token se configuran **una vez a nivel de app** en Meta (no por Página): con OAuth ya no se muestran al usuario.
+- En Meta, una app tiene **una sola URL de webhook por objeto**. `leadgen` (Lead Ads) y `messages` (Messenger) son campos del objeto **Page**, así que en la app de OAuth los dos llegan a la misma URL: la que ya tenga configurada el objeto Page (hoy, la de mensajes: `/api/webhooks/meta-dm`).
+- Por eso `/api/webhooks/meta-dm` debe reconocer los cambios `field: "leadgen"` y pasarlos al mismo procesador que usa hoy `/api/connectors/meta/webhook` (extraerlo a `src/lib/intake/meta-leadgen.ts`): resolver el conector META por `page_id`, filtro de formularios, reserva, detalle del lead con Graph `v24.0` y token en cabecera (hoy `v21.0` en la URL), mapeo.
+- La verificación (GET) y la firma usan los valores globales (`META_DM_VERIFY_TOKEN`; firma con `META_DM_APP_SECRET` o `META_APP_SECRET`).
+- `/api/connectors/meta/webhook` se queda igual para las conexiones manuales de Lead Ads de otras apps, hasta que se reconecten.
+- La URL y el verify token se configuran una vez a nivel de app en Meta, no por Página: con OAuth ya no se muestran al usuario.
 
 ### 3.4 Desconectar
 
