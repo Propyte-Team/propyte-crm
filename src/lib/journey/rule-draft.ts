@@ -4,6 +4,8 @@ import { conditionsDslSchema } from "@/lib/validations/rebuild-f1";
 import type { WorkflowNode } from "@/lib/validations/rebuild-f1";
 import type { z } from "zod";
 import type { Flow, RFNode, RFEdge } from "./flow-adapter";
+import { armarDisparador } from "@/lib/workflows/trigger-catalog";
+import { PIPELINE_STAGES } from "@/lib/constants";
 
 export type Conditions = z.infer<typeof conditionsDslSchema>;
 
@@ -375,20 +377,37 @@ export function setMeta(
   return { ...draft, ...patch };
 }
 
-/** Draft mínimo válido para una regla nueva (trigger + 1 acción CHANGE_STAGE). */
+/**
+ * Draft mínimo VÁLIDO para una regla nueva (E4 #6). Antes nacía con nombre vacío (la API exige
+ * >= 3 caracteres), trigger EVENT sin eventType y CHANGE_STAGE sin etapa, así que el primer
+ * "Guardar" siempre fallaba con "Datos inválidos". Ahora: nombre "Nueva regla", disparador del
+ * catálogo (lead.captured) y una acción con config completa (mover a la primera etapa del pipeline).
+ * Nace inactiva: no dispara nada hasta que el usuario la active.
+ */
 export function newRuleDraft(): RuleDraft {
+  const trigger = armarDisparador("lead.captured", "");
   return {
     id: undefined,
-    name: "",
+    name: "Nueva regla",
     description: null,
-    triggerType: "EVENT",
-    triggerConfig: {},
+    triggerType: trigger.triggerType,
+    triggerConfig: trigger.triggerConfig,
     conditions: {} as Conditions,
-    actions: [{ nodeId: "a0", type: "CHANGE_STAGE", config: {} }],
+    actions: [{ nodeId: "a0", type: "CHANGE_STAGE", config: { toStage: PIPELINE_STAGES[0].code } }],
     cooldownMinutes: null,
     priority: 100,
     isActive: false,
   };
+}
+
+/**
+ * Convierte un payload de regla (acciones planas o con ramas, como lo arma el constructor de
+ * Configuracion) en draft del lienzo. Sin id => regla nueva (el draft no lleva id).
+ */
+export function payloadToDraft(p: RulePayload): RuleDraft {
+  const d = ruleToDraft({ ...p, id: p.id ?? "" });
+  if (!p.id) delete d.id;
+  return d;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

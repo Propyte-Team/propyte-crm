@@ -88,12 +88,15 @@ export function AutomationSection({
   userRole,
   deepLinkPlanId,
   deepLinkSlaId,
+  deepLinkRuleId,
 }: {
   userRole: string;
   /** Deep-link desde Journey (cadence node click) → abre esta cadencia directo. */
   deepLinkPlanId?: string;
   /** Deep-link desde Journey (panel SLA) → abre esta política directo (via SlaPolicyEditor). */
   deepLinkSlaId?: string;
+  /** Deep-link desde /journey ("Editar en Configuración") → abre el builder de esta regla. */
+  deepLinkRuleId?: string;
 }) {
   const canEdit = ["ADMIN", "DIRECTOR"].includes(userRole);
   const { fuentes } = useFuentes();
@@ -128,6 +131,15 @@ export function AutomationSection({
     const p = plans.find((x) => x.id === deepLinkPlanId);
     if (p) setEditingPlan(p);
   }, [deepLinkPlanId, plans]);
+
+  // Deep-link desde /journey: ?ruleId=<id> abre el builder de esa regla, una sola vez.
+  const appliedRuleDeepLink = useRef(false);
+  useEffect(() => {
+    if (appliedRuleDeepLink.current || !deepLinkRuleId || rules.length === 0) return;
+    appliedRuleDeepLink.current = true;
+    const r = rules.find((x) => x.id === deepLinkRuleId);
+    if (r && canEdit) setBuilderRule(r);
+  }, [deepLinkRuleId, rules, canEdit]);
 
   async function retry(id: string) {
     const res = await fetch("/api/admin/automation/retry", {
@@ -265,9 +277,9 @@ export function AutomationSection({
                 </button>
               )}
               <a
-                href={`/journey?mode=targeted&ruleId=${r.id}`}
+                href={`/journey?ruleId=${r.id}`}
                 className="text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]"
-                title="Ver como diagrama (Journey)"
+                title="Ver en el mapa"
               >
                 <GitBranch className="h-4 w-4" />
               </a>
