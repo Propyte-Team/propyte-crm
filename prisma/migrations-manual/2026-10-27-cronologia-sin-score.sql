@@ -19,8 +19,12 @@ DECLARE
   k text;
 BEGIN
   -- 2026-10-27: el score de contactos tiene su propio historial en contact_scores.
+  -- #950: array_append, NO `excluded_keys || 'score'`. Con `||` Postgres toma el literal sin tipo
+  -- como un arreglo («malformed array literal: "score"») y, como esto corre en el disparador
+  -- AFTER UPDATE de contacts, CUALQUIER cambio a un contacto fallaba. Producción ya tenía
+  -- array_append (se corrigió a mano al aplicarla); el archivo quedaba distinto.
   IF TG_ARGV[0] = 'contact' THEN
-    excluded_keys := excluded_keys || 'score';
+    excluded_keys := array_append(excluded_keys, 'score');
   END IF;
 
   FOR k IN SELECT jsonb_object_keys(new_row)
