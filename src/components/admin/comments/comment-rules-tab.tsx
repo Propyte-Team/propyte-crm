@@ -5,12 +5,17 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Pause, Play, Pencil, Trash2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { leerError } from "@/lib/api-errors";
 import { CommentRuleDialog, type CommentRuleRow, type ConnectorOption } from "./comment-rule-dialog";
 import { CommentRuleTester } from "./comment-rule-tester";
 import { CommentRuleLogs } from "./comment-rule-logs";
 import { CommentAccountsHealth } from "./comment-accounts-health";
 
 export function CommentRulesTab() {
+  const { toast } = useToast();
+  const confirmar = useConfirm();
   const [rules, setRules] = useState<CommentRuleRow[]>([]);
   const [connectors, setConnectors] = useState<ConnectorOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +35,7 @@ export function CommentRulesTab() {
       if (rulesRes.ok) {
         setRules((await rulesRes.json()).data ?? []);
       } else {
-        setLoadError("No se pudieron cargar las reglas");
+        setLoadError(await leerError(rulesRes, "No se pudieron cargar las reglas"));
       }
       if (connRes.ok) {
         const all = (await connRes.json()).data ?? [];
@@ -57,15 +62,35 @@ export function CommentRulesTab() {
       body: JSON.stringify({ isActive: !rule.isActive }),
     });
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(typeof data.error === "string" ? data.error : "No se pudo cambiar el estado");
+      toast({
+        title: rule.isActive ? "No se pudo pausar la regla" : "No se pudo activar la regla",
+        description: await leerError(res, "Intenta de nuevo."),
+        variant: "destructive",
+      });
+    } else {
+      toast({ title: rule.isActive ? "Regla en pausa" : "Regla activada" });
     }
     load();
   }
 
   async function remove(rule: CommentRuleRow) {
-    if (!confirm(`¿Eliminar la regla "${rule.name}"? El historial se conserva.`)) return;
-    await fetch(`/api/admin/comment-rules/${rule.id}`, { method: "DELETE" });
+    const ok = await confirmar({
+      titulo: `¿Eliminar la regla "${rule.name}"?`,
+      descripcion: "Dejará de contestar comentarios en esa cuenta. El historial se conserva.",
+      confirmar: "Eliminar regla",
+      peligroso: true,
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/admin/comment-rules/${rule.id}`, { method: "DELETE" });
+    if (res.ok) {
+      toast({ title: "Regla eliminada" });
+    } else {
+      toast({
+        title: "No se pudo eliminar la regla",
+        description: await leerError(res, "Intenta de nuevo."),
+        variant: "destructive",
+      });
+    }
     load();
   }
 
@@ -106,7 +131,7 @@ export function CommentRulesTab() {
                     {r.connector.provider === "INSTAGRAM" ? "Instagram" : "Facebook"} · {r.connector.name}
                   </span>
                   <span className={`badge ${r.isActive ? "badge-success" : "badge-neutral"}`}>
-                    {r.isActive ? "ACTIVA" : "EN PAUSA"}
+                    {r.isActive ? "Activa" : "En pausa"}
                   </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -121,7 +146,7 @@ export function CommentRulesTab() {
                   ))}
                 </div>
                 <p className="mt-1 text-[12px] text-muted-foreground">
-                  {r._count.logs} disparos · prioridad {r.priority} ·{" "}
+                  {r._count.logs} veces · orden {r.priority} ·{" "}
                   {r.postFilter.length ? `${r.postFilter.length} publicaciones` : "toda la cuenta"} ·{" "}
                   {r.publicReplies.length} variante(s) ·{" "}
                   {r.dailyCap > 0 ? `tope ${r.dailyCap}/día` : "sin tope diario"}
@@ -129,14 +154,17 @@ export function CommentRulesTab() {
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Button variant="outline" size="sm" onClick={() => toggle(r)}
-                  title={r.isActive ? "Pausar" : "Activar"}>
+                  title={r.isActive ? "Pausar regla" : "Activar regla"}
+                  aria-label={r.isActive ? "Pausar regla" : "Activar regla"}>
                   {r.isActive ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                 </Button>
                 <Button variant="outline" size="sm"
-                  onClick={() => { setEditing(r); setDialogOpen(true); }} title="Editar">
+                  onClick={() => { setEditing(r); setDialogOpen(true); }} title="Editar regla"
+                  aria-label="Editar regla">
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => remove(r)} title="Eliminar">
+                <Button variant="outline" size="sm" onClick={() => remove(r)} title="Eliminar regla"
+                  aria-label="Eliminar regla">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>

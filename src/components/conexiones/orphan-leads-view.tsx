@@ -177,7 +177,7 @@ function ContactRow({
       <p className="mt-0.5 text-[11px] text-muted-foreground">
         {LEAD_SOURCE_LABELS[row.leadSource] ?? row.leadSource} · alta {fecha(row.createdAt)} · último mensaje{" "}
         {fecha(row.lastMessageAt)}
-        {showOwner && row.owner ? ` · dueño ${row.owner.email}` : ""}
+        {showOwner && row.owner ? ` · asignado a ${row.owner.email}` : ""}
       </p>
     </div>
   );
@@ -406,7 +406,7 @@ export function OrphanLeadsView({
             Conexiones
           </Link>
         </p>
-        <h1 className="text-[28px] font-semibold tracking-tight">Leads huérfanos</h1>
+        <h1 className="text-[28px] font-semibold tracking-tight">Prospectos sin atender</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Prospectos que se pueden estar perdiendo. Solo ves los de las marcas que tienes prendidas.
         </p>
@@ -451,8 +451,8 @@ export function OrphanLeadsView({
       </Section>
 
       <Section
-        title="Con dueño técnico"
-        hint="Asignados a una cuenta interna o de pruebas (correo .local). El reparto ya no les da leads, pero estos se quedaron ahí sin seguimiento."
+        title="Asignados a una cuenta interna"
+        hint="Están asignados a una cuenta del sistema o de pruebas, así que nadie los atiende. El reparto ya no les da prospectos nuevos, pero estos se quedaron ahí sin seguimiento."
         total={data.technical.total}
         shown={data.technical.rows.length}
         seleccion={{ ids: marcablesDe(data.technical.rows, (r) => r.id), selected: seleccion, onToggle }}

@@ -6,6 +6,29 @@ import { Plus, Pencil, GitBranch } from "lucide-react";
 import { WorkflowBuilder } from "./workflow-builder";
 import { CadenceEditor } from "./cadence-editor";
 import { SlaPolicyEditor } from "./sla-policy-editor";
+import { formatMinutes, mensajeAutomatizacion } from "./cadence-editor";
+import { labelFor, triggerLabelFor } from "@/lib/journey/node-catalog";
+import { etiqueta } from "@/lib/labels";
+import { toast } from "@/components/ui/use-toast";
+
+const QUEUE_LABELS: Record<string, string> = {
+  PENDING: "Pendientes",
+  RUNNING: "En ejecución",
+  DONE: "Hechas",
+  FAILED: "Fallidas",
+  SKIPPED: "Omitidas",
+};
+
+const ENTIDADES: Record<string, string> = {
+  contact: "contacto", deal: "operación", lead: "lead", task: "tarea", conversation: "conversación", enrollment: "cadencia",
+};
+
+function stepsSummary(steps: Array<{ order: number; actionType: string; delayMinutes: number }>): string {
+  return [...steps]
+    .sort((a, b) => a.order - b.order)
+    .map((st) => (st.delayMinutes > 0 ? `tras ${formatMinutes(st.delayMinutes)}: ` : "") + labelFor(st.actionType))
+    .join(" → ");
+}
 
 interface Rule {
   id: string;
@@ -107,27 +130,42 @@ export function AutomationSection({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    setMsg(res.ok ? "Acción re-encolada ✓" : "No se pudo reintentar");
+    if (res.ok) toast({ title: "Acción puesta de nuevo en la fila" });
+    else setMsg("No se pudo reintentar la acción");
     load();
   }
 
-  async function patch(body: Record<string, unknown>) {
+  async function patch(body: Record<string, unknown>, okTitle?: string) {
     setMsg("");
     const res = await fetch("/api/admin/automation", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) setMsg("Error al guardar");
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setMsg(mensajeAutomatizacion(d, "No se pudo guardar el cambio"));
+    } else if (okTitle) {
+      toast({ title: okTitle });
+    }
     load();
   }
+
+  const accionesPendientes = (queue.PENDING ?? 0) + (queue.RUNNING ?? 0);
+  const accionesFallidas = queue.FAILED ?? 0;
+  const semaforo =
+    accionesFallidas > 0
+      ? { color: "var(--color-error)", titulo: "Hay problemas.", detalle: `${accionesFallidas} ${accionesFallidas === 1 ? "acción falló" : "acciones fallaron"}; revisa los errores y reintenta.` }
+      : accionesPendientes > 0 || obs.eventsPending > 0
+      ? { color: "#d97706", titulo: "Trabajando.", detalle: `Hay ${accionesPendientes + obs.eventsPending} elementos esperando su turno; se procesan en unos minutos.` }
+      : { color: "var(--color-success)", titulo: "Todo al día.", detalle: `Nada pendiente ni fallido · ${obs.eventsDone24h} procesados en 24 h.` };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Flujos de trabajo y SLA</h1>
         <p className="text-muted-foreground">
-          Cola de acciones: {Object.entries(queue).map(([k, v]) => `${k} ${v}`).join(" · ") || "vacía"}
+          Acciones programadas: {Object.entries(queue).map(([k, v]) => `${etiqueta(QUEUE_LABELS, k)} ${v}`).join(" · ") || "ninguna"}
         </p>
       </div>
       {msg && <p className="text-[13px]" style={{ color: "var(--color-error)" }}>{msg}</p>}
@@ -136,22 +174,26 @@ export function AutomationSection({
       <div className="crm-card !p-0 overflow-hidden">
         <div className="px-4 py-3 hairline-b flex items-center justify-between">
           <span className="text-[13px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-            Observabilidad del motor
+            ¿Está funcionando la automatización?
           </span>
           <button onClick={load} className="text-[12px] hover:underline" style={{ color: "var(--text-tertiary)" }}>Actualizar</button>
         </div>
+        <div className="flex items-center gap-2 px-4 py-3 hairline-b">
+          <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: semaforo.color }} />
+          <p className="text-[13px]"><strong>{semaforo.titulo}</strong> <span style={{ color: "var(--text-secondary)" }}>{semaforo.detalle}</span></p>
+        </div>
         <div className="grid grid-cols-2 gap-px md:grid-cols-4" style={{ background: "var(--border-subtle)" }}>
           <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
-            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Eventos pendientes</p>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Eventos por procesar</p>
             <p className="num mt-0.5 text-[15px] font-medium" style={{ color: obs.eventsPending > 0 ? "var(--color-error)" : "var(--text-primary)" }}>{obs.eventsPending}</p>
           </div>
           <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
-            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Procesados (24h)</p>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Procesados en 24 h</p>
             <p className="num mt-0.5 text-[15px] font-medium">{obs.eventsDone24h}</p>
           </div>
           <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
-            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>En cola</p>
-            <p className="num mt-0.5 text-[15px] font-medium">{(queue.PENDING ?? 0) + (queue.RUNNING ?? 0)}</p>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Acciones pendientes</p>
+            <p className="num mt-0.5 text-[15px] font-medium">{accionesPendientes}</p>
           </div>
           <div className="px-4 py-3" style={{ background: "var(--bg-card)" }}>
             <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Fallidas</p>
@@ -165,7 +207,7 @@ export function AutomationSection({
               {obs.recentErrors.map((e) => (
                 <li key={e.id} className="flex items-center justify-between gap-3 px-4 py-2">
                   <div className="min-w-0">
-                    <p className="text-[13px]">{e.actionType} <span style={{ color: "var(--text-tertiary)" }}>· {e.entityType}</span></p>
+                    <p className="text-[13px]">{labelFor(e.actionType)} <span style={{ color: "var(--text-tertiary)" }}>· {etiqueta(ENTIDADES, String(e.entityType ?? "").toLowerCase(), "—")}</span></p>
                     <p className="truncate text-[11px]" style={{ color: "var(--color-error)" }}>{e.error ?? "—"} ({e.attempts}/{e.maxAttempts})</p>
                   </div>
                   {canEdit && (
@@ -176,11 +218,13 @@ export function AutomationSection({
             </ul>
           </div>
         )}
-        {obs.eventsPending === 0 && (queue.FAILED ?? 0) === 0 && obs.recentErrors.length === 0 && (
-          <p className="px-4 py-3 text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            Motor al día: sin eventos pendientes ni acciones fallidas. (Requiere el cron `/api/cron/workflows` activo.)
+        <details className="px-4 py-3 text-[12px]" style={{ borderTop: "1px solid var(--border-subtle)", color: "var(--text-tertiary)" }}>
+          <summary className="cursor-pointer">Detalles técnicos</summary>
+          <p className="mt-1">
+            Las reglas se ejecutan con una tarea programada (cron) en <code>/api/cron/workflows</code> que debe estar
+            activa en Hostinger. Si &ldquo;Eventos por procesar&rdquo; no baja, revisa que esa tarea esté corriendo.
           </p>
-        )}
+        </details>
       </div>
 
       {/* Workflows */}
@@ -189,7 +233,7 @@ export function AutomationSection({
           <div>
             <p className="text-[13px] font-semibold">Reglas de flujo de trabajo</p>
             <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              Requieren el cron /api/cron/workflows activo en Hostinger para ejecutarse
+              Cuando pasa algo en el CRM, la regla hace algo por ti (más en &ldquo;Detalles técnicos&rdquo; arriba)
             </p>
           </div>
           {canEdit && (
@@ -206,7 +250,7 @@ export function AutomationSection({
                 {r.description ?? "—"}
               </p>
               <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                {r.triggerType} · {Array.isArray(r.actions) ? r.actions.length : 0} acciones ·
+                Cuando: {triggerLabelFor(r.triggerType)} · {Array.isArray(r.actions) ? r.actions.length : 0} {Array.isArray(r.actions) && r.actions.length === 1 ? "acción" : "acciones"} ·
                 última: {r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString("es-MX") : "nunca"}
               </p>
             </div>
@@ -219,11 +263,11 @@ export function AutomationSection({
               <a
                 href={`/journey?mode=targeted&ruleId=${r.id}`}
                 className="text-[color:var(--text-tertiary)] hover:text-[color:var(--text-primary)]"
-                title="Editar en Journey"
+                title="Ver como diagrama (Journey)"
               >
                 <GitBranch className="h-4 w-4" />
               </a>
-              <Switch on={r.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "rule", id: r.id, isActive: v })} />
+              <Switch on={r.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "rule", id: r.id, isActive: v }, v ? "Regla activada" : "Regla pausada · no afecta acciones ya programadas")} />
             </div>
           </div>
         ))}
@@ -254,9 +298,9 @@ export function AutomationSection({
       <div className="crm-card !p-0 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 hairline-b">
           <div>
-            <p className="text-[13px] font-semibold">Cadencias (action plans)</p>
+            <p className="text-[13px] font-semibold">Secuencias de seguimiento (cadencias)</p>
             <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              Secuencias de acciones programadas con condiciones de salida
+              Pasos programados (mensaje, tarea, aviso…) que se aplican a un contacto con el paso del tiempo
             </p>
           </div>
           {canEdit && (
@@ -309,8 +353,11 @@ export function AutomationSection({
                 {p.ownerUserId && <span className="badge badge-neutral ml-1">personal</span>}
               </p>
               <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                {p.steps.length} pasos · {p._count.enrollments} enrolados
+                {p.steps.length} {p.steps.length === 1 ? "paso" : "pasos"} · {p._count.enrollments} {p._count.enrollments === 1 ? "contacto en curso" : "contactos en curso"}
               </p>
+              {p.steps.length > 0 && (
+                <p className="truncate text-[11px]" style={{ color: "var(--text-tertiary)" }}>{stepsSummary(p.steps)}</p>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {canEdit && (
@@ -322,7 +369,7 @@ export function AutomationSection({
                   <Pencil className="h-4 w-4" />
                 </button>
               )}
-              <Switch on={p.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "plan", id: p.id, isActive: v })} />
+              <Switch on={p.isActive} disabled={!canEdit} onChange={(v) => patch({ kind: "plan", id: p.id, isActive: v }, v ? "Cadencia activada" : "Cadencia pausada")} />
             </div>
           </div>
         ))}

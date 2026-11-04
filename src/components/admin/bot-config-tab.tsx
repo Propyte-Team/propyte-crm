@@ -1,4 +1,4 @@
-// Tab de configuracion del bot: estado y canales, tono, autonomia, arranque, modelo y data-gate
+// Tab de configuracion del bot: estado y canales, estilo de conversacion, cuando contesta solo y, plegado en "Avanzado", arranque, modelo y cifras
 "use client";
 
 import { useState, useTransition } from "react";
@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import { updateBotConfig } from "@/server/bot-config";
+import { AUTONOMY_LABELS } from "@/lib/labels";
 import { BOT_CHANNELS, toggleBotChannel } from "./bot-channels";
 import type { BotTonePreset } from "@prisma/client";
 
@@ -56,7 +57,11 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
         });
         toast({ title: "Configuración del bot guardada" });
       } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({
+          title: "No se pudo guardar la configuración del bot",
+          description: error?.message || "Intenta de nuevo; si sigue fallando, avisa a sistemas.",
+          variant: "destructive",
+        });
       }
     });
   }
@@ -66,7 +71,7 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Estado</CardTitle>
-          <CardDescription>Enciende o apaga el bot globalmente y elige en qué canales contesta.</CardDescription>
+          <CardDescription>Enciende o apaga el bot y elige en qué canales contesta.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="flex items-center gap-2">
@@ -77,6 +82,9 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
             />
             <span>Bot activo</span>
           </label>
+          <p className="text-xs text-muted-foreground">
+            Apagado: nadie contesta solo en las cuentas sin marca. Las marcas con agente encendido siguen contestando.
+          </p>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Canales en que contesta</legend>
             <div className="flex flex-wrap gap-4">
@@ -102,12 +110,14 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Tono</CardTitle>
-          <CardDescription>Elige el registro de voz. Las reglas de marca no cambian.</CardDescription>
+          <CardTitle className="text-lg">Estilo de conversación</CardTitle>
+          <CardDescription>
+            Cómo suena el bot al escribir. Las marcas y los agentes que tienen su propio estilo no cambian.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Preset</Label>
+            <Label>Estilo</Label>
             <Select
               value={cfg.tonePreset}
               onValueChange={(v) => setCfg({ ...cfg, tonePreset: v as BotTonePreset })}
@@ -139,11 +149,12 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Comportamiento</CardTitle>
+          <CardTitle className="text-lg">Cuándo contesta solo</CardTitle>
+          <CardDescription>Define si el bot responde por su cuenta o espera a que un asesor lo apruebe.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Autonomía</Label>
+            <Label>Nivel de autonomía</Label>
             <Select
               value={cfg.autonomyLevel}
               onValueChange={(v) => setCfg({ ...cfg, autonomyLevel: v as BotConfigData["autonomyLevel"] })}
@@ -152,14 +163,37 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="L0">L0 — sólo sugiere</SelectItem>
-                <SelectItem value="L1">L1 — envío con aprobación</SelectItem>
-                <SelectItem value="L2">L2 — autónomo con red</SelectItem>
+                {(["L0", "L1", "L2"] as const).map((lvl) => (
+                  <SelectItem key={lvl} value={lvl}>
+                    {AUTONOMY_LABELS[lvl]} <span className="text-[10px] text-muted-foreground">({lvl})</span>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Arranque</Label>
+            <Label>Longitud máxima de cada respuesta (líneas)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={8}
+              value={cfg.maxLines}
+              onChange={(e) => setCfg({ ...cfg, maxLines: Number(e.target.value) })}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <details className="rounded-lg border bg-card">
+        <summary className="cursor-pointer select-none px-6 py-4 text-lg font-semibold">
+          Avanzado
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            Ajustes técnicos; normalmente no hace falta tocarlos
+          </span>
+        </summary>
+        <div className="space-y-4 px-6 pb-6">
+          <div className="space-y-2">
+            <Label>Cómo saluda al empezar</Label>
             <Select
               value={cfg.openerStyle}
               onValueChange={(v) => setCfg({ ...cfg, openerStyle: v as BotConfigData["openerStyle"] })}
@@ -173,45 +207,31 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Longitud máxima (líneas)</Label>
-            <Input
-              type="number"
-              min={1}
-              max={8}
-              value={cfg.maxLines}
-              onChange={(e) => setCfg({ ...cfg, maxLines: Number(e.target.value) })}
-            />
-          </div>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={cfg.dataGateStrict}
               onChange={(e) => setCfg({ ...cfg, dataGateStrict: e.target.checked })}
             />
-            <span>Data-gate estricto (no inventar cifras)</span>
+            <span>No inventar cifras ni precios (recomendado)</span>
           </label>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Modelo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Select value={cfg.model} onValueChange={(v) => setCfg({ ...cfg, model: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="claude-sonnet-5-5">Claude Sonnet 5.5 (recomendado)</SelectItem>
-              <SelectItem value="claude-sonnet-5">Claude Sonnet 5</SelectItem>
-              <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
-              <SelectItem value="claude-haiku-4-5">Claude Haiku 4.5 (más barato)</SelectItem>
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
+          <div className="space-y-2">
+            <Label>Modelo de inteligencia artificial</Label>
+            <Select value={cfg.model} onValueChange={(v) => setCfg({ ...cfg, model: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="claude-sonnet-5-5">Claude Sonnet 5.5 (recomendado)</SelectItem>
+                <SelectItem value="claude-sonnet-5">Claude Sonnet 5</SelectItem>
+                <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
+                <SelectItem value="claude-haiku-4-5">Claude Haiku 4.5 (más barato)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Cambia el costo y la calidad de las respuestas. Déjalo en el recomendado salvo indicación de sistemas.</p>
+          </div>
+        </div>
+      </details>
 
       <Button onClick={save} disabled={pending}>
         {pending ? "Guardando…" : "Guardar configuración"}

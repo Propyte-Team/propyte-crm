@@ -1,8 +1,12 @@
-// Configuración → Módulos & Campos: catálogo anti-sprawl + alta de campo custom.
+// Configuración → Módulos & Campos: lista de campos propios + alta de campo.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Archive } from "lucide-react";
+import { FIELD_TYPE_LABELS, etiqueta } from "@/lib/labels";
+import { erroresPorCampo, mensajeDeError } from "@/lib/api-errors";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/use-toast";
 
 interface FieldDef {
   id: string;
@@ -24,6 +28,8 @@ export function FieldsSection({ userRole }: { userRole: string }) {
   const [object, setObject] = useState("contact");
   const [draft, setDraft] = useState({ apiName: "", label: "", fieldType: "TEXT", isRequired: false, options: "" });
   const [msg, setMsg] = useState("");
+  const [errores, setErrores] = useState<Record<string, string>>({});
+  const confirmar = useConfirm();
   const [similar, setSimilar] = useState<Array<{ apiName: string; label: string }>>([]);
 
   const load = useCallback(async () => {
@@ -34,6 +40,7 @@ export function FieldsSection({ userRole }: { userRole: string }) {
 
   async function create(force = false) {
     setMsg("");
+    setErrores({});
     setSimilar([]);
     const body: Record<string, unknown> = {
       objectApiName: object,
@@ -57,21 +64,34 @@ export function FieldsSection({ userRole }: { userRole: string }) {
       setSimilar(data.similar ?? []);
       setMsg("Posibles duplicados — revisa antes de crear");
     } else if (res.ok) {
-      setMsg("Campo creado ✓");
+      setMsg("");
+      toast({ title: "Campo creado", description: draft.label.trim() });
       setDraft({ apiName: "", label: "", fieldType: "TEXT", isRequired: false, options: "" });
       load();
     } else {
-      setMsg(typeof data.error === "string" ? data.error : "Error de validación");
+      setErrores(erroresPorCampo(data));
+      setMsg(mensajeDeError(data, "No se pudo crear el campo"));
     }
   }
 
   async function archive(id: string) {
-    if (!confirm("¿Archivar campo? Los valores se conservan (no se borran).")) return;
-    await fetch("/api/admin/metadata/fields", {
+    const ok = await confirmar({
+      titulo: "¿Archivar este campo?",
+      descripcion: "Deja de mostrarse, pero los valores ya capturados se conservan (no se borran).",
+      confirmar: "Archivar",
+      peligroso: true,
+    });
+    if (!ok) return;
+    const res = await fetch("/api/admin/metadata/fields", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, archive: true }),
     });
+    if (!res.ok) {
+      toast({ title: "No se pudo archivar", description: mensajeDeError(await res.json().catch(() => ({})), "Intenta de nuevo"), variant: "destructive" });
+      return;
+    }
+    toast({ title: "Campo archivado" });
     load();
   }
 
@@ -80,22 +100,30 @@ export function FieldsSection({ userRole }: { userRole: string }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Módulos & Campos</h1>
-          <p className="text-muted-foreground">Catálogo anti-sprawl: nombre interno inmutable, archivar conserva valores</p>
+          <p className="text-muted-foreground">Agrega datos propios a contactos y negocios. Al archivar un campo, lo ya capturado se conserva.</p>
         </div>
         <select className="form-input !w-40 !py-1.5" value={object} onChange={(e) => setObject(e.target.value)}>
           <option value="contact">Contacto</option>
-          <option value="deal">Deal</option>
+          <option value="deal">Negocio</option>
         </select>
       </div>
 
       {isAdmin && (
         <div className="crm-card !p-4 space-y-3">
-          <p className="text-[13px] font-semibold">Nuevo campo en {object === "contact" ? "Contacto" : "Deal"}</p>
+          <p className="text-[13px] font-semibold">Nuevo campo en {object === "contact" ? "Contacto" : "Negocio"}</p>
           <div className="grid gap-3 sm:grid-cols-4">
-            <input className="form-input" placeholder={`${object}_mi_campo`} value={draft.apiName} onChange={(e) => setDraft({ ...draft, apiName: e.target.value })} />
-            <input className="form-input" placeholder="Etiqueta visible" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
+            <div>
+              <input className="form-input" aria-label="Nombre técnico" placeholder={`${object}_mi_campo`} value={draft.apiName} onChange={(e) => setDraft({ ...draft, apiName: e.target.value })} />
+              <p className="mt-1 text-[11px]" style={{ color: errores.apiName ? "var(--color-warning)" : "var(--text-tertiary)" }}>
+                {errores.apiName ?? "Nombre técnico: minúsculas y guiones bajos, empieza con el módulo. No se puede cambiar después."}
+              </p>
+            </div>
+            <div>
+              <input className="form-input" aria-label="Etiqueta visible" placeholder="Etiqueta visible" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
+              {errores.label && <p className="mt-1 text-[11px]" style={{ color: "var(--color-warning)" }}>{errores.label}</p>}
+            </div>
             <select className="form-input" value={draft.fieldType} onChange={(e) => setDraft({ ...draft, fieldType: e.target.value })}>
-              {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {FIELD_TYPES.map((t) => <option key={t} value={t}>{etiqueta(FIELD_TYPE_LABELS, t)}</option>)}
             </select>
             <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
               <input type="checkbox" checked={draft.isRequired} onChange={(e) => setDraft({ ...draft, isRequired: e.target.checked })} />
@@ -103,7 +131,10 @@ export function FieldsSection({ userRole }: { userRole: string }) {
             </label>
           </div>
           {draft.fieldType === "PICKLIST" && (
-            <input className="form-input" placeholder="Opciones separadas por coma: Notaría 1, Notaría 7" value={draft.options} onChange={(e) => setDraft({ ...draft, options: e.target.value })} />
+            <div>
+              <input className="form-input" aria-label="Opciones de la lista" placeholder="Opciones separadas por coma: Notaría 1, Notaría 7" value={draft.options} onChange={(e) => setDraft({ ...draft, options: e.target.value })} />
+              {errores.options && <p className="mt-1 text-[11px]" style={{ color: "var(--color-warning)" }}>{errores.options}</p>}
+            </div>
           )}
           {msg && <p className="text-[12px]" style={{ color: similar.length ? "var(--color-warning)" : "var(--text-secondary)" }}>{msg}</p>}
           {similar.length > 0 && (
@@ -122,11 +153,11 @@ export function FieldsSection({ userRole }: { userRole: string }) {
 
       <div className="crm-card !p-0 overflow-hidden">
         <div className="px-4 py-3 hairline-b">
-          <p className="text-[13px] font-semibold">Catálogo ({fields.length})</p>
+          <p className="text-[13px] font-semibold">Campos propios ({fields.length})</p>
         </div>
         {fields.length === 0 && (
           <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-            Sin campos custom en este objeto. Los campos núcleo viven en el schema tipado.
+            Aún no has agregado campos propios. Los campos estándar (nombre, teléfono…) se administran en Visibilidad de campos.
           </p>
         )}
         {fields.map((f) => (
@@ -137,7 +168,7 @@ export function FieldsSection({ userRole }: { userRole: string }) {
                 <span className="num ml-2 text-[12px]" style={{ color: "var(--text-tertiary)" }}>{f.apiName}</span>
               </p>
               <div className="mt-0.5 flex gap-1.5">
-                <span className="badge badge-neutral">{f.fieldType}</span>
+                <span className="badge badge-neutral">{etiqueta(FIELD_TYPE_LABELS, f.fieldType)}</span>
                 {f.isRequired && <span className="badge badge-warning">obligatorio</span>}
                 {f.options.length > 0 && <span className="badge badge-neutral">{f.options.length} opciones</span>}
               </div>

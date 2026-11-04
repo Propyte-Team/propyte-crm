@@ -4,6 +4,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { Lock } from "lucide-react";
+import { ROLE_LABELS_COMPLETO, etiqueta } from "@/lib/labels";
 
 type Access = "HIDDEN" | "READ" | "EDIT";
 
@@ -18,19 +20,18 @@ interface PermRow {
   access: Access;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: "Admin",
-  DIRECTOR: "Director",
-  GERENTE: "Gerente",
-  TEAM_LEADER: "Team Leader",
-  ASESOR_SR: "Asesor Sr",
-  ASESOR_JR: "Asesor Jr",
-  ASESOR: "Asesor",
-  BROKER: "Broker",
-  HOSTESS: "Hostess",
-  MARKETING: "Marketing",
-  MANTENIMIENTO: "Mantenimiento",
-  DEVELOPER_EXT: "Developer ext.",
+// Campos que calcula o mantiene el sistema (triggers/automatizaciones): "Edita" no aplica.
+export const CAMPOS_DEL_SISTEMA: ReadonlySet<string> = new Set([
+  "score",
+  "flujo",
+  "contactStatus",
+  "whatsappUserId",
+]);
+
+// Qué más controla el permiso de un campo (acoplamientos del detalle del contacto).
+export const ACOPLAMIENTOS: Record<string, string> = {
+  estado: "También controla: subestado y razón de salida.",
+  referredById: "Si lo ocultas, la ficha tampoco muestra la lista de referidos.",
 };
 
 const ACCESS_LABELS: Record<Access, string> = {
@@ -94,7 +95,7 @@ export function CoreFieldsSection({ userRole }: { userRole: string }) {
       <div>
         <h2 className="text-lg font-semibold tracking-tight">Visibilidad de campos por rol</h2>
         <p className="text-[13px] text-[color:var(--text-tertiary)]">
-          Controla qué campos del contacto ve y edita cada rol. Sin override = puede editar.
+          Por defecto todos los puestos pueden editar todo; aquí restringes lo que ve y edita cada puesto.
         </p>
       </div>
 
@@ -102,7 +103,7 @@ export function CoreFieldsSection({ userRole }: { userRole: string }) {
         <span className="text-[13px] text-[color:var(--text-secondary)]">Rol</span>
         <select className="form-input max-w-[220px] text-[13px]" value={role} onChange={(e) => setRole(e.target.value)}>
           {roles.map((r) => (
-            <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>
+            <option key={r} value={r}>{etiqueta(ROLE_LABELS_COMPLETO, r)}</option>
           ))}
         </select>
         {msg && <span className="text-[12px] text-[color:var(--text-tertiary)]">{msg}</span>}
@@ -114,12 +115,25 @@ export function CoreFieldsSection({ userRole }: { userRole: string }) {
             <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--text-tertiary)]">{group}</h3>
             <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
               {gfields.map((f) => {
-                const a = accessFor(f.key);
+                const sistema = CAMPOS_DEL_SISTEMA.has(f.key);
+                const raw = accessFor(f.key);
+                const a: Access = sistema && raw === "EDIT" ? "READ" : raw;
+                const opts: Access[] = sistema ? ["READ", "HIDDEN"] : ["EDIT", "READ", "HIDDEN"];
                 return (
                   <div key={f.key} className="flex items-center justify-between gap-3 py-2">
-                    <span className="text-[13px] text-[color:var(--text-primary)]">{f.label}</span>
+                    <div className="min-w-0">
+                      <span className="text-[13px] text-[color:var(--text-primary)]">{f.label}</span>
+                      {sistema && (
+                        <p className="flex items-center gap-1 text-[11px] text-[color:var(--text-tertiary)]">
+                          <Lock className="h-3 w-3" aria-hidden /> Lo calcula el sistema
+                        </p>
+                      )}
+                      {ACOPLAMIENTOS[f.key] && (
+                        <p className="text-[11px] text-[color:var(--text-tertiary)]">{ACOPLAMIENTOS[f.key]}</p>
+                      )}
+                    </div>
                     <div className="flex gap-1">
-                      {(["EDIT", "READ", "HIDDEN"] as Access[]).map((opt) => (
+                      {opts.map((opt) => (
                         <button
                           key={opt}
                           onClick={() => change(f.key, opt)}

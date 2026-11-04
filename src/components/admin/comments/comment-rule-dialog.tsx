@@ -14,6 +14,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, X } from "lucide-react";
+import Link from "next/link";
+import { mensajeDeError, erroresPorCampo } from "@/lib/api-errors";
 import { normalize } from "@/lib/comments/match";
 import { DAILY_CAP_DEFAULT } from "@/server/comment-rules.schema";
 
@@ -67,11 +69,14 @@ export function CommentRuleDialog({
   const [postFilter, setPostFilter] = useState("");
   const [priority, setPriority] = useState(100);
   const [error, setError] = useState("");
+  // Errores de validación del servidor, uno por campo, junto a cada campo.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setError("");
+    setFieldErrors({});
     if (editing) {
       setConnectorId(editing.connectorId);
       setName(editing.name);
@@ -119,8 +124,12 @@ export function CommentRuleDialog({
     addTo(phrases, setPhrases, phraseDraft, () => setPhraseDraft(""));
   }
 
+  const errorCampo = (campo: string) =>
+    fieldErrors[campo] ? <p className="text-[11px] text-destructive">{fieldErrors[campo]}</p> : null;
+
   async function save() {
     setError("");
+    setFieldErrors({});
     const cleanReplies = publicReplies.map((r) => r.trim()).filter(Boolean);
     if (!name.trim() || !connectorId || phrases.length === 0 || cleanReplies.length === 0 || !dmTemplate.trim()) {
       setError("Faltan nombre, cuenta, frases, al menos una respuesta pública y el mensaje privado");
@@ -157,7 +166,10 @@ export function CommentRuleDialog({
       return;
     }
     const data = await res.json().catch(() => ({}));
-    setError(typeof data.error === "string" ? data.error : "No se pudo guardar la regla");
+    const porCampo = erroresPorCampo(data);
+    setFieldErrors(porCampo);
+    // Si hay mensajes por campo ya se ven junto a cada uno; el general solo repite lo que no tiene campo.
+    setError(Object.keys(porCampo).length > 0 ? "Revisa los campos marcados." : mensajeDeError(data, "No se pudo guardar la regla"));
   }
 
   return (
@@ -181,7 +193,8 @@ export function CommentRuleDialog({
             </Select>
             {connectors.length === 0 && (
               <p className="text-[11px] text-destructive">
-                No hay conectores de Instagram o Messenger activos. Créalos en Admin → Integraciones.
+                No hay cuentas de Instagram o Facebook activas. Conéctalas en{" "}
+                <Link href="/conexiones" className="underline">Conexiones</Link>.
               </p>
             )}
           </div>
@@ -189,6 +202,7 @@ export function CommentRuleDialog({
           <div className="space-y-1.5">
             <Label>Nombre</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Info — campaña Tulum" />
+            {errorCampo("name")}
           </div>
 
           <div className="space-y-1.5">
@@ -220,6 +234,7 @@ export function CommentRuleDialog({
                 sin acentos ni mayúsculas. &quot;info&quot; no dispara con &quot;informal&quot;.
               </p>
             )}
+            {errorCampo("phrases")}
             {clashes.length > 0 && (
               <p className="text-[11px] text-destructive">
                 Choque: {clashes.map((c) => `"${c.phrase}" ya la usa la regla activa "${c.rule}"`).join(" · ")}.
@@ -267,6 +282,7 @@ export function CommentRuleDialog({
               &quot;estudio de arquitectura&quot;, &quot;¿ya no está en venta?&quot; o
               &quot;soy broker&quot;. Vacío = sin negativas.
             </p>
+            {errorCampo("excludePhrases")}
             {selfVetoes.length > 0 && (
               <p className="text-[11px] text-destructive">
                 {selfVetoes.map((e) => `"${e}"`).join(", ")} también dispara la regla: así nunca
@@ -308,6 +324,7 @@ export function CommentRuleDialog({
               Varias variantes evitan publicar el mismo texto en cadena, que es lo que Meta
               interpreta como spam.
             </p>
+            {errorCampo("publicReplies")}
           </div>
 
           <div className="space-y-1.5">
@@ -322,8 +339,9 @@ export function CommentRuleDialog({
             />
             <p className="text-[11px] text-muted-foreground">
               Después de este mensaje el bot sigue la conversación en el Inbox.
-              Variable disponible: <code>{"{{usuario}}"}</code>.
+              Para saludar por su nombre a quien comentó, escribe <code>{"{{usuario}}"}</code>.
             </p>
+            {errorCampo("dmTemplate")}
           </div>
 
           <div className="space-y-1.5">
@@ -336,16 +354,10 @@ export function CommentRuleDialog({
               placeholder="MEDIA-1&#10;MEDIA-2"
             />
             <p className="text-[11px] text-muted-foreground">
-              Vacío = todos los posts de la cuenta. Solo IDs, no URLs: el ID aparece en el
-              log en cuanto llega el primer comentario, y ahí puedes copiarlo.
+              Vacío = todas las publicaciones de la cuenta. Pega el identificador de cada publicación (no sirve
+              el enlace): aparece en el historial en cuanto llega el primer comentario, y ahí puedes copiarlo.
             </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Prioridad</Label>
-            <Input type="number" min={1} max={999} value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))} />
-            <p className="text-[11px] text-muted-foreground">Menor número gana si dos reglas coinciden.</p>
+            {errorCampo("postFilter")}
           </div>
 
           <div className="space-y-1.5">
@@ -362,7 +374,21 @@ export function CommentRuleDialog({
               publicación se vuelve viral: sin él, un post con mil comentarios manda mil DMs.
               0 = sin tope.
             </p>
+            {errorCampo("dailyCap")}
           </div>
+
+          <details className="rounded-md border p-3">
+            <summary className="cursor-pointer select-none text-sm font-medium">Avanzado</summary>
+            <div className="mt-3 space-y-1.5">
+              <Label>Orden de preferencia</Label>
+              <Input type="number" min={1} max={999} value={priority}
+                onChange={(e) => setPriority(Number(e.target.value))} />
+              <p className="text-[11px] text-muted-foreground">
+                Si dos reglas coinciden con el mismo comentario, gana la de número menor.
+              </p>
+              {errorCampo("priority")}
+            </div>
+          </details>
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
           <Button className="w-full" onClick={save} disabled={saving}>

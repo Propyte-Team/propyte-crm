@@ -12,7 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PLAZA_LABELS } from "@/lib/constants";
 import { providerById } from "@/lib/connectors/registry";
-import { apiErrorMessage, type BrandRow } from "./brand-helpers";
+import { mensajeDeError } from "@/lib/api-errors";
+import type { BrandRow } from "./brand-helpers";
 import { BrandFormDialog } from "./brand-form-dialog";
 
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "Activa", PAUSED: "Pausada", ERROR: "Con error" };
@@ -39,12 +40,12 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
       const res = await fetch("/api/admin/brands");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setLoadError(apiErrorMessage(data, "No se pudieron cargar las marcas"));
+        setLoadError(mensajeDeError(data, "No se pudieron cargar las marcas"));
         return;
       }
       setBrands(Array.isArray(data.data) ? data.data : []);
     } catch {
-      setLoadError("Error de red al cargar las marcas");
+      setLoadError("No hay conexión con el servidor. Revisa tu internet e intenta de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -60,7 +61,7 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
         <p className="text-[13px]" style={{ color: "var(--text-secondary)" }}>
           Cada marca contesta con su propia presentación, conocimiento, catálogo y canales. Las cuentas de
           Conexiones se asignan a una marca; las que no tienen marca usan la predeterminada y la configuración
-          global del bot.
+          general del bot.
         </p>
         {canWrite && (
           <Button size="sm" className="shrink-0" onClick={() => { setEditing(null); setDialogOpen(true); }}>
@@ -87,7 +88,7 @@ export function BrandsTab({ canWrite, playbooks, users }: Props) {
                   {/* La predeterminada lee la config GLOBAL del bot: su propio `botEnabled` no se usa,
                       así que mostrar "apagado" sería engañoso. */}
                   {b.isDefault ? (
-                    <Badge variant="outline">Usa el bot global</Badge>
+                    <Badge variant="outline">Sigue la configuración del bot general</Badge>
                   ) : b.botEnabled ? (
                     <Badge>Agente encendido</Badge>
                   ) : (

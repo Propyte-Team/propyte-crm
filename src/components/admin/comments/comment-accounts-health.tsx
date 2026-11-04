@@ -12,6 +12,7 @@
 // desde aquí (antes había que hacerlo a mano en Meta con un token).
 "use client";
 
+import { mensajeDeError } from "@/lib/api-errors";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,7 +49,7 @@ export function CommentAccountsHealth() {
       ...m,
       [id]: res.ok
         ? { ok: true, text: `Suscrita a: ${(body.data?.subscribedFields ?? []).join(", ")}` }
-        : { ok: false, text: body.error ?? "No se pudo suscribir" },
+        : { ok: false, text: mensajeDeError(body, "No se pudo suscribir") },
     }));
     if (res.ok) await run();
   }

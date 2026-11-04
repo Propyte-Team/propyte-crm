@@ -31,7 +31,7 @@ export function UserBrandsField({ role, brands, selected, onChange, canEdit, isE
         <p className="text-sm text-muted-foreground">Ve todas las marcas (administrador)</p>
       ) : brands === null ? (
         <p className="text-sm text-muted-foreground">
-          No disponible: falta aplicar la migración de marcas por usuario.
+          No disponible por ahora. Avisa al equipo técnico para activar la visibilidad por marca.
         </p>
       ) : !isEditing ? (
         <p className="text-sm text-muted-foreground">

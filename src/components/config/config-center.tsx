@@ -15,8 +15,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  Workflow, Users, Database, Bot, Plug, MessageSquare, UserCircle,
-  FileText, Eye, ArrowUpRight, ShieldCheck, DollarSign, ClipboardCheck,
+  Workflow, Users, Database, Bot, Plug, UserCircle,
+  FileText, Eye, ArrowUpRight, DollarSign, ClipboardCheck,
   GitBranch, ListChecks, CopyCheck, KeyRound, MessageCircle, Tag, type LucideIcon,
 } from "lucide-react";
 import { AutomationSection } from "./automation-section";
@@ -32,8 +32,6 @@ interface CardDef {
   icon: LucideIcon;
   title: string;
   items: string[];
-  /** Pinta un chip "Admin" — la sección es de gestión administrativa. */
-  admin?: boolean;
   /** Si está presente, solo se muestra a estos roles (ADMIN siempre ve todo). */
   roles?: string[];
 }
@@ -61,55 +59,64 @@ export function resolveInitialSection(sectionParam: string | null | undefined): 
 }
 
 // Exportada para poder verificar en pruebas qué tarjetas muestra el índice.
+// Grupos por tarea de la persona, en lenguaje de negocio (auditoría 05 §5).
+// Cada tarjeta administrativa declara `roles`; quien no puede usarla no la ve.
+const ADMIN_DIR = ["ADMIN", "DIRECTOR"];
+const GERENCIA = ["ADMIN", "DIRECTOR", "GERENTE"];
+
 export const CONFIG_GROUPS: Array<{ title: string; cards: CardDef[] }> = [
   {
-    title: "Organización",
+    title: "Mi cuenta",
     cards: [
-      { href: "/admin?tab=users", icon: UserCircle, title: "Usuarios & Roles", admin: true, items: ["Altas y roles", "Plazas", "Activar/desactivar"] },
-      { href: "/admin?tab=commissions", icon: DollarSign, title: "Comisiones", admin: true, items: ["Reglas por tipo de deal", "Por fuente y rol"] },
-      { href: "/admin?tab=settings", icon: ClipboardCheck, title: "Acuerdo de actividad", admin: true, items: ["Mínimos diarios/semanales", "Llamadas, WhatsApps, visitas"] },
-      { key: "teams", icon: Users, title: "Equipos & Territorios", admin: true, items: ["Equipos con líder", "Territorios por plaza/zona", "Reglas de asignación", "Miembros"] },
+      { href: "/settings", icon: FileText, title: "Mi perfil", items: ["Tu firma de correo, tu tarjeta digital y tus plantillas de mensajes"] },
     ],
   },
   {
-    title: "Automatización",
+    title: "Equipo y permisos",
     cards: [
-      { key: "automation", icon: Workflow, title: "Flujos de trabajo y SLA", items: ["Reglas de flujo (8 canónicas)", "Cadencias / planes de acción", "Políticas SLA", "Cola de acciones"] },
-      { href: "/journey", icon: GitBranch, title: "Journey", admin: true, roles: ["ADMIN", "DIRECTOR"], items: ["Mapa del customer journey", "Etapas y layout"] },
+      { href: "/admin?tab=users", icon: UserCircle, title: "Usuarios", roles: ADMIN_DIR, items: ["Alta, puesto, plaza y acceso de cada persona"] },
+      { key: "teams", icon: Users, title: "Equipos y zonas", roles: ADMIN_DIR, items: ["Quién atiende cada plaza y a quién le llegan los leads nuevos"] },
+      { key: "corefields", icon: Eye, title: "Qué ve cada puesto", roles: ADMIN_DIR, items: ["Decide qué datos del contacto ve y edita cada puesto"] },
+      { href: "/admin?tab=commissions", icon: DollarSign, title: "Comisiones", roles: ADMIN_DIR, items: ["Cómo se reparten las comisiones por tipo de venta"] },
+      { href: "/admin?tab=settings", icon: ClipboardCheck, title: "Metas de actividad", roles: ADMIN_DIR, items: ["Mínimos diarios y semanales de llamadas, mensajes y visitas"] },
     ],
   },
   {
-    title: "Bot conversacional",
+    title: "Proceso de ventas",
     cards: [
-      { href: "/admin?tab=bot", icon: Bot, title: "Bot: tono y comportamiento", items: ["Encendido y canales", "Tono elegible (4 presets)", "Autonomía L0-L2", "Escalamiento"] },
-      { href: "/admin?tab=playbook", icon: ListChecks, title: "Playbook de calificación", items: ["Tareas ordenadas", "Auto-llenado del contacto", "Activar/desactivar"] },
-      { href: "/admin?tab=botAgents", icon: Bot, title: "Agentes conversacionales", items: ["Persona del bot por segmento", "Clasificador por tipo de contacto", "Identidad + playbook por segmento", "Clientes / Brokers / Reclutamiento"] },
-      { href: "/admin?tab=botBrands", icon: Tag, title: "Marcas del agente", items: ["Presentación y conocimiento por marca", "Catálogo por marca", "Canales y encendido por marca", "Cuentas asignadas"] },
-      { href: "/admin?tab=comments", icon: MessageCircle, title: "Reglas de comentarios", items: ["Palabra clave → respuesta pública", "DM privado automático", "Instagram y Facebook", "Historial con reintento"] },
+      { href: "/journey", icon: GitBranch, title: "Etapas del recorrido del cliente", roles: ADMIN_DIR, items: ["Mapa de las etapas por las que pasa un cliente"] },
+      { key: "automation", icon: Workflow, title: "Seguimientos y reglas automáticas", roles: ADMIN_DIR, items: ["Recordatorios y tareas que el CRM crea solo, tiempos máximos de respuesta y reglas del tipo \"cuando pase esto, haz aquello\""] },
     ],
   },
   {
-    title: "Datos & Campos",
+    title: "Fichas y datos",
     cards: [
-      { key: "fields", icon: Database, title: "Módulos & Campos", admin: true, items: ["Catálogo anti-sprawl", "Campos custom (Contact/Deal)", "Picklists", "Permisos por rol"] },
-      { key: "corefields", icon: Eye, title: "Visibilidad de campos", admin: true, items: ["Campos core por rol", "Ocultar / solo lectura / editar", "Contacto (más módulos pronto)", "Enforcement en API"] },
-      { href: "/duplicados", icon: CopyCheck, title: "Duplicados", admin: true, roles: ["ADMIN", "DIRECTOR"], items: ["Detección de contactos duplicados", "Merge humano-en-loop"] },
+      { key: "fields", icon: Database, title: "Campos de la ficha", roles: ADMIN_DIR, items: ["Agrega datos propios a contactos y negocios, con listas de opciones y permisos por puesto"] },
     ],
   },
   {
-    title: "Canales & Integraciones",
+    title: "Calidad de datos",
     cards: [
-      { href: "/conexiones", icon: Plug, title: "Centro de conexiones", items: ["Meta Lead Ads / IG / Messenger", "Mapeo de campos por conector", "Estado y últimos leads"] },
-      // 2026-10-12 (entrega 3 de marcas): mismos roles que Conexiones; aquí entran ADMIN/DIRECTOR/GERENTE.
-      { href: "/conexiones/huerfanos", icon: Users, title: "Leads huérfanos", items: ["Contactos sin dueño", "Con dueño técnico (.local)", "Mensajes a cuentas sin registrar"] },
-      { href: "/admin?tab=integrations", icon: KeyRound, title: "API keys & Webhooks", admin: true, items: ["API keys", "Webhooks salientes"] },
-      { href: "/inbox", icon: MessageSquare, title: "WhatsApp", items: ["Inbox con bot", "Takeover humano", "Cloud API directo"] },
+      { href: "/duplicados", icon: CopyCheck, title: "Duplicados", roles: GERENCIA, items: ["Contactos repetidos listos para revisar y unir"] },
+      { href: "/conexiones/huerfanos", icon: Users, title: "Leads sin asesor", roles: GERENCIA, items: ["Contactos y mensajes que llegaron y no tienen quién los atienda"] },
     ],
   },
   {
-    title: "Personal",
+    title: "Asistente de WhatsApp y redes",
     cards: [
-      { href: "/settings", icon: FileText, title: "Mi perfil & Plantillas", items: ["Firma de correo", "Tarjeta digital", "Plantillas con atajos"] },
+      { href: "/admin?tab=bot", icon: Bot, title: "Comportamiento del asistente", roles: ADMIN_DIR, items: ["Tono, cuándo responde solo y cuándo pasa la conversación a una persona"] },
+      { href: "/admin?tab=playbook", icon: ListChecks, title: "Guion de calificación", roles: ADMIN_DIR, items: ["Las preguntas que hace el asistente para calificar a un contacto"] },
+      { href: "/admin?tab=botAgents", icon: Bot, title: "Perfiles por tipo de cliente", roles: ADMIN_DIR, items: ["Cómo se presenta con clientes, brokers y candidatos"] },
+      { href: "/admin?tab=botBrands", icon: Tag, title: "Marcas", roles: ADMIN_DIR, items: ["Qué sabe y qué ofrece el asistente por cada marca"] },
+      { href: "/admin?tab=comments", icon: MessageCircle, title: "Respuestas en redes", roles: ADMIN_DIR, items: ["Respuestas automáticas a comentarios en Instagram y Facebook"] },
+    ],
+  },
+  {
+    title: "Conexiones",
+    cards: [
+      // Misma audiencia que la pantalla de conexiones (ADMIN/DIRECTOR/GERENTE).
+      { href: "/conexiones", icon: Plug, title: "Cuentas conectadas", roles: GERENCIA, items: ["Meta, Instagram y Messenger: de dónde llegan tus leads y su estado"] },
+      { href: "/admin?tab=integrations", icon: KeyRound, title: "Integraciones técnicas", roles: ADMIN_DIR, items: ["Llaves de acceso y avisos a otros sistemas, para integraciones técnicas"] },
     ],
   },
 ];
@@ -146,7 +153,7 @@ export function ConfigCenter({ userRole }: { userRole: string }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Configuración</h1>
-        <p className="text-muted-foreground">Todo lo configurable del CRM, en un solo lugar</p>
+        <p className="text-muted-foreground">Ajusta tu cuenta, tu equipo y cómo trabaja el CRM</p>
       </div>
 
       <div className="space-y-8">
@@ -166,15 +173,6 @@ export function ConfigCenter({ userRole }: { userRole: string }) {
                       <div className="flex items-start justify-between">
                         <Icon className="h-5 w-5" style={{ color: "var(--text-primary)" }} />
                         <div className="flex items-center gap-1.5">
-                          {card.admin && (
-                            <span
-                              className="inline-flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                              style={{ color: "var(--text-tertiary)", borderColor: "var(--border-subtle)" }}
-                            >
-                              <ShieldCheck className="h-3.5 w-3.5" />
-                              Admin
-                            </span>
-                          )}
                           <ArrowUpRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: "var(--text-tertiary)" }} />
                         </div>
                       </div>

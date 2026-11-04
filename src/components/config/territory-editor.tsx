@@ -1,19 +1,23 @@
-// Editor de un territorio: miembros (usuario + nivel de acceso) y reglas de entrada
+// Editor de un territorio: miembros y reglas de entrada
 // (prioridad + condiciones + activa). Guardar manda la lista completa al
 // PUT /api/admin/territories, que reemplaza miembros y reglas de ese territorio.
+// Los miembros se mandan siempre con accessLevel VIEW: el nivel de acceso no lo usa nada.
+// Avisos por toast (éxito y error).
 "use client";
 
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { ConditionTreeEditor } from "./condition-tree";
 import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
-import { ROUTING_FIELD_SUGGESTIONS, nextPriority } from "@/lib/teams/rules-model";
+import { ROUTING_FIELD_SUGGESTIONS, nextPriority, hasIncompleteCondition } from "@/lib/teams/rules-model";
+import { toast } from "@/components/ui/use-toast";
+import { leerError } from "@/lib/api-errors";
 
 export interface TerritoryRuleData { id?: string; priority: number; isActive: boolean; conditions?: unknown }
-export interface TerritoryMemberData { accessLevel: string; user: { id: string; name: string } }
+export interface TerritoryMemberData { accessLevel?: string; user: { id: string; name: string } }
 interface UserOpt { id: string; name: string }
 
-interface MemberRow { userId: string; accessLevel: "VIEW" | "EDIT" }
+interface MemberRow { userId: string }
 interface RuleRow { priority: number; isActive: boolean; tree: ConditionTree }
 
 export function TerritoryEditor({
@@ -23,37 +27,42 @@ export function TerritoryEditor({
   members: TerritoryMemberData[];
   rules: TerritoryRuleData[];
   users: UserOpt[];
-  onSaved: (msg: string) => void;
+  onSaved: () => void;
   onCancel: () => void;
 }) {
   const [memberRows, setMemberRows] = useState<MemberRow[]>(
-    members.map((m) => ({ userId: m.user.id, accessLevel: m.accessLevel === "EDIT" ? "EDIT" : "VIEW" })),
+    members.map((m) => ({ userId: m.user.id })),
   );
   const [ruleRows, setRuleRows] = useState<RuleRow[]>(
     rules.map((r) => ({ priority: r.priority, isActive: r.isActive, tree: parseConditions(r.conditions) })),
   );
   const [addUser, setAddUser] = useState("");
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
 
   const updRule = (i: number, patch: Partial<RuleRow>) => setRuleRows(ruleRows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   async function save() {
+    if (ruleRows.some((r) => hasIncompleteCondition(r.tree))) {
+      toast({ title: "Hay una condición incompleta", description: "Completa o quita la fila antes de guardar.", variant: "destructive" });
+      return;
+    }
     setSaving(true);
-    setErr("");
     const res = await fetch("/api/admin/territories", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         territoryId,
-        members: memberRows,
+        members: memberRows.map((m) => ({ userId: m.userId, accessLevel: "VIEW" })),
         rules: ruleRows.map((r) => ({ priority: r.priority, isActive: r.isActive, conditions: buildConditionsTree(r.tree) })),
       }),
     });
-    const data = await res.json().catch(() => ({}));
     setSaving(false);
-    if (!res.ok) { setErr(typeof data.error === "string" ? data.error : "No se pudo guardar el territorio"); return; }
-    onSaved("Territorio actualizado ✓");
+    if (!res.ok) {
+      toast({ title: "No se pudo guardar el territorio", description: await leerError(res, "No se pudo guardar el territorio"), variant: "destructive" });
+      return;
+    }
+    toast({ title: "Territorio actualizado" });
+    onSaved();
   }
 
   const available = users.filter((u) => !memberRows.some((m) => m.userId === u.id));
@@ -64,16 +73,12 @@ export function TerritoryEditor({
       <div className="space-y-2">
         <p className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Miembros</p>
         <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-          Solo los miembros reciben los leads que caen en este territorio. Sin miembros, el territorio no restringe a nadie.
+          Los leads que caen en este territorio se reparten solo entre sus miembros. Sin miembros, no se limita a nadie.
         </p>
         <div className="flex flex-wrap gap-2">
           {memberRows.map((m, i) => (
             <span key={m.userId} className="badge badge-neutral inline-flex items-center gap-1.5">
               {nameOf(m.userId)}
-              <select className="form-input !w-auto !py-0 !px-1 text-[11px]" value={m.accessLevel}
-                onChange={(e) => setMemberRows(memberRows.map((x, j) => (j === i ? { ...x, accessLevel: e.target.value as "VIEW" | "EDIT" } : x)))}>
-                <option value="VIEW">ver</option><option value="EDIT">editar</option>
-              </select>
               <button type="button" title="Quitar" onClick={() => setMemberRows(memberRows.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></button>
             </span>
           ))}
@@ -83,7 +88,7 @@ export function TerritoryEditor({
               {available.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
             {addUser && (
-              <button type="button" className="btn-secondary !py-1 !px-2 text-[12px]" onClick={() => { setMemberRows([...memberRows, { userId: addUser, accessLevel: "VIEW" }]); setAddUser(""); }}>OK</button>
+              <button type="button" className="btn-secondary !py-1 !px-2 text-[12px]" onClick={() => { setMemberRows([...memberRows, { userId: addUser }]); setAddUser(""); }}>OK</button>
             )}
           </span>
         </div>
@@ -92,7 +97,7 @@ export function TerritoryEditor({
       <div className="space-y-2">
         <p className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Reglas de entrada</p>
         <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-          Un lead cae en este territorio cuando cumple alguna regla activa. Entre territorios, gana el más específico (hijo antes que padre) y luego la menor prioridad.
+          Un lead entra a este territorio cuando cumple alguna regla activa. Si cumple varios, gana el más específico (un subterritorio antes que el territorio que lo contiene) y, a igual nivel, el de menor prioridad.
         </p>
         {ruleRows.map((r, i) => (
           <div key={i} className="space-y-2 rounded-md border p-2" style={{ borderColor: "var(--border-subtle)" }}>
@@ -123,7 +128,6 @@ export function TerritoryEditor({
         </button>
       </div>
 
-      {err && <p className="text-[12px] text-red-600">{err}</p>}
       <div className="flex gap-2">
         <button type="button" className="btn-primary !py-1.5 !px-3 text-[12px]" disabled={saving} onClick={save}>{saving ? "Guardando…" : "Guardar territorio"}</button>
         <button type="button" className="btn-secondary !py-1.5 !px-3 text-[12px]" onClick={onCancel}>Cancelar</button>

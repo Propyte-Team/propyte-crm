@@ -2,23 +2,28 @@
 import { Sidebar } from "@/components/layout/sidebar"
 import { Topbar } from "@/components/layout/topbar"
 import { CommandPalette } from "@/components/layout/command-palette"
+import { ConfirmProvider } from "@/components/ui/confirm-dialog"
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // ConfirmProvider (E1 #962): un solo diálogo de confirmación para todo el dashboard (useConfirm).
+  // El Toaster vive en el layout raíz (src/app/layout.tsx), por eso aquí solo va el provider.
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-base)" }}>
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-6" style={{ background: "var(--bg-surface)" }}>
-          {children}
-        </main>
+    <ConfirmProvider>
+      <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-base)" }}>
+        <Sidebar />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Topbar />
+          <main className="flex-1 overflow-y-auto p-6" style={{ background: "var(--bg-surface)" }}>
+            {children}
+          </main>
+        </div>
+        {/* Command palette global ⌘K / Ctrl+K (Fase 5) */}
+        <CommandPalette />
       </div>
-      {/* Command palette global ⌘K / Ctrl+K (Fase 5) */}
-      <CommandPalette />
-    </div>
+    </ConfirmProvider>
   )
 }

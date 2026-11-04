@@ -6,6 +6,10 @@ import { useState, useEffect, useRef } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { ConditionTreeEditor } from "./condition-tree";
 import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
+import { erroresPorCampo } from "@/lib/api-errors";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/use-toast";
+import { formatMinutes, mensajeAutomatizacion } from "./cadence-editor";
 
 export interface Sla {
   id: string;
@@ -67,17 +71,22 @@ function serializeBusinessHours(tz: string, days: DayRow[]): unknown {
   return { tz: tz.trim() || DEFAULT_TZ, days: daysObj };
 }
 
-function extractError(d: any): string {
-  if (typeof d?.error === "string") return d.error;
-  if (Array.isArray(d?.error?.formErrors) && d.error.formErrors.length) return d.error.formErrors.join(", ");
-  if (d?.error?.fieldErrors) {
-    const msgs = Object.entries(d.error.fieldErrors as Record<string, string[]>).flatMap(([k, v]) =>
-      (v ?? []).map((m) => `${k}: ${m}`)
-    );
-    if (msgs.length) return msgs.join("; ");
-  }
-  return "Error al guardar";
+function extractError(d: unknown): string {
+  return mensajeAutomatizacion(d, "No se pudo guardar la política");
 }
+
+/** Línea-resumen de tiempos: "Contactar en 15 min · recordar cada 1 h · reasignar a las 24 h". */
+export function slaSummary(firstTouchMinutes: number, retryMinutes: number, orphanHours: number): string {
+  return `Contactar en ${formatMinutes(firstTouchMinutes)} · recordar cada ${formatMinutes(retryMinutes)} · reasignar a las ${orphanHours} h`;
+}
+
+// Zonas horarias de México más usadas (el valor guardado sigue siendo el nombre IANA).
+const TZ_OPTIONS: { value: string; label: string }[] = [
+  { value: "America/Cancun", label: "Cancún / Tulum (sin horario de verano)" },
+  { value: "America/Mexico_City", label: "Ciudad de México" },
+  { value: "America/Monterrey", label: "Monterrey" },
+  { value: "America/Tijuana", label: "Tijuana" },
+];
 
 // Switch local (mismo patrón visual que el de automation-section.tsx).
 function Switch({ on, disabled, onChange }: { on: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
@@ -120,6 +129,7 @@ function SlaForm({
   const [tree, setTree] = useState<ConditionTree>(parseConditions(initial?.conditions));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErrs, setFieldErrs] = useState<Record<string, string>>({});
 
   function updateDay(i: number, patch: Partial<DayRow>) {
     setDays((d) => d.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
@@ -127,6 +137,7 @@ function SlaForm({
 
   async function save() {
     setErr(null);
+    setFieldErrs({});
     if (!name.trim()) {
       setErr("El nombre es obligatorio");
       return;
@@ -159,9 +170,11 @@ function SlaForm({
     setBusy(false);
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
+      setFieldErrs(erroresPorCampo(d));
       setErr(extractError(d));
       return;
     }
+    toast({ title: initial ? "Política actualizada" : "Política creada" });
     onSaved();
   }
 
@@ -178,6 +191,7 @@ function SlaForm({
           placeholder="ej. Leads VIP"
           className="form-input text-[13px] font-medium"
         />
+        {fieldErrs.name && <p className="text-[11px] text-red-600">{fieldErrs.name}</p>}
       </div>
 
       <div className="flex flex-wrap items-center gap-5">
@@ -187,10 +201,10 @@ function SlaForm({
         </label>
         <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
           <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
-          Es la política default
+          Aplica a todos los demás contactos (política general)
         </label>
-        <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }}>
-          Prioridad
+        <label className="flex items-center gap-2 text-[13px]" style={{ color: "var(--text-secondary)" }} title="Si un contacto cumple varias políticas, gana la de número menor">
+          Orden (menor = primero)
           <input
             type="number"
             min={0}
@@ -207,19 +221,19 @@ function SlaForm({
         <ConditionTreeEditor
           tree={tree}
           onChange={setTree}
-          label="Segmento (condiciones)"
-          emptyText="Sin condiciones = aplica a cualquier contacto que no calce con una política de mayor prioridad."
+          label="¿Para qué contactos aplica? (segmento)"
+          emptyText="Sin condiciones = aplica a cualquier contacto que no cumpla otra política de orden menor."
         />
       ) : (
         <p className="rounded-md border p-3 text-[12px]" style={{ borderColor: "var(--border-subtle)", color: "var(--text-tertiary)" }}>
-          La política default aplica cuando ningún segmento cumple.
+          La política general aplica a los contactos que no cumplen ningún segmento.
         </p>
       )}
 
       {/* Tiempos */}
       <div className="flex flex-wrap gap-4">
         <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-          1er toque (min)
+          Contactar en (min)
           <input
             type="number"
             min={1}
@@ -230,7 +244,7 @@ function SlaForm({
           />
         </label>
         <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-          Reintento (min)
+          Recordar cada (min)
           <input
             type="number"
             min={1}
@@ -241,7 +255,7 @@ function SlaForm({
           />
         </label>
         <label className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-          Huérfano (hrs)
+          Reasignar si nadie lo toma (hrs)
           <input
             type="number"
             min={1}
@@ -253,6 +267,11 @@ function SlaForm({
         </label>
       </div>
 
+      <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+        <strong>Así funciona:</strong> {slaSummary(firstTouchMinutes, retryMinutes, orphanHours)}.
+        Si el asesor no hace el primer contacto a tiempo se le recuerda; si el lead sigue sin asesor, se reasigna.
+      </p>
+
       {/* Horario laboral */}
       <div className="space-y-2">
         <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
@@ -260,12 +279,15 @@ function SlaForm({
         </p>
         <label className="block text-[11px]" style={{ color: "var(--text-secondary)" }}>
           Zona horaria
-          <input
+          <select
             value={tz}
             onChange={(e) => setTz(e.target.value)}
-            placeholder={DEFAULT_TZ}
-            className="form-input mt-1 !w-56 text-[13px]"
-          />
+            className="form-input mt-1 !w-72 text-[13px]"
+          >
+            {[...TZ_OPTIONS, ...(TZ_OPTIONS.some((o) => o.value === tz) ? [] : [{ value: tz, label: tz }])].map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
         </label>
         <div className="space-y-1.5">
           {days.map((d, i) => (
@@ -293,7 +315,7 @@ function SlaForm({
           ))}
         </div>
         <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-          Ningún día marcado como abierto = se evalúa en reloj de pared, 24/7.
+          Ningún día marcado = el reloj corre las 24 horas, todos los días.
         </p>
       </div>
 
@@ -327,6 +349,7 @@ export function SlaPolicyEditor({
 }) {
   const [editing, setEditing] = useState<"new" | Sla | null>(null);
   const [msg, setMsg] = useState("");
+  const confirmar = useConfirm();
   const appliedDeepLink = useRef(false);
 
   useEffect(() => {
@@ -338,7 +361,13 @@ export function SlaPolicyEditor({
 
   async function handleDelete(s: Sla) {
     if (s.isDefault) return;
-    if (!confirm(`¿Eliminar la política "${s.name}"? Los timers históricos quedarán sin política asociada.`)) return;
+    const ok = await confirmar({
+      titulo: `¿Eliminar la política "${s.name}"?`,
+      descripcion: "Las métricas pasadas se conservan.",
+      confirmar: "Eliminar",
+      peligroso: true,
+    });
+    if (!ok) return;
     setMsg("");
     const res = await fetch(`/api/admin/automation/sla/${s.id}`, { method: "DELETE" });
     if (!res.ok) {
@@ -346,6 +375,7 @@ export function SlaPolicyEditor({
       setMsg(extractError(d));
       return;
     }
+    toast({ title: "Política eliminada" });
     onChanged();
   }
 
@@ -353,9 +383,9 @@ export function SlaPolicyEditor({
     <div className="crm-card !p-0 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 hairline-b">
         <div>
-          <p className="text-[13px] font-semibold">Políticas SLA (speed-to-lead)</p>
+          <p className="text-[13px] font-semibold">Tiempos de respuesta (SLA)</p>
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-            Tiempos de respuesta por segmento, con horario laboral opcional
+            Cuánto puede tardar el primer contacto con un lead nuevo, por segmento y con horario laboral opcional
           </p>
         </div>
         {canEdit && (
@@ -381,7 +411,7 @@ export function SlaPolicyEditor({
 
       {policies.length === 0 && !editing && (
         <p className="px-4 py-6 text-center text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-          Sin políticas SLA todavía.
+          Sin políticas de tiempo de respuesta todavía.
         </p>
       )}
 
@@ -390,11 +420,14 @@ export function SlaPolicyEditor({
           <div className="min-w-0">
             <p className="text-[13px] font-medium">
               {s.name}
-              {s.isDefault && <span className="badge badge-neutral ml-1">default</span>}
+              {s.isDefault && <span className="badge badge-neutral ml-1">general</span>}
               {!s.isActive && <span className="badge badge-neutral ml-1">inactiva</span>}
             </p>
             <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-              prioridad {s.priority} · {s._count.timers} timers históricos
+              {slaSummary(s.firstTouchMinutes, s.retryMinutes, s.orphanHours)}
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+              Orden {s.priority} · {s._count.timers} seguimientos registrados
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">

@@ -25,13 +25,13 @@ const OPS = [
 function CondRowFields({ c, onChange, onDelete, listId }: { c: CondLeaf; onChange: (c: CondLeaf) => void; onDelete: () => void; listId: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <input list={listId} className="form-input !w-auto min-w-[12rem] flex-1 text-[13px]" placeholder="campo (ej. contact.score)" value={c.field}
+      <input list={listId} className="form-input !w-auto min-w-[12rem] flex-1 text-[13px]" placeholder="dato del contacto, p. ej. contact.leadSource" title="Dato que se evalúa. Elige una sugerencia de la lista o escríbelo." value={c.field}
         onChange={(e) => onChange({ ...c, field: e.target.value })} />
       <select className="form-input !w-auto text-[13px]" value={c.op} onChange={(e) => onChange({ ...c, op: e.target.value })}>
         {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       {c.op !== "exists" && (
-        <input className="form-input !w-auto min-w-[8rem] flex-1 text-[13px]" placeholder={c.op === "in" || c.op === "nin" ? "a,b,c" : "valor"} value={c.value}
+        <input className="form-input !w-auto min-w-[8rem] flex-1 text-[13px]" placeholder={c.op === "in" || c.op === "nin" ? "varios valores separados por coma: A,B,C" : "valor, p. ej. FACEBOOK_ADS"} value={c.value}
           onChange={(e) => onChange({ ...c, value: e.target.value })} />
       )}
       <button type="button" onClick={onDelete} className="shrink-0 text-[color:var(--text-tertiary)] hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
@@ -67,7 +67,7 @@ export function ConditionTreeEditor({
       <div className="flex items-center justify-between">
         <h3 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>{label}</h3>
         <div className="flex items-center gap-2 text-[12px]">
-          <span style={{ color: "var(--text-tertiary)" }}>Cumplir</span>
+          <span style={{ color: "var(--text-tertiary)" }}>Se cumplen</span>
           <select className="form-input !w-auto text-[12px]" value={tree.combinator} onChange={(e) => setRoot(e.target.value as "all" | "any")}>
             <option value="all">todas</option>
             <option value="any">cualquiera</option>
@@ -103,6 +103,10 @@ export function ConditionTreeEditor({
         <button type="button" onClick={addLeaf} className="btn-secondary text-[12px]"><Plus className="h-3.5 w-3.5" /> Condición</button>
         <button type="button" onClick={addGroup} className="btn-secondary text-[12px]"><Plus className="h-3.5 w-3.5" /> Grupo</button>
       </div>
+      <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+        Por ahora el dato y el valor se escriben a mano (p. ej. contact.leadSource igual a FACEBOOK_ADS).
+        En la siguiente etapa se elegirán de una lista, sin teclear claves.
+      </p>
       {tree.items.length === 0 && (
         <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
           {emptyText ?? "Sin condiciones = se aplicará siempre."}

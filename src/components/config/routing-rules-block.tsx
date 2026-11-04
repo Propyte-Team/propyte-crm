@@ -1,18 +1,23 @@
 // Configuración → Equipos & Territorios → Reglas de ruteo (RoutingRule).
 // Lista por prioridad + formulario inline. Escribe /api/admin/routing-rules; el motor que
 // las aplica es autoRouteLead. Las reglas se evalúan en orden de prioridad (menor primero)
-// y gana la primera que matchea y encuentra candidato.
+// y gana la primera que cumple y encuentra a quién asignar.
+// Avisos: éxito y error salen por toast.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Pencil, Trash2, Power } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/use-toast";
+import { leerError } from "@/lib/api-errors";
+import { ROLE_LABELS_COMPLETO, PLAZA_LABELS, etiqueta, opciones } from "@/lib/labels";
 import { ConditionTreeEditor } from "./condition-tree";
 import { buildConditionsTree, parseConditions, type ConditionTree } from "@/lib/workflows/builder-model";
 import {
-  ROUTING_FIELD_SUGGESTIONS, STRATEGY_LABELS, describeConditions, describeTargets,
-  buildTargets, parseTargets, nextPriority,
+  ROUTING_FIELD_SUGGESTIONS, STRATEGY_LABELS, strategyOptions, describeConditions, describeTargets,
+  buildTargets, parseTargets, nextPriority, hasIncompleteCondition,
 } from "@/lib/teams/rules-model";
-import { ROUTING_STRATEGIES, ROUTING_TARGET_ROLES, ROUTING_PLAZAS } from "@/lib/validations/routing-rule";
+import { ROUTING_TARGET_ROLES } from "@/lib/validations/routing-rule";
 
 export interface RoutingRuleData {
   id: string;
@@ -36,8 +41,6 @@ interface FormState {
   tree: ConditionTree;
 }
 
-const PLAZA_LABEL: Record<string, string> = { TULUM: "Tulum", PDC: "PDC", MERIDA: "Mérida" };
-
 function emptyForm(priority: number): FormState {
   return { name: "", priority, strategy: "ROUND_ROBIN", mode: "roles", roles: [], userIds: [], plaza: "", tree: { combinator: "all", items: [] } };
 }
@@ -53,7 +56,9 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
   const [rules, setRules] = useState<RoutingRuleData[]>([]);
   const [editing, setEditing] = useState<{ id: string | null; form: FormState } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
+  const confirmar = useConfirm();
+  const ok = (title: string) => toast({ title });
+  const fallo = (description: string) => toast({ title: "No se pudo completar", description, variant: "destructive" });
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/routing-rules");
@@ -66,7 +71,8 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
   async function save() {
     if (!editing) return;
     const f = editing.form;
-    if (f.name.trim().length < 3) { setMsg("El nombre necesita al menos 3 caracteres"); return; }
+    if (f.name.trim().length < 3) { fallo("El nombre necesita al menos 3 caracteres"); return; }
+    if (hasIncompleteCondition(f.tree)) { fallo("Hay una condición incompleta. Completa o quita la fila antes de guardar."); return; }
     setSaving(true);
     const body = {
       name: f.name.trim(),
@@ -80,10 +86,9 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json().catch(() => ({}));
     setSaving(false);
-    if (!res.ok) { setMsg(typeof data.error === "string" ? data.error : "No se pudo guardar la regla"); return; }
-    setMsg(editing.id ? "Regla actualizada ✓" : "Regla creada ✓");
+    if (!res.ok) { fallo(await leerError(res, "No se pudo guardar la regla")); return; }
+    ok(editing.id ? "Regla actualizada" : "Regla creada");
     setEditing(null);
     load();
   }
@@ -94,14 +99,20 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !r.isActive }),
     });
-    if (!res.ok) setMsg("No se pudo cambiar el estado");
+    if (!res.ok) fallo(await leerError(res, "No se pudo cambiar el estado"));
     load();
   }
 
   async function remove(r: RoutingRuleData) {
-    if (!window.confirm(`¿Eliminar la regla "${r.name}"? Los leads dejarán de repartirse con ella.`)) return;
+    const seguro = await confirmar({
+      titulo: `¿Eliminar la regla "${r.name}"?`,
+      descripcion: "Los leads dejarán de repartirse con ella. No se puede deshacer.",
+      confirmar: "Eliminar",
+      peligroso: true,
+    });
+    if (!seguro) return;
     const res = await fetch(`/api/admin/routing-rules/${r.id}`, { method: "DELETE" });
-    setMsg(res.ok ? "Regla eliminada" : "No se pudo eliminar");
+    if (res.ok) ok("Regla eliminada"); else fallo(await leerError(res, "No se pudo eliminar"));
     load();
   }
 
@@ -113,7 +124,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
     <div className="crm-card !p-0 overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 hairline-b">
         <div>
-          <p className="text-[13px] font-semibold">Reglas de ruteo</p>
+          <p className="text-[13px] font-semibold">Reglas de reparto de leads</p>
           <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
             Se evalúan por prioridad (menor primero); gana la primera que cumple y tiene a quién asignar. Si ninguna asigna, el lead entra al turno general.
           </p>
@@ -124,7 +135,6 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
           </button>
         )}
       </div>
-      {msg && <p className="px-4 pt-2 text-[12px]" style={{ color: "var(--text-secondary)" }}>{msg}</p>}
 
       {editing && (
         <div className="space-y-3 px-4 py-3 hairline-b" style={{ background: "var(--bg-subtle, transparent)" }}>
@@ -138,9 +148,9 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
               <input type="number" min={1} max={1000} className="form-input !w-24 !py-1.5 text-[13px]" value={editing.form.priority} onChange={(e) => setForm({ priority: Number(e.target.value) || 1 })} />
             </label>
             <label className="text-[12px]">
-              <span className="block mb-1" style={{ color: "var(--text-tertiary)" }}>Estrategia</span>
+              <span className="block mb-1" style={{ color: "var(--text-tertiary)" }}>Cómo repartir</span>
               <select className="form-input !w-56 !py-1.5 text-[13px]" value={editing.form.strategy} onChange={(e) => setForm({ strategy: e.target.value })}>
-                {ROUTING_STRATEGIES.map((s) => <option key={s} value={s}>{STRATEGY_LABELS[s]}</option>)}
+                {strategyOptions(editing.id ? editing.form.strategy : undefined).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
           </div>
@@ -159,12 +169,12 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
               <div className="flex flex-wrap items-center gap-3 text-[13px]">
                 {ROUTING_TARGET_ROLES.map((r) => (
                   <label key={r} className="inline-flex items-center gap-1.5">
-                    <input type="checkbox" checked={editing.form.roles.includes(r)} onChange={() => setForm({ roles: toggleIn(editing.form.roles, r) })} /> {r}
+                    <input type="checkbox" checked={editing.form.roles.includes(r)} onChange={() => setForm({ roles: toggleIn(editing.form.roles, r) })} /> {etiqueta(ROLE_LABELS_COMPLETO, r)}
                   </label>
                 ))}
                 <select className="form-input !w-44 !py-1 text-[12px]" value={editing.form.plaza} onChange={(e) => setForm({ plaza: e.target.value })}>
                   <option value="">Plaza del lead</option>
-                  {ROUTING_PLAZAS.map((p) => <option key={p} value={p}>{PLAZA_LABEL[p]}</option>)}
+                  {opciones(PLAZA_LABELS).map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
                 <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Sin roles marcados = asesores (todos los niveles)</span>
               </div>
@@ -174,7 +184,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
                 {asesores.map((u) => (
                   <label key={u.id} className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1" style={{ borderColor: "var(--border-subtle)" }}>
                     <input type="checkbox" checked={editing.form.userIds.includes(u.id)} onChange={() => setForm({ userIds: toggleIn(editing.form.userIds, u.id) })} />
-                    {u.name}{u.plaza ? <span style={{ color: "var(--text-tertiary)" }}> · {PLAZA_LABEL[u.plaza] ?? u.plaza}</span> : null}
+                    {u.name}{u.plaza ? <span style={{ color: "var(--text-tertiary)" }}> · {etiqueta(PLAZA_LABELS, u.plaza)}</span> : null}
                   </label>
                 ))}
               </div>
@@ -199,7 +209,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
 
       {rules.length === 0 && !editing && (
         <p className="px-4 py-6 text-center text-[13px]" style={{ color: "var(--text-tertiary)" }}>
-          Sin reglas de ruteo. Todos los leads entran al turno general de asesores.
+          Sin reglas de reparto. Todos los leads entran al turno general de asesores.
         </p>
       )}
       {rules.map((r) => (
@@ -213,7 +223,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
             <p className="mt-1 text-[12px]" style={{ color: "var(--text-secondary)" }}>
               <span style={{ color: "var(--text-tertiary)" }}>Cuando </span>{describeConditions(r.conditions)}
               <span style={{ color: "var(--text-tertiary)" }}> → </span>{describeTargets(r.targets as never, usersById)}
-              <span style={{ color: "var(--text-tertiary)" }}> · </span>{STRATEGY_LABELS[r.strategy as keyof typeof STRATEGY_LABELS] ?? r.strategy}
+              <span style={{ color: "var(--text-tertiary)" }}> · </span>{etiqueta(STRATEGY_LABELS, r.strategy)}
             </p>
           </div>
           {canEdit && (
