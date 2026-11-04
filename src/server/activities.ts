@@ -13,6 +13,7 @@ import { getVisibleBrands } from "@/lib/brands/user-access"
 import { activityBrandVisibilityWhere } from "@/lib/brands/visibility"
 import { puedeAsignarTareaA } from "@/lib/activities/asignacion"
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion"
+import { emitirVisitaRealizada } from "@/lib/workflows/emisiones"
 
 /** Los userId que un rol TEAM puede ver: él mismo + quienes le reportan. */
 async function teamMemberIds(currentUserId: string): Promise<string[]> {
@@ -276,6 +277,7 @@ export async function createActivity(data: CreateActivityInput) {
 
   // Disparar webhook de actividad creada (fire-and-forget, no bloquea la respuesta)
   dispatchWebhook("activity.created", { activity })
+  if (finalStatus === "COMPLETADA") await emitirVisitaRealizada(activity)
 
   if (asignadaAOtro) {
     await avisarAsignacion({
@@ -398,6 +400,8 @@ export async function updateActivity(id: string, data: UpdateActivityInput) {
       user: { select: { id: true, name: true } },
     },
   })
+
+  if (data.status === "COMPLETADA" && existing.status !== "COMPLETADA") await emitirVisitaRealizada(activity)
 
   if (nuevoAsignado && nuevoAsignado !== session.user.id) {
     await avisarAsignacion({

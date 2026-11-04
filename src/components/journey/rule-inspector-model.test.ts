@@ -38,8 +38,8 @@ describe("selectorDeDisparador", () => {
   it("solo ofrece activos; el actual proximamente se conserva con aviso", () => {
     const base = selectorDeDisparador("EVENT", { eventType: "lead.captured" });
     expect(base.grupos.flatMap((g) => g.opciones).some((o) => o.proximamente)).toBe(false);
-    const s = selectorDeDisparador("EVENT", { eventType: "quote.opened" });
-    const op = s.grupos.flatMap((g) => g.opciones).find((o) => o.key === "quote.opened");
+    const s = selectorDeDisparador("BEHAVIORAL", { eventType: "page.view" });
+    const op = s.grupos.flatMap((g) => g.opciones).find((o) => o.key === "behavioral");
     expect(op?.proximamente).toBe(true);
     expect(s.aviso).toBeTruthy();
   });
