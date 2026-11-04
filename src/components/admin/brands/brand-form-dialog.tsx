@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { mensajeDeError, erroresPorCampo } from "@/lib/api-errors";
 import { PLAZA_LABELS } from "@/lib/constants";
+import { textoHereda } from "@/lib/bot/quien-contesta";
 import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import {
   NONE, BRAND_CHANNEL_OPTIONS, BRAND_LIMITS, brandToForm, buildBrandPayload,
@@ -54,11 +55,13 @@ export interface BrandFormDialogProps {
   /** null = marca nueva. */
   brand: BrandRow | null;
   playbooks: Array<{ id: string; name: string }>;
+  /** Configuración general del bot, para mostrar "Hereda: X (general)" en el estilo. */
+  general?: { tonePreset: string } | null;
   users: Array<{ id: string; name: string }>;
   onSaved: () => void;
 }
 
-export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, onSaved }: BrandFormDialogProps) {
+export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, general, onSaved }: BrandFormDialogProps) {
   const { toast } = useToast();
   const confirmar = useConfirm();
   const mode: BrandFormMode = !brand ? "create" : brand.isDefault ? "edit-default" : "edit";
@@ -399,7 +402,9 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NONE}>{SAME_AS_GLOBAL}</SelectItem>
+                      <SelectItem value={NONE}>
+                        {general ? textoHereda("estilo", { tonePreset: general.tonePreset, activePlaybookId: null }) : SAME_AS_GLOBAL}
+                      </SelectItem>
                       {Object.values(TONE_PRESETS).map((t) => (
                         <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
                       ))}
@@ -408,14 +413,15 @@ export function BrandFormDialog({ open, onOpenChange, brand, playbooks, users, o
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Playbook</Label>
+                  <Label>Guion de preguntas (playbook)</Label>
                   <Select
                     value={form.playbookId || NONE}
                     onValueChange={(v) => set("playbookId", v === NONE ? "" : v)}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NONE}>{SAME_AS_GLOBAL}</SelectItem>
+                      {/* El motor NO hereda el guion general en una marca: sin guion propio no califica. */}
+                      <SelectItem value={NONE}>Sin guion propio (no usa el del bot general)</SelectItem>
                       {playbooks.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                       ))}

@@ -6,6 +6,7 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import { writeCredentials } from "@/lib/intake/connectors";
+import { leadsUltimos30Dias } from "@/lib/connectors/actividad";
 import {
   connectorCredentialsMetaSchema,
   connectorCredentialsSocialSchema,
@@ -64,9 +65,12 @@ export async function GET() {
     },
   });
   // redact: solo indicar si hay credenciales, jamás el contenido
+  // E6: prospectos de los últimos 30 días por cuenta (null = no se pudo contar).
+  const por30d = await leadsUltimos30Dias(connectors.map((c) => c.id));
   const safe = connectors.map(({ credentials, ...rest }) => ({
     ...rest,
     hasCredentials: !!credentials,
+    leads30d: por30d ? (por30d[rest.id] ?? 0) : null,
   }));
   return NextResponse.json({ data: safe });
 }

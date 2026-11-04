@@ -38,3 +38,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const warnings = sanitizeEnumFields({ ...mapped });
   return NextResponse.json({ data: { mapped, usedLastLead, warnings } });
 }
+
+// GET: preguntas del último prospecto recibido por la cuenta (E6), para sugerirlas en el editor de
+// mapeo en vez de pedir que se teclee el nombre interno («full_name»). Solo las claves, nunca los
+// valores (son datos personales del prospecto).
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession();
+  if (!session?.user || !ALLOWED_ROLES.includes(session.user.role)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+  const { id } = await ctx.params;
+  const last = await prisma.connectorLeadLog.findFirst({
+    where: { connectorId: id },
+    orderBy: { receivedAt: "desc" },
+    select: { rawPayload: true },
+  });
+  const raw = (last?.rawPayload ?? {}) as { external?: Record<string, unknown> };
+  const questions = raw.external && typeof raw.external === "object" ? Object.keys(raw.external).slice(0, 50) : [];
+  return NextResponse.json({ data: { questions } });
+}

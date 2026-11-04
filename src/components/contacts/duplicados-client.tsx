@@ -5,6 +5,7 @@ import Link from "next/link";
 import { leerError } from "@/lib/api-errors";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/use-toast";
+import { descripcionFusion, resumenFusion, type ResumenFusion } from "./duplicados-model";
 
 export interface Ct {
   id: string;
@@ -22,6 +23,8 @@ export interface Ct {
 type MatchType = "strong" | "name";
 
 interface DupGroup {
+  /** Firma estable del grupo (la calcula el servidor) */
+  key: string;
   matchType: MatchType;
   contacts: Ct[];
 }
@@ -47,54 +50,75 @@ function MatchBadge({ matchType }: { matchType: MatchType }) {
       className="rounded border px-2 py-0.5 text-[11px] font-medium text-[color:var(--text-tertiary)]"
       style={{ borderColor: "var(--border-subtle)" }}
     >
-      {matchType === "strong" ? "Coincidencia fuerte (tel/email)" : "Coincidencia débil (nombre)"}
+      {matchType === "strong" ? "Mismo teléfono o correo" : "Nombre parecido"}
     </span>
   );
 }
 
+interface Meta {
+  total: number;
+  totalFuertes: number;
+  totalNombre: number;
+  filtrados: number;
+  hayMas: boolean;
+}
+
+const PAGINA = 20;
+type Tab = "strong" | "name";
+
 export function DuplicadosClient() {
   const confirmar = useConfirm();
   const [groups, setGroups] = useState<DupGroup[]>([]);
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [tab, setTab] = useState<Tab>("strong");
   const [loading, setLoading] = useState(true);
-  const [survivors, setSurvivors] = useState<Record<number, string>>({});
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const [survivors, setSurvivors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [resultados, setResultados] = useState<Array<ResumenFusion & { id: number }>>([]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/contacts/duplicates");
+  // offset 0 reemplaza la lista; offset > 0 ("Cargar más") la acumula.
+  const load = useCallback(async (offset = 0) => {
+    if (offset === 0) setLoading(true); else setCargandoMas(true);
+    const res = await fetch(`/api/contacts/duplicates?tipo=${tab}&limit=${PAGINA}&offset=${offset}`);
     if (!res.ok) {
       toast({ title: "No se pudieron cargar los duplicados", description: await leerError(res), variant: "destructive" });
       setLoading(false);
+      setCargandoMas(false);
       return;
     }
     const json = await res.json().catch(() => ({}));
     const data: DupGroup[] = json.data ?? [];
-    const def: Record<number, string> = {};
-    data.forEach((g, idx) => {
-      def[idx] = elegirPrincipal(g.contacts).id;
+    setMeta(json.meta ?? null);
+    setGroups((prev) => (offset === 0 ? data : [...prev, ...data]));
+    setSurvivors((prev) => {
+      const def: Record<string, string> = offset === 0 ? {} : { ...prev };
+      for (const g of data) def[g.key] = elegirPrincipal(g.contacts).id;
+      return def;
     });
-    setGroups(data);
-    setSurvivors(def);
     setLoading(false);
-  }, []);
+    setCargandoMas(false);
+  }, [tab]);
 
   useEffect(() => {
-    load();
+    load(0);
   }, [load]);
 
-  async function mergeGroup(idx: number, group: Ct[]) {
-    const survivorId = survivors[idx];
+  async function mergeGroup(g: DupGroup) {
+    const survivorId = survivors[g.key];
     if (!survivorId) return;
-    const losers = group.filter((c) => c.id !== survivorId);
+    const principal = g.contacts.find((c) => c.id === survivorId)!;
+    const losers = g.contacts.filter((c) => c.id !== survivorId);
     const ok = await confirmar({
       titulo: `¿Fusionar ${losers.length} ${losers.length === 1 ? "contacto" : "contactos"} en el contacto principal?`,
-      descripcion:
-        "Los demás contactos se archivan y no se pueden recuperar desde la pantalla. Sus negocios y actividades pasan al contacto principal.",
+      descripcion: descripcionFusion(principal, losers),
       confirmar: "Fusionar",
       peligroso: true,
     });
     if (!ok) return;
     setBusy(true);
+    let fusionados = 0;
+    let error: string | undefined;
     for (const l of losers) {
       const res = await fetch("/api/contacts/merge", {
         method: "POST",
@@ -102,12 +126,36 @@ export function DuplicadosClient() {
         body: JSON.stringify({ survivorId, loserId: l.id }),
       });
       if (!res.ok) {
-        toast({ title: "No se pudo fusionar", description: await leerError(res, "Error al fusionar"), variant: "destructive" });
+        error = await leerError(res, "Error al fusionar");
         break;
       }
+      fusionados++;
     }
     setBusy(false);
-    await load();
+    const resumen = resumenFusion({ fusionados, total: losers.length, error });
+    setResultados((prev) => [{ ...resumen, id: Date.now() }, ...prev].slice(0, 5));
+    toast({ title: resumen.titulo, description: resumen.detalle, variant: resumen.tono === "ok" ? undefined : "destructive" });
+    await load(0);
+  }
+
+  async function noEsDuplicado(g: DupGroup) {
+    const ok = await confirmar({
+      titulo: "¿Marcar como que no son la misma persona?",
+      descripcion: "Este grupo dejará de aparecer en la lista. No se modifica ningún contacto.",
+      confirmar: "No es duplicado",
+    });
+    if (!ok) return;
+    const res = await fetch("/api/contacts/duplicates/revisados", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: g.contacts.map((c) => c.id) }),
+    });
+    if (!res.ok) {
+      toast({ title: "No se pudo guardar", description: await leerError(res), variant: "destructive" });
+      return;
+    }
+    toast({ title: "Grupo marcado como no duplicado" });
+    await load(0);
   }
 
   return (
@@ -117,21 +165,48 @@ export function DuplicadosClient() {
           Contactos duplicados
         </h1>
         <p className="text-[13px] text-[color:var(--text-tertiary)]">
-          Agrupados por email/teléfono (fuerte) o por nombre (débil). Elige el contacto principal y fusiona.
+          Elige el contacto principal; los demás se unen a él. Si no son la misma persona, márcalo y el grupo deja de aparecer.
         </p>
       </div>
+
+      <div className="flex flex-wrap gap-2">
+        {([["strong", "Seguras (mismo teléfono o correo)", meta?.totalFuertes], ["name", "Por revisar (nombre parecido)", meta?.totalNombre]] as const).map(([t, texto, n]) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="rounded border px-3 py-1.5 text-[13px]"
+            style={{
+              borderColor: tab === t ? "var(--color-teal, #0D9488)" : "var(--border-default)",
+              color: tab === t ? "var(--text-primary)" : "var(--text-secondary)",
+            }}
+          >
+            {texto}{n !== undefined ? ` (${n})` : ""}
+          </button>
+        ))}
+      </div>
+
+      {resultados.length > 0 && (
+        <div className="space-y-1">
+          {resultados.map((r) => (
+            <div key={r.id} className="rounded border px-3 py-2 text-[12px]" style={{ borderColor: r.tono === "ok" ? "var(--border-subtle)" : "var(--color-warning)" }}>
+              <p className="font-medium text-[color:var(--text-primary)]">{r.titulo}</p>
+              {r.detalle && <p className="text-[color:var(--text-tertiary)]">{r.detalle}</p>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <p className="text-[13px] text-[color:var(--text-tertiary)]">Cargando…</p>
       ) : groups.length === 0 ? (
         <p className="text-[13px] text-[color:var(--text-tertiary)]">
-          No se detectaron duplicados.
+          No hay grupos en esta lista.
         </p>
       ) : (
         <div className="space-y-4">
-          {groups.map((g, idx) => (
+          {groups.map((g) => (
             <div
-              key={idx}
+              key={g.key}
               className="crm-card rounded-lg border p-4"
               style={{
                 borderColor: "var(--border-default)",
@@ -145,13 +220,22 @@ export function DuplicadosClient() {
                   </span>
                   <MatchBadge matchType={g.matchType} />
                 </div>
-                <button
-                  className="btn-primary text-xs disabled:opacity-40"
-                  disabled={busy}
-                  onClick={() => mergeGroup(idx, g.contacts)}
-                >
-                  Fusionar en el contacto principal
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    className="btn-secondary text-xs disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => noEsDuplicado(g)}
+                  >
+                    No es duplicado
+                  </button>
+                  <button
+                    className="btn-primary text-xs disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => mergeGroup(g)}
+                  >
+                    Fusionar en el contacto principal
+                  </button>
+                </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {g.contacts.map((c) => (
@@ -162,10 +246,10 @@ export function DuplicadosClient() {
                   >
                     <input
                       type="radio"
-                      name={`surv-${idx}`}
-                      checked={survivors[idx] === c.id}
+                      name={`surv-${g.key}`}
+                      checked={survivors[g.key] === c.id}
                       onChange={() =>
-                        setSurvivors((s) => ({ ...s, [idx]: c.id }))
+                        setSurvivors((s) => ({ ...s, [g.key]: c.id }))
                       }
                       className="mt-1"
                     />
@@ -206,6 +290,11 @@ export function DuplicadosClient() {
               </div>
             </div>
           ))}
+          {meta?.hayMas && (
+            <button className="btn-secondary text-xs disabled:opacity-40" disabled={cargandoMas} onClick={() => load(groups.length)}>
+              {cargandoMas ? "Cargando…" : `Cargar más (${groups.length} de ${meta.filtrados})`}
+            </button>
+          )}
         </div>
       )}
     </div>

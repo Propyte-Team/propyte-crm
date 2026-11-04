@@ -36,18 +36,24 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { GripVertical, Plus, Trash2 } from "lucide-react";
+import { GripVertical, Plus, Trash2, X } from "lucide-react";
 import { upsertPlaybook, setActivePlaybook, deletePlaybook } from "@/server/bot-playbook";
 import { CAPTURE_TYPES } from "@/server/bot-playbook.schema";
-import { NATIVE_TARGET_FIELDS } from "@/lib/bot/playbook/fields";
+import { NATIVE_TARGET_FIELDS, isNativeTarget } from "@/lib/bot/playbook/fields";
+import {
+  agregarSinonimos,
+  errorDeOpciones,
+  etiquetaDeValor,
+  leerOpciones,
+  opcionesDeFabrica,
+  opcionesParaGuardar,
+  quitarSinonimo,
+  tieneValoresFijos,
+  type OpcionEnum,
+} from "./playbook-options";
 import type { CaptureType } from "@prisma/client";
 
 // --- Tipos de datos recibidos del servidor -------------------------------
-
-interface EnumOption {
-  value: string;
-  synonyms: string[];
-}
 
 export interface PlaybookTaskData {
   id: string;
@@ -84,7 +90,7 @@ interface TaskRowState {
   objective: string;
   targetField: string;
   captureType: CaptureType;
-  enumOptionsText: string;
+  enumOptions: OpcionEnum[];
   extractionHint: string | null;
   required: boolean;
   skipIfFilled: boolean;
@@ -132,43 +138,6 @@ const MAX_OBJECTIVE = 500;
 
 // --- Helpers de conversión -------------------------------------------------
 
-function toEnumOptionsArray(json: unknown): EnumOption[] {
-  if (!Array.isArray(json)) return [];
-  return json
-    .filter((o): o is Record<string, unknown> => o !== null && typeof o === "object")
-    .map((o) => ({
-      value: String(o.value ?? ""),
-      synonyms: Array.isArray(o.synonyms) ? o.synonyms.map(String) : [],
-    }))
-    .filter((o) => o.value.length > 0);
-}
-
-// "valor:sinónimo1,sinónimo2" por línea → [{value, synonyms}]
-function parseEnumOptionsText(text: string): EnumOption[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const idx = line.indexOf(":");
-      if (idx === -1) return { value: line, synonyms: [] };
-      const value = line.slice(0, idx).trim();
-      const synonyms = line
-        .slice(idx + 1)
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      return { value, synonyms };
-    })
-    .filter((o) => o.value.length > 0);
-}
-
-function enumOptionsToText(options: EnumOption[]): string {
-  return options
-    .map((o) => (o.synonyms.length > 0 ? `${o.value}:${o.synonyms.join(",")}` : o.value))
-    .join("\n");
-}
-
 // slug simple: minúsculas, sin acentos, espacios → guion bajo
 function slugify(text: string): string {
   return text
@@ -194,7 +163,7 @@ function tasksToRows(tasks: PlaybookTaskData[]): TaskRowState[] {
       objective: t.objective,
       targetField: t.targetField,
       captureType: t.captureType,
-      enumOptionsText: enumOptionsToText(toEnumOptionsArray(t.enumOptions)),
+      enumOptions: leerOpciones(t.enumOptions),
       extractionHint: t.extractionHint ?? null,
       required: t.required,
       skipIfFilled: t.skipIfFilled,
@@ -206,6 +175,114 @@ function errorLegible(error: unknown): string {
   const msg = error instanceof Error ? error.message : "";
   if (!msg || msg.startsWith("[") || msg.startsWith("{")) return "Revisa los datos e intenta de nuevo.";
   return msg;
+}
+
+// --- Editor de opciones (filas: opción + sinónimos en chips) -----------------
+
+function OpcionesEditor({
+  targetField,
+  opciones,
+  onChange,
+}: {
+  targetField: string;
+  opciones: OpcionEnum[];
+  onChange: (next: OpcionEnum[]) => void;
+}) {
+  const fijas = tieneValoresFijos(targetField);
+  const [borradores, setBorradores] = useState<Record<number, string>>({});
+
+  function patchFila(i: number, patch: Partial<OpcionEnum>) {
+    onChange(opciones.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
+  }
+  function confirmarSinonimos(i: number) {
+    const texto = borradores[i] ?? "";
+    if (!texto.trim()) return;
+    patchFila(i, { synonyms: agregarSinonimos(opciones[i].synonyms, texto, opciones[i].value) });
+    setBorradores((b) => ({ ...b, [i]: "" }));
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label>Opciones que el bot puede elegir</Label>
+      <div className="space-y-2">
+        {opciones.map((o, i) => (
+          <div key={i} className="flex flex-wrap items-start gap-2 rounded-md border p-2">
+            <div className="w-48 shrink-0">
+              {fijas ? (
+                <span className="block pt-1.5 text-sm font-medium" title={o.value}>
+                  {etiquetaDeValor(targetField, o.value)}
+                </span>
+              ) : (
+                <Input
+                  value={o.value}
+                  aria-label="Opción"
+                  placeholder="Opción"
+                  onChange={(e) => patchFila(i, { value: e.target.value })}
+                />
+              )}
+            </div>
+            <div className="min-w-[200px] flex-1 space-y-1.5">
+              <div className="flex flex-wrap gap-1.5">
+                {o.synonyms.map((sn) => (
+                  <span key={sn} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                    {sn}
+                    <button
+                      type="button"
+                      aria-label={"Quitar " + sn}
+                      onClick={() => patchFila(i, { synonyms: quitarSinonimo(o.synonyms, sn) })}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <Input
+                value={borradores[i] ?? ""}
+                aria-label="Otras formas en que el cliente lo dice"
+                placeholder="Cómo lo dice el cliente (Enter para agregar)"
+                onChange={(e) => setBorradores((b) => ({ ...b, [i]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    confirmarSinonimos(i);
+                  }
+                }}
+                onBlur={() => confirmarSinonimos(i)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Quitar opción"
+              title="Quitar opción"
+              onClick={() => onChange(opciones.filter((_, idx) => idx !== i))}
+            >
+              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+            </Button>
+          </div>
+        ))}
+        {opciones.length === 0 && <p className="text-xs text-muted-foreground">Sin opciones todavía.</p>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {!fijas && (
+          <Button type="button" variant="outline" size="sm" onClick={() => onChange([...opciones, { value: "", synonyms: [] }])}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Agregar opción
+          </Button>
+        )}
+        {fijas && (
+          <Button type="button" variant="outline" size="sm" onClick={() => onChange(opcionesDeFabrica(targetField))}>
+            Restaurar opciones
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {fijas
+          ? "Las opciones son las del sistema. En cada una agrega las palabras con que el cliente suele decirlo (por ejemplo «depa» para Departamento)."
+          : "Escribe cada opción y, debajo, las otras formas en que el cliente la dice."}
+      </p>
+    </div>
+  );
 }
 
 // --- Fila de tarea (sortable) ---------------------------------------------
@@ -304,6 +381,7 @@ function TaskRowItem({
               )}
             </div>
 
+            {!isNativeTarget(row.targetField) && (
             <div className="space-y-1.5">
               <Label>Cómo interpreta la respuesta</Label>
               <Select
@@ -332,21 +410,15 @@ function TaskRowItem({
                 </SelectContent>
               </Select>
             </div>
+            )}
           </div>
 
           {row.captureType === "ENUM" && (
-            <div className="space-y-1.5">
-              <Label>Opciones (una por línea)</Label>
-              <textarea
-                className="form-input min-h-[80px] resize-y font-mono text-xs"
-                value={row.enumOptionsText}
-                onChange={(e) => onChange({ enumOptionsText: e.target.value })}
-                placeholder={"DEPARTAMENTO:depa,depto\nCASA"}
-              />
-              <p className="text-xs text-muted-foreground">
-                Escribe la opción y, después de dos puntos, otras formas en que el cliente la dice, separadas por comas.
-              </p>
-            </div>
+            <OpcionesEditor
+              targetField={row.targetField}
+              opciones={row.enumOptions}
+              onChange={(enumOptions) => onChange({ enumOptions })}
+            />
           )}
 
           <div className="flex flex-wrap gap-4">
@@ -470,7 +542,7 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         objective: "",
         targetField: "",
         captureType: "TEXT" as CaptureType,
-        enumOptionsText: "",
+        enumOptions: [],
         extractionHint: null,
         required: true,
         skipIfFilled: true,
@@ -492,11 +564,9 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
         if (r.uid !== uid) return r;
         const spec = NATIVE_TARGET_FIELDS[field];
         const captureType = (spec?.captureType ?? "TEXT") as CaptureType;
-        const enumOptionsText =
-          captureType === "ENUM"
-            ? enumOptionsToText((spec?.enumValues ?? []).map((v) => ({ value: v, synonyms: [] })))
-            : r.enumOptionsText;
-        return { ...r, targetField: field, captureType, enumOptionsText };
+        // Campo nativo con lista fija: se cargan sus opciones de fábrica; si no, se conservan las que había.
+        const enumOptions = captureType === "ENUM" ? opcionesDeFabrica(field) : r.enumOptions;
+        return { ...r, targetField: field, captureType, enumOptions };
       }),
     );
   }
@@ -540,6 +610,15 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
       });
       return;
     }
+    const filaConLista = rows.findIndex((r) => r.captureType === "ENUM" && errorDeOpciones(r.enumOptions));
+    if (filaConLista !== -1) {
+      toast({
+        title: "Revisa las opciones",
+        description: `La pregunta ${filaConLista + 1}: ${errorDeOpciones(rows[filaConLista].enumOptions)}`,
+        variant: "destructive",
+      });
+      return;
+    }
     startTransition(async () => {
       try {
         // Keys ya asignadas (filas cargadas de DB) van primero al set para que
@@ -573,7 +652,7 @@ export function PlaybookTab({ initialPlaybooks, activePlaybookId, customFields }
             // datos previos a este fix con un targetField desalineado.
             targetField: r.captureType === "FULL_NAME" ? "firstName" : r.targetField,
             captureType: r.captureType,
-            enumOptions: r.captureType === "ENUM" ? parseEnumOptionsText(r.enumOptionsText) : [],
+            enumOptions: r.captureType === "ENUM" ? opcionesParaGuardar(r.enumOptions) : [],
             extractionHint: r.extractionHint ?? undefined,
             required: r.required,
             skipIfFilled: r.skipIfFilled,
