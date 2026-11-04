@@ -45,6 +45,11 @@ export function matchesTrigger(rule: Pick<AutomationRule, "triggerType" | "trigg
   }
 }
 
+export function triggerDelayMinutes(triggerConfig: unknown): number {
+  const d = (triggerConfig as { delayMinutes?: unknown } | null | undefined)?.delayMinutes;
+  return typeof d === "number" && Number.isFinite(d) && d > 0 ? d : 0;
+}
+
 // Carga el contexto de un entity (sin requerir un WorkflowEvent). Compartido por
 // buildContext (motor) y el scheduler (exitConditions de cadencias).
 export async function loadEntityContext(
@@ -57,7 +62,11 @@ export async function loadEntityContext(
     ctx.contact = await prisma.contact.findUnique({ where: { id: entityId }, include: withAd });
   } else if (entityType === "deal") {
     const deal = await prisma.deal.findUnique({ where: { id: entityId } });
-    ctx.deal = deal;
+    // `hasQuote` es calculado (no columna): ¿hay al menos una cotización no borrada? WF4 lo usa.
+    const quote = deal
+      ? await prisma.quote.findFirst({ where: { dealId: deal.id, deletedAt: null }, select: { id: true } })
+      : null;
+    ctx.deal = deal ? { ...deal, hasQuote: quote !== null } : deal;
     if (deal) ctx.contact = await prisma.contact.findUnique({ where: { id: deal.contactId }, include: withAd });
   } else if (entityType === "conversation") {
     const conv = await prisma.conversation.findUnique({ where: { id: entityId } });
@@ -159,8 +168,12 @@ export async function processEvent(eventId: string): Promise<void> {
         continue;
       }
       const specs = walkNodes(parsedActions.data, ctx);
+      // `triggerConfig.delayMinutes` pospone la regla ENTERA (WF4: 48 h tras la reunión). Al
+      // ejecutar, `runQueue` re-evalúa las condiciones de la regla contra el contexto fresco
+      // (`recheckConditions`), p. ej. «sigue sin cotización». Solo aplica con retraso > 0.
+      const triggerDelay = triggerDelayMinutes(rule.triggerConfig);
       for (const spec of specs) {
-        const runAfter = new Date(Date.now() + (spec.delayMinutes ?? 0) * 60_000);
+        const runAfter = new Date(Date.now() + (triggerDelay + (spec.delayMinutes ?? 0)) * 60_000);
         // Auditoría 2026-09-10: el `false` de `enqueueAction` (colisión de dedupeKey) se
         // descartaba sin más. Como la clave incluye `dayBucket(runAfter)`, una regla sólo
         // puede encolar la misma acción UNA VEZ AL DÍA por entidad y ruta — así que un
@@ -175,7 +188,11 @@ export async function processEvent(eventId: string): Promise<void> {
           actionType: spec.actionType as never,
           entityType: event.entityType,
           entityId: event.entityId,
-          config: { ...spec.config, autonomyLevel: spec.autonomyLevel },
+          config: {
+            ...spec.config,
+            autonomyLevel: spec.autonomyLevel,
+            ...(triggerDelay > 0 ? { recheckConditions: rule.conditions } : {}),
+          },
           dedupeKey: `${rule.id}:${event.entityId}:${spec.actionType}:${spec.path}:${dayBucket(runAfter)}`,
           runAfter,
         });

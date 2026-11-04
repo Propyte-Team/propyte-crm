@@ -19,6 +19,11 @@ function isDecision(n: WorkflowNode): n is Extract<WorkflowNode, { kind: "decisi
   return (n as { kind?: string }).kind === "decision";
 }
 
+function delayDeConfig(config: unknown): number | undefined {
+  const d = (config as { delayMinutes?: unknown } | null | undefined)?.delayMinutes;
+  return typeof d === "number" && Number.isFinite(d) && d > 0 ? d : undefined;
+}
+
 export function walkNodes(nodes: WorkflowNode[], ctx: Ctx, prefix = ""): EnqueueSpec[] {
   const out: EnqueueSpec[] = [];
   nodes.forEach((node, i) => {
@@ -34,10 +39,13 @@ export function walkNodes(nodes: WorkflowNode[], ctx: Ctx, prefix = ""): Enqueue
       return;
     }
     const action = node as Extract<WorkflowNode, { type: string }>;
+    // Retraso: el de primer nivel manda; si no, `config.delayMinutes` (así lo dejó el seed de WF5/WF6/WF8
+    // en prod). Se lee aquí para que motor y scheduler lo respeten sin duplicar la regla.
+    const delay = action.delayMinutes ?? delayDeConfig(action.config);
     out.push({
       actionType: action.type,
       config: (action.config ?? {}) as Record<string, unknown>,
-      ...(action.delayMinutes !== undefined ? { delayMinutes: action.delayMinutes } : {}),
+      ...(delay !== undefined ? { delayMinutes: delay } : {}),
       ...(action.autonomyLevel !== undefined ? { autonomyLevel: action.autonomyLevel } : {}),
       path,
     });

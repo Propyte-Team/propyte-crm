@@ -51,7 +51,7 @@
 //   describirRetraso(minutos): string                "de inmediato" | "tras 15 min" | "tras 2 días"
 //   describeAction(action, fuentes?, opts?: { conRetraso?: boolean }): string
 //       "enviar WhatsApp «Bienvenida postventa»". `conRetraso` agrega " (tras 1 día)" con el
-//       `delayMinutes` de PRIMER NIVEL (el único que lee el motor).
+//       `delayMinutes` de primer nivel o, si no hay, `config.delayMinutes` (ambos los lee el motor).
 //   describeActions(actions, fuentes?, opts?): string    frases unidas con " → " ("" si no hay)
 //   describeRule(rule, fuentes?): string
 //       "Cuando … · si … · entonces …"; sin condiciones se omite el "si".
@@ -404,8 +404,10 @@ export function describeAction(
   const def = accionPorTipo(action.type);
   const config = (action.config ?? {}) as Config;
   const frase = def ? def.frase(config, fuentes) : humanizar(action.type).toLowerCase();
-  const retraso = typeof action.delayMinutes === "number" && action.delayMinutes > 0;
-  return opts.conRetraso && retraso ? `${frase} (${describirRetraso(action.delayMinutes)})` : frase;
+  // Primer nivel, o `config.delayMinutes` (como lo guarda el seed y lo lee el motor).
+  const minutos = action.delayMinutes ?? (typeof config.delayMinutes === "number" ? config.delayMinutes : undefined);
+  const retraso = typeof minutos === "number" && minutos > 0;
+  return opts.conRetraso && retraso ? `${frase} (${describirRetraso(minutos)})` : frase;
 }
 
 export function describeActions(
@@ -458,7 +460,8 @@ export function validarAccion(action: AccionLike, fuentes?: FuentesDeAccion): Re
   const nombre = def.label;
   const falta = (campo: string) => problemas.push(`${nombre}: falta ${campo}`);
 
-  if (action.delayMinutes != null && (!Number.isInteger(action.delayMinutes) || action.delayMinutes < 0)) {
+  const retrasoAccion = action.delayMinutes ?? (c.delayMinutes as number | null | undefined);
+  if (retrasoAccion != null && (!Number.isInteger(retrasoAccion) || retrasoAccion < 0)) {
     problemas.push(`${nombre}: el retraso debe ser un número entero de minutos, 0 o más`);
   }
 

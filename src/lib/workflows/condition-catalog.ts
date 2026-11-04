@@ -170,6 +170,8 @@ export const CAMPOS_DE_CONDICION: CampoDeCondicion[] = [
   { key: "deal.currency", label: "Moneda", frase: "moneda", grupo: "Negocio", tipo: "enum", opciones: CURRENCY_LABELS, contextos: DE_NEGOCIO },
   { key: "deal.probability", label: "Probabilidad (%)", frase: "probabilidad", grupo: "Negocio", tipo: "number", contextos: DE_NEGOCIO },
   { key: "deal.lostReason", label: "Motivo de pérdida", frase: "motivo de pérdida", grupo: "Negocio", tipo: "enum", opciones: LOST_REASON_LABELS, contextos: DE_NEGOCIO },
+  // Calculado por `loadEntityContext` (engine.ts): no es columna de Deal.
+  { key: "deal.hasQuote", label: "Tiene cotización", frase: "tiene cotización", grupo: "Negocio", tipo: "boolean", contextos: DE_NEGOCIO, ayuda: "El negocio tiene cotización" },
   // Evento
   { key: "event.type", label: "Tipo de evento", frase: "evento", grupo: "Evento", tipo: "enum", opciones: EVENTOS_DE_CONDICION, contextos: ["event"] },
   // Contexto: no es una columna de BD; `buildContext` (engine.ts) lo calcula al evaluar. Solo existe
