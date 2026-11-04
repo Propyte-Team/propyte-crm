@@ -6,8 +6,11 @@ import { Plus, Pencil, GitBranch } from "lucide-react";
 import { WorkflowBuilder } from "./workflow-builder";
 import { CadenceEditor } from "./cadence-editor";
 import { SlaPolicyEditor } from "./sla-policy-editor";
-import { formatMinutes, mensajeAutomatizacion } from "./cadence-editor";
-import { labelFor, triggerLabelFor } from "@/lib/journey/node-catalog";
+import { mensajeAutomatizacion } from "./cadence-editor";
+import { useFuentes } from "./use-fuentes";
+import { minutosAcumulados } from "./cadence-editor-model";
+import { describeRule, describeStep, type FuentesDeAccion } from "@/lib/workflows/action-catalog";
+import { labelFor } from "@/lib/journey/node-catalog";
 import { etiqueta } from "@/lib/labels";
 import { toast } from "@/components/ui/use-toast";
 
@@ -23,11 +26,10 @@ const ENTIDADES: Record<string, string> = {
   contact: "contacto", deal: "operación", lead: "lead", task: "tarea", conversation: "conversación", enrollment: "cadencia",
 };
 
-function stepsSummary(steps: Array<{ order: number; actionType: string; delayMinutes: number }>): string {
-  return [...steps]
-    .sort((a, b) => a.order - b.order)
-    .map((st) => (st.delayMinutes > 0 ? `tras ${formatMinutes(st.delayMinutes)}: ` : "") + labelFor(st.actionType))
-    .join(" → ");
+function pasosEnFrases(steps: Plan["steps"], fuentes: FuentesDeAccion): string[] {
+  const ordenados = [...steps].sort((a, b) => a.order - b.order);
+  const acum = minutosAcumulados(ordenados);
+  return ordenados.map((st, i) => describeStep(st, fuentes, { acumuladoMinutos: acum[i] }));
 }
 
 interface Rule {
@@ -37,6 +39,8 @@ interface Rule {
   isActive: boolean;
   triggerType: string;
   lastFiredAt: string | null;
+  triggerConfig?: unknown;
+  conditions?: unknown;
   actions: unknown[];
 }
 interface Plan {
@@ -46,7 +50,7 @@ interface Plan {
   isActive: boolean;
   ownerUserId: string | null;
   exitConditions: unknown;
-  steps: Array<{ order: number; actionType: string; delayMinutes: number; config: Record<string, string>; autonomyLevel: string }>;
+  steps: Array<{ order: number; actionType: string; delayMinutes: number; config: Record<string, unknown>; autonomyLevel: string }>;
   _count: { enrollments: number };
 }
 interface Sla {
@@ -92,6 +96,7 @@ export function AutomationSection({
   deepLinkSlaId?: string;
 }) {
   const canEdit = ["ADMIN", "DIRECTOR"].includes(userRole);
+  const { fuentes } = useFuentes();
   const [rules, setRules] = useState<Rule[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [slas, setSlas] = useState<Sla[]>([]);
@@ -246,11 +251,10 @@ export function AutomationSection({
           <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 hairline-b">
             <div className="min-w-0">
               <p className="text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{r.name}</p>
-              <p className="truncate text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                {r.description ?? "—"}
+              <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                {describeRule(r, fuentes)}
               </p>
               <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                Cuando: {triggerLabelFor(r.triggerType)} · {Array.isArray(r.actions) ? r.actions.length : 0} {Array.isArray(r.actions) && r.actions.length === 1 ? "acción" : "acciones"} ·
                 última: {r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString("es-MX") : "nunca"}
               </p>
             </div>
@@ -356,7 +360,9 @@ export function AutomationSection({
                 {p.steps.length} {p.steps.length === 1 ? "paso" : "pasos"} · {p._count.enrollments} {p._count.enrollments === 1 ? "contacto en curso" : "contactos en curso"}
               </p>
               {p.steps.length > 0 && (
-                <p className="truncate text-[11px]" style={{ color: "var(--text-tertiary)" }}>{stepsSummary(p.steps)}</p>
+                <ol className="mt-0.5 space-y-0.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+                  {pasosEnFrases(p.steps, fuentes).map((f, i) => <li key={i}>{f}</li>)}
+                </ol>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
