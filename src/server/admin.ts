@@ -13,6 +13,7 @@ import { z } from "zod";
 import { randomBytes } from "crypto";
 import type { UserRole, Plaza, CareerLevel } from "@prisma/client";
 import { generateApiKeyPair } from "@/lib/auth/api-key";
+import { describirClaveRegla, mensajeReglaDuplicada } from "@/components/admin/admin-helpers";
 
 // Roles permitidos para acceder a administración
 const ADMIN_ROLES = ["ADMIN", "DIRECTOR", "GERENTE"];
@@ -781,6 +782,39 @@ export async function getCommissionRules() {
 }
 
 /**
+ * No puede haber dos reglas con el mismo (tipo de deal, origen del lead, rol): nadie sabría
+ * cuál aplica al calcular la comisión. Lanza un error de negocio (llega al diálogo como
+ * `{ error }`) si ya hay otra. El índice único de la base es la red de seguridad ante carreras.
+ */
+async function asegurarReglaUnica(
+  clave: { dealType: string; leadSourceCategory: string; role: string },
+  ignorarId?: string,
+) {
+  const otra = await prisma.commissionRule.findFirst({
+    where: {
+      dealType: clave.dealType as any,
+      leadSourceCategory: clave.leadSourceCategory as any,
+      role: clave.role as any,
+      ...(ignorarId ? { id: { not: ignorarId } } : {}),
+    },
+  });
+  if (otra) throw new BusinessRuleError(mensajeReglaDuplicada(otra));
+}
+
+/** Si dos guardados simultáneos pasan la revisión, la base rechaza el segundo (P2002): mismo mensaje. */
+function traducirChoqueUnico(
+  e: unknown,
+  clave: { dealType: string; leadSourceCategory: string; role: string },
+): never {
+  if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+    throw new BusinessRuleError(
+      `Ya existe una regla para ${describirClaveRegla(clave)}. Edita esa en lugar de crear otra.`,
+    );
+  }
+  throw e;
+}
+
+/**
  * Crea una nueva regla de comisión con validación Zod.
  */
 export async function createCommissionRule(data: {
@@ -795,15 +829,22 @@ export async function createCommissionRule(data: {
 
   const validated = createCommissionRuleSchema.parse(data);
 
-  const rule = await prisma.commissionRule.create({
-    data: {
-      dealType: validated.dealType as any,
-      leadSourceCategory: validated.leadSourceCategory as any,
-      role: validated.role as any,
-      percentage: validated.percentage,
-      isActive: validated.isActive ?? true,
-    },
-  });
+  await asegurarReglaUnica(validated);
+
+  let rule;
+  try {
+    rule = await prisma.commissionRule.create({
+      data: {
+        dealType: validated.dealType as any,
+        leadSourceCategory: validated.leadSourceCategory as any,
+        role: validated.role as any,
+        percentage: validated.percentage,
+        isActive: validated.isActive ?? true,
+      },
+    });
+  } catch (e) {
+    return traducirChoqueUnico(e, validated);
+  }
 
   return rule;
   });
@@ -838,10 +879,22 @@ export async function updateCommissionRule(
   if (validated.percentage !== undefined) updateData.percentage = validated.percentage;
   if (validated.isActive !== undefined) updateData.isActive = validated.isActive;
 
-  const rule = await prisma.commissionRule.update({
-    where: { id },
-    data: updateData,
-  });
+  const clave = {
+    dealType: validated.dealType ?? existing.dealType,
+    leadSourceCategory: validated.leadSourceCategory ?? existing.leadSourceCategory,
+    role: validated.role ?? existing.role,
+  };
+  await asegurarReglaUnica(clave, id);
+
+  let rule;
+  try {
+    rule = await prisma.commissionRule.update({
+      where: { id },
+      data: updateData,
+    });
+  } catch (e) {
+    return traducirChoqueUnico(e, clave);
+  }
 
   return rule;
   });

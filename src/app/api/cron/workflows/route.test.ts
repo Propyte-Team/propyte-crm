@@ -11,6 +11,7 @@ const emitEvent = vi.fn();
 const limpiarOtpVencidos = vi.fn();
 const sincronizarCorreoEntranteTick = vi.fn();
 const recalcularScores = vi.fn();
+const recalcularTemperaturas = vi.fn();
 const completarPerfilDesdeHub = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
@@ -64,8 +65,16 @@ vi.mock("@/lib/google/gmail-sync", () => ({
 vi.mock("@/lib/scoring/recalcular", () => ({
   recalcularScores: (...a: unknown[]) => recalcularScores(...a),
 }));
+vi.mock("@/lib/copilot/temperatura-recalcular", () => ({
+  recalcularTemperaturas: (...a: unknown[]) => recalcularTemperaturas(...a),
+}));
 vi.mock("@/lib/intake/perfil-desde-hub", () => ({
   completarPerfilDesdeHub: (...a: unknown[]) => completarPerfilDesdeHub(...a),
+}));
+// Acuerdo de actividad (E8): se dobla para probar el aislamiento del tick; la logica tiene sus
+// pruebas en lib/workflows/acuerdo-actividad.test.ts.
+vi.mock("@/lib/workflows/acuerdo-actividad", () => ({
+  revisarAcuerdoDeActividad: async () => ({ asesores: 0, incumplidos: 0, notificaciones: 0 }),
 }));
 vi.mock("@/lib/workflows/scheduler", () => ({
   runEnrollments: (...a: unknown[]) => runEnrollments(...a),
@@ -98,6 +107,8 @@ beforeEach(() => {
   limpiarOtpVencidos.mockResolvedValue(0);
   sincronizarCorreoEntranteTick.mockResolvedValue({ cuentas: 1, registrados: 0, omitidos: 0, desconectadas: 0, errores: [] });
   recalcularScores.mockResolvedValue({ calculados: 0, activo: false });
+  recalcularTemperaturas.mockReset();
+  recalcularTemperaturas.mockResolvedValue({ calculados: 0, cambiados: 0 });
   completarPerfilDesdeHub.mockResolvedValue({ revisados: 0, completados: 0, campos: 0 });
 });
 
@@ -140,6 +151,30 @@ describe("etapa leadScoring", () => {
     const res = await GET(pedir({ "x-cron-secret": SECRET }));
     expect(res.status).toBe(500);
     expect((await res.json()).fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["leadScoring"]);
+  });
+});
+
+describe("etapa temperatura (#973)", () => {
+  it("corre en cada tick con un lote de 200", async () => {
+    recalcularTemperaturas.mockResolvedValue({ calculados: 12, cambiados: 3 });
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect(recalcularTemperaturas).toHaveBeenCalledWith(200);
+    expect((await res.json()).temperatura).toEqual({ calculados: 12, cambiados: 3 });
+  });
+
+  it("con contact_temperaturas sin migrar (P2021) no tumba el tick", async () => {
+    recalcularTemperaturas.mockRejectedValue(Object.assign(new Error("tabla no existe"), { code: "P2021" }));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).temperatura).toEqual({ calculados: 0, sinMigrar: true });
+  });
+
+  it("cualquier otro error sale con su nombre y el tick responde 500", async () => {
+    recalcularTemperaturas.mockRejectedValue(new Error("conexión caída"));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["temperatura"]);
   });
 });
 

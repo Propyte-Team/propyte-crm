@@ -6,6 +6,7 @@ import { listPlaybooks } from "@/server/bot-playbook";
 import { listAgentProfiles } from "@/server/bot-agents";
 import { getUserBrandAccessOverview } from "@/lib/brands/user-access";
 import prisma from "@/lib/db";
+import { enLotes } from "@/lib/db/lotes";
 import { redirect } from "next/navigation";
 import { AdminContent } from "@/components/admin/admin-content";
 
@@ -35,22 +36,23 @@ export default async function AdminPage(
     .then((defs) => defs.map((d) => `custom.${d.apiName}`))
     .catch(() => [] as string[]);
 
-  // Obtener datos en paralelo
-  const [users, deletedUsers, userHistory, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles, brandAccess] = await Promise.all([
-    getUsers(),
-    getDeletedUsers(),
-    getUserAuditHistory(),
-    getCommissionRules(),
-    getSystemConfig(),
-    getWebhookConfigs(),
-    getApiKeys(),
-    getBotConfigForAdmin(),
-    listPlaybooks(),
+  // Datos en lotes de 4 (no los 11 a la vez): varias de estas funciones hacen más de una consulta y
+  // el pooler de sesión solo da 15 conexiones (#974).
+  const [users, deletedUsers, userHistory, commissionRules, systemConfig, webhooks, apiKeys, botConfig, playbooks, agentProfiles, brandAccess] = await enLotes([
+    () => getUsers(),
+    () => getDeletedUsers(),
+    () => getUserAuditHistory(),
+    () => getCommissionRules(),
+    () => getSystemConfig(),
+    () => getWebhookConfigs(),
+    () => getApiKeys(),
+    () => getBotConfigForAdmin(),
+    () => listPlaybooks(),
     // best-effort pre-migración: la pestaña Agentes muestra vacío en vez de romper /admin
-    listAgentProfiles().catch(() => []),
+    () => listAgentProfiles().catch(() => []),
     // «Marcas que ve» por usuario (2026-10-12). Nunca lanza: sin la migración devuelve null.
-    getUserBrandAccessOverview(),
-  ]);
+    () => getUserBrandAccessOverview(),
+  ], 4);
 
   return (
     <div className="space-y-6">

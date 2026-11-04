@@ -84,7 +84,7 @@ export const CONFIG_GROUPS: Array<{ title: string; cards: CardDef[] }> = [
   {
     title: "Proceso de ventas",
     cards: [
-      { href: "/journey", icon: GitBranch, title: "Etapas del recorrido del cliente", roles: ADMIN_DIR, items: ["Mapa de las etapas por las que pasa un cliente"] },
+      { href: "/journey", icon: GitBranch, title: "Etapas del recorrido del cliente", roles: ADMIN_DIR, items: ["Mapa de las etapas por las que pasa un cliente, con cuántos contactos pasan por cada regla"] },
       { key: "automation", icon: Workflow, title: "Seguimientos y reglas automáticas", roles: ADMIN_DIR, items: ["Recordatorios y tareas que el CRM crea solo, tiempos máximos de respuesta y reglas del tipo \"cuando pase esto, haz aquello\""] },
     ],
   },
@@ -140,6 +140,7 @@ export function ConfigCenter({ userRole }: { userRole: string }) {
             userRole={userRole}
             deepLinkPlanId={searchParams.get("planId") ?? undefined}
             deepLinkSlaId={searchParams.get("slaId") ?? undefined}
+            deepLinkRuleId={searchParams.get("ruleId") ?? undefined}
           />
         )}
         {section === "teams" && <TeamsSection userRole={userRole} />}

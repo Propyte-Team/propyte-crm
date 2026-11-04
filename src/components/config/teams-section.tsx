@@ -176,7 +176,7 @@ export function TeamsSection({ userRole }: { userRole: string }) {
           <div>
             <p className="text-[13px] font-semibold">Territorios</p>
             <p className="text-[12px]" style={{ color: "var(--text-tertiary)" }}>
-              Por ahora la plaza y las zonas son informativas; el reparto solo usa las reglas de entrada.
+              Un lead entra aquí si su zona preferida coincide con alguna de estas zonas (y con la plaza, si la hay). Las reglas de entrada permiten afinar o ampliar.
             </p>
           </div>
           {canEdit && (

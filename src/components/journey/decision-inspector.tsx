@@ -1,7 +1,10 @@
 "use client";
 import type { DecisionNodeDraft, BranchDraft, Conditions } from "@/lib/journey/rule-draft";
 import { ConditionTreeEditor } from "@/components/config/condition-tree";
-import { parseConditions, buildConditionsTree } from "@/lib/workflows/builder-model";
+import { buildConditionsTreeGuiado } from "@/components/config/condition-tree-model";
+import { parseConditions } from "@/lib/workflows/builder-model";
+import type { ContextoDeCondicion } from "@/lib/workflows/condition-catalog";
+import { tituloDeRama } from "./rule-inspector-model";
 
 interface DecisionOps {
   setDecisionLabel: (nodeId: string, label: string) => void;
@@ -14,69 +17,75 @@ interface DecisionOps {
   setElseEnabled: (decisionNodeId: string, enabled: boolean) => void;
 }
 
-export function DecisionInspector({ decision, ops }: { decision: DecisionNodeDraft; ops: DecisionOps }) {
+const BOTON = "btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]";
+const ETIQUETA = "block text-[12px] font-medium text-[color:var(--text-secondary)]";
+const AYUDA = "text-[11px] text-[color:var(--text-tertiary)]";
+
+export function DecisionInspector({
+  decision, ops, contexto = "contact",
+}: {
+  decision: DecisionNodeDraft;
+  ops: DecisionOps;
+  /** Datos que ofrecen las condiciones; sale del disparador de la regla. */
+  contexto?: ContextoDeCondicion;
+}) {
   return (
-    <aside className="journey-inspector">
-      <h3 className="label">◆ Decisión</h3>
-      <input
-        className="form-input"
-        placeholder="Nombre (p. ej. Por origen)"
-        value={decision.label ?? ""}
-        onChange={(e) => ops.setDecisionLabel(decision.nodeId, e.target.value)}
-      />
+    <aside className="crm-card !p-4 space-y-3 text-[12px]">
+      <h3 className="text-[12px] font-semibold uppercase tracking-wider text-[color:var(--text-tertiary)]">Decisión</h3>
+      <div className="space-y-1">
+        <label htmlFor="insp-decision" className={ETIQUETA}>Nombre</label>
+        <input
+          id="insp-decision"
+          className="form-input text-[13px]"
+          placeholder="Por ejemplo: Por origen"
+          value={decision.label ?? ""}
+          onChange={(e) => ops.setDecisionLabel(decision.nodeId, e.target.value)}
+        />
+        <p className={AYUDA}>Se revisan las ramas en orden y corre la primera que se cumpla.</p>
+      </div>
+
       {decision.branches.map((b: BranchDraft, i: number) => (
-        <div key={b.branchId} className="decision-branch" style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #e5e5e5)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div key={b.branchId} className="space-y-2 border-t pt-3" style={{ borderColor: "var(--border-subtle)" }}>
+          <p className="text-[13px] font-medium text-[color:var(--text-primary)]">{tituloDeRama(b, i)}</p>
+          <div className="flex items-center gap-2">
             <input
-              className="form-input"
-              placeholder={`Rama ${i + 1}`}
+              className="form-input text-[13px]"
+              placeholder={`Nombre de la rama ${i + 1} (opcional)`}
+              aria-label={`Nombre de la rama ${i + 1}`}
               value={b.label ?? ""}
               onChange={(e) => ops.setBranchLabel(b.branchId, e.target.value)}
             />
-            <button type="button" className="btn-secondary" onClick={() => ops.removeBranch(b.branchId)}>Quitar rama</button>
+            <button type="button" className={BOTON} onClick={() => ops.removeBranch(b.branchId)}>Quitar</button>
           </div>
           <ConditionTreeEditor
             tree={parseConditions(b.conditions)}
-            onChange={(tree) => ops.setBranchConditions(b.branchId, buildConditionsTree(tree) as Conditions)}
-            label="Si cumple…"
+            onChange={(tree) => ops.setBranchConditions(b.branchId, buildConditionsTreeGuiado(tree) as Conditions)}
+            label="Si se cumple…"
+            contexto={contexto}
           />
-          <p className="label" style={{ marginTop: 6 }}>
-            {b.steps.length} acción(es) en esta rama — edítalas seleccionando sus nodos en el lienzo.
+          <p className={AYUDA}>
+            {b.steps.length} {b.steps.length === 1 ? "acción" : "acciones"} en esta rama. Edítalas seleccionando sus nodos en el lienzo.
           </p>
-          <button
-            type="button"
-            className="btn-secondary"
-            style={{ marginTop: 4 }}
-            onClick={() => ops.addActionToBranch(b.branchId, "NOTIFY")}
-          >
-            + Acción en rama
-          </button>
+          <button type="button" className={BOTON} onClick={() => ops.addActionToBranch(b.branchId, "NOTIFY")}>+ Acción en esta rama</button>
         </div>
       ))}
-      <button type="button" className="btn-secondary" style={{ marginTop: 12 }} onClick={() => ops.addBranch(decision.nodeId)}>+ Añadir rama</button>
+      <button type="button" className={BOTON} onClick={() => ops.addBranch(decision.nodeId)}>+ Añadir rama</button>
 
-      {/* Camino por defecto (else) */}
-      <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e5e5)" }}>
-        <label className="label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+      <div className="space-y-2 border-t pt-3" style={{ borderColor: "var(--border-subtle)" }}>
+        <label className="flex cursor-pointer items-center gap-2 text-[13px]">
           <input
             type="checkbox"
             checked={decision.else !== undefined}
             onChange={(e) => ops.setElseEnabled(decision.nodeId, e.target.checked)}
           />
-          Camino por defecto (si ninguna rama cumple)
+          Camino por defecto (si ninguna rama se cumple)
         </label>
         {decision.else !== undefined && (
-          <div style={{ marginTop: 8 }}>
-            <p className="label" style={{ marginBottom: 4 }}>
-              {decision.else.length} acción(es) en el camino por defecto — edítalas seleccionando sus nodos en el lienzo.
+          <div className="space-y-1.5">
+            <p className={AYUDA}>
+              {decision.else.length} {decision.else.length === 1 ? "acción" : "acciones"} en el camino por defecto. Edítalas seleccionando sus nodos en el lienzo.
             </p>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => ops.addActionToElse(decision.nodeId, "NOTIFY")}
-            >
-              + Acción en por defecto
-            </button>
+            <button type="button" className={BOTON} onClick={() => ops.addActionToElse(decision.nodeId, "NOTIFY")}>+ Acción por defecto</button>
           </div>
         )}
       </div>

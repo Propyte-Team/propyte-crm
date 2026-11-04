@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,17 @@ import { TONE_PRESETS } from "@/lib/bot/tone-presets";
 import { updateBotConfig } from "@/server/bot-config";
 import { AUTONOMY_LABELS } from "@/lib/labels";
 import { BOT_CHANNELS, toggleBotChannel } from "./bot-channels";
+import { BotResumen } from "./bot-resumen";
+import { BotProbador } from "./bot-probador";
+import {
+  DISPARADORES_DE_FABRICA,
+  DISPARADORES_SUGERIDOS,
+  MAX_LARGO_TEMA,
+  agregarTema,
+  alternarDisparador,
+  quitarTema,
+  temasPersonalizados,
+} from "./bot-escalamiento";
 import type { BotTonePreset } from "@prisma/client";
 
 export interface BotConfigData {
@@ -34,12 +46,32 @@ export interface BotConfigData {
 
 const TONE_KEYS = Object.keys(TONE_PRESETS) as BotTonePreset[];
 
+// Qué hace cada nivel, en palabras de negocio (la clave L0-L2 no se muestra).
+const AUTONOMY_DESCRIPTIONS: Record<BotConfigData["autonomyLevel"], string> = {
+  L0: "El bot solo sugiere la respuesta al asesor; nunca escribe al cliente.",
+  L1: "El bot redacta y espera la aprobación de un asesor antes de enviar.",
+  L2: "El bot contesta solo y pasa a un asesor cuando detecta alguno de los temas de «Pasa a humano cuando…».",
+};
+
 export function BotConfigTab({ initial }: { initial: BotConfigData }) {
   const [cfg, setCfg] = useState<BotConfigData>(initial);
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
 
   const preset = TONE_PRESETS[cfg.tonePreset];
+  const [temaNuevo, setTemaNuevo] = useState("");
+  const [temaError, setTemaError] = useState("");
+
+  function agregar(texto: string) {
+    const r = agregarTema(cfg.escalationTriggers, texto);
+    if (!r.ok) {
+      setTemaError(r.motivo);
+      return;
+    }
+    setTemaError("");
+    setTemaNuevo("");
+    setCfg({ ...cfg, escalationTriggers: r.lista });
+  }
 
   function save() {
     startTransition(async () => {
@@ -68,6 +100,8 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
 
   return (
     <div className="space-y-6">
+      <BotResumen botConfig={{ botEnabled: cfg.botEnabled, tonePreset: cfg.tonePreset, autonomyLevel: cfg.autonomyLevel }} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Estado</CardTitle>
@@ -139,7 +173,7 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
             <div className="space-y-1">
               {preset.fewShot.slice(0, 4).map((ex, i) => (
                 <p key={i}>
-                  <span className="font-medium">{ex.role === "user" ? "Cliente" : "Sage"}:</span> {ex.content}
+                  <span className="font-medium">{ex.role === "user" ? "Cliente" : "Bot"}:</span> {ex.content}
                 </p>
               ))}
             </div>
@@ -153,24 +187,29 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
           <CardDescription>Define si el bot responde por su cuenta o espera a que un asesor lo apruebe.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Nivel de autonomía</Label>
-            <Select
-              value={cfg.autonomyLevel}
-              onValueChange={(v) => setCfg({ ...cfg, autonomyLevel: v as BotConfigData["autonomyLevel"] })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(["L0", "L1", "L2"] as const).map((lvl) => (
-                  <SelectItem key={lvl} value={lvl}>
-                    {AUTONOMY_LABELS[lvl]} <span className="text-[10px] text-muted-foreground">({lvl})</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">¿Qué hace el bot con cada mensaje?</legend>
+            {(["L0", "L1", "L2"] as const).map((lvl) => (
+              <label
+                key={lvl}
+                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
+                  cfg.autonomyLevel === lvl ? "border-primary bg-muted/40" : ""
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="autonomia"
+                  className="mt-1"
+                  checked={cfg.autonomyLevel === lvl}
+                  onChange={() => setCfg({ ...cfg, autonomyLevel: lvl })}
+                />
+                <span>
+                  <span className="block text-sm font-medium">{AUTONOMY_LABELS[lvl]}</span>
+                  <span className="block text-xs text-muted-foreground">{AUTONOMY_DESCRIPTIONS[lvl]}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <div className="space-y-2">
             <Label>Longitud máxima de cada respuesta (líneas)</Label>
             <Input
@@ -180,6 +219,95 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
               value={cfg.maxLines}
               onChange={(e) => setCfg({ ...cfg, maxLines: Number(e.target.value) })}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Pasa a humano cuando…</CardTitle>
+          <CardDescription>
+            Si el cliente toca alguno de estos temas, el bot avisa que lo atenderá un asesor y deja de contestar
+            ese hilo. Aplica a todas las cuentas (marcas y bot general).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            {DISPARADORES_DE_FABRICA.map((d) => (
+              <label key={d.valor} className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={cfg.escalationTriggers.includes(d.valor)}
+                  onChange={(e) =>
+                    setCfg({ ...cfg, escalationTriggers: alternarDisparador(cfg.escalationTriggers, d.valor, e.target.checked) })
+                  }
+                />
+                <span>
+                  <span className="block text-sm">{d.etiqueta}</span>
+                  <span className="block text-xs text-muted-foreground">{d.ayuda}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tema-nuevo">Otros temas</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {temasPersonalizados(cfg.escalationTriggers).map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                  {t}
+                  <button
+                    type="button"
+                    aria-label={"Quitar " + t}
+                    onClick={() => setCfg({ ...cfg, escalationTriggers: quitarTema(cfg.escalationTriggers, t) })}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {temasPersonalizados(cfg.escalationTriggers).length === 0 && (
+                <span className="text-xs text-muted-foreground">Ninguno agregado.</span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                id="tema-nuevo"
+                value={temaNuevo}
+                maxLength={MAX_LARGO_TEMA}
+                placeholder="Ej. pide factura"
+                onChange={(e) => {
+                  setTemaNuevo(e.target.value);
+                  setTemaError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    agregar(temaNuevo);
+                  }
+                }}
+              />
+              <Button type="button" variant="outline" onClick={() => agregar(temaNuevo)}>
+                Agregar
+              </Button>
+            </div>
+            {temaError && <p className="text-xs text-destructive">{temaError}</p>}
+            <div className="flex flex-wrap gap-1.5">
+              {DISPARADORES_SUGERIDOS.filter((t) => !cfg.escalationTriggers.includes(t)).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  onClick={() => agregar(t)}
+                >
+                  + {t}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Cada tema se le explica al bot con palabras: escríbelo como lo diría el cliente o como lo describirías tú.
+              Máximo 20 temas en total. El bot lo interpreta; no busca la frase exacta.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -236,6 +364,16 @@ export function BotConfigTab({ initial }: { initial: BotConfigData }) {
       <Button onClick={save} disabled={pending}>
         {pending ? "Guardando…" : "Guardar configuración"}
       </Button>
+
+      <BotProbador
+        overrides={{
+          tonePreset: cfg.tonePreset,
+          maxLines: cfg.maxLines,
+          openerStyle: cfg.openerStyle,
+          dataGateStrict: cfg.dataGateStrict,
+          escalationTriggers: cfg.escalationTriggers,
+        }}
+      />
     </div>
   );
 }

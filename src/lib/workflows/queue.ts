@@ -98,6 +98,17 @@ export async function recuperarEncalladas(
   return { reencoladas, agotadas };
 }
 
+// true si el ítem trae `recheckConditions` y el contexto actual ya no las cumple.
+// Import dinámico: engine.ts importa queue.ts (evita el ciclo al cargar).
+export async function recheckFallido(config: unknown, entityType: string, entityId: string): Promise<boolean> {
+  const cond = (config as { recheckConditions?: unknown } | null)?.recheckConditions;
+  if (!cond || typeof cond !== "object" || Object.keys(cond).length === 0) return false;
+  const { loadEntityContext } = await import("./engine");
+  const { evaluateConditions } = await import("./evaluate-conditions");
+  const ctx = await loadEntityContext(entityType, entityId);
+  return !evaluateConditions(cond as never, ctx);
+}
+
 // Procesa hasta `batch` acciones vencidas. Claim optimista: updateMany con guard de status.
 export async function runQueue(batch = 20): Promise<{ ran: number; failed: number; skipped: number }> {
   const now = new Date();
@@ -119,6 +130,16 @@ export async function runQueue(batch = 20): Promise<{ ran: number; failed: numbe
     if (claimed.count === 0) continue; // otro runner la tomó
 
     try {
+      // Regla pospuesta (`triggerConfig.delayMinutes`): re-evaluar sus condiciones con datos
+      // frescos; si ya no se cumplen (p. ej. ya hay cotización), no se ejecuta.
+      if (await recheckFallido(item.config, item.entityType, item.entityId)) {
+        await prisma.actionQueue.update({
+          where: { id: item.id },
+          data: { status: "SKIPPED", finishedAt: new Date(), error: "Las condiciones de la regla ya no se cumplen" },
+        });
+        skipped++;
+        continue;
+      }
       const result = await executeAction(item, { actorCache });
       await prisma.actionQueue.update({
         where: { id: item.id },

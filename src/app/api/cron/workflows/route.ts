@@ -36,6 +36,18 @@ async function recalcularScoresSafe() {
   }
 }
 
+// #973: temperatura calculada (Copilot). Igual que el score: solo se perdona P2021
+// (contact_temperaturas sin migrar); cualquier otro error sube con el nombre de la etapa.
+async function recalcularTemperaturasSafe() {
+  try {
+    const { recalcularTemperaturas } = await import("@/lib/copilot/temperatura-recalcular");
+    return await recalcularTemperaturas(200);
+  } catch (err) {
+    if (esTablaSinMigrar(err)) return { calculados: 0, sinMigrar: true };
+    throw err;
+  }
+}
+
 async function processPendingConversionsSafe() {
   try {
     const { processPendingConversions } = await import("@/lib/capi/dispatch");
@@ -153,11 +165,21 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   // Lead scoring: en sombra no alimenta a nadie (solo escribe contact_scores). Con
   // `scoring.activo` emite `contact.scored`, que el tick SIGUIENTE procesa vía `events`.
   { nombre: "leadScoring", correr: () => recalcularScoresSafe() },
+  // #973: no alimenta a ninguna etapa de este tick (Copilot la leerá para ordenar «Mi día»).
+  { nombre: "temperatura", correr: () => recalcularTemperaturasSafe() },
   // #699 (defecto 2): retira los códigos de un solo uso que ya vencieron. Va al final por
   // lo mismo: no alimenta a nadie. Y NO lleva `try` propio —a diferencia de las etapas con
   // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto
   // falla, es un fallo de verdad y tiene que subir a la lista de fallos y sacar el 500.
   { nombre: "otpVencidos", correr: () => limpiarOtpVencidos() },
+  // Acuerdo de actividad (E8): una vez por dia laboral por la manana, avisa al lider (o a la
+  // gerencia) de los asesores que no llegaron a los minimos del dia anterior. Se frena solo
+  // con `activity_agreement.last_run`, asi que correr cada minuto no repite avisos.
+  {
+    nombre: "acuerdoActividad",
+    correr: async () =>
+      (await import("@/lib/workflows/acuerdo-actividad")).revisarAcuerdoDeActividad(prisma, new Date()),
+  },
   // #889: correo entrante de los buzones Gmail conectados → historial del contacto + aviso
   // al asesor. Va al final porque no alimenta a ninguna otra etapa y es la única que sale a
   // la red (API de Gmail). Import dinámico para no cargar googleapis si nadie lo usa. Una
