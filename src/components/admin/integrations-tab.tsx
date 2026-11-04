@@ -14,11 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Copy } from "lucide-react";
+import { Plus, Trash2, Copy, RefreshCw } from "lucide-react";
 import {
   createWebhookConfig,
   updateWebhookConfig,
   deleteWebhookConfig,
+  regenerateWebhookSecret,
   generateNewApiKey,
   revokeApiKey,
 } from "@/server/admin";
@@ -38,22 +39,15 @@ const WEBHOOK_EVENTS = [
   { value: "activity.created", label: "Actividad creada" },
 ];
 
-// El secret NO se guarda en el estado de la lista: solo se muestra una vez, al crear el webhook
-// (igual que las API keys). Las filas existentes llegan con `secret` desde el servidor; se descarta
-// al entrar al componente.
+// El servidor nunca manda el secret en las listas: solo `secretHint` («••••ab12»). El valor
+// completo llega una única vez, en la respuesta de crear o regenerar, y no se guarda en la lista.
 interface WebhookData {
   id: string;
   event: string;
   url: string;
   isActive: boolean;
-  secret?: string;
+  secretHint: string;
   createdAt: Date;
-}
-
-/** Quita el secret de una fila antes de guardarla en el estado. */
-function sinSecret<T extends { secret?: string }>(w: T): Omit<T, "secret"> {
-  const { secret: _descartado, ...resto } = w;
-  return resto;
 }
 
 interface ApiKeyData {
@@ -78,7 +72,7 @@ export function IntegrationsTab({
   const [isPending, startTransition] = useTransition();
 
   const confirmar = useConfirm();
-  const [webhooks, setWebhooks] = useState<WebhookData[]>(() => initialWebhooks.map(sinSecret));
+  const [webhooks, setWebhooks] = useState<WebhookData[]>(initialWebhooks);
   const [apiKeys, setApiKeys] = useState(initialApiKeys);
 
   // Formulario nuevo webhook
@@ -104,12 +98,12 @@ export function IntegrationsTab({
           event: newWebhookEvent,
           url: newWebhookUrl,
         });
-        const { secret } = config as { secret?: string };
-        setWebhooks((prev) => [...prev, sinSecret(config as WebhookData)]);
-        if (secret) setSecretNuevo({ url: newWebhookUrl, secret });
+        const { secret, ...fila } = config;
+        setWebhooks((prev) => [...prev, fila as WebhookData]);
+        setSecretNuevo({ url: newWebhookUrl, secret });
         setNewWebhookEvent("");
         setNewWebhookUrl("");
-        toast({ title: "Webhook creado", description: "Ya está activo. Copia su clave secreta ahora: no se vuelve a mostrar." });
+        toast({ title: "Webhook creado", description: "Ya está activo. Cópialo ahora, no se volverá a mostrar." });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -135,6 +129,26 @@ export function IntegrationsTab({
             w.id === webhook.id ? { ...w, isActive: !w.isActive } : w
           )
         );
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+    });
+  }
+
+  async function handleRegenerateSecret(webhook: WebhookData) {
+    const ok = await confirmar({
+      titulo: "¿Regenerar la clave secreta?",
+      descripcion: `La clave actual deja de valer al instante. El sistema que recibe ${webhook.url} (Zapier u otro) tendrá que actualizarse con la clave nueva, o rechazará las firmas.`,
+      confirmar: "Regenerar clave",
+      peligroso: true,
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      try {
+        const { secret, ...fila } = await regenerateWebhookSecret(webhook.id);
+        setWebhooks((prev) => prev.map((w) => (w.id === webhook.id ? { ...w, secretHint: fila.secretHint } : w)));
+        setSecretNuevo({ url: webhook.url, secret });
+        toast({ title: "Clave regenerada", description: "Cópiala ahora, no se volverá a mostrar." });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -261,7 +275,7 @@ export function IntegrationsTab({
           {secretNuevo && (
             <div className="mb-4 rounded-lg border border-yellow-300 bg-yellow-50 p-4">
               <p className="mb-1 text-sm font-semibold text-yellow-800">
-                Clave secreta del webhook (solo se muestra una vez):
+                Clave secreta del webhook. Cópiala ahora, no se volverá a mostrar:
               </p>
               <p className="mb-2 break-all text-xs text-yellow-800">Para {secretNuevo.url}. Úsala en el servicio que lo recibe para verificar la firma.</p>
               <div className="flex items-center gap-2">
@@ -303,7 +317,7 @@ export function IntegrationsTab({
                       <td className="py-2 max-w-[200px] truncate font-mono text-xs">
                         {webhook.url}
                       </td>
-                      <td className="py-2 text-xs text-muted-foreground">Oculta (se mostró al crearlo)</td>
+                      <td className="py-2 font-mono text-xs text-muted-foreground">{webhook.secretHint}</td>
                       <td className="py-2">
                         <div className="flex items-center gap-2">
                           <button
@@ -321,14 +335,27 @@ export function IntegrationsTab({
                         </div>
                       </td>
                       <td className="py-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteWebhook(webhook.id)}
-                          disabled={isPending}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                        </Button>
+                        <div className="flex items-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Regenerar clave secreta"
+                            aria-label="Regenerar clave secreta"
+                            onClick={() => handleRegenerateSecret(webhook)}
+                            disabled={isPending}
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Borrar webhook"
+                            onClick={() => handleDeleteWebhook(webhook.id)}
+                            disabled={isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
