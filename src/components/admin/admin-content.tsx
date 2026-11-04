@@ -957,16 +957,15 @@ export function AdminContent({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Nada en el CRM lee estos valores todavía (ni alertas, ni reportes, ni SLA). */}
+              {/* Los lee workflows/acuerdo-actividad.ts (cron diario). */}
               <div
                 className="mb-6 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
                 role="note"
               >
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
-                  <strong>Estos mínimos todavía no generan alertas ni afectan reportes.</strong>{" "}
-                  Puedes dejarlos capturados como referencia del equipo; cuando se conecten, se
-                  aplicarán tal como estén guardados.
+                  Cada mañana, el CRM avisa al líder de equipo (o a gerencia) de los asesores que no
+                  llegaron a estos mínimos el día anterior.
                 </p>
               </div>
               <div className="grid gap-6 md:grid-cols-2">

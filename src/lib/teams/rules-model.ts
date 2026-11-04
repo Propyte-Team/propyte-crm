@@ -56,8 +56,10 @@ export { FIELD_LABELS, FIELD_VALUE_LABELS, describeConditions };
 export function describeTargets(
   targets: RoutingTargets | null | undefined,
   usersById: Record<string, string> = {},
+  teamsById: Record<string, string> = {},
 ): string {
   const t = targets ?? {};
+  if (t.teamId) return "Equipo " + (teamsById[t.teamId] ?? t.teamId.slice(0, 8));
   if (t.userIds && t.userIds.length > 0) {
     return "Usuarios: " + t.userIds.map((id) => usersById[id] ?? id.slice(0, 8)).join(", ");
   }
@@ -66,7 +68,10 @@ export function describeTargets(
 }
 
 /** Estado del formulario de destino → `targets` que guarda la API (sin claves vacías). */
-export function buildTargets(form: { mode: "roles" | "users"; roles: string[]; userIds: string[]; plaza: string }): RoutingTargets {
+export function buildTargets(form: { mode: "roles" | "users" | "team"; roles: string[]; userIds: string[]; plaza: string; teamId?: string }): RoutingTargets {
+  if (form.mode === "team") {
+    return form.teamId ? { teamId: form.teamId } : {};
+  }
   if (form.mode === "users") {
     return form.userIds.length > 0 ? { userIds: form.userIds } : {};
   }
@@ -77,12 +82,15 @@ export function buildTargets(form: { mode: "roles" | "users"; roles: string[]; u
 }
 
 /** `targets` guardados → estado del formulario. */
-export function parseTargets(targets: unknown): { mode: "roles" | "users"; roles: string[]; userIds: string[]; plaza: string } {
+export function parseTargets(targets: unknown): { mode: "roles" | "users" | "team"; roles: string[]; userIds: string[]; plaza: string; teamId: string } {
   const t = (targets && typeof targets === "object" ? targets : {}) as RoutingTargets;
-  if (Array.isArray(t.userIds) && t.userIds.length > 0) {
-    return { mode: "users", roles: [], userIds: t.userIds, plaza: "" };
+  if (typeof t.teamId === "string" && t.teamId) {
+    return { mode: "team", roles: [], userIds: [], plaza: "", teamId: t.teamId };
   }
-  return { mode: "roles", roles: Array.isArray(t.roles) ? t.roles : [], userIds: [], plaza: t.plaza ?? "" };
+  if (Array.isArray(t.userIds) && t.userIds.length > 0) {
+    return { mode: "users", roles: [], userIds: t.userIds, plaza: "", teamId: "" };
+  }
+  return { mode: "roles", roles: Array.isArray(t.roles) ? t.roles : [], userIds: [], plaza: t.plaza ?? "", teamId: "" };
 }
 
 /** Prioridad sugerida para una regla nueva: después de la última (deja hueco de 10). */

@@ -29,21 +29,23 @@ export interface RoutingRuleData {
   strategy: string;
   targets: unknown;
 }
+interface TeamOpt { id: string; name: string; isActive: boolean }
 interface UserOpt { id: string; name: string; role: string; plaza?: string | null }
 
 interface FormState {
   name: string;
   priority: number;
   strategy: string;
-  mode: "roles" | "users";
+  mode: "roles" | "users" | "team";
   roles: string[];
   userIds: string[];
   plaza: string;
+  teamId: string;
   tree: ConditionTree;
 }
 
 function emptyForm(priority: number): FormState {
-  return { name: "", priority, strategy: "ROUND_ROBIN", mode: "roles", roles: [], userIds: [], plaza: "", tree: { combinator: "all", items: [] } };
+  return { name: "", priority, strategy: "ROUND_ROBIN", mode: "roles", roles: [], userIds: [], plaza: "", teamId: "", tree: { combinator: "all", items: [] } };
 }
 
 function formFromRule(r: RoutingRuleData): FormState {
@@ -57,6 +59,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
   const [rules, setRules] = useState<RoutingRuleData[]>([]);
   const [editing, setEditing] = useState<{ id: string | null; form: FormState } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [teams, setTeams] = useState<TeamOpt[]>([]);
   const confirmar = useConfirm();
   const ok = (title: string) => toast({ title });
   const fallo = (description: string) => toast({ title: "No se pudo completar", description, variant: "destructive" });
@@ -66,8 +69,15 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
     if (res.ok) setRules((await res.json()).data ?? []);
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetch("/api/admin/teams")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((j) => setTeams((j.data ?? []) as TeamOpt[]))
+      .catch(() => setTeams([]));
+  }, []);
 
   const usersById = Object.fromEntries(users.map((u) => [u.id, u.name]));
+  const teamsById = Object.fromEntries(teams.map((t) => [t.id, t.name]));
 
   async function save() {
     if (!editing) return;
@@ -75,6 +85,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
     if (f.name.trim().length < 3) { fallo("El nombre necesita al menos 3 caracteres"); return; }
     const problemas = problemasDeCondiciones(f.tree);
     if (problemas.length > 0) { fallo(`Condición incompleta: ${problemas[0]}`); return; }
+    if (f.mode === "team" && !f.teamId) { fallo("Elige el equipo al que se asignará"); return; }
     setSaving(true);
     const body = {
       name: f.name.trim(),
@@ -166,8 +177,21 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
               <label className="inline-flex items-center gap-1.5">
                 <input type="radio" checked={editing.form.mode === "users"} onChange={() => setForm({ mode: "users" })} /> Usuarios específicos
               </label>
+              <label className="inline-flex items-center gap-1.5">
+                <input type="radio" checked={editing.form.mode === "team"} onChange={() => setForm({ mode: "team" })} /> Un equipo
+              </label>
             </div>
-            {editing.form.mode === "roles" ? (
+            {editing.form.mode === "team" ? (
+              <div className="flex flex-wrap items-center gap-3 text-[13px]">
+                <select className="form-input !w-64 !py-1.5 text-[13px]" value={editing.form.teamId} onChange={(e) => setForm({ teamId: e.target.value })}>
+                  <option value="">Elige un equipo…</option>
+                  {teams
+                    .filter((t) => t.isActive || t.id === editing.form.teamId)
+                    .map((t) => <option key={t.id} value={t.id}>{t.name}{t.isActive ? "" : " (inactivo)"}</option>)}
+                </select>
+                <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>Se reparte entre los miembros activos del equipo; el líder recibe un aviso.</span>
+              </div>
+            ) : editing.form.mode === "roles" ? (
               <div className="flex flex-wrap items-center gap-3 text-[13px]">
                 {ROUTING_TARGET_ROLES.map((r) => (
                   <label key={r} className="inline-flex items-center gap-1.5">
@@ -225,7 +249,7 @@ export function RoutingRulesBlock({ userRole, users }: { userRole: string; users
             </div>
             <p className="mt-1 text-[12px]" style={{ color: "var(--text-secondary)" }}>
               <span style={{ color: "var(--text-tertiary)" }}>Cuando </span>{describeConditions(r.conditions)}
-              <span style={{ color: "var(--text-tertiary)" }}> → </span>{describeTargets(r.targets as never, usersById)}
+              <span style={{ color: "var(--text-tertiary)" }}> → </span>{describeTargets(r.targets as never, usersById, teamsById)}
               <span style={{ color: "var(--text-tertiary)" }}> · </span>{etiqueta(STRATEGY_LABELS, r.strategy)}
             </p>
           </div>

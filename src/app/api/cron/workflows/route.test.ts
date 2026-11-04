@@ -61,6 +61,11 @@ vi.mock("@/lib/scoring/recalcular", () => ({
 vi.mock("@/lib/intake/perfil-desde-hub", () => ({
   completarPerfilDesdeHub: (...a: unknown[]) => completarPerfilDesdeHub(...a),
 }));
+// Acuerdo de actividad (E8): se dobla para probar el aislamiento del tick; la logica tiene sus
+// pruebas en lib/workflows/acuerdo-actividad.test.ts.
+vi.mock("@/lib/workflows/acuerdo-actividad", () => ({
+  revisarAcuerdoDeActividad: async () => ({ asesores: 0, incumplidos: 0, notificaciones: 0 }),
+}));
 vi.mock("@/lib/workflows/scheduler", () => ({
   runEnrollments: (...a: unknown[]) => runEnrollments(...a),
   runInactivityRules: (...a: unknown[]) => runInactivityRules(...a),
