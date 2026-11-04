@@ -51,6 +51,10 @@ const SOURCE_LABELS: Record<string, string> = {
   // #953: la migración llenó el estado nuevo en los casos 1:1; y la corrección de un administrador.
   estado_llenado_953: "Llenado de estado (#953)",
   ui_correccion_estado: "Corrección de estado (administrador)",
+  // #957 y #958: migraciones de datos; #973: la temperatura que calcula Copilot.
+  operaciones_llenado_957: "Llenado de operaciones (#957)",
+  estado_migracion_958: "Migración de estados (#958)",
+  copilot_temperatura: "Temperatura calculada (Copilot)",
 };
 
 /** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */

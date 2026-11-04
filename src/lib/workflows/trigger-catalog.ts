@@ -84,10 +84,6 @@ const EVENTO_A_DISPARADOR: Record<string, string> = {
   "sla.breach": "sla_breach",
 };
 
-// Eventos que `emitEvent` NO emite en ningún punto del código (verificado: no hay llamada a
-// emitEvent con ese literal en src/ ni scripts/). La regla se puede guardar pero no dispara.
-const EVENTOS_SIN_EMISOR = new Set(["contact.merged", "quote.opened", "visit.completed"]);
-
 const etiquetaEvento = (type: string) => EVENTOS_DE_CONDICION[type] ?? type;
 
 // key → { frase, grupo, contexto }. Los eventos con disparador propio no están aquí.
@@ -120,10 +116,7 @@ const disparadoresDeEvento: Disparador[] = Object.entries(EVENTOS).map(([key, e]
   grupo: e.grupo,
   triggerType: "EVENT",
   contexto: e.contexto,
-  estado: EVENTOS_SIN_EMISOR.has(key) ? "proximamente" : "activo",
-  ...(EVENTOS_SIN_EMISOR.has(key)
-    ? { ayuda: "Todavía no se emite desde el sistema: la regla se guarda pero no se dispara." }
-    : {}),
+  estado: "activo",
 }));
 
 const propio = (key: string) => disparadoresDeEvento.filter((d) => d.key === key);
@@ -191,17 +184,6 @@ export const DISPARADORES: Disparador[] = [
     triggerType: "SLA_BREACH",
     contexto: "event",
     estado: "activo",
-  },
-  {
-    // scheduler.ts no tiene ninguna rama para TIME: la regla se guarda y nunca corre.
-    key: "time",
-    frase: "llega una fecha u hora programada",
-    label: "Programado (fecha u hora)",
-    grupo: "Tiempo",
-    triggerType: "TIME",
-    contexto: "contact",
-    estado: "proximamente",
-    ayuda: "El motor todavía no ejecuta disparadores por calendario.",
   },
   // Otros
   ...propio("recruitment.apto"), ...propio("recruitment.revisar"), ...propio("recruitment.no_apto"),
