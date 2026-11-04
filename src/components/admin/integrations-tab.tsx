@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Copy, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, Copy } from "lucide-react";
 import {
   createWebhookConfig,
   updateWebhookConfig,
@@ -38,13 +38,22 @@ const WEBHOOK_EVENTS = [
   { value: "activity.created", label: "Actividad creada" },
 ];
 
+// El secret NO se guarda en el estado de la lista: solo se muestra una vez, al crear el webhook
+// (igual que las API keys). Las filas existentes llegan con `secret` desde el servidor; se descarta
+// al entrar al componente.
 interface WebhookData {
   id: string;
   event: string;
   url: string;
   isActive: boolean;
-  secret: string;
+  secret?: string;
   createdAt: Date;
+}
+
+/** Quita el secret de una fila antes de guardarla en el estado. */
+function sinSecret<T extends { secret?: string }>(w: T): Omit<T, "secret"> {
+  const { secret: _descartado, ...resto } = w;
+  return resto;
 }
 
 interface ApiKeyData {
@@ -69,7 +78,7 @@ export function IntegrationsTab({
   const [isPending, startTransition] = useTransition();
 
   const confirmar = useConfirm();
-  const [webhooks, setWebhooks] = useState(initialWebhooks);
+  const [webhooks, setWebhooks] = useState<WebhookData[]>(() => initialWebhooks.map(sinSecret));
   const [apiKeys, setApiKeys] = useState(initialApiKeys);
 
   // Formulario nuevo webhook
@@ -80,17 +89,8 @@ export function IntegrationsTab({
   const [newApiKeyName, setNewApiKeyName] = useState("");
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
 
-  // Visibilidad de secrets
-  const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set());
-
-  function toggleSecretVisibility(id: string) {
-    setVisibleSecrets((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  // Secret del webhook recién creado: se muestra una sola vez (E6).
+  const [secretNuevo, setSecretNuevo] = useState<{ url: string; secret: string } | null>(null);
 
   async function handleCreateWebhook() {
     if (!newWebhookEvent || !newWebhookUrl) {
@@ -104,10 +104,12 @@ export function IntegrationsTab({
           event: newWebhookEvent,
           url: newWebhookUrl,
         });
-        setWebhooks((prev) => [...prev, config as WebhookData]);
+        const { secret } = config as { secret?: string };
+        setWebhooks((prev) => [...prev, sinSecret(config as WebhookData)]);
+        if (secret) setSecretNuevo({ url: newWebhookUrl, secret });
         setNewWebhookEvent("");
         setNewWebhookUrl("");
-        toast({ title: "Webhook creado", description: "Ya está activo. Puedes copiar su clave secreta desde la lista." });
+        toast({ title: "Webhook creado", description: "Ya está activo. Copia su clave secreta ahora: no se vuelve a mostrar." });
       } catch (error: any) {
         toast({ title: "Error", description: error.message, variant: "destructive" });
       }
@@ -115,6 +117,16 @@ export function IntegrationsTab({
   }
 
   async function handleToggleWebhook(webhook: WebhookData) {
+    // Pausar corta el envío de eventos; se avisa antes. Activar no necesita confirmación.
+    if (webhook.isActive) {
+      const ok = await confirmar({
+        titulo: "¿Pausar este webhook?",
+        descripcion: `Mientras esté en pausa no se enviará nada a ${webhook.url}, y los eventos que ocurran en ese tiempo no se reenvían al reactivarlo.`,
+        confirmar: "Pausar webhook",
+        peligroso: true,
+      });
+      if (!ok) return;
+    }
     startTransition(async () => {
       try {
         await updateWebhookConfig(webhook.id, { isActive: !webhook.isActive });
@@ -246,6 +258,25 @@ export function IntegrationsTab({
             </Button>
           </div>
 
+          {secretNuevo && (
+            <div className="mb-4 rounded-lg border border-yellow-300 bg-yellow-50 p-4">
+              <p className="mb-1 text-sm font-semibold text-yellow-800">
+                Clave secreta del webhook (solo se muestra una vez):
+              </p>
+              <p className="mb-2 break-all text-xs text-yellow-800">Para {secretNuevo.url}. Úsala en el servicio que lo recibe para verificar la firma.</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded bg-white px-3 py-2 font-mono text-xs break-all">{secretNuevo.secret}</code>
+                <Button variant="outline" size="sm" onClick={() => copyToClipboard(secretNuevo.secret)}>
+                  <Copy className="mr-1 h-3 w-3" />
+                  Copiar
+                </Button>
+              </div>
+              <Button variant="ghost" size="sm" className="mt-2" onClick={() => setSecretNuevo(null)}>
+                Ya la guardé, cerrar
+              </Button>
+            </div>
+          )}
+
           {/* Tabla de webhooks */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -253,7 +284,7 @@ export function IntegrationsTab({
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-2 font-medium">Evento</th>
                   <th className="pb-2 font-medium">URL</th>
-                  <th className="pb-2 font-medium">Secret</th>
+                  <th className="pb-2 font-medium">Clave secreta</th>
                   <th className="pb-2 font-medium">Estado</th>
                   <th className="pb-2 font-medium">Acciones</th>
                 </tr>
@@ -272,41 +303,22 @@ export function IntegrationsTab({
                       <td className="py-2 max-w-[200px] truncate font-mono text-xs">
                         {webhook.url}
                       </td>
+                      <td className="py-2 text-xs text-muted-foreground">Oculta (se mostró al crearlo)</td>
                       <td className="py-2">
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono text-xs">
-                            {visibleSecrets.has(webhook.id)
-                              ? webhook.secret
-                              : webhook.secret.substring(0, 8) + "..."}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleSecretVisibility(webhook.id)}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={webhook.isActive}
+                            aria-label={webhook.isActive ? "Pausar webhook" : "Activar webhook"}
+                            disabled={isPending}
+                            onClick={() => handleToggleWebhook(webhook)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${webhook.isActive ? "bg-green-500" : "bg-neutral-300"}`}
                           >
-                            {visibleSecrets.has(webhook.id) ? (
-                              <EyeOff className="h-3 w-3" />
-                            ) : (
-                              <Eye className="h-3 w-3" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(webhook.secret)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
+                            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${webhook.isActive ? "translate-x-4" : "translate-x-0.5"}`} />
+                          </button>
+                          <span className="text-xs text-muted-foreground">{webhook.isActive ? "Activo" : "En pausa"}</span>
                         </div>
-                      </td>
-                      <td className="py-2">
-                        <Badge
-                          variant={webhook.isActive ? "default" : "secondary"}
-                          className={`cursor-pointer ${webhook.isActive ? "bg-green-500" : ""}`}
-                          onClick={() => handleToggleWebhook(webhook)}
-                        >
-                          {webhook.isActive ? "Activo" : "Inactivo"}
-                        </Badge>
                       </td>
                       <td className="py-2">
                         <Button

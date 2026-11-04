@@ -8,10 +8,10 @@ import { MetaDmsWizard } from "./meta-dms-wizard";
 import { MappingEditor } from "./mapping-editor";
 import { BrandSelect, useBrandOptions } from "./brand-select";
 import { WhatsAppCoexConnect } from "./whatsapp-coex-connect";
-import { formatDate } from "@/lib/format-date";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { leerError } from "@/lib/api-errors";
-import { estadoDeConexion, traducirErrorConexion, type TonoEstado } from "./connection-status";
+import { estadoDeConexion, resumenDeActividad, traducirErrorConexion, type TonoEstado } from "./connection-status";
+import { toast } from "@/components/ui/use-toast";
 import { coexStatusOf, type CoexStatusKind } from "@/lib/whatsapp/coex/status";
 import type { EmbeddedSignupAvailability } from "@/lib/whatsapp/coex/public-config";
 
@@ -23,6 +23,8 @@ interface Conn {
   brandId: string | null;
   brand: { id: string; name: string } | null;
   _count: { leadLogs: number };
+  // E6: prospectos de los últimos 30 días (null/ausente = no hay conteo confiable).
+  leads30d?: number | null;
   // 2026-10-14: de aquí sale el estado de la coexistencia (config.coex). Sin secretos: esos
   // viven cifrados en credentials, que nunca llega al navegador.
   config?: unknown;
@@ -121,6 +123,29 @@ export function ConnectionsView({
       setError("Error de red al cargar las conexiones.");
     }
   }, []);
+
+  // E6: «Probar» una cuenta ya conectada. Una llamada de lectura con lo guardado; el resultado se
+  // muestra bajo la cuenta y en un aviso. Si falla, el servidor ya subió el conteo de errores.
+  const [probando, setProbando] = useState<string | null>(null);
+  const [pruebaDe, setPruebaDe] = useState<{ id: string; ok: boolean; detalle: string; error?: string } | null>(null);
+  const probar = useCallback(async (c: Conn) => {
+    if (probando) return;
+    setProbando(c.id);
+    setPruebaDe(null);
+    try {
+      const res = await fetch(`/api/admin/connectors/${c.id}/probar`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      const detalle = typeof data.detalle === "string" ? data.detalle : "No se pudo probar la cuenta.";
+      const ok = res.ok && data.ok === true;
+      setPruebaDe({ id: c.id, ok, detalle, error: typeof data.error === "string" ? data.error : undefined });
+      toast({ title: ok ? "Funciona" : "No funciona", description: `${c.name}: ${detalle}`, variant: ok ? "default" : "destructive" });
+      if (!ok) reload();
+    } catch {
+      setPruebaDe({ id: c.id, ok: false, detalle: "Error de red al probar la cuenta." });
+    } finally {
+      setProbando(null);
+    }
+  }, [probando, reload]);
 
   const toggle = useCallback(async (c: Conn) => {
     const res = await fetch(`/api/admin/connectors/${c.id}`, {
@@ -291,10 +316,13 @@ export function ConnectionsView({
                             })()}
                           </span>
                           <span className="flex shrink-0 items-center gap-3">
-                            <span className="font-mono text-[11px] text-muted-foreground">
-                              {c._count.leadLogs} {c._count.leadLogs === 1 ? "prospecto" : "prospectos"} · último:{" "}
-                              {c.lastLeadAt ? formatDate(c.lastLeadAt) : "—"}
-                            </span>
+                            <button
+                              className="text-[11px] underline disabled:opacity-50 disabled:no-underline"
+                              disabled={probando === c.id}
+                              onClick={() => probar(c)}
+                            >
+                              {probando === c.id ? "Probando…" : "Probar"}
+                            </button>
                             <button className="text-[11px] underline" onClick={() => toggle(c)}>
                               {c.status === "ACTIVE" ? "Pausar" : "Activar"}
                             </button>
@@ -322,6 +350,18 @@ export function ConnectionsView({
                             </button>
                           </span>
                         </div>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">{resumenDeActividad(c)}</p>
+                        {pruebaDe?.id === c.id && (
+                          <div role="status" className={`mt-1 text-[11px] ${pruebaDe.ok ? "text-green-700" : "text-destructive"}`}>
+                            <p>{pruebaDe.ok ? "Prueba correcta: " : "La prueba falló: "}{pruebaDe.detalle}</p>
+                            {pruebaDe.error && (
+                              <details className="text-muted-foreground">
+                                <summary className="cursor-pointer">Detalle técnico</summary>
+                                <p className="mt-0.5 break-words font-mono text-[10px]">{pruebaDe.error}</p>
+                              </details>
+                            )}
+                          </div>
+                        )}
                         {brandFor === c.id && (
                           <div className="mt-2">
                             <BrandSelect
@@ -481,6 +521,13 @@ export function ConnectionsView({
                       )}
                     </span>
                     <span className="flex shrink-0 items-center gap-3">
+                      <button
+                        className="text-[11px] underline disabled:opacity-50 disabled:no-underline"
+                        disabled={probando === c.id}
+                        onClick={() => probar(c)}
+                      >
+                        {probando === c.id ? "Probando…" : "Probar"}
+                      </button>
                       <button className="text-[11px] underline" onClick={() => toggle(c)}>
                         {c.status === "ACTIVE" ? "Pausar" : "Activar"}
                       </button>
@@ -489,6 +536,12 @@ export function ConnectionsView({
                       </button>
                     </span>
                   </div>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{resumenDeActividad(c)}</p>
+                  {pruebaDe?.id === c.id && (
+                    <p role="status" className={`mt-1 text-[11px] ${pruebaDe.ok ? "text-green-700" : "text-destructive"}`}>
+                      {pruebaDe.ok ? "Prueba correcta: " : "La prueba falló: "}{pruebaDe.detalle}
+                    </p>
+                  )}
                   <ErrorDeConexion c={c} />
                 </div>
               );
