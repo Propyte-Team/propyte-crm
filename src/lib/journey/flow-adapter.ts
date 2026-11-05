@@ -1,79 +1,10 @@
-// Adaptador puro: vistas derivadas (journey-map.ts) → {nodes,edges} de React Flow.
-// Sin importar React Flow aquí (solo tipos planos) → testeable en Node.
-import { laneLabel, type GeneralView, type TargetedView } from "./journey-map";
+// Tipos planos de un flujo de React Flow ({nodes, edges}) y utilidades de posición. Sin React Flow
+// aquí (solo tipos planos) → testeable en Node.
 
 export interface RFNode { id: string; type: string; position: { x: number; y: number }; data: Record<string, unknown> }
 export interface RFEdge { id: string; source: string; target: string; data?: Record<string, unknown> }
 export interface Flow { nodes: RFNode[]; edges: RFEdge[] }
 export type Positions = Record<string, { x: number; y: number }>;
-
-const LANE_W = 240;   // ancho por carril
-const ROW_H = 90;     // alto por fila dentro del carril
-const HEADER_Y = 0;
-
-export function generalToFlow(view: GeneralView): Flow {
-  const nodes: RFNode[] = [];
-  const edges: RFEdge[] = [];
-  view.lanes.forEach((lane, li) => {
-    const x = li * LANE_W;
-    nodes.push({
-      id: `stage:${lane.stage}`, type: "stage", position: { x, y: HEADER_Y },
-      data: { label: laneLabel(lane.stage), stage: lane.stage },
-    });
-    let row = 1;
-    for (const r of lane.rules) {
-      nodes.push({ id: `rule:${r.id}`, type: "rule", position: { x, y: row * ROW_H },
-        data: { label: r.name, isActive: r.isActive, triggerType: r.triggerType, isSlaBreach: r.isSlaBreach } });
-      row++;
-    }
-    for (const c of lane.cadences) {
-      nodes.push({ id: `plan:${c.id}`, type: "cadence", position: { x, y: row * ROW_H },
-        data: { label: c.name, isActive: c.isActive, stepCount: c.stepCount, planId: c.id } });
-      row++;
-    }
-    if (li > 0) {
-      const prev = view.lanes[li - 1];
-      edges.push({ id: `adv:${prev.stage}->${lane.stage}`, source: `stage:${prev.stage}`, target: `stage:${lane.stage}` });
-    }
-  });
-  // Aristas regla -> cadencia (ENROLL_PLAN) y regla -> etapa destino (CHANGE_STAGE/SET_LIFECYCLE).
-  // Se arman al final, cuando ya existen todos los nodos, para no apuntar a algo que no se dibujo.
-  const ids = new Set(nodes.map((n) => n.id));
-  const seen = new Set(edges.map((e) => e.id));
-  const link = (id: string, source: string, target: string) => {
-    if (seen.has(id) || !ids.has(source) || !ids.has(target)) return;
-    seen.add(id);
-    edges.push({ id, source, target });
-  };
-  for (const lane of view.lanes) {
-    for (const r of lane.rules) {
-      for (const pid of r.planIds ?? []) link(`rp:${r.id}->${pid}`, `rule:${r.id}`, `plan:${pid}`);
-      for (const st of r.stageTargets ?? []) {
-        if (st !== lane.stage) link(`rs:${r.id}->${st}`, `rule:${r.id}`, `stage:${st}`);
-      }
-    }
-  }
-  return { nodes, edges };
-}
-
-export function targetedToFlow(view: TargetedView): Flow {
-  const nodes: RFNode[] = [];
-  const edges: RFEdge[] = [];
-  view.flows.forEach((flow, fi) => {
-    let prevId: string | null = null;
-    flow.forEach((node, ni) => {
-      // ID por rule.id (no por indice): crear/borrar/reordenar reglas no desplaza el acomodo guardado (E4 #11).
-      const id = `f:${view.ruleIds?.[fi] ?? fi}:${node.kind}:${ni}`;
-      const data: Record<string, unknown> = { label: node.label };
-      if (node.planId) data.planId = node.planId;
-      if (node.isSlaBreach) data.isSlaBreach = node.isSlaBreach;
-      nodes.push({ id, type: node.kind, position: { x: ni * LANE_W, y: fi * (ROW_H * 1.6) }, data });
-      if (prevId) edges.push({ id: `${prevId}->${id}`, source: prevId, target: id });
-      prevId = id;
-    });
-  });
-  return { nodes, edges };
-}
 
 /** Aplica posiciones guardadas por nodo; los no guardados conservan el auto-layout. */
 export function applyPositions(nodes: RFNode[], positions: Positions): RFNode[] {

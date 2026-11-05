@@ -59,6 +59,8 @@ interface RuleInspectorPanelProps {
   draft: RuleDraft;
   selectedId: string | null;
   ops: Ops;
+  /** Oculta «Regla activa» cuando quien lo usa ya tiene su propio interruptor (lienzo de /journey). */
+  sinActiva?: boolean;
 }
 
 // Clases compartidas (coherentes con action-card / Configuracion).
@@ -182,7 +184,7 @@ function AccionForm({
 }
 
 // -- Componente -----------------------------------------------------------------------
-export function RuleInspectorPanel({ draft, selectedId, ops }: RuleInspectorPanelProps) {
+export function RuleInspectorPanel({ draft, selectedId, ops, sinActiva = false }: RuleInspectorPanelProps) {
   const { listas, fuentes } = useFuentes();
   const vista = vistaDeInspector(draft.actions, selectedId);
   const selected: NodeDraft | undefined = selectedId ? findNode(draft.actions, selectedId) : undefined;
@@ -371,7 +373,7 @@ export function RuleInspectorPanel({ draft, selectedId, ops }: RuleInspectorPane
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]" aria-label="Subir" onClick={() => ops.reorderAction(action.nodeId, "up")}>↑ Subir</button>
           <button type="button" className="btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]" aria-label="Bajar" onClick={() => ops.reorderAction(action.nodeId, "down")}>↓ Bajar</button>
-          <button type="button" className="btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]" onClick={() => ops.removeNode(action.nodeId)}>Borrar</button>
+          <button type="button" className="btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]" onClick={() => ops.removeNode(action.nodeId)}>Quitar paso</button>
         </div>
       </aside>
     );
@@ -395,10 +397,12 @@ export function RuleInspectorPanel({ draft, selectedId, ops }: RuleInspectorPane
         <input id="insp-prio" className="form-input !w-24 text-[13px] num" type="number" min={1} max={1000} value={draft.priority} onChange={(e) => ops.setMeta({ priority: Number(e.target.value) })} />
         <p className={AYUDA}>Si varias reglas coinciden, corre primero la de número menor.</p>
       </div>
-      <label className="flex items-center gap-2 text-[13px]">
-        <input type="checkbox" checked={draft.isActive} onChange={(e) => ops.setMeta({ isActive: e.target.checked })} />
-        Regla activa
-      </label>
+      {!sinActiva && (
+        <label className="flex items-center gap-2 text-[13px]">
+          <input type="checkbox" checked={draft.isActive} onChange={(e) => ops.setMeta({ isActive: e.target.checked })} />
+          Regla activa
+        </label>
+      )}
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]" onClick={() => ops.addAction("NOTIFY")}>+ Añadir acción</button>
         <button type="button" className="btn-secondary !min-h-0 !px-2.5 !py-1 !text-[12px]" onClick={() => ops.addDecision()}>+ Añadir decisión</button>

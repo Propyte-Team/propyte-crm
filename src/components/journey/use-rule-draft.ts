@@ -5,6 +5,7 @@ import {
   type RuleDraft, type RuleRow, ruleToDraft, draftToRulePayload, newRuleDraft,
   addAction, insertAction, removeAction, reorderAction, setActionConfig, setActionType, setActionDelay, setTrigger, setConditions, setMeta,
   addDecision, removeNode, setDecisionLabel, addBranch, removeBranch, setBranchLabel, setBranchConditions, addActionToBranch, setElseEnabled, addActionToElse,
+  insertActionAt, insertDecisionAt, setEspera, conservarEsperaDeDisparador, type PuntoDeInsercion,
   type Conditions,
 } from "@/lib/journey/rule-draft";
 
@@ -70,7 +71,30 @@ export function useRuleDraft() {
     addActionToBranch: (branchId: string, type: string) => setDraft((d) => (d ? addActionToBranch(d, branchId, type) : d)),
     setElseEnabled: (decisionNodeId: string, enabled: boolean) => setDraft((d) => (d ? setElseEnabled(d, decisionNodeId, enabled) : d)),
     addActionToElse: (decisionNodeId: string, type: string) => setDraft((d) => (d ? addActionToElse(d, decisionNodeId, type) : d)),
+    // Edición en el lienzo de /journey (J3)
+    insertActionAt: (punto: PuntoDeInsercion, type: string) => setDraft((d) => (d ? insertActionAt(d, punto, type) : d)),
+    insertDecisionAt: (punto: PuntoDeInsercion) => setDraft((d) => (d ? insertDecisionAt(d, punto) : d)),
+    setEspera: (objetivo: string, minutos: number) => setDraft((d) => (d ? setEspera(d, objetivo, minutos) : d)),
+    // Cambiar de disparador sin perder su espera (la espera no es parte de lo que se elige).
+    setTriggerConEspera: (t: { triggerType: string; triggerConfig: Record<string, unknown> }) =>
+      setDraft((d) => (d ? setTrigger(d, { triggerType: t.triggerType, triggerConfig: conservarEsperaDeDisparador(d.triggerConfig, t.triggerConfig) }) : d)),
   }), []);
+
+  /**
+   * La regla se encendió o apagó por su propia vía (PATCH): se refleja en el borrador y en la base de
+   * comparación, para que eso no cuente como «cambio sin guardar».
+   */
+  const syncActive = useCallback((isActive: boolean) => {
+    setDraft((d) => (d ? { ...d, isActive } : d));
+    setBaseline((b) => {
+      if (!b) return b;
+      try {
+        const o = JSON.parse(b) as Record<string, unknown>;
+        o.isActive = isActive;
+        return JSON.stringify(o);
+      } catch { return b; }
+    });
+  }, []);
 
   const save = useCallback(async (): Promise<boolean> => {
     if (!draft) return false;
@@ -116,5 +140,5 @@ export function useRuleDraft() {
 
   const discard = useCallback(() => setDraft(null), []);
 
-  return { draft, isDirty, saving, error, fieldErrors, load, loadDraft, lastSaved, startNew, ops, save, discard };
+  return { draft, isDirty, saving, error, fieldErrors, load, loadDraft, lastSaved, startNew, ops, save, discard, syncActive };
 }

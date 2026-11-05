@@ -15,6 +15,7 @@ export const TAMANOS_NODO: Record<string, Tamano> = {
   wait: { width: 200, height: 36 },
   decision: { width: 280, height: 60 },
   empty: { width: 200, height: 36 },
+  fin: { width: 120, height: 32 },
 };
 export const TAMANO_POR_DEFECTO: Tamano = { width: 280, height: 84 };
 

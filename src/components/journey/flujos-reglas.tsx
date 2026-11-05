@@ -1,24 +1,25 @@
 "use client";
-// Flujos de las reglas (J2), de SOLO LECTURA, debajo del embudo: lista de reglas por paso del embudo
-// y, al elegir una, su flujo de arriba hacia abajo (acomodo automático, esperas visibles, ramas con
-// etiqueta) con los números de cada paso. Editar sigue siendo en Configuración → Reglas.
-import { useEffect, useMemo, useState } from "react";
+// Flujos de las reglas, debajo del embudo: lista de reglas por paso del embudo y, al elegir una, su
+// flujo de arriba hacia abajo (acomodo automático, esperas visibles, ramas con etiqueta) con los
+// números de cada paso. Quien puede editar (Admin/Dirección) pasa el mismo lienzo a modo edición (J3).
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import {
-  Background, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow,
-  type Edge, type Node, type NodeProps, type NodeTypes,
-} from "@xyflow/react";
+import { Background, Controls, MiniMap, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { leerError } from "@/lib/api-errors";
+import { toast } from "@/components/ui/use-toast";
 import { ESTADO_LABELS } from "@/lib/estados";
 import { CUALQUIER_MOMENTO, PASOS_EMBUDO, pasoDeRegla, type PasoDeRegla } from "@/lib/journey/embudo";
-import { layoutFlow, TAMANO_POR_DEFECTO, TAMANOS_NODO } from "@/lib/journey/layout";
+import { layoutFlow } from "@/lib/journey/layout";
 import { computeNodeMetrics, type NodeMetrics, type RawMetrics } from "@/lib/journey/node-metrics";
 import { draftToReadFlow } from "@/lib/journey/read-flow";
 import { ruleToDraft, type RuleRow } from "@/lib/journey/rule-draft";
 import type { ResumenDeRegla } from "@/lib/journey/resumen-reglas";
+import { filasDeSla, type PoliticaSla } from "@/lib/journey/sla-panel";
 import { FitOnChange, edgeLabel } from "./flow-nodes";
+import { TIPOS_DE_PASO, lineaDeLectura } from "./flow-pasos";
+import { RuleFlowEditor } from "./rule-flow-editor";
 
 type Ventana = "7" | "30" | "90" | "all";
 const VENTANAS: { valor: Ventana; texto: string }[] = [
@@ -31,46 +32,6 @@ const VENTANAS: { valor: Ventana; texto: string }[] = [
 const SELECT = "rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-xs dark:border-neutral-700";
 const num = (n: number) => n.toLocaleString("es-MX");
 const editarHref = (id: string) => `/configuracion?section=automation&ruleId=${encodeURIComponent(id)}`;
-
-// ───────────────────────────── nodos del lienzo ─────────────────────────────
-
-const ESTILO_NODO: Record<string, string> = {
-  trigger: "border-blue-500 bg-blue-50 text-blue-950 dark:bg-blue-950/40 dark:text-blue-100",
-  condition: "border-dashed border-neutral-400 bg-white dark:bg-neutral-900",
-  action: "border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-900",
-  stage: "border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-900",
-  decision: "border-violet-500 bg-violet-50 text-violet-950 dark:bg-violet-950/40 dark:text-violet-100",
-  wait: "rounded-full border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200",
-  empty: "rounded-full border-dashed border-neutral-300 bg-transparent text-neutral-500",
-};
-
-function NodoLectura({ type, data }: NodeProps) {
-  const d = data as { titulo?: string; texto?: string; volumen?: number };
-  const t = TAMANOS_NODO[type] ?? TAMANO_POR_DEFECTO;
-  const pastilla = type === "wait" || type === "empty";
-  return (
-    <div
-      style={{ width: t.width, height: t.height }}
-      className={`relative flex flex-col justify-center border px-3 text-xs shadow-sm ${pastilla ? "items-center" : "rounded-lg"} ${ESTILO_NODO[type] ?? ESTILO_NODO.action}`}
-    >
-      <Handle type="target" position={Position.Top} isConnectable={false} className="!h-1.5 !w-1.5 !border-0 !bg-neutral-400" />
-      {!pastilla && d.titulo && <span className="text-[10px] font-semibold uppercase tracking-wide opacity-60">{d.titulo}</span>}
-      <span className={pastilla ? "font-medium" : "line-clamp-2 text-[13px] font-medium leading-snug"}>{d.texto}</span>
-      {typeof d.volumen === "number" && (
-        <span className="absolute -top-2.5 right-2 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
-          Corrió {num(d.volumen)} {d.volumen === 1 ? "vez" : "veces"}
-        </span>
-      )}
-      <Handle type="source" position={Position.Bottom} isConnectable={false} className="!h-1.5 !w-1.5 !border-0 !bg-neutral-400" />
-    </div>
-  );
-}
-
-// Referencia estable a nivel de módulo: React Flow no remonta nodos en cada render.
-const NODE_TYPES: NodeTypes = {
-  trigger: NodoLectura, condition: NodoLectura, action: NodoLectura, stage: NodoLectura,
-  decision: NodoLectura, wait: NodoLectura, empty: NodoLectura,
-};
 
 // ───────────────────────────── lista de reglas ─────────────────────────────
 
@@ -104,13 +65,15 @@ function Punto({ activa }: { activa: boolean }) {
 interface Props {
   /** Una pastilla del embudo pide abrir esta regla (`n` cambia en cada pedido). */
   abrirRegla?: { id: string; n: number } | null;
-  /** Muestra «Editar en Configuración» (ADMIN/DIRECTOR). */
+  /** Muestra «Editar» (solo Admin y Dirección; el gerente ve el flujo sin botones de edición). */
   puedeEditar?: boolean;
 }
 
 export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) {
   const searchParams = useSearchParams();
   const [reglas, setReglas] = useState<RuleRow[] | null>(null);
+  const [politicasSla, setPoliticasSla] = useState<PoliticaSla[]>([]);
+  const [editando, setEditando] = useState(false);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [intento, setIntento] = useState(0);
   const [ventana, setVentana] = useState<Ventana>("30");
@@ -131,7 +94,12 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
         if (!r.ok) throw new Error(await leerError(r, "No se pudieron cargar las reglas."));
         return r.json();
       })
-      .then((j) => { if (!cancel) setReglas(((j.data ?? j).rules ?? []) as RuleRow[]); })
+      .then((j) => {
+        if (cancel) return;
+        const d = j.data ?? j;
+        setReglas((d.rules ?? []) as RuleRow[]);
+        setPoliticasSla((d.slaPolicies ?? []) as PoliticaSla[]);
+      })
       .catch((e: unknown) => { if (!cancel) setErrorCarga(e instanceof Error ? e.message : "No se pudieron cargar las reglas."); });
     return () => { cancel = true; };
   }, [intento]);
@@ -160,7 +128,12 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
     if (id && reglas.some((r) => r.id === id)) setElegida(id);
   }, [reglas, enlaceAplicado, searchParams]);
   useEffect(() => {
-    if (abrirRegla && reglas?.some((r) => r.id === abrirRegla.id)) setElegida(abrirRegla.id);
+    if (!abrirRegla || !reglas?.some((r) => r.id === abrirRegla.id)) return;
+    // Con una regla a medias de editar no se cambia de regla sin avisar.
+    if (editando) { toast({ title: "Termina de editar esta regla para abrir otra" }); return; }
+    setElegida(abrirRegla.id);
+    // Solo reacciona a un pedido nuevo del embudo (`n`), no a cambios de `editando`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirRegla, reglas]);
 
   const regla = useMemo(() => reglas?.find((r) => r.id === elegida) ?? null, [reglas, elegida]);
@@ -192,17 +165,19 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
   }, [acomodo, metricas]);
   const edges: Edge[] = useMemo(() => {
     if (!acomodo) return [];
-    return acomodo.edges.map((e) => ({
-      id: e.id, source: e.source, target: e.target, type: "smoothstep",
-      label: edgeLabel(e, metricas),
-      markerEnd: { type: MarkerType.ArrowClosed },
-      labelStyle: { fontSize: 11, fontWeight: 600 },
-      labelBgPadding: [6, 3] as [number, number],
-      labelBgBorderRadius: 6,
-    }));
+    return acomodo.edges.map((e) => lineaDeLectura(e, edgeLabel(e, metricas)));
   }, [acomodo, metricas]);
 
   const grupos = useMemo(() => (reglas ? agruparPorPaso(reglas) : []), [reglas]);
+  const filasSla = useMemo(() => filasDeSla(politicasSla), [politicasSla]);
+
+  const salirDeEdicion = useCallback(() => setEditando(false), []);
+  const alGuardar = useCallback((row: RuleRow) => {
+    setReglas((rs) => (rs ? rs.map((r) => (r.id === row.id ? { ...r, ...row } : r)) : rs));
+  }, []);
+  const alCambiarActiva = useCallback((id: string, isActive: boolean) => {
+    setReglas((rs) => (rs ? rs.map((r) => (r.id === id ? { ...r, isActive } : r)) : rs));
+  }, []);
   const fila = elegida ? resumen?.get(elegida) : undefined;
 
   return (
@@ -250,8 +225,10 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
                           <button
                             type="button"
                             onClick={() => setElegida(r.id)}
+                            disabled={editando && r.id !== elegida}
+                            title={editando && r.id !== elegida ? "Termina de editar la regla abierta para cambiar de regla" : undefined}
                             aria-current={r.id === elegida ? "true" : undefined}
-                            className={`flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-left text-sm ${
+                            className={`flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
                               r.id === elegida
                                 ? "border-neutral-900 bg-neutral-100 dark:border-neutral-100 dark:bg-neutral-800"
                                 : "border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
@@ -272,6 +249,26 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
                 </div>
               ))}
             </div>
+            {filasSla.length > 0 && (
+              <details className="mt-3 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs dark:border-neutral-800">
+                <summary className="cursor-pointer font-medium">Tiempos de atención (SLA) · {filasSla.length}</summary>
+                <ul className="mt-2 space-y-2">
+                  {filasSla.map((f) => (
+                    <li key={f.id} className="rounded-md border border-neutral-200 p-2 dark:border-neutral-800">
+                      <p className="flex items-center justify-between gap-2 font-medium">
+                        <span className="truncate">{f.name}</span>
+                        {f.isDefault && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">general</span>}
+                      </p>
+                      <p className="mt-1 text-neutral-500">{f.tiempos}</p>
+                      <p className="text-neutral-500">Aplica a: {f.aQuien}</p>
+                      {puedeEditar && (
+                        <Link href={`/configuracion?section=automation&slaId=${encodeURIComponent(f.id)}`} className="mt-1 inline-block font-medium underline">Editar en Configuración</Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </aside>
 
           <div className="min-w-0 flex-1">
@@ -280,7 +277,17 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
                 Elige una regla de la lista, o una pastilla del embudo, para ver su flujo.
               </div>
             )}
-            {regla && (
+            {regla && editando && puedeEditar && (
+              <RuleFlowEditor
+                key={regla.id}
+                regla={regla}
+                raw={raw}
+                onSalir={salirDeEdicion}
+                onGuardada={alGuardar}
+                onActivaCambiada={alCambiarActiva}
+              />
+            )}
+            {regla && !(editando && puedeEditar) && (
               <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
                 <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-neutral-200 px-4 py-2.5 dark:border-neutral-800">
                   <h3 className="flex items-center gap-2 text-sm font-semibold"><Punto activa={regla.isActive} />{regla.name}</h3>
@@ -292,9 +299,18 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
                     </span>
                   )}
                   {puedeEditar && (
-                    <Link href={editarHref(regla.id)} className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900">
-                      Editar en Configuración
-                    </Link>
+                    <span className="ml-auto flex flex-wrap items-center gap-2">
+                      <Link href={editarHref(regla.id)} className="text-xs text-neutral-500 underline hover:text-neutral-900 dark:hover:text-neutral-100">
+                        Abrir en Configuración
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setEditando(true)}
+                        className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
+                      >
+                        Editar
+                      </button>
+                    </span>
                   )}
                 </header>
                 {errorMetricas && (
@@ -307,7 +323,7 @@ export function FlujosReglas({ abrirRegla = null, puedeEditar = false }: Props) 
                   <ReactFlow
                     nodes={nodes}
                     edges={edges}
-                    nodeTypes={NODE_TYPES}
+                    nodeTypes={TIPOS_DE_PASO}
                     nodesDraggable={false}
                     nodesConnectable={false}
                     elementsSelectable={false}

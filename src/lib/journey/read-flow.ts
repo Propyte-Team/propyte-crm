@@ -36,7 +36,16 @@ interface Cola { id: string; label?: string; branchId?: string; vacia?: boolean 
 
 const mayuscula = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-export function draftToReadFlow(draft: RuleDraft): Flow {
+export interface OpcionesDeFlujo {
+  /**
+   * Para editar (J3): el «Si» aparece siempre (con «aplica siempre» si no hay condiciones, para poder
+   * abrirlo) y un nodo «Fin» recoge los finales para poder agregar pasos al final.
+   */
+  edicion?: boolean;
+}
+
+export function draftToReadFlow(draft: RuleDraft, opts: OpcionesDeFlujo = {}): Flow {
+  const edicion = opts.edicion === true;
   const nodes: RFNode[] = [];
   const edges: RFEdge[] = [];
   const usados = new Set<string>();
@@ -68,8 +77,11 @@ export function draftToReadFlow(draft: RuleDraft): Flow {
     unir(colas, "trigger~espera");
     colas = [{ id: "trigger~espera" }];
   }
-  if (!sinCondiciones(draft.conditions)) {
-    nodo("condition", "condition", { titulo: "Si", texto: mayuscula(describeConditions(draft.conditions)) });
+  if (edicion || !sinCondiciones(draft.conditions)) {
+    nodo("condition", "condition", {
+      titulo: "Si",
+      texto: sinCondiciones(draft.conditions) ? "Sin condiciones: aplica siempre" : mayuscula(describeConditions(draft.conditions)),
+    });
     unir(colas, "condition");
     colas = [{ id: "condition" }];
   }
@@ -115,6 +127,13 @@ export function draftToReadFlow(draft: RuleDraft): Flow {
   }
 
   const finales = emitir(draft.actions, colas);
+  if (edicion) {
+    const sueltos = finales.filter((c) => !c.vacia);
+    if (sueltos.length > 0) {
+      nodo("fin", "fin", { titulo: "", texto: "Fin" });
+      unir(sueltos, "fin");
+    }
+  }
   // Ramas vacías que nada recoge después: se marcan para que la etiqueta no quede colgando.
   finales.filter((c) => c.vacia).forEach((c, i) => {
     const id = `${c.id}~vacio${i}`;
