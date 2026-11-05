@@ -55,6 +55,8 @@ const SOURCE_LABELS: Record<string, string> = {
   operaciones_llenado_957: "Llenado de operaciones (#957)",
   estado_migracion_958: "Migración de estados (#958)",
   copilot_temperatura: "Temperatura calculada (Copilot)",
+  // #984: el llenado de los contactos de Empleo que se habían quedado en Nuevo.
+  empleo_a_rh_984: "Derivado a RH automático (#984)",
 };
 
 /** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */
