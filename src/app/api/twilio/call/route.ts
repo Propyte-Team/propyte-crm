@@ -4,6 +4,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { initiateCall } from "@/lib/twilio/voice";
 import { prisma } from "@/lib/db";
 import { puedeTocarRecord } from "@/lib/rbac/record-access";
+import { MENSAJE_SIN_TELEFONO, tieneTelefono } from "@/lib/contacts/sin-telefono";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession();
@@ -42,6 +43,12 @@ export async function POST(req: NextRequest) {
       { error: "Contacto marcado doNotContact" },
       { status: 422 }
     );
+  }
+
+  // #833: sin teléfono no hay a quién marcar. Antes Twilio rechazaba el número vacío y la ruta
+  // respondía un 500 genérico («Error al iniciar llamada») sin decir por qué.
+  if (!tieneTelefono(contact.phone)) {
+    return NextResponse.json({ error: MENSAJE_SIN_TELEFONO }, { status: 422 });
   }
 
   try {
