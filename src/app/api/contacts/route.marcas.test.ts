@@ -23,6 +23,7 @@ const getVisibleBrands = vi.fn();
 vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
 
 import { GET } from "./route";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
 const marcaDe = (userId: string) => ({
@@ -69,7 +70,7 @@ describe("GET /api/contacts — marcas", () => {
     const and = whereUsed().AND;
     expect(and).toHaveLength(3);
     expect(and[0]).toEqual({ OR: [{ assignedToId: { in: ["ase-2"] } }, { assignedToId: null }] });
-    expect(and[1].OR).toEqual(expect.arrayContaining([{ firstName: { contains: "ana", mode: "insensitive" } }]));
+    expect(and[1]).toEqual(whereBusquedaContacto("ana")); // #960: la regla común de búsqueda
     expect(and[2]).toEqual(marcaDe("ger-1"));
   });
 

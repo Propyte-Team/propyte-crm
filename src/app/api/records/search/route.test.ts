@@ -19,6 +19,7 @@ const getVisibleBrands = vi.fn();
 vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
 
 import { GET } from "./route";
+import { whereBusquedaContacto, whereNombreCompleto } from "@/lib/contacts/busqueda";
 
 const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
 const MARCA_CONTACTO = {
@@ -45,14 +46,15 @@ describe("GET /api/records/search — marcas", () => {
   it("contactos: la búsqueda (OR) intacta y la marca en AND", async () => {
     await GET(req("contact"));
     const where = contactFindMany.mock.calls[0][0].where;
-    expect(where.OR).toEqual(expect.arrayContaining([{ firstName: { contains: "ana", mode: "insensitive" } }]));
+    // #960: la búsqueda es la regla común (nombre completo, correo o teléfono).
+    expect(where.OR).toEqual(whereBusquedaContacto("ana")!.OR);
     expect(where.AND).toEqual([MARCA_CONTACTO]);
   });
 
   it("negocios: suyos o de un contacto de una marca visible", async () => {
     await GET(req("deal"));
     const where = dealFindMany.mock.calls[0][0].where;
-    expect(where.contact.OR).toBeDefined(); // la búsqueda por nombre del contacto sigue
+    expect(where.contact).toEqual(whereNombreCompleto("ana")); // la búsqueda por nombre del contacto sigue (#960)
     expect(where.AND).toEqual([{ OR: [{ assignedToId: "u1" }, { contact: MARCA_CONTACTO }] }]);
   });
 

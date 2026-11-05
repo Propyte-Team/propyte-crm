@@ -6,6 +6,7 @@ import { getServerSession } from "@/lib/auth/session";
 import { findMatchingDevelopments } from "@/lib/bot/hub-catalog";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { contactBrandVisibilityWhere, dealBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { whereBusquedaContacto, whereNombreCompleto } from "@/lib/contacts/busqueda";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +28,8 @@ export async function GET(req: NextRequest) {
       where: {
         deletedAt: null,
         mergedIntoId: null,
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { phone: { contains: q } },
-          { email: { contains: q, mode: "insensitive" } },
-        ],
+        // #960: nombre completo (cada palabra en nombre o apellido), correo o teléfono.
+        ...whereBusquedaContacto(q),
         ...(porMarca ? { AND: [porMarca] } : {}),
       },
       select: { id: true, firstName: true, lastName: true, phone: true },
@@ -44,12 +41,7 @@ export async function GET(req: NextRequest) {
     const rows = await prisma.deal.findMany({
       where: {
         deletedAt: null,
-        contact: {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-          ],
-        },
+        contact: whereNombreCompleto(q) ?? {}, // #960
         ...(porMarca ? { AND: [porMarca] } : {}),
       },
       select: { id: true, stage: true, estimatedValue: true, contact: { select: { firstName: true, lastName: true } } },

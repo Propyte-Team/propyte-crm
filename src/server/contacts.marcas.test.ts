@@ -26,6 +26,7 @@ const getVisibleBrands = vi.fn();
 vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
 
 import { getContacts, getContact, getContactAccessInfo } from "./contacts";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 const SOLO_PROPYTE = { brandIds: ["b-def"], includesDefault: true };
 const CON_YAXNAH = { brandIds: ["b-def", "b-yax"], includesDefault: true };
@@ -66,7 +67,7 @@ describe("getContacts", () => {
     const where = contactFindMany.mock.calls[0][0].where;
     expect(where.AND).toHaveLength(2);
     expect(where.AND[0]).toEqual(marcaDe("ger-1"));
-    expect(where.AND[1].OR).toEqual(expect.arrayContaining([{ firstName: { contains: "ana", mode: "insensitive" } }]));
+    expect(where.AND[1]).toEqual(whereBusquedaContacto("ana")); // #960: la regla común de búsqueda
   });
 
   it("DIRECTOR (acceso total por rol) también se recorta por marca", async () => {

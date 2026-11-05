@@ -12,6 +12,7 @@ import { Prisma } from "@prisma/client";
 import { dispatchWebhook } from "@/lib/webhooks/dispatcher";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import { datosDeArchivado } from "@/lib/contacts/archivar";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 import { CONTACT_TYPE_ORDER, CONTACT_TYPE_SIN_TIPO, LEAD_SOURCE_ORDER, tiposEquivalentes } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import {
@@ -167,17 +168,9 @@ export async function getContacts(filters: ContactFilters = {}) {
   const filtroMarca = await loadBrandFilter(filters.brandId, visible);
   if (filtroMarca.kind === "brand") and.push(contactBrandFilterWhere(filtroMarca.filter));
 
-  // Búsqueda por nombre, email o teléfono
-  if (filters.search) {
-    and.push({
-      OR: [
-        { firstName: { contains: filters.search, mode: "insensitive" } },
-        { lastName: { contains: filters.search, mode: "insensitive" } },
-        { email: { contains: filters.search, mode: "insensitive" } },
-        { phone: { contains: filters.search } },
-      ],
-    });
-  }
+  // Búsqueda por nombre completo, email o teléfono (#960: misma regla que /api/contacts).
+  const porTexto = whereBusquedaContacto(filters.search);
+  if (porTexto) and.push(porTexto);
   if (filters.etiqueta) and.push({ tags: { has: filters.etiqueta } }); // #958
   if (and.length > 0) where.AND = and;
 

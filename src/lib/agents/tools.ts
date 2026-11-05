@@ -5,6 +5,7 @@ import prisma from "@/lib/db";
 import { avisarAsignacion } from "@/lib/notificaciones/avisar-asignacion";
 import type { User } from "@prisma/client";
 import { normalizePhoneE164 } from "@/lib/phone";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 export interface AgentTool {
   name: string;
@@ -71,12 +72,8 @@ export const AGENT_TOOLS: AgentTool[] = [
         where: {
           deletedAt: null,
           mergedIntoId: null,
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-            { phone: { contains: q.replace(/\D/g, "") || q } },
-            { email: { contains: q, mode: "insensitive" } },
-          ],
+          // #960: nombre completo, teléfono (solo dígitos) o correo.
+          ...(whereBusquedaContacto(q, { telefono: "solo_digitos" }) ?? {}),
         },
         select: {
           id: true, firstName: true, lastName: true, phone: true, email: true, score: true,

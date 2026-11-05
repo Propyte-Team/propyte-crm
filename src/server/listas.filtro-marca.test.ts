@@ -32,6 +32,7 @@ vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[])
 
 import { getContacts } from "./contacts";
 import { getDealsByStage } from "./deals";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 const YAXNAH = { id: "b-yax", isDefault: false };
 const PROPYTE_Y_YAXNAH = { brandIds: ["b-def", "b-yax"], includesDefault: true };
@@ -78,7 +79,7 @@ describe("getContacts({ brandId })", () => {
     const and = contactFindMany.mock.calls[0][0].where.AND;
     expect(and).toHaveLength(3);
     expect(and[1]).toEqual({ brands: { some: { brandId: "b-yax" } } });
-    expect(and[2].OR).toEqual(expect.arrayContaining([{ firstName: { contains: "ana", mode: "insensitive" } }]));
+    expect(and[2]).toEqual(whereBusquedaContacto("ana")); // #960: la regla común de búsqueda
   });
 
   it("trae las marcas del contacto para el badge", async () => {
