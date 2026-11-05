@@ -1568,6 +1568,73 @@ model ContactTemperatura {
   @@schema("propyte_crm")
 }
 
+// #988 — Copilot «Mi día»: cadencia de nuevos (15 días, PDF de Luis). Tablas, disparador de
+// inscripción y plantillas en prisma/migrations-manual/2026-11-05-copilot-mi-dia.sql. Reglas en
+// src/lib/copilot/cadencia-nuevos.ts. Sin relations de Prisma, como contact_temperaturas.
+model CopilotPlantilla {
+  id          String   @id @default(uuid())
+  codigo      String // WA1, CORREO1, SMS_C2, BUZON1, LINEA_VALOR, CIFRA…
+  idioma      String // ES | EN
+  variante    String   @default("") // TRACCION/METODO, FIDEICOMISO/SEGURIDAD, A–D, PDC/CANCUN/QROO
+  canal       String // WHATSAPP | SMS | CORREO | BUZON | DATO
+  nombre      String
+  asunto      String?
+  cuerpo      String
+  orden       Int      @default(0)
+  updatedAt   DateTime @default(now())
+  updatedById String?
+
+  @@unique([codigo, idioma, variante])
+  @@map("copilot_plantillas")
+  @@schema("propyte_crm")
+}
+
+model CopilotCadencia {
+  id               String    @id @default(uuid())
+  contactId        String
+  tipo             String // NUEVOS | BASE_DE_DATOS
+  estado           String    @default("ACTIVA") // ACTIVA | TERMINADA (una ACTIVA por contacto: índice parcial)
+  motivoFin        String? // RESPONDIO | SALIO_DEL_ESTADO | YA_NO_APLICA | SIN_RESPUESTA
+  inicio           DateTime
+  diaInicio        DateTime  @db.Date // día 1, fecha civil de Cancún
+  horaEntrada      Int // 0–23, Cancún: decide la franja de la L1
+  modoSms          String? // EE. UU./Canadá: COMPLEMENTARIO | ROBUSTO (se decide el día 4)
+  diaMaterializado Int       @default(0) // hasta qué día ya se crearon los toques
+  primerIntentoAt  DateTime?
+  respuestaAt      DateTime?
+  finAt            DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([contactId])
+  @@index([estado])
+  @@map("copilot_cadencias")
+  @@schema("propyte_crm")
+}
+
+model CopilotToque {
+  id             String    @id @default(uuid())
+  cadenciaId     String
+  contactId      String
+  dia            Int
+  fecha          DateTime  @db.Date
+  codigo         String // L1…L7, WA1…WA5, CORREO1…CORREO5, SMS1…SMS4, BUZON1, BUZON2
+  canal          String // LLAMADA | WHATSAPP | SMS | CORREO | BUZON
+  orden          Int
+  plantilla      String?
+  cuando         String
+  variante       String?
+  resultado      String? // NULL = pendiente
+  resultadoAt    DateTime?
+  resultadoPorId String?
+  avisoVencidaAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([cadenciaId, codigo])
+  @@index([contactId])
+  @@map("copilot_toques")
+  @@schema("propyte_crm")
+}
+
 model ContactScore {
   contactId      String   @id
   score          Int?

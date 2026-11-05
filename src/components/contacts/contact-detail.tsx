@@ -55,6 +55,7 @@ import { NEGOCIO_ANTERIOR_LABEL, esEtapaOperacion, etiquetaEtapa } from "@/lib/o
 import { etiquetaEstado } from "@/lib/estados";
 import { ScoreMetric, type ScoreGuardado } from "./score-metric";
 import { ReclutamientoCard } from "./reclutamiento-card";
+import { CadenciaDelContacto } from "@/components/copilot/cadencia-del-contacto";
 import type { CandidatoDeContacto } from "@/server/reclutamiento";
 import {
   CONTACT_STATUS_LABELS,
@@ -580,6 +581,8 @@ export function ContactDetail({ contact, userRole, fieldAccess = {}, currentUser
 
         {/* Columna derecha — timeline unificada + notas */}
         <div className="space-y-5 lg:col-span-7">
+          {/* #988: cadencia de nuevos de Copilot (solo si el contacto tiene o tuvo una). */}
+          <CadenciaDelContacto contactId={contact.id} userId={currentUserId ?? ""} onCambio={() => router.refresh()} />
           <div className="crm-card">
             <ActivityLog
               contactId={contact.id}

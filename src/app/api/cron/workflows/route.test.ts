@@ -12,6 +12,7 @@ const limpiarOtpVencidos = vi.fn();
 const sincronizarCorreoEntranteTick = vi.fn();
 const recalcularScores = vi.fn();
 const recalcularTemperaturas = vi.fn();
+const tickCadencias = vi.fn();
 const completarPerfilDesdeHub = vi.fn();
 const paymentFindMany = vi.fn();
 const paymentUpdate = vi.fn();
@@ -68,6 +69,9 @@ vi.mock("@/lib/scoring/recalcular", () => ({
 vi.mock("@/lib/copilot/temperatura-recalcular", () => ({
   recalcularTemperaturas: (...a: unknown[]) => recalcularTemperaturas(...a),
 }));
+vi.mock("@/lib/copilot/cadencia-servicio", () => ({
+  tickCadencias: (...a: unknown[]) => tickCadencias(...a),
+}));
 vi.mock("@/lib/intake/perfil-desde-hub", () => ({
   completarPerfilDesdeHub: (...a: unknown[]) => completarPerfilDesdeHub(...a),
 }));
@@ -109,6 +113,8 @@ beforeEach(() => {
   recalcularScores.mockResolvedValue({ calculados: 0, activo: false });
   recalcularTemperaturas.mockReset();
   recalcularTemperaturas.mockResolvedValue({ calculados: 0, cambiados: 0 });
+  tickCadencias.mockReset();
+  tickCadencias.mockResolvedValue({ cadencias: 0, toques: 0 });
   completarPerfilDesdeHub.mockResolvedValue({ revisados: 0, completados: 0, campos: 0 });
 });
 
@@ -436,5 +442,37 @@ describe("GET /api/cron/workflows — parcialidades vencidas", () => {
 
     expect(r.status).toBe(200);
     expect(body.overduePayments).toBe(0);
+  });
+});
+
+describe("etapa cadencias (#988)", () => {
+  it("corre en cada tick, después de la temperatura", async () => {
+    const orden: string[] = [];
+    recalcularTemperaturas.mockImplementation(async () => (orden.push("temperatura"), { calculados: 0, cambiados: 0 }));
+    tickCadencias.mockImplementation(async () => (orden.push("cadencias"), { cadencias: 2, toques: 9 }));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect(orden).toEqual(["temperatura", "cadencias"]);
+    expect((await res.json()).cadencias).toEqual({ cadencias: 2, toques: 9 });
+  });
+
+  it("con las tablas de Copilot sin migrar (P2021, o 42P01 en una consulta cruda) no tumba el tick", async () => {
+    tickCadencias.mockRejectedValueOnce(Object.assign(new Error("tabla no existe"), { code: "P2021" }));
+    let res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).cadencias).toEqual({ cadencias: 0, sinMigrar: true });
+
+    tickCadencias.mockRejectedValueOnce(
+      Object.assign(new Error('relation "propyte_crm.copilot_cadencias" does not exist'), { code: "P2010", meta: { code: "42P01" } }),
+    );
+    res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(200);
+  });
+
+  it("cualquier otro error sale con su nombre y el tick responde 500", async () => {
+    tickCadencias.mockRejectedValue(new Error("conexión caída"));
+    const res = await GET(pedir({ "x-cron-secret": SECRET }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).fallos.map((f: { etapa: string }) => f.etapa)).toEqual(["cadencias"]);
   });
 });
