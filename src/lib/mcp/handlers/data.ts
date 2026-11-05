@@ -2,6 +2,7 @@
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { tiposEquivalentes } from "@/lib/constants";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,14 +38,9 @@ export async function searchContacts(query: unknown) {
   }
   if (d.assignedTo)  where.assignedToId = d.assignedTo;
 
-  if (d.search) {
-    where.OR = [
-      { firstName: { contains: d.search, mode: "insensitive" } },
-      { lastName:  { contains: d.search, mode: "insensitive" } },
-      { email:     { contains: d.search, mode: "insensitive" } },
-      { phone:     { contains: d.search.replace(/\D/g, "") || d.search } },
-    ];
-  }
+  // #960: nombre completo (cada palabra en nombre o apellido), correo o teléfono (solo dígitos).
+  const porTexto = whereBusquedaContacto(d.search, { telefono: "solo_digitos" });
+  if (porTexto) where.OR = porTexto.OR;
 
   const [data, total] = await Promise.all([
     prisma.contact.findMany({

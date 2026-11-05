@@ -5,6 +5,7 @@ import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
 import type { Prisma } from "@prisma/client";
 import { inboxScopeWhere } from "@/lib/inbox/scope";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { connectorBrandLabel } from "@/lib/inbox/connector-label";
 import { loadBrandFilter } from "@/lib/brands/view-context";
@@ -53,15 +54,9 @@ export async function GET(req: NextRequest) {
     where.unreadCount = { gt: 0 };
   }
 
-  if (search) {
-    contactConds.push({
-      OR: [
-        { firstName: { contains: search, mode: "insensitive" } },
-        { lastName: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search } },
-      ],
-    });
-  }
+  // #960: nombre completo (cada palabra en nombre o apellido) o teléfono; el Inbox no busca correo.
+  const porTexto = whereBusquedaContacto(search, { email: false });
+  if (porTexto) contactConds.push(porTexto);
 
   if (contactConds.length > 0) where.contact = { AND: contactConds };
 

@@ -14,6 +14,7 @@ const getVisibleBrands = vi.fn();
 vi.mock("@/lib/brands/user-access", () => ({ getVisibleBrands: (...a: unknown[]) => getVisibleBrands(...a) }));
 
 import { GET } from "./route";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 function req(qs = "") {
   return { nextUrl: new URL(`http://x/api/conversations${qs}`) } as never;
@@ -47,12 +48,8 @@ describe("GET /api/conversations — aislamiento", () => {
     const contact = whereUsed().contact;
     expect(contact.AND).toHaveLength(2);
     expect(contact.AND[0]).toEqual({ OR: [{ assignedToId: "ase-1" }, { assignedToId: null }] });
-    expect(contact.AND[1].OR).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ firstName: expect.anything() }),
-        expect.objectContaining({ phone: expect.anything() }),
-      ])
-    );
+    // #960: nombre completo o teléfono, con la regla común (el Inbox no busca correo).
+    expect(contact.AND[1]).toEqual(whereBusquedaContacto("ana", { email: false }));
   });
 
   it("gerente con search: solo la condición de búsqueda, sin scope", async () => {
@@ -190,7 +187,7 @@ describe("GET /api/conversations — marcas (AND sobre el alcance por rol)", () 
         },
       ],
     });
-    expect(and[1].OR).toEqual(expect.arrayContaining([expect.objectContaining({ firstName: expect.anything() })]));
+    expect(and[1]).toEqual(whereBusquedaContacto("ana", { email: false })); // #960
   });
 
   it("la marca nunca amplía: un asesor CON Yaxnáh no ve el hilo de Yaxnáh de otro asesor", async () => {

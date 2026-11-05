@@ -18,6 +18,7 @@ import prisma from "@/lib/db";
 import { CONTACT_TYPE_BROKER } from "@/lib/constants";
 import { getVisibleBrands } from "@/lib/brands/user-access";
 import { contactBrandVisibilityWhere } from "@/lib/brands/visibility";
+import { whereNombreCompleto } from "./busqueda";
 import {
   FULL_ACCESS_ROLES,
   OWN_ACCESS_ROLES,
@@ -42,17 +43,6 @@ export function puedeVerCatalogoBrokers(role: string): boolean {
   return ROLES_CON_CATALOGO.has(role);
 }
 
-/** Palabras de la búsqueda: cada una debe aparecer en el nombre o en el apellido. */
-function whereBusqueda(search: string | undefined): Prisma.ContactWhereInput[] {
-  const palabras = (search ?? "").trim().split(/\s+/).filter(Boolean).slice(0, 5);
-  return palabras.map((p) => ({
-    OR: [
-      { firstName: { contains: p, mode: "insensitive" } },
-      { lastName: { contains: p, mode: "insensitive" } },
-    ],
-  }));
-}
-
 /** Brokers elegibles para este usuario: vivos, de tipo Broker y de una marca que ve. */
 export async function brokerCatalogWhere(
   user: { id: string; role: string },
@@ -61,7 +51,9 @@ export async function brokerCatalogWhere(
   const and: Prisma.ContactWhereInput[] = [];
   const porMarca = contactBrandVisibilityWhere(user, await getVisibleBrands(user));
   if (porMarca) and.push(porMarca);
-  and.push(...whereBusqueda(opts.search));
+  // Cada palabra en el nombre o el apellido: la misma regla de todos los buscadores (#960).
+  const porNombre = whereNombreCompleto(opts.search);
+  if (porNombre) and.push(...(porNombre.AND as Prisma.ContactWhereInput[]));
   return {
     deletedAt: null,
     contactType: CONTACT_TYPE_BROKER,

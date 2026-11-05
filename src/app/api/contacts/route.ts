@@ -50,6 +50,7 @@ import {
 } from "@/lib/contacts/alcance-lista";
 import { getContactAccessInfo } from "@/server/contacts";
 import { datosDeArchivado } from "@/lib/contacts/archivar";
+import { whereBusquedaContacto } from "@/lib/contacts/busqueda";
 
 // Los sets de roles y el alcance de la lista viven en lib/contacts/alcance-lista.ts (#919):
 // el filtro «Asesores» usa la misma regla.
@@ -250,16 +251,11 @@ export async function GET(request: NextRequest) {
     }
     Object.assign(where, alcance);
 
-    // Filtro de búsqueda por nombre, email o teléfono (insensible a mayúsculas)
-    if (search) {
-      const searchCondition: Prisma.ContactWhereInput = {
-        OR: [
-          { firstName: { contains: search, mode: "insensitive" } },
-          { lastName: { contains: search, mode: "insensitive" } },
-          { email: { contains: search, mode: "insensitive" } },
-          { phone: { contains: search } },
-        ],
-      };
+    // Filtro de búsqueda por nombre completo, email o teléfono (insensible a mayúsculas).
+    // #960: cada palabra en el nombre o el apellido («Camilo Aguilar» encuentra a «Camilo René
+    // Aguilar Pino»). Es la ruta de la lista y de TODOS los buscadores de contacto de la app.
+    const searchCondition = whereBusquedaContacto(search);
+    if (searchCondition) {
       // Combinar con filtros existentes usando AND
       if (where.OR) {
         where.AND = [{ OR: where.OR }, searchCondition];
