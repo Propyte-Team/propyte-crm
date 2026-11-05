@@ -377,6 +377,201 @@ export function setMeta(
   return { ...draft, ...patch };
 }
 
+// ─── Edición en el lienzo de /journey (J3) ────────────────────────────────────
+// Posiciones del árbol («aquí, en esta lista, en este lugar») y esperas. Todo puro.
+
+/** Una lista de pasos del árbol: la principal, una rama de decisión o su «si no». */
+export type ListaRef =
+  | { tipo: "raiz" }
+  | { tipo: "rama"; branchId: string }
+  | { tipo: "else"; nodeId: string };
+
+/** Lugar donde entra un paso nuevo: `indice` = cuántos pasos quedan antes de él en esa lista. */
+export interface PuntoDeInsercion { lista: ListaRef; indice: number }
+
+/** Lo mínimo de una arista del lienzo que hace falta para saber dónde insertar. */
+export interface AristaDeLienzo { source: string; target: string; data?: Record<string, unknown> }
+
+const ESPERA = "~espera";
+export const ID_ESPERA_DISPARADOR = "trigger~espera";
+/** Id del nodo de espera que va antes de la acción `nodeId`. */
+export const idEsperaDe = (nodeId: string) => `${nodeId}${ESPERA}`;
+export const esIdDeEspera = (id: string) => id.endsWith(ESPERA);
+/** `a1~espera` → `a1`; `trigger~espera` → `trigger`. */
+export const baseDeEspera = (id: string) => (esIdDeEspera(id) ? id.slice(0, -ESPERA.length) : id);
+
+function enLista(draft: RuleDraft, ref: ListaRef, fn: (l: NodeDraft[]) => NodeDraft[]): RuleDraft {
+  if (ref.tipo === "raiz") return { ...draft, actions: fn(draft.actions) };
+  const walk = (nodes: NodeDraft[]): NodeDraft[] =>
+    nodes.map((n) => {
+      if (!isDecisionDraft(n)) return n;
+      if (ref.tipo === "else" && n.nodeId === ref.nodeId) return n.else ? { ...n, else: fn(n.else) } : n;
+      return {
+        ...n,
+        branches: n.branches.map((b) =>
+          ref.tipo === "rama" && b.branchId === ref.branchId ? { ...b, steps: fn(b.steps) } : { ...b, steps: walk(b.steps) },
+        ),
+        ...(n.else ? { else: walk(n.else) } : {}),
+      };
+    });
+  return { ...draft, actions: walk(draft.actions) };
+}
+
+function buscarNodo(nodes: NodeDraft[], id: string): NodeDraft | undefined {
+  for (const n of nodes) {
+    if (n.nodeId === id) return n;
+    if (isDecisionDraft(n)) {
+      for (const b of n.branches) { const f = buscarNodo(b.steps, id); if (f) return f; }
+      if (n.else) { const f = buscarNodo(n.else, id); if (f) return f; }
+    }
+  }
+  return undefined;
+}
+
+/** Dónde está el nodo `nodeId` (su lista y su lugar en ella), o null. */
+export function ubicarNodo(draft: RuleDraft, nodeId: string): PuntoDeInsercion | null {
+  const buscar = (nodes: NodeDraft[], lista: ListaRef): PuntoDeInsercion | null => {
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n.nodeId === nodeId) return { lista, indice: i };
+      if (isDecisionDraft(n)) {
+        for (const b of n.branches) {
+          const r = buscar(b.steps, { tipo: "rama", branchId: b.branchId });
+          if (r) return r;
+        }
+        if (n.else) {
+          const r = buscar(n.else, { tipo: "else", nodeId: n.nodeId });
+          if (r) return r;
+        }
+      }
+    }
+    return null;
+  };
+  return buscar(draft.actions, { tipo: "raiz" });
+}
+
+/** Mete `nodo` en ese lugar (el lugar se acota a la lista) y reasigna los ids. */
+export function insertarNodoEn(draft: RuleDraft, punto: PuntoDeInsercion, nodo: NodeDraft): RuleDraft {
+  const out = enLista(draft, punto.lista, (l) => {
+    const i = Math.max(0, Math.min(punto.indice, l.length));
+    const next = [...l];
+    next.splice(i, 0, nodo);
+    return next;
+  });
+  return { ...out, actions: rebuildBranchIds(out.actions) };
+}
+
+export function insertActionAt(draft: RuleDraft, punto: PuntoDeInsercion, type: string): RuleDraft {
+  return insertarNodoEn(draft, punto, { nodeId: "", type, config: {} });
+}
+
+export function insertDecisionAt(draft: RuleDraft, punto: PuntoDeInsercion): RuleDraft {
+  const dec: DecisionNodeDraft = { nodeId: "", kind: "decision", branches: [{ branchId: "", conditions: {} as Conditions, steps: [] }] };
+  return insertarNodoEn(draft, punto, dec);
+}
+
+/** Id que tendrá el paso recién metido en `punto` (para dejarlo seleccionado). */
+export function idDeNodoInsertado(punto: PuntoDeInsercion): string {
+  if (punto.lista.tipo === "raiz") return `a${punto.indice}`;
+  if (punto.lista.tipo === "rama") return `${punto.lista.branchId}.${punto.indice}`;
+  return `${punto.lista.nodeId}.else.${punto.indice}`;
+}
+
+function listaDeBranchId(bid: string): ListaRef {
+  return bid.endsWith(".else") ? { tipo: "else", nodeId: bid.slice(0, -".else".length) } : { tipo: "rama", branchId: bid };
+}
+
+/**
+ * Lugar del árbol al que corresponde una línea del lienzo de edición (`draftToReadFlow` con `edicion`),
+ * o null si en esa línea no se puede insertar (la que une una espera con su acción, o la que entra al «Si»).
+ *  · sale de una decisión con rama → al principio de esa rama (o de su «si no»);
+ *  · sale de un paso → justo después de él, en su misma lista;
+ *  · sale del disparador / del «Si» → justo antes del paso al que llega (o al final si no hay pasos).
+ */
+export function puntoDeArista(draft: RuleDraft, e: AristaDeLienzo): PuntoDeInsercion | null {
+  if (e.target === "condition" || e.target === ID_ESPERA_DISPARADOR) return null;
+  if (esIdDeEspera(e.source) && baseDeEspera(e.source) === e.target) return null;
+  const idOrigen = baseDeEspera(e.source);
+  const nodoOrigen = buscarNodo(draft.actions, idOrigen);
+  const bid = e.data?.branchId;
+  if (nodoOrigen && isDecisionDraft(nodoOrigen) && typeof bid === "string") return { lista: listaDeBranchId(bid), indice: 0 };
+  if (nodoOrigen && !isDecisionDraft(nodoOrigen)) {
+    const u = ubicarNodo(draft, idOrigen);
+    return u ? { lista: u.lista, indice: u.indice + 1 } : null;
+  }
+  // Origen = disparador o «Si»: antes del paso destino, o al final de una regla sin pasos.
+  if (e.target === "fin") return { lista: { tipo: "raiz" }, indice: draft.actions.length };
+  return ubicarNodo(draft, baseDeEspera(e.target));
+}
+
+/** A qué paso se le guarda una espera: el disparador (`"trigger"`) o una acción (su `nodeId`). */
+export type ObjetivoDeEspera = string;
+
+export type EsperaDeArista = { ok: true; objetivo: ObjetivoDeEspera } | { ok: false; motivo: string };
+
+/**
+ * La espera no es un nodo guardado: es `delayMinutes` del paso que viene después. Desde el disparador
+ * (o su espera) se guarda en el disparador; si no, en la acción a la que llega la línea.
+ */
+export function esperaDeArista(draft: RuleDraft, e: AristaDeLienzo): EsperaDeArista {
+  if (e.source === "trigger" || e.source === ID_ESPERA_DISPARADOR) return { ok: true, objetivo: "trigger" };
+  const origen = buscarNodo(draft.actions, e.source);
+  const bid = e.data?.branchId;
+  if (origen && isDecisionDraft(origen) && typeof bid === "string") {
+    // Línea de una rama: solo vale si llega al primer paso DE esa rama (si la rama está vacía, llega al
+    // paso que sigue a la decisión y una espera ahí afectaría a todos los caminos).
+    const u = ubicarNodo(draft, baseDeEspera(e.target));
+    const ref = listaDeBranchId(bid);
+    const mismaLista = !!u && u.lista.tipo === ref.tipo
+      && (ref.tipo === "rama" ? (u.lista as typeof ref).branchId === ref.branchId : ref.tipo === "else" ? (u.lista as typeof ref).nodeId === ref.nodeId : true);
+    if (!mismaLista) return { ok: false, motivo: "Esta rama está vacía. Agrega primero una acción aquí para poder esperar antes de ella." };
+  }
+  const nodo = buscarNodo(draft.actions, baseDeEspera(e.target));
+  if (nodo && !isDecisionDraft(nodo)) return { ok: true, objetivo: nodo.nodeId };
+  return { ok: false, motivo: "La espera se guarda en la acción que viene después. Agrega primero una acción aquí." };
+}
+
+/** Minutos de espera del disparador o de una acción (0 = sin espera). */
+export function minutosDeEspera(draft: RuleDraft, objetivo: ObjetivoDeEspera): number {
+  if (objetivo === "trigger") {
+    const d = Number((draft.triggerConfig as Record<string, unknown> | undefined)?.delayMinutes ?? 0);
+    return Number.isFinite(d) && d > 0 ? d : 0;
+  }
+  const n = buscarNodo(draft.actions, objetivo);
+  if (!n || isDecisionDraft(n)) return 0;
+  const m = n.delayMinutes ?? (typeof n.config?.delayMinutes === "number" ? (n.config.delayMinutes as number) : 0);
+  return m > 0 ? m : 0;
+}
+
+/** Pone (minutos > 0) o quita (0) la espera. La de una acción se guarda en `delayMinutes` de la acción. */
+export function setEspera(draft: RuleDraft, objetivo: ObjetivoDeEspera, minutos: number): RuleDraft {
+  const m = Number.isFinite(minutos) ? Math.max(0, Math.round(minutos)) : 0;
+  if (objetivo === "trigger") {
+    const { delayMinutes: _viejo, ...resto } = (draft.triggerConfig ?? {}) as Record<string, unknown>;
+    return { ...draft, triggerConfig: m > 0 ? { ...resto, delayMinutes: m } : resto };
+  }
+  return {
+    ...draft,
+    actions: mapNodeById(draft.actions, objetivo, (n) => {
+      if (isDecisionDraft(n)) return n;
+      // Una sola fuente de verdad: si la espera vivía en config (como la guarda el seed), se mueve.
+      const { delayMinutes: _enConfig, ...config } = n.config ?? {};
+      const { delayMinutes: _arriba, ...sinEspera } = n;
+      return { ...sinEspera, config, ...(m > 0 ? { delayMinutes: m } : {}) };
+    }),
+  };
+}
+
+/** Al cambiar de disparador desde el panel se conserva la espera que ya tenía (no es parte del disparador elegido). */
+export function conservarEsperaDeDisparador(
+  actual: Record<string, unknown> | undefined,
+  nuevo: Record<string, unknown>,
+): Record<string, unknown> {
+  const d = actual?.delayMinutes;
+  if (typeof d === "number" && d > 0 && nuevo.delayMinutes === undefined) return { ...nuevo, delayMinutes: d };
+  return nuevo;
+}
+
 /**
  * Draft mínimo VÁLIDO para una regla nueva (E4 #6). Antes nacía con nombre vacío (la API exige
  * >= 3 caracteres), trigger EVENT sin eventType y CHANGE_STAGE sin etapa, así que el primer
