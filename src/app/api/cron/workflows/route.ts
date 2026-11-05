@@ -11,6 +11,7 @@ import { reasignarSinPrimerContacto } from "@/lib/workflows/sla-reasignacion";
 import { runEnrollments, runInactivityRules } from "@/lib/workflows/scheduler";
 import { rechazoCron } from "@/lib/cron/auth";
 import { limpiarOtpVencidos } from "@/lib/auth/otp-limpieza";
+import { esTablaSinMigrar as sinTablasCopilot } from "@/lib/copilot/sin-migrar";
 
 // CAPI dispatcher con guarda (tablas C123 pueden no estar migradas aún)
 async function reintentarLeadsSafe() {
@@ -44,6 +45,18 @@ async function recalcularTemperaturasSafe() {
     return await recalcularTemperaturas(200);
   } catch (err) {
     if (esTablaSinMigrar(err)) return { calculados: 0, sinMigrar: true };
+    throw err;
+  }
+}
+
+// #988: «Mi día» (cadencia de nuevos). Solo se perdona la migración sin correr (P2021 o 42P01 en
+// las consultas crudas); cualquier otro error sube con el nombre de la etapa.
+async function tickCadenciasSafe() {
+  try {
+    const { tickCadencias } = await import("@/lib/copilot/cadencia-servicio");
+    return await tickCadencias();
+  } catch (err) {
+    if (sinTablasCopilot(err)) return { cadencias: 0, sinMigrar: true };
     throw err;
   }
 }
@@ -167,6 +180,10 @@ const ETAPAS: ReadonlyArray<{ nombre: string; correr: () => Promise<unknown> }> 
   { nombre: "leadScoring", correr: () => recalcularScoresSafe() },
   // #973: no alimenta a ninguna etapa de este tick (Copilot la leerá para ordenar «Mi día»).
   { nombre: "temperatura", correr: () => recalcularTemperaturasSafe() },
+  // #988: después de la temperatura, que ordena «Mi día». Crea los toques del día, detecta
+  // respuestas (→ Contactado), cierra las cadencias que pasaron su último día (→ Perdido) y avisa
+  // al gerente de las tareas con 24 h sin marcar.
+  { nombre: "cadencias", correr: () => tickCadenciasSafe() },
   // #699 (defecto 2): retira los códigos de un solo uso que ya vencieron. Va al final por
   // lo mismo: no alimenta a nadie. Y NO lleva `try` propio —a diferencia de las etapas con
   // tablas que pueden no estar migradas— porque `users` existe desde el init: si esto

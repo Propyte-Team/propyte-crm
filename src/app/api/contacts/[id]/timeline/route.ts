@@ -57,6 +57,8 @@ const SOURCE_LABELS: Record<string, string> = {
   copilot_temperatura: "Temperatura calculada (Copilot)",
   // #984: el llenado de los contactos de Empleo que se habían quedado en Nuevo.
   empleo_a_rh_984: "Derivado a RH automático (#984)",
+  // #988: la cadencia de nuevos de Copilot (Nuevo → Sin respuesta → Contactado o Perdido).
+  copilot_cadencia: "Cadencia de nuevos (Copilot)",
 };
 
 /** «nueva_fuente» → «Nueva fuente»: una fuente sin etiqueta nunca sale como identificador. */
