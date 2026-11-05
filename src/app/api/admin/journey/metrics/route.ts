@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
+import { ROLES_EMBUDO } from "@/lib/journey/embudo";
 import { cutoffFromWindow, parseMetricsQuery } from "./route-helpers";
 
-const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
+// Leer métricas: gerencia, dirección y administración (ROLES_EMBUDO). Escribir reglas sigue siendo de ADMIN/DIRECTOR.
+const MANAGE_ROLES = ROLES_EMBUDO;
 
 export async function GET(req: Request) {
   const session = await getServerSession();
