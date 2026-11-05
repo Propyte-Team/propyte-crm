@@ -100,6 +100,8 @@ interface ContactsListProps {
   userRole: string;
   /** #958: ?etiqueta= de la URL. Se ve como un chip que se puede quitar. */
   etiquetaInicial?: string | null;
+  /** ?estado= de la URL (estado del contacto). */
+  estadoInicial?: string | null;
 }
 
 // Etiquetas de fuentes: única fuente de verdad en constants.ts (AUD-20260710-02 —
@@ -143,6 +145,7 @@ export function ContactsList({
   initialTotalPages,
   userRole,
   etiquetaInicial = null,
+  estadoInicial = null,
 }: ContactsListProps) {
   const router = useRouter();
   const [contacts, setContacts] = useState<ContactData[]>(initialContacts);
@@ -153,7 +156,7 @@ export function ContactsList({
   const [filterSource, setFilterSource] = useState("ALL");
   const [filterTemp, setFilterTemp] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
-  const [filterStatus, setFilterStatus] = useState("ALL");
+  const [filterStatus, setFilterStatus] = useState(estadoInicial ?? "ALL");
   const [lifecycleFilter, setLifecycleFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);

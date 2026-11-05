@@ -7,6 +7,7 @@ import { BrandViewProvider } from "@/components/brands/brand-view";
 import { getBrandViewContext } from "@/lib/brands/view-context";
 import { BRAND_FILTER_PARAM } from "@/lib/brands/filter";
 import { PARAM_ETIQUETA, etiquetaDelFiltro } from "@/lib/contacts/filtro-etiqueta";
+import { esEstado, ESTADO_SIN_ESTADO } from "@/lib/estados";
 
 export default async function ContactsPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -26,10 +27,15 @@ export default async function ContactsPage(props: {
   // #958: ?etiqueta= (los enlaces de las tareas abren la lista ya filtrada).
   const etiqueta = etiquetaDelFiltro(searchParams[PARAM_ETIQUETA]);
 
+  // ?estado= (el embudo del Journey enlaza aquí): solo un estado que existe o «Por clasificar».
+  const estadoCrudo = searchParams.estado;
+  const estadoUrl = typeof estadoCrudo === "string" ? estadoCrudo : undefined;
+  const estado = estadoUrl && (esEstado(estadoUrl) || estadoUrl === ESTADO_SIN_ESTADO) ? estadoUrl : null;
+
   // Obtener primera página de contactos para renderizado inicial
   let initialData;
   try {
-    initialData = await getContacts({ page: 1, pageSize: 20, brandId, etiqueta });
+    initialData = await getContacts({ page: 1, pageSize: 20, brandId, etiqueta, estado });
   } catch {
     initialData = { contacts: [], total: 0, page: 1, pageSize: 20, totalPages: 0 };
   }
@@ -47,6 +53,7 @@ export default async function ContactsPage(props: {
           initialTotalPages={initialData.totalPages}
           userRole={session.user.role}
           etiquetaInicial={etiqueta}
+          estadoInicial={estado}
         />
       </BrandViewProvider>
     </div>
