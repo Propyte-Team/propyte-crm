@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { ALTO_INICIAL, SANDBOX_CORREO, altoDelDocumento, documentoDelCorreo } from "./email-thread-model"
 
 interface ThreadMessage {
   messageId: string
@@ -53,23 +54,7 @@ export function EmailThread({ threadId }: { threadId: string }) {
             <span className="shrink-0">{format(new Date(m.date), "d MMM, HH:mm", { locale: es })}</span>
           </div>
           {m.bodyHtml ? (
-            // Auditoría 2026-09-10: segunda capa. El HTML ya viene saneado del servidor
-            // (lib/email/sanitize.ts, aplicado en getThreadMessages), pero se pinta dentro
-            // de un iframe con `sandbox` VACÍO — sin allow-scripts, sin allow-same-origin,
-            // sin allow-forms. Un sandbox así no ejecuta nada: ni `<script>`, ni
-            // `onerror`, ni `javascript:`. Si algún día alguien sirve HTML por otra ruta
-            // sin pasar por el saneador, esto sigue conteniéndolo.
-            //
-            // `srcDoc` y no `src`: el contenido va inline, no hay petición que interceptar.
-            // Altura fija porque con el sandbox vacío el documento de dentro no puede
-            // mandar su alto por postMessage — y el diseño ya acotaba a max-h-64.
-            <iframe
-              sandbox=""
-              srcDoc={`<!doctype html><meta charset="utf-8"><base target="_blank"><style>html,body{margin:0;padding:0;font:12px system-ui,-apple-system,sans-serif;color:#404040;overflow-wrap:break-word}img{max-width:100%;height:auto}a{color:inherit;text-decoration:underline}table{max-width:100%}</style>${m.bodyHtml}`}
-              title={`Cuerpo del correo: ${m.subject || "(sin asunto)"}`}
-              className="mt-1.5 h-64 w-full border-0 bg-white"
-              loading="lazy"
-            />
+            <CuerpoHtml html={m.bodyHtml} title={`Cuerpo del correo: ${m.subject || "(sin asunto)"}`} />
           ) : (
             <p className="mt-1.5 max-h-64 overflow-y-auto whitespace-pre-wrap text-[12px] text-[color:var(--text-secondary)]">
               {m.bodyText}
@@ -78,5 +63,39 @@ export function EmailThread({ threadId }: { threadId: string }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * Cuerpo HTML de un correo en un iframe que toma el alto de su contenido (#888), con tope.
+ *
+ * Tres capas (auditoría 2026-09-10 y #888, detalle en email-thread-model.ts):
+ *  1. El HTML ya viene saneado del servidor (lib/email/sanitize.ts, en getThreadMessages).
+ *  2. `sandbox="allow-same-origin"` sin `allow-scripts`: dentro no se ejecuta nada (ni `<script>`,
+ *     ni `onerror`, ni `javascript:`), sin formularios ni ventanas; el CRM solo puede LEER el
+ *     documento para medir su alto.
+ *  3. Una política de contenido dentro del documento que tampoco permite scripts ni formularios.
+ *
+ * `srcDoc` y no `src`: el contenido va inline, no hay petición que interceptar.
+ */
+function CuerpoHtml({ html, title }: { html: string; title: string }) {
+  const [alto, setAlto] = useState(ALTO_INICIAL)
+  return (
+    <iframe
+      sandbox={SANDBOX_CORREO}
+      srcDoc={documentoDelCorreo(html)}
+      title={title}
+      className="mt-1.5 w-full border-0 bg-white"
+      style={{ height: alto }}
+      loading="lazy"
+      onLoad={(e) => {
+        // El evento llega cuando ya cargaron las imágenes del correo, así que el alto es el final.
+        try {
+          setAlto(altoDelDocumento(e.currentTarget.contentDocument))
+        } catch {
+          setAlto(ALTO_INICIAL)
+        }
+      }}
+    />
   )
 }
