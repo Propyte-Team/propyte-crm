@@ -15,6 +15,7 @@ import { fillTemplate, contactTemplateVars } from "@/lib/templates/fill";
 import { canMarkSpam } from "@/lib/moderation/roles";
 import { AssignControl } from "./assign-control";
 import { notifyInboxUnreadChanged } from "@/lib/inbox/unread-event";
+import { telefonoParaMostrar } from "@/lib/contacts/sin-telefono";
 import { BrandBadges, BrandFilterSelect, useBrandFilterParam } from "@/components/brands/brand-view";
 
 interface ConversationListItem {
@@ -1036,7 +1037,10 @@ export function InboxView({ userId, userRole }: { userId: string; userRole: stri
             <p className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
               {thread.contact.firstName} {thread.contact.lastName}
             </p>
-            <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>{thread.contact.phone}</p>
+            {/* #834: sin teléfono guardado (solo WhatsApp, Instagram o Messenger) no queda en blanco. */}
+            <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+              {telefonoParaMostrar(thread.contact.phone, thread.channel)}
+            </p>
             {thread.contact.email && (
               <p className="truncate text-[12px]" style={{ color: "var(--text-secondary)" }}>{thread.contact.email}</p>
             )}
