@@ -21,6 +21,7 @@ import {
   contactBrandVisibilityWhere,
 } from "@/lib/brands/visibility";
 import { loadBrandFilter } from "@/lib/brands/view-context";
+import { whereEstado } from "@/lib/estados";
 import { contactBrandFilterWhere } from "@/lib/brands/filter";
 import {
   MAX_REFERIDOS_EN_FICHA,
@@ -79,6 +80,8 @@ interface ContactFilters {
   brandId?: string;
   /** #958: ?etiqueta= de la URL (ya normalizada con etiquetaDelFiltro). */
   etiqueta?: string | null;
+  /** ?estado= de la URL (estado nuevo del contacto, o «Por clasificar»). Un valor que no existe no filtra. */
+  estado?: string | null;
   page?: number;
   pageSize?: number;
 }
@@ -172,6 +175,8 @@ export async function getContacts(filters: ContactFilters = {}) {
   const porTexto = whereBusquedaContacto(filters.search);
   if (porTexto) and.push(porTexto);
   if (filters.etiqueta) and.push({ tags: { has: filters.etiqueta } }); // #958
+  const porEstado = whereEstado(filters.estado, []);
+  if (porEstado) and.push(porEstado as Prisma.ContactWhereInput);
   if (and.length > 0) where.AND = and;
 
   // Filtros específicos

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
 import { getServerSession } from "@/lib/auth/session";
+import { enLotes } from "@/lib/db/lotes";
 
 const MANAGE_ROLES = ["ADMIN", "DIRECTOR"];
 
@@ -12,8 +13,9 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [rules, plans, slaPolicies, queueStats, recentErrors, eventsPending, eventsDone24h] = await Promise.all([
-    prisma.automationRule.findMany({
+  // En lotes de 3 (#974): 7 consultas a la vez agotaban el pooler y el Journey decía «Sin reglas».
+  const [rules, plans, slaPolicies, queueStats, recentErrors, eventsPending, eventsDone24h] = await enLotes([
+    () => prisma.automationRule.findMany({
       where: { deletedAt: null },
       orderBy: { priority: "asc" },
       select: {
@@ -22,23 +24,23 @@ export async function GET() {
         lastFiredAt: true,
       },
     }),
-    prisma.actionPlan.findMany({
+    () => prisma.actionPlan.findMany({
       where: { deletedAt: null },
       orderBy: { name: "asc" },
       include: { steps: { orderBy: { order: "asc" } }, _count: { select: { enrollments: true } } },
     }),
-    prisma.slaPolicy.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { timers: true } } } }),
-    prisma.actionQueue.groupBy({ by: ["status"], _count: { id: true } }).catch(() => []),
+    () => prisma.slaPolicy.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { timers: true } } } }),
+    () => prisma.actionQueue.groupBy({ by: ["status"], _count: { id: true } }).catch(() => []),
     // Observabilidad (T4.1): acciones fallidas recientes + throughput de eventos.
-    prisma.actionQueue.findMany({
+    () => prisma.actionQueue.findMany({
       where: { status: "FAILED" },
       orderBy: { finishedAt: "desc" },
       take: 10,
       select: { id: true, actionType: true, entityType: true, entityId: true, attempts: true, maxAttempts: true, error: true, finishedAt: true },
     }).catch(() => []),
-    prisma.workflowEvent.count({ where: { processedAt: null } }).catch(() => 0),
-    prisma.workflowEvent.count({ where: { processedAt: { gte: since } } }).catch(() => 0),
-  ]);
+    () => prisma.workflowEvent.count({ where: { processedAt: null } }).catch(() => 0),
+    () => prisma.workflowEvent.count({ where: { processedAt: { gte: since } } }).catch(() => 0),
+  ], 3);
 
   return NextResponse.json({
     data: {

@@ -24,13 +24,15 @@ type Win = "7" | "30" | "90" | "all";
 const scope = "general";
 const editarHref = (id: string) => `/configuracion?section=automation&ruleId=${encodeURIComponent(id)}`;
 
-export function JourneyMapView() {
+export function JourneyMapView({ abrirRegla = null }: { abrirRegla?: { id: string; n: number } | null }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [rules, setRules] = useState<RuleRow[]>([]);
   const [plans, setPlans] = useState<PlanLite[]>([]);
   const [slas, setSlas] = useState<SlaPolicyLite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [intento, setIntento] = useState(0);
   const [mode, setMode] = useState<Mode>("general");
   // Regla elegida: en "Por regla" es la que se dibuja; en General es la del panel de metricas.
   const [ruleId, setRuleId] = useState<string | null>(null);
@@ -46,14 +48,23 @@ export function JourneyMapView() {
   const metrics: NodeMetrics | null = useMemo(() => (draft && raw ? computeNodeMetrics(draft, raw) : null), [draft, raw]);
 
   useEffect(() => {
-    fetch("/api/admin/automation").then((r) => r.json()).then((j) => {
+    // Si la carga falla no se muestra «Sin reglas»: eso era mentira con la base saturada.
+    setLoading(true);
+    setErrorCarga(null);
+    fetch("/api/admin/automation").then(async (r) => {
+      if (!r.ok) throw new Error(await leerError(r, "No se pudieron cargar las reglas."));
+      return r.json();
+    }).then((j) => {
       const d = j.data ?? j;
       setRules((d.rules ?? []) as RuleRow[]);
       setPlans((d.plans ?? []) as PlanLite[]);
       setSlas((d.slaPolicies ?? []) as SlaPolicyLite[]);
       setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    }).catch((e: unknown) => {
+      setErrorCarga(e instanceof Error ? e.message : "No se pudieron cargar las reglas.");
+      setLoading(false);
+    });
+  }, [intento]);
 
   const slaRows = useMemo(() => deriveSlaPanel(slas), [slas]);
 
@@ -67,6 +78,12 @@ export function JourneyMapView() {
     if (rules.some((x) => x.id === id)) { setMode("rule"); setRuleId(id); }
     else toast({ title: "No encontramos esa regla", description: "Puede que se haya eliminado. Te mostramos el mapa general.", variant: "destructive" });
   }, [loading, rules, searchParams]);
+
+  // Una pastilla del embudo (J1) pide abrir el flujo de una regla.
+  useEffect(() => {
+    if (!abrirRegla || loading) return;
+    if (rules.some((x) => x.id === abrirRegla.id)) { setMode("rule"); setRuleId(abrirRegla.id); }
+  }, [abrirRegla, loading, rules]);
 
   // Metricas de la regla elegida (la API solo da metricas por regla).
   useEffect(() => {
@@ -149,6 +166,14 @@ export function JourneyMapView() {
   }, [draft, metrics]);
 
   if (loading) return <div className="p-8 text-sm text-neutral-500">Cargando mapa…</div>;
+  if (errorCarga) {
+    return (
+      <div className="p-8 text-sm text-neutral-600">
+        {errorCarga}{" "}
+        <button type="button" className="underline" onClick={() => setIntento((n) => n + 1)}>Reintentar</button>
+      </div>
+    );
+  }
   if (!rules.length && !plans.length && !slas.length) return <div className="p-8 text-sm text-neutral-500">Sin reglas ni cadencias configuradas. Créalas en Configuración → Automatización.</div>;
 
   const tab = (m: Mode, label: string) => (
